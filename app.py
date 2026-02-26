@@ -21,6 +21,7 @@ st.set_page_config(page_title="暴騰銘柄スクリーニング", layout="wide"
 st.title("📈 暴騰銘柄・半値押しスクリーニング")
 
 # --- ここから追加：レスポンシブCSSの定義 ---
+st.markdown("""
 # --- ここから追加：レスポンシブCSSの定義 ---
 st.markdown("""
 <style>
@@ -33,10 +34,14 @@ st.markdown("""
     .responsive-text {
         font-size: 1.1rem;
     }
-    /* タイトルや見出しをスマホサイズに縮小 */
+    /* タイトルや見出しを縮小 */
     h1 { font-size: 1.5rem !important; }
     h2 { font-size: 1.3rem !important; }
     h3 { font-size: 1.1rem !important; }
+    
+    /* 数値表示（55%押し、最高値、現在値）のブロックを縮小 */
+    [data-testid="stMetricValue"] * { font-size: 1.4rem !important; }
+    [data-testid="stMetricLabel"] * { font-size: 0.85rem !important; }
 }
 /* PC用（画面幅769px以上） */
 @media (min-width: 769px) {
@@ -45,6 +50,8 @@ st.markdown("""
     }
 }
 </style>
+""", unsafe_allow_html=True)
+# --- ここまで追加 ---
 """, unsafe_allow_html=True)
 # --- ここまで追加 ---
 
