@@ -22,8 +22,6 @@ st.title("📈 暴騰銘柄・半値押しスクリーニング")
 
 # --- ここから追加：レスポンシブCSSの定義 ---
 st.markdown("""
-# --- ここから追加：レスポンシブCSSの定義 ---
-st.markdown("""
 <style>
 .responsive-text {
     font-weight: bold;
