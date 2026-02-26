@@ -92,7 +92,7 @@ if st.sidebar.button("▶ スクリーニング実行"):
         ticker_symbol = ticker_code + ".T"
         try:
             # 時差バグを排除し、強制的に直近1年分の最新データを取得
-            df = yf.download(ticker_symbol, period="1y", progress=False)
+            df = yf.download(ticker_symbol, period="2y", progress=False)
             if df.empty or len(df) < 20:
                 continue
                 
