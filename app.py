@@ -118,8 +118,8 @@ if st.sidebar.button("▶ スクリーニング実行"):
             loss_10 = int(drop_55_price * 0.90)
             loss_8  = int(drop_55_price * 0.92)
             
-            st.markdown(f"<h3>💰 売値目標: [+3%] <span style='color:#ff4b4b'>{target_3}円</span> / [+5%] <span style='color:#ff4b4b'>{target_5}円</span> / [+8%] <span style='color:#ff4b4b'>{target_8}円</span></h3>", unsafe_allow_html=True)
-            st.markdown(f"<h3>🛡️ 損切り線: ザラ場(-10%) <span style='color:#00fa9a'>{loss_10}円</span> / 終値(-8%) <span style='color:#00fa9a'>{loss_8}円</span></h3>", unsafe_allow_html=True)
+            st.markdown(f"<div class='responsive-text'>💰 売値目標: [+3%] <span style='color:#ff4b4b'>{target_3}円</span> / [+5%] <span style='color:#ff4b4b'>{target_5}円</span> / [+8%] <span style='color:#ff4b4b'>{target_8}円</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='responsive-text'>🛡️ 損切り線: ザラ場(-10%) <span style='color:#00fa9a'>{loss_10}円</span> / 終値(-8%) <span style='color:#00fa9a'>{loss_8}円</span></div>", unsafe_allow_html=True)
             
         except Exception as e:
             st.error(f"{ticker_code} の処理中にエラーが発生しました")
