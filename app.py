@@ -20,6 +20,30 @@ def save_tickers(tickers_str):
 st.set_page_config(page_title="暴騰銘柄スクリーニング", layout="wide")
 st.title("📈 暴騰銘柄・半値押しスクリーニング")
 
+# --- ここから追加：レスポンシブCSSの定義 ---
+st.markdown("""
+<style>
+.responsive-text {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+}
+/* スマホ用（画面幅768px以下） */
+@media (max-width: 768px) {
+    .responsive-text {
+        font-size: 1.1rem;
+    }
+}
+/* PC用（画面幅769px以上） */
+@media (min-width: 769px) {
+    .responsive-text {
+        font-size: 1.5rem;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+# --- ここまで追加 ---
+
+Step 2: 出力部分のタグ変更
 # --- サイドバー設定 ---
 st.sidebar.header("⚙️ システム設定")
 
