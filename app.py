@@ -50,8 +50,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 # --- ここまで追加 ---
-""", unsafe_allow_html=True)
-# --- ここまで追加 ---
 
 # Step 2: 出力部分のタグ変更
 # --- サイドバー設定 ---
