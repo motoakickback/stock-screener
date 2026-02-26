@@ -97,8 +97,8 @@ if st.sidebar.button("▶ スクリーニング実行"):
                 
             current_price = float(df['Close'].iloc[-1])
             
-            # フィルター：株価200円未満
-            if filter_under_200 and current_price < 200:
+            # フィルター：指定株価以下を除外
+            if current_price <= min_price_limit:
                 continue
             # フィルター：IPO1年以内（営業日約250日未満）
             if filter_ipo and len(df) < 250:
