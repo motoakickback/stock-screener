@@ -91,7 +91,8 @@ if st.sidebar.button("▶ スクリーニング実行"):
             
         ticker_symbol = ticker_code + ".T"
         try:
-            df = yf.download(ticker_symbol, start=start_date, end=end_date, progress=False)
+            # 時差バグを排除し、強制的に直近1年分の最新データを取得
+            df = yf.download(ticker_symbol, period="1y", progress=False)
             if df.empty or len(df) < 20:
                 continue
                 
@@ -117,10 +118,14 @@ if st.sidebar.button("▶ スクリーニング実行"):
             st.divider()
             st.subheader(f"{ticker_code} （最高値: {int(recent_high)}円）")
             
+            # データがいつの日付のものかを取得
+            latest_date = df.index[-1].strftime('%m/%d')
+            
             col1, col2, col3 = st.columns(3)
             col1.metric("🎯 55%押し(買値目安)", f"{int(drop_55_price)}円")
             col2.metric("📉 最高値", f"{int(recent_high)}円")
-            col3.metric("現在値", f"{int(current_price)}円")
+            # 「現在値」ラベルに取得日を併記
+            col3.metric(f"最新値 ({latest_date} 終値)", f"{int(current_price)}円")
             
             # 売値目標（50%基準）
             target_3 = int(base_50_price * 1.03)
