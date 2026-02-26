@@ -64,7 +64,12 @@ blacklist_input = st.sidebar.text_input("除外ブラックリスト", value="33
 blacklist = [t.strip() for t in blacklist_input.split(',')] if blacklist_input else []
 
 st.sidebar.subheader("🛡️ フィルター設定 (ONで除外)")
-filter_under_200 = st.sidebar.checkbox("株価200円未満を除外", value=True)
+min_price_limit = st.sidebar.selectbox(
+    "⬇️ 株価下限フィルター",
+    options=[0, 200, 1000, 2000, 3000],
+    format_func=lambda x: "制限なし" if x == 0 else f"{x}円以下を除外",
+    index=1
+)
 filter_ipo = st.sidebar.checkbox("IPO(上場1年以内)を除外", value=True)
 filter_2x_1m = st.sidebar.checkbox("1ヶ月で2倍以上の暴騰を除外", value=True)
 filter_3x_1y = st.sidebar.checkbox("1年で3倍以上(第3波終了)を除外", value=True)
