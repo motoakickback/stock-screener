@@ -21,6 +21,7 @@ st.set_page_config(page_title="暴騰銘柄スクリーニング", layout="wide"
 st.title("📈 暴騰銘柄・半値押しスクリーニング")
 
 # --- ここから追加：レスポンシブCSSの定義 ---
+# --- ここから追加：レスポンシブCSSの定義 ---
 st.markdown("""
 <style>
 .responsive-text {
@@ -32,6 +33,10 @@ st.markdown("""
     .responsive-text {
         font-size: 1.1rem;
     }
+    /* タイトルや見出しをスマホサイズに縮小 */
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.3rem !important; }
+    h3 { font-size: 1.1rem !important; }
 }
 /* PC用（画面幅769px以上） */
 @media (min-width: 769px) {
