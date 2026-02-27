@@ -12,7 +12,7 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="J-Quants 戦略アドバイザー", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V13.3 最終安定版)")
+st.title("🛡️ J-Quants 戦略アドバイザー (V14.0 構造改革版)")
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -23,38 +23,27 @@ BASE_URL = "https://api.jquants.com/v2"
 
 # --- LINE送信モジュール ---
 def send_line(text):
-    if not LINE_TOKEN or not LINE_USER_ID:
-        return False
+    if not LINE_TOKEN or not LINE_USER_ID: return False
     url = "https://api.line.me/v2/bot/message/push"
     req_headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_TOKEN}"
     }
-    payload = {
-        "to": LINE_USER_ID,
-        "messages": [{"type": "text", "text": text}]
-    }
+    payload = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": text}]}
     try:
         res = requests.post(url, headers=req_headers, json=payload, timeout=10)
         return res.status_code == 200
-    except:
-        return False
+    except: return False
 
 # --- 3. 共通関数 ---
 def clean_df(df):
     r_cols = {
-        'AdjustmentOpen': 'AdjO',
-        'AdjustmentHigh': 'AdjH',
-        'AdjustmentLow': 'AdjL',
-        'AdjustmentClose': 'AdjC',
-        'Open': 'AdjO',
-        'High': 'AdjH',
-        'Low': 'AdjL',
-        'Close': 'AdjC'
+        'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH',
+        'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
+        'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'
     }
     df = df.rename(columns=r_cols)
-    cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-    for c in cols:
+    for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors='coerce')
     if 'Date' in df.columns:
@@ -90,8 +79,7 @@ def get_old_codes():
                 u = f"https://api.jquants.com/{v}/listed/info?date={d}"
                 r = requests.get(u, headers=headers, timeout=10)
                 if r.status_code == 200 and r.json().get("info"):
-                    df = pd.DataFrame(r.json()["info"])
-                    return df['Code'].astype(str).tolist()
+                    return pd.DataFrame(r.json()["info"])['Code'].astype(str).tolist()
             except: pass
     return []
 
@@ -103,20 +91,19 @@ def get_single_data(code, yrs=3):
     try:
         u = f"{BASE_URL}/equities/bars/daily?code={code}&from={f_d}&to={t_d}"
         r = requests.get(u, headers=headers, timeout=15)
-        if r.status_code == 200:
-            return r.json().get("data", [])
+        if r.status_code == 200: return r.json().get("data", [])
     except: pass
     return []
 
-@st.cache_data(ttl=3600)
-def get_hist_data():
+# 【修正】UIクラッシュを防ぐためプログレスバーを排除し、裏側で高速取得
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_hist_data_cached():
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
-        if d.weekday() < 5:
-            dates.append(d.strftime('%Y%m%d'))
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
         days += 1
     
     d_h = base - timedelta(days=180)
@@ -128,28 +115,19 @@ def get_hist_data():
     dates.append(d_y.strftime('%Y%m%d'))
     
     rows = []
-    bar = st.progress(0, "神速モードで相場データを並列取得中...")
-    
     def fetch(dt):
         try:
             u = f"{BASE_URL}/equities/bars/daily?date={dt}"
             r = requests.get(u, headers=headers, timeout=10)
-            time.sleep(0.1)
-            if r.status_code == 200:
-                return r.json().get("data", [])
+            if r.status_code == 200: return r.json().get("data", [])
         except: pass
         return []
         
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = {exe.submit(fetch, dt): dt for dt in dates}
-        comp = 0
+        futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
-            if res:
-                rows.extend(res)
-            comp += 1
-            bar.progress(comp / len(dates))
-    bar.empty()
+            if res: rows.extend(res)
     return rows
 
 def draw_chart(df, targ_p):
@@ -157,57 +135,59 @@ def draw_chart(df, targ_p):
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
-        increasing_line_color='#ef5350',
-        decreasing_line_color='#26a69a'
+        increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
     fig.add_trace(go.Scatter(
         x=df['Date'], y=[targ_p]*len(df), mode='lines',
-        name='目標(指定%押)',
-        line=dict(color='#FFD700', width=2, dash='dash')
+        name='目標(指定%押)', line=dict(color='#FFD700', width=2, dash='dash')
     ))
     fig.update_layout(
         height=320, margin=dict(l=0, r=0, t=10, b=0),
-        xaxis_rangeslider_visible=False,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        hovermode="x unified"
+        xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 4. UI構築 ---
+# ==========================================
+# 4. UI構築（サイドバーをタブから完全に独立）
+# ==========================================
+st.sidebar.header("🔍 ピックアップルール")
+f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
+f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
+f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
+f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外", value=True)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
+
+c_f7_1, c_f7_2 = st.sidebar.columns(2)
+f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
+f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
+
+st.sidebar.header("🎯 買いルール")
+push_r = st.sidebar.number_input("① 押し目(%)", value=50, step=5)
+limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
+
+# ==========================================
+# メイン画面（タブ）
+# ==========================================
 tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（バックテスト）"])
 master_df = load_master()
 
 with tab1:
     st.markdown("### 🌐 ボスの「鉄の掟」全銘柄スクリーニング")
     run_scan = st.button("🚀 最新データで全軍スキャン開始")
-    
-    st.sidebar.header("🔍 ピックアップルール")
-    f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
-    f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
-    f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
-    f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
-    f5_ipo = st.sidebar.checkbox("⑤ IPO除外", value=True)
-    f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
-    
-    c1, c2 = st.sidebar.columns(2)
-    f7_min14 = c1.number_input("⑦下限(倍)", value=1.3, step=0.1)
-    f7_max14 = c2.number_input("⑦上限(倍)", value=2.0, step=0.1)
-
-    st.sidebar.header("🎯 買いルール")
-    push_r = st.sidebar.number_input("① 押し目(%)", value=50, step=5)
-    limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
     if run_scan:
-        raw = get_hist_data()
+        with st.spinner("神速モードで相場データを並列取得中..."):
+            raw = get_hist_data_cached()
+            
         if not raw:
             st.error("データの取得に失敗しました。")
         else:
             with st.spinner("全4000銘柄に鉄の掟を一括執行中..."):
                 d_raw = pd.DataFrame(raw)
                 df = clean_df(d_raw)
-                df = df.dropna(subset=['AdjC', 'AdjH', 'AdjL'])
-                df = df.sort_values(['Code', 'Date'])
+                df = df.dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
                 df_30 = df.groupby('Code').tail(30)
                 df_14 = df_30.groupby('Code').tail(14)
@@ -215,29 +195,206 @@ with tab1:
                 counts = df_14.groupby('Code').size()
                 valid = counts[counts == 14].index
                 
+                if valid.empty:
+                    st.warning("条件を満たす銘柄データが存在しません。")
+                    st.stop()
+                
                 df_14 = df_14[df_14['Code'].isin(valid)]
                 df_30 = df_30[df_30['Code'].isin(valid)]
-                
                 df_past = df[~df.index.isin(df_30.index)]
                 df_past = df_past[df_past['Code'].isin(valid)]
                 
-                agg_14 = df_14.groupby('Code').agg(
-                    lc=('AdjC', 'last'),
-                    h14=('AdjH', 'max'),
-                    l14=('AdjL', 'min')
-                )
+                agg_14 = df_14.groupby('Code').agg(lc=('AdjC', 'last'), h14=('AdjH', 'max'), l14=('AdjL', 'min'))
                 
                 idx_max = df_14.groupby('Code')['AdjH'].idxmax()
-                h_dates = df_14.loc[idx_max].set_index('Code')['Date']
-                h_dates = h_dates.rename('h_date')
-                
+                h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
                 df_14_m = df_14.merge(h_dates, on='Code')
                 cond_d = df_14_m['Date'] > df_14_m['h_date']
-                d_high = df_14_m[cond_d].groupby('Code').size()
-                d_high = d_high.rename('d_high')
+                d_high = df_14_m[cond_d].groupby('Code').size().rename('d_high')
                 
                 agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
-                agg_p = df_past.groupby('Code').agg(
-                    omax=('AdjH', 'max'),
-                    omin=('AdjL', 'min')
-                )
+                agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
+                
+                sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0})
+                sum_df = sum_df.join(agg_30).join(agg_p).reset_index()
+                
+                ur = sum_df['h14'] - sum_df['l14']
+                sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+                
+                sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
+                sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
+                
+                c_omax = (sum_df['omax'].notna()) & (sum_df['omax'] > 0)
+                sum_df['ldrop'] = np.where(c_omax, ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
+                
+                c_omin = (sum_df['omin'].notna()) & (sum_df['omin'] > 0)
+                sum_df['lrise'] = np.where(c_omin, sum_df['lc'] / sum_df['omin'], 0)
+                
+                if not master_df.empty:
+                    sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
+                
+                sum_df = sum_df[sum_df['lc'] >= f1_min]
+                sum_df = sum_df[sum_df['r30'] <= f2_m30]
+                sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
+                
+                c_rise = (sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0)
+                sum_df = sum_df[c_rise]
+                
+                if f5_ipo:
+                    old_c = get_old_codes()
+                    if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
+                        
+                if f6_risk and 'CompanyName' in sum_df.columns:
+                    c_risk = ~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)
+                    sum_df = sum_df[c_risk]
+                
+                sum_df = sum_df[sum_df['r14'] >= f7_min14]
+                sum_df = sum_df[sum_df['r14'] <= f7_max14]
+                sum_df = sum_df[sum_df['d_high'] <= limit_d]
+                sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
+                
+                res = sum_df.sort_values('lc', ascending=False).head(30)
+                
+            if res.empty: 
+                st.warning("現在の相場に、標的は存在しません。")
+            else:
+                msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
+                for i, r in res.head(10).iterrows():
+                    c = str(r['Code'])[:-1]
+                    n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
+                    bp = int(r['bt'])
+                    msg += f"\n■ {n} ({c})\n"
+                    msg += f"・現在値: {int(r['lc'])}円\n"
+                    msg += f"・買値目安: {bp}円\n"
+                    msg += f"・売値: +3%({int(bp*1.03)}) / +5%({int(bp*1.05)}) / +8%({int(bp*1.08)})\n"
+                
+                with st.spinner("ボスのスマホへ標的データを送信中..."):
+                    if send_line(msg):
+                        st.success("📱 LINEへ送信成功しました。")
+                    else:
+                        st.error("⚠️ LINE送信に失敗しました。Secretsの設定を確認してください。")
+
+                st.success(f"スキャン完了: {len(res)} 銘柄クリア")
+                for _, r in res.iterrows():
+                    st.divider()
+                    c = str(r['Code'])
+                    n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
+                    st.subheader(f"{n} ({c[:-1]})")
+                    
+                    cc1, cc2, cc3 = st.columns(3)
+                    cc1.metric("最新終値", f"{int(r['lc'])}円")
+                    cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
+                    cc3.metric("高値から日数", f"{int(r['d_high'])}日")
+                    
+                    hist = df[df['Code'] == c].sort_values('Date').tail(14)
+                    if not hist.empty:
+                        draw_chart(hist, r['bt'])
+
+with tab2:
+    st.markdown("### 📉 鉄の掟：複数銘柄 一括検証 ＆ 損益算出")
+    col_1, col_2 = st.columns([1, 2])
+    with col_1:
+        bt_c_in = st.text_area("銘柄コード（複数可）", value="6614, 3997, 4935", height=100)
+        run_bt = st.button("🔥 一括バックテスト")
+    with col_2:
+        st.caption("⚙️ パラメーター")
+        cc_1, cc_2 = st.columns(2)
+        bt_push = cc_1.number_input("① 押し目 (%)", value=50, step=5)
+        bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
+        bt_tp = cc_1.number_input("③ 利確 (+%)", value=8, step=1)
+        bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
+        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=10, step=1)
+        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=8, step=1)
+        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
+
+    if run_bt and bt_c_in:
+        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', bt_c_in)))
+        if not t_codes:
+            st.warning("有効なコードが見つかりません。")
+        else:
+            all_t = []
+            b_bar = st.progress(0, "仮想売買中...")
+            for idx, c in enumerate(t_codes):
+                raw = get_single_data(c + "0", 3)
+                if raw:
+                    df = clean_df(pd.DataFrame(raw))
+                    pos = None
+                    for i in range(14, len(df)):
+                        td = df.iloc[i]
+                        if pos is None:
+                            win = df.iloc[i-14:i]
+                            rh = win['AdjH'].max()
+                            rl = win['AdjL'].min()
+                            if pd.isna(rh) or pd.isna(rl):
+                                continue
+                                
+                            idxmax = win['AdjH'].idxmax()
+                            h_d = len(win[win['Date'] > win.loc[idxmax, 'Date']])
+                            r14 = rh / rl if rl > 0 else 0
+                            
+                            if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
+                                targ = rh - ((rh - rl) * (bt_push / 100))
+                                if td['AdjL'] <= targ:
+                                    exec_p = min(td['AdjO'], targ)
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
+                        else:
+                            bp = round(pos['b_p'], 1)
+                            held = i - pos['b_i']
+                            sp = 0
+                            rsn = ""
+                            
+                            sl_i = bp * (1 - (bt_sl_i / 100))
+                            tp = bp * (1 + (bt_tp / 100))
+                            sl_c = bp * (1 - (bt_sl_c / 100))
+                            
+                            if td['AdjL'] <= sl_i:
+                                sp = min(td['AdjO'], sl_i)
+                                rsn = f"損切(ザ場-{bt_sl_i}%)"
+                            elif td['AdjH'] >= tp:
+                                sp = max(td['AdjO'], tp)
+                                rsn = f"利確(+{bt_tp}%)"
+                            elif td['AdjC'] <= sl_c:
+                                sp = td['AdjC']
+                                rsn = f"損切(終値-{bt_sl_c}%)"
+                            elif held >= bt_sell_d:
+                                sp = td['AdjC']
+                                rsn = f"時間切れ({bt_sell_d}日)"
+                                
+                            if rsn:
+                                sp = round(sp, 1)
+                                p_pct = round(((sp / bp) - 1) * 100, 2)
+                                p_amt = int((sp - bp) * bt_lot)
+                                
+                                all_t.append({
+                                    '銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'),
+                                    '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held,
+                                    '買値(円)': bp, '売値(円)': sp, '損益(%)': p_pct,
+                                    '損益額(円)': p_amt, '決済理由': rsn
+                                })
+                                pos = None
+                                
+                b_bar.progress((idx + 1) / len(t_codes))
+                time.sleep(0.5)
+                
+            b_bar.empty()
+            st.success("シミュレーション完了")
+            
+            if not all_t:
+                st.warning("シグナル点灯はありませんでした。")
+            else:
+                tdf = pd.DataFrame(all_t)
+                tot = len(tdf)
+                wins = len(tdf[tdf['損益額(円)'] > 0])
+                n_prof = tdf['損益額(円)'].sum()
+                sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum()
+                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
+                
+                pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
+                
+                st.markdown(f"### 💰 総合結果：差し引き利益額 **{n_prof:,} 円**")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("トレード回数", f"{tot} 回")
+                m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
+                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
+                m4.metric("PF", f"{pf}")
+                st.dataframe(tdf, use_container_width=True)
