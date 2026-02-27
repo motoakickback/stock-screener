@@ -13,7 +13,6 @@ import concurrent.futures
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="株式投資戦略本部", layout="wide")
 
-# タイトルのレスポンシブ化
 st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ 株式投資戦略本部</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
@@ -164,11 +163,14 @@ push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
 # ==========================================
-# メイン画面（タブ）
+# メイン画面（3タブ構成に変更）
 # ==========================================
-tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（バックテスト）"])
+tab1, tab2, tab3 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）"])
 master_df = load_master()
 
+# ----------------------------------------
+# タブ1：全軍スキャン
+# ----------------------------------------
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全軍スキャン</h3>', unsafe_allow_html=True)
     run_scan = st.button("🚀 最新データで全軍スキャン開始")
@@ -214,7 +216,6 @@ with tab1:
                 sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0})
                 sum_df = sum_df.join(agg_30).join(agg_p).reset_index()
                 
-                # 【追加】買値目標と到達度（%）の計算
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
                 
@@ -253,7 +254,6 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
                 
-                # 【変更】ソート順を「到達度（reach_pct）の高い順（降順）」に変更
                 res = sum_df.sort_values('reach_pct', ascending=False).head(30)
                 
             if res.empty: 
@@ -267,7 +267,6 @@ with tab1:
                     
                     st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
                     
-                    # 【変更】3カラムで到達度を表示し、日数はキャプションに移動
                     cc1, cc2, cc3 = st.columns(3)
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
@@ -278,58 +277,86 @@ with tab1:
                     if not hist.empty:
                         draw_chart(hist, r['bt'])
 
-    # --- 個別狙撃モジュール ---
-    st.markdown("---")
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 個別狙撃（ピンポイント分析）</h3>', unsafe_allow_html=True)
+# ----------------------------------------
+# タブ2：局地戦（個別狙撃・複数対応）
+# ----------------------------------------
+with tab2:
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
+    st.caption("※「鉄の掟」を完全に無視し、指定された銘柄すべての押し目ラインと到達度だけを強制算出します。")
+    
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
-        target_code = st.text_input("標的コード (例: 7203)", max_chars=4)
-        run_single = st.button("🔫 個別スキャン実行")
+        target_codes_str = st.text_area("標的コード（複数可）", value="7203\n9984", height=100)
+        run_single = st.button("🔫 指定銘柄 一斉スキャン")
     with col_s2:
-        st.caption("※指定した銘柄の現在値と、鉄の掟に基づく「指定%の押し目ライン」を即座に算出してチャートを表示します。全軍スキャンを待つ必要はありません。")
+        st.caption("改行やカンマ区切りで複数の4桁コードを入力してください。結果は到達度が高い順（100%超えから）に自動で並び替えて表示されます。")
 
-    if run_single and target_code:
-        if len(target_code) == 4 and target_code.isdigit():
-            with st.spinner(f"標的 {target_code} の軌道を計算中..."):
-                raw_single = get_single_data(target_code + "0", 1) 
-                if raw_single:
-                    df_s = clean_df(pd.DataFrame(raw_single))
-                    if not df_s.empty and len(df_s) >= 14:
-                        df_s_14 = df_s.tail(14)
-                        h14 = df_s_14['AdjH'].max()
-                        l14 = df_s_14['AdjL'].min()
-                        lc = df_s['AdjC'].iloc[-1]
+    if run_single and target_codes_str:
+        # 入力から4桁の数字だけを抽出し、重複を排除
+        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', target_codes_str)))
+        
+        if not t_codes:
+            st.warning("4桁の有効な銘柄コードが見つかりません。")
+        else:
+            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を計算中..."):
+                results = []
+                charts_data = {}
+                
+                for c in t_codes:
+                    raw_single = get_single_data(c + "0", 1) 
+                    if raw_single:
+                        df_s = clean_df(pd.DataFrame(raw_single))
+                        if not df_s.empty and len(df_s) >= 14:
+                            df_s_14 = df_s.tail(14)
+                            h14 = df_s_14['AdjH'].max()
+                            l14 = df_s_14['AdjL'].min()
+                            lc = df_s['AdjC'].iloc[-1]
+                            
+                            bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
+                            
+                            denom_s = h14 - bt_single
+                            reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
+                            
+                            c_name = f"銘柄 {c}"
+                            if not master_df.empty:
+                                m_row = master_df[master_df['Code'] == c + "0"]
+                                if not m_row.empty:
+                                    c_name = m_row.iloc[0]['CompanyName']
+                                    
+                            results.append({
+                                'Code': c,
+                                'Name': c_name,
+                                'lc': lc,
+                                'bt': bt_single,
+                                'h14': h14,
+                                'reach_pct': reach_s
+                            })
+                            charts_data[c] = (df_s_14, bt_single)
+                
+                if results:
+                    # 到達度（reach_pct）で降順ソート
+                    res_df = pd.DataFrame(results).sort_values('reach_pct', ascending=False)
+                    st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（到達度順）")
+                    
+                    for _, r in res_df.iterrows():
+                        st.divider()
+                        st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{r["Name"]} ({r["Code"]})</h3>', unsafe_allow_html=True)
                         
-                        bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
-                        
-                        # 【追加】個別狙撃時の到達度計算
-                        denom_s = h14 - bt_single
-                        reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
-                        
-                        c_name = f"銘柄 {target_code}"
-                        if not master_df.empty:
-                            m_row = master_df[master_df['Code'] == target_code + "0"]
-                            if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']
-
-                        st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{c_name} ({target_code})</h3>', unsafe_allow_html=True)
-                        
-                        # 【変更】個別狙撃の表示も3カラムに統一
                         sc1, sc2, sc3 = st.columns(3)
-                        sc1.metric("最新終値", f"{int(lc)}円")
-                        sc2.metric(f"🎯 目標 ({push_r}%押)", f"{int(bt_single)}円")
-                        sc3.metric("到達度", f"{reach_s:.1f}%")
-                        st.caption(f"⏱️ 直近14日高値: {int(h14)}円")
+                        sc1.metric("最新終値", f"{int(r['lc'])}円")
+                        sc2.metric(f"🎯 目標 ({push_r}%押)", f"{int(r['bt'])}円")
+                        sc3.metric("到達度", f"{r['reach_pct']:.1f}%")
+                        st.caption(f"⏱️ 直近14日高値: {int(r['h14'])}円")
                         
-                        draw_chart(df_s_14, bt_single)
-                    else:
-                        st.warning("直近14日間のデータが不足しています。")
+                        df_chart, bt_chart = charts_data[r['Code']]
+                        draw_chart(df_chart, bt_chart)
                 else:
                     st.error("データの取得に失敗しました。上場廃止やコード誤りの可能性があります。")
-        else:
-            st.warning("4桁の半角数字で入力してください。")
 
-with tab2:
+# ----------------------------------------
+# タブ3：訓練（バックテスト）
+# ----------------------------------------
+with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
     
     col_1, col_2 = st.columns([1, 2])
