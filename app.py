@@ -12,28 +12,12 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="J-Quants 戦略アドバイザー", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V14.2 個別狙撃復帰版)")
+st.title("🛡️ J-Quants 戦略アドバイザー (V14.3 サイレントスキャン版)")
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
-LINE_TOKEN = st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
-LINE_USER_ID = st.secrets.get("LINE_USER_ID", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
-
-# --- LINE送信モジュール ---
-def send_line(text):
-    if not LINE_TOKEN or not LINE_USER_ID: return False
-    url = "https://api.line.me/v2/bot/message/push"
-    req_headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_TOKEN}"
-    }
-    payload = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": text}]}
-    try:
-        res = requests.post(url, headers=req_headers, json=payload, timeout=10)
-        return res.status_code == 200
-    except: return False
 
 # --- 3. 共通関数 ---
 def clean_df(df):
@@ -163,7 +147,6 @@ f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
-# 【修正】ボスの指示通りデフォルトを45%に設定
 push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
@@ -258,23 +241,8 @@ with tab1:
             if res.empty: 
                 st.warning("現在の相場に、標的は存在しません。")
             else:
-                msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
-                for i, r in res.head(10).iterrows():
-                    c = str(r['Code'])[:-1]
-                    n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
-                    bp = int(r['bt'])
-                    msg += f"\n■ {n} ({c})\n"
-                    msg += f"・現在値: {int(r['lc'])}円\n"
-                    msg += f"・買値目安: {bp}円\n"
-                    msg += f"・売値: +3%({int(bp*1.03)}) / +5%({int(bp*1.05)}) / +8%({int(bp*1.08)})\n"
-                
-                with st.spinner("ボスのスマホへ標的データを送信中..."):
-                    if send_line(msg):
-                        st.success("📱 LINEへ送信成功しました。")
-                    else:
-                        st.error("⚠️ LINE送信に失敗しました。Secretsの設定を確認してください。")
-
-                st.success(f"スキャン完了: {len(res)} 銘柄クリア")
+                # 【修正】LINE送信モジュールを物理的に排除し、画面表示のみに専念
+                st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code'])
@@ -290,7 +258,7 @@ with tab1:
                     if not hist.empty:
                         draw_chart(hist, r['bt'])
 
-    # --- 【新規追加】個別狙撃モジュール ---
+    # --- 個別狙撃モジュール ---
     st.markdown("---")
     st.markdown("### 🎯 個別狙撃（ピンポイント分析）")
     col_s1, col_s2 = st.columns([1, 2])
@@ -343,7 +311,6 @@ with tab2:
     with col_2:
         st.caption("⚙️ パラメーター")
         cc_1, cc_2 = st.columns(2)
-        # 【修正】ボスの指示通りデフォルトを45%に設定
         bt_push = cc_1.number_input("① 押し目 (%)", value=45, step=5)
         bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
         bt_tp = cc_1.number_input("③ 利確 (+%)", value=8, step=1)
