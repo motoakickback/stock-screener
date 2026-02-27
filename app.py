@@ -5,44 +5,39 @@ import time
 import os
 from datetime import datetime, timedelta
 
-# Plotlyのインポート失敗に備えた自己修復ロジック
-try:
-    import plotly.graph_objects as go
-    HAS_PLOTLY = True
-except ImportError:
-    HAS_PLOTLY = False
-
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V8.8)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V8.8)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.0)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V9.0)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理 (自動修復機能付き) ---
+# --- 3. 銘柄マスター管理 (JPXから直接取得) ---
 def generate_brands_csv():
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tv0syu00000011xl-att/data_j.xls"
     try:
+        # openpyxl がインストールされていれば成功する
         df = pd.read_excel(url)
         df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分', '新市場区分上場日']]
         df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'ListingDate']
         df['Code'] = df['Code'].astype(str) + "0"
         df.to_csv("brands.csv", index=False)
         return True
-    except: return False
+    except Exception as e:
+        st.sidebar.error(f"マスター取得失敗: 必要な部品(openpyxl)が不足しています。")
+        return False
 
 @st.cache_data
 def load_brand_master():
-    if not os.path.exists("brands.csv"):
-        generate_brands_csv() # なければその場で徴収
-    try:
+    if not os.path.exists("brands.csv"): 
+        generate_brands_csv()
+    if os.path.exists("brands.csv"):
         return pd.read_csv("brands.csv", dtype={'Code': str})
-    except:
-        return pd.DataFrame()
+    return pd.DataFrame()
 
-# --- 4. サイドバー設定（鉄の掟：①～⑥ 完全連番 ＆ 完全実装） ---
+# --- 4. サイドバー設定（鉄の掟：①～⑥ 完全実装） ---
 st.sidebar.header("🔍 鉄の掟（フィルター）")
 f1_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100)
 f2_short = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
@@ -51,10 +46,11 @@ f4_long = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
-if st.sidebar.button("銘柄マスタを強制同期"):
-    if generate_brands_csv():
-        st.cache_data.clear()
-        st.rerun()
+if st.sidebar.button("銘柄データを最新に更新"):
+    with st.sidebar.spinner("JPXから4000銘柄を徴収中..."):
+        if generate_brands_csv():
+            st.cache_data.clear()
+            st.rerun()
 
 # --- 5. 株価データ取得 ---
 @st.cache_data(ttl=3600)
@@ -77,7 +73,7 @@ def get_historical_data():
                 all_rows.extend(res.json().get("data", []))
         except: pass
         p_bar.progress((i + 1) / 14)
-        time.sleep(13) # レート制限遵守
+        time.sleep(13)
     p_bar.empty()
     return all_rows
 
@@ -113,9 +109,9 @@ if st.button("スクリーニング開始"):
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
             if f5_ipo and 'ListingDate' in summary.columns:
                 limit = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
-                summary = summary[pd.to_datetime(summary['ListingDate']) <= limit]
+                summary = summary[pd.to_datetime(summary['ListingDate'], errors='coerce') <= limit]
             if f6_risk and 'CompanyName' in summary.columns:
-                summary = summary[~summary['CompanyName'].str.contains("疑義|重要事象", na=False)]
+                summary = summary[~summary['CompanyName'].str.astype(str).str.contains("疑義|重要事象", na=False)]
             
             summary['current_ratio'] = summary['latest_close'] / summary['recent_high']
             results = summary.sort_values('current_ratio').head(30)
@@ -135,14 +131,10 @@ if st.button("スクリーニング開始"):
                 target_50 = int(row['recent_high'] * 0.50)
                 c3.metric("🎯 買値目安(50%)", f"{target_50}円")
 
-                # チャート描画 (Plotlyがなければ自動で標準チャートに切替)
+                # 標準機能だけで描く2色チャート（Plotly不要）
                 hist = df[df['Code'] == row['Code']].sort_values('Date')
                 if not hist.empty:
-                    if HAS_PLOTLY:
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(x=hist['Date'], y=hist['AdjC'], name='株価', line=dict(color='#007BFF', width=3)))
-                        fig.add_trace(go.Scatter(x=hist['Date'], y=[target_50]*len(hist), name='50%線', line=dict(color='#FF4136', dash='dash')))
-                        fig.update_layout(height=280, margin=dict(l=0, r=0, t=20, b=0), hovermode="x unified")
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.line_chart(hist.set_index('Date')['AdjC'])
+                    chart_data = hist.set_index('Date')[['AdjC']].rename(columns={'AdjC': '実績株価'})
+                    chart_data['目標ライン(50%)'] = target_50
+                    # 青色(株価)と赤色(目標)を指定して描画
+                    st.line_chart(chart_data, color=["#007BFF", "#FF4136"])
