@@ -4,32 +4,45 @@ import pandas as pd
 import time
 import os
 from datetime import datetime, timedelta
+from io import BytesIO
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.2)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V9.2)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.3)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V9.3)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理 ---
+# --- 3. 銘柄マスター管理 (エラー可視化・完全版) ---
 def generate_brands_csv():
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tv0syu00000011xl-att/data_j.xls"
     try:
-        df = pd.read_excel(url)
-        df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分', '新市場区分上場日']]
-        df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'ListingDate']
+        # アクセス拒否を防ぐためのヘッダー偽装
+        req_headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=req_headers, timeout=10)
+        res.raise_for_status()
+        
+        # xlrdエンジンで確実に読み込む
+        df = pd.read_excel(BytesIO(res.content), engine='xlrd')
+        
+        # 実際に存在するカラムだけを抽出 (上場日は存在しないため除外)
+        df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+        df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
         df['Code'] = df['Code'].astype(str) + "0"
         df.to_csv("brands.csv", index=False)
-        return True
-    except: return False
+        return True, "成功"
+    except Exception as e:
+        return False, str(e)
 
 @st.cache_data
 def load_brand_master():
-    if not os.path.exists("brands.csv"): 
-        generate_brands_csv()
+    if not os.path.exists("brands.csv"):
+        success, err_msg = generate_brands_csv()
+        if not success:
+            st.sidebar.error(f"⚠️ マスター取得エラー: {err_msg}")
+            
     if os.path.exists("brands.csv"):
         return pd.read_csv("brands.csv", dtype={'Code': str})
     return pd.DataFrame()
@@ -46,14 +59,17 @@ f1_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100
 f2_short = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
 f3_signal = st.sidebar.checkbox("③ 買値目安(50%以下)のみ表示", value=True)
 f4_long = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
-f5_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
+st.sidebar.caption("⚠️ ⑤ IPO除外はデータ制限のため現在凍結中")
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
 if st.sidebar.button("銘柄データを最新に更新"):
     with st.sidebar.spinner("JPXから4000銘柄を徴収中..."):
-        if generate_brands_csv():
+        success, err_msg = generate_brands_csv()
+        if success:
             st.cache_data.clear()
             st.rerun()
+        else:
+            st.sidebar.error(f"更新失敗: {err_msg}")
 
 # --- 5. データ取得関数 ---
 @st.cache_data(ttl=3600)
@@ -98,7 +114,6 @@ def get_single_stock_data(code):
 # --- 6. メイン画面のUI配置 ---
 master_df = load_brand_master()
 
-# 全スクリーニングボタンをメイン画面の目立つ場所に常時固定
 st.markdown("### 🌐 全4,000銘柄 スクリーニング")
 run_full_scan = st.button("🚀 全銘柄スクリーニング開始（約3分）")
 st.divider()
@@ -175,9 +190,7 @@ elif run_full_scan:
                 summary = summary[(summary['latest_close'] / summary['recent_high']) <= 0.50]
             if f4_long:
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
-            if f5_ipo and 'ListingDate' in summary.columns:
-                limit = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
-                summary = summary[pd.to_datetime(summary['ListingDate'], errors='coerce') <= limit]
+                
             if f6_risk and 'CompanyName' in summary.columns:
                 summary = summary[~summary['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
             
