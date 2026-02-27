@@ -108,8 +108,6 @@ def main():
         return
 
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
-    
-    # 【変更箇所】押し目を 45% に設定
     push_r = 45; limit_d = 4
 
     master_df = load_master()
@@ -146,6 +144,11 @@ def main():
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+    
+    # 【追加】到達度（%）の計算
+    denom = sum_df['h14'] - sum_df['bt']
+    sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
+    
     sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
     sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
     
@@ -169,7 +172,8 @@ def main():
     sum_df = sum_df[sum_df['d_high'] <= limit_d]
     sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
     
-    res = sum_df.sort_values('lc', ascending=False).head(30)
+    # 【変更】到達度（reach_pct）で降順ソート
+    res = sum_df.sort_values('reach_pct', ascending=False).head(30)
     
     if res.empty: 
         log("現在の相場に、標的は存在しません。LINE通知はスキップします。")
@@ -180,7 +184,8 @@ def main():
             c = str(r['Code'])[:-1]
             n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
             bp = int(r['bt'])
-            msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値: {bp}円\n・売値: +3%({int(bp*1.03)}) / +5%({int(bp*1.05)}) / +8%({int(bp*1.08)})\n"
+            # 【変更】LINEメッセージに到達度を追加
+            msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +3%({int(bp*1.03)}) / +5%({int(bp*1.05)}) / +8%({int(bp*1.08)})\n"
         
         if send_line(msg): log("LINE通知 成功")
         else: log("エラー: LINE通知 失敗")
