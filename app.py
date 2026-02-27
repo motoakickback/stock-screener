@@ -83,7 +83,9 @@ if st.sidebar.button("▶ スクリーニング実行"):
     end_date = datetime.date.today()
     start_date = end_date - datetime.timedelta(days=400) # 約1年強のデータ取得
     
+    # --- 変更ここから ---
     hit_count = 0
+    results = [] # フィルターを通過した銘柄を貯めるリスト
     
     for ticker_code in ticker_list:
         if ticker_code in blacklist:
@@ -91,41 +93,53 @@ if st.sidebar.button("▶ スクリーニング実行"):
             
         ticker_symbol = ticker_code + ".T"
         try:
-            # 時差バグを排除し、強制的に直近1年分の最新データを取得
+            # 時差バグを排除し、直近2年分のデータを取得（IPOフィルター正常化のため）
             df = yf.download(ticker_symbol, period="2y", progress=False)
-            if df.empty or len(df) < 20:
-                continue
+            
+            if len(df) < 250:
+                continue # IPO除外
                 
             current_price = float(df['Close'].iloc[-1])
+            recent_high = float(df['High'].tail(14).max())
+            drop_55_price = recent_high * 0.45
             
             # フィルター：指定株価以下を除外
             if current_price <= min_price_limit:
                 continue
-            # フィルター：IPO1年以内（営業日約250日未満）
-            if filter_ipo and len(df) < 250:
-                continue
                 
-            # 直近2週間のデータを取得
-            recent_df = df.tail(14)
-            recent_high = float(recent_df['High'].max())
+            # 全てのフィルターを通過した銘柄の「下落率」を計算してリストへ保存
+            drop_ratio = current_price / recent_high
+            latest_date = df.index[-1].strftime('%m/%d')
             
-            # 55%押し水準(買値)と、50%水準(計算ベース)
-            drop_55_price = recent_high * 0.45
-            base_50_price = recent_high * 0.50
+            results.append({
+                'code': ticker_code,
+                'current_price': current_price,
+                'recent_high': recent_high,
+                'drop_55_price': drop_55_price,
+                'drop_ratio': drop_ratio,
+                'latest_date': latest_date
+            })
             
             hit_count += 1
             
-            st.divider()
-            st.subheader(f"{ticker_code} （最高値: {int(recent_high)}円）")
-            
-            # データがいつの日付のものかを取得
-            latest_date = df.index[-1].strftime('%m/%d')
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("🎯 55%押し(買値目安)", f"{int(drop_55_price)}円")
-            col2.metric("📉 最高値", f"{int(recent_high)}円")
-            # 「現在値」ラベルに取得日を併記
-            col3.metric(f"最新値 ({latest_date} 終値)", f"{int(current_price)}円")
+        except Exception:
+            continue
+
+    # --- 貯め込んだリストを「下落率が高い順（現在値/最高値 が小さい順）」にソート ---
+    results_sorted = sorted(results, key=lambda x: x['drop_ratio'])
+
+    # --- ソート済みの結果を画面に一括出力 ---
+    for item in results_sorted:
+        st.divider()
+        st.subheader(f"{item['code']} （最高値: {int(item['recent_high'])}円）")
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("🎯 55%押し(買値目安)", f"{int(item['drop_55_price'])}円")
+        # 下落率をパーセンテージで表示
+        col2.metric("📉 現在水準", f"{int(item['drop_ratio'] * 100)}%") 
+        col3.metric(f"最新値 ({item['latest_date']} 終値)", f"{int(item['current_price'])}円")
+        
+    # --- 変更ここまで ---
             
             # 売値目標（50%基準）
             target_3 = int(base_50_price * 1.03)
