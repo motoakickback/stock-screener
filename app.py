@@ -5,8 +5,8 @@ import time
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V5.5)", layout="wide")
-st.title("⚔️ J-Quants 戦略アドバイザー (V5.5)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V5.6)", layout="wide")
+st.title("⚔️ J-Quants 戦略アドバイザー (V5.6)")
 
 # --- 2. Secrets & Headers ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -21,21 +21,23 @@ exclude_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
 target_sector = st.sidebar.multiselect("業種絞り込み", ["情報・通信業", "サービス業", "電気機器", "小売業", "不動産業", "卸売業", "機械"])
 
-# --- 4. 銘柄詳細取得 (V2正式エンドポイント: /listed/info) ---
+# --- 4. 銘柄詳細取得 (V2正式エンドポイント: /v2/listed/list) ---
 @st.cache_data(ttl=86400)
 def get_brand_info():
-    # 正しいエンドポイントは listed/info です
-    url = "https://api.jquants.com/v2/listed/info?date=20251128"
+    # エンドポイントを正式な /v2/listed/list に修正
+    url = "https://api.jquants.com/v2/listed/list"
     try:
+        # サーバー同期のため短時間の待機
+        time.sleep(2)
         res = requests.get(url, headers=headers, timeout=15)
         if res.status_code == 200:
-            # 階層名も info です
-            return pd.DataFrame(res.json().get("info", []))
+            # V2の階層名は list です
+            return pd.DataFrame(res.json().get("list", []))
         else:
-            st.error(f"❌ 銘柄情報APIエラー: HTTP {res.status_code} - {res.text}")
+            st.error(f"❌ 銘柄情報APIエラー: HTTP {res.status_code}")
             return pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ 銘柄情報通信エラー: {e}")
+        st.error(f"❌ 通信エラー: {e}")
         return pd.DataFrame()
 
 # --- 5. 複数日データ取得 ---
@@ -61,12 +63,12 @@ def get_historical_data():
             if res.status_code == 200:
                 all_rows.extend(res.json().get("data", []))
             elif res.status_code == 429:
-                st.error("❌ 制限(429)超過。1分待機してください。")
+                st.error("❌ 制限超過。1分待機してください。")
                 return []
         except Exception: pass
         
         progress_bar.progress((i + 1) / 14)
-        time.sleep(13)
+        time.sleep(13) # Freeプラン13秒ルール
         
     status_text.empty()
     progress_bar.empty()
@@ -74,10 +76,12 @@ def get_historical_data():
 
 # --- 6. メイン実行 ---
 if st.button("スクリーニング開始"):
+    # 接続安定化のための初期待機
+    time.sleep(1)
     info_df = get_brand_info()
     
     if info_df.empty:
-        st.warning("銘柄マスターが空です。API Keyを確認してください。")
+        st.warning("銘柄情報の取得に失敗しました。少し時間を置いて再度ボタンを押してください。")
         st.stop()
         
     with st.spinner("ボスの規律に基づき解析中..."):
@@ -97,9 +101,10 @@ if st.button("スクリーニング開始"):
             ).reset_index()
             
             final_df = pd.merge(summary, info_df, on='Code', how='inner')
+            # 時価総額のカラム名は MarketCapitalization
             final_df['MarketCapitalization'] = pd.to_numeric(final_df['MarketCapitalization'], errors='coerce')
             
-            # --- 鉄の掟適用 ---
+            # --- 鉄の掟（フィルター） ---
             final_df = final_df[final_df['latest_close'] >= min_price]
             if exclude_short_spike:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 2.0)]
