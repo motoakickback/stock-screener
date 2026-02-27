@@ -37,9 +37,9 @@ def load_brand_master():
 st.sidebar.header("🔍 鉄の掟（フィルター）")
 min_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100)
 exclude_short_spike = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
-exclude_long_peak = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
-exclude_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
-exclude_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
+exclude_long_peak = st.sidebar.checkbox("③ 3倍以上上げ切りを除外", value=True)
+exclude_ipo = st.sidebar.checkbox("④ IPO除外 (上場1年未満)", value=True)
+exclude_risk = st.sidebar.checkbox("⑤ 疑義注記銘柄を除外", value=True)
 
 st.sidebar.divider()
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
