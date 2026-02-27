@@ -2,9 +2,8 @@ name: J-Quants Auto Screener
 
 on:
   schedule:
-    # 毎日 日本時間17:00 (UTC 08:00) に自動実行
     - cron: '0 8 * * *'
-  workflow_dispatch: # テスト用の手動実行ボタン
+  workflow_dispatch:
 
 jobs:
   run-screener:
