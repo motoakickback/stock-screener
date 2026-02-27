@@ -5,13 +5,12 @@ import time
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V6.1)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V6.1)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V6.2)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V6.2)")
 
 # --- 2. 認証情報の取得 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
-# 確実に疎通するベースURL
 BASE_URL = "https://api.jquants.com/v2"
 
 # --- 3. サイドバー設定（鉄の掟） ---
@@ -26,18 +25,17 @@ st.sidebar.divider()
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
 target_sector = st.sidebar.multiselect("業種絞り込み", ["情報・通信業", "サービス業", "電気機器", "小売業", "不動産業", "卸売業", "機械"])
 
-# --- 4. 銘柄詳細取得 (Freeプラン安定版：日付指定必須) ---
+# --- 4. 銘柄詳細取得 ---
 @st.cache_data(ttl=86400)
 def get_brand_info():
-    # 無料枠では必ず過去の日付を指定する必要があります
+    # 無料枠で確実に通るエンドポイントと日付
     url = f"{BASE_URL}/listed/info?date=20251128"
     try:
         res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200:
             return pd.DataFrame(res.json().get("info", []))
         else:
-            st.error(f"❌ 銘柄情報APIエラー: HTTP {res.status_code}")
-            st.code(res.text) 
+            st.error(f"❌ 銘柄情報取得失敗: HTTP {res.status_code}")
             return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ 通信エラー: {e}")
@@ -62,7 +60,7 @@ def get_historical_data():
         if res.status_code == 200:
             all_rows.extend(res.json().get("data", []))
         progress_bar.progress((i + 1) / 14)
-        time.sleep(13) # Freeプランレートリミット対策
+        time.sleep(13) # Freeプラン 1分間5回制限
     progress_bar.empty()
     return all_rows
 
@@ -86,36 +84,28 @@ if st.button("スクリーニング開始"):
                 recent_low=('AdjL', 'min')
             ).reset_index()
             
-            # 銘柄情報の統合
             final_df = pd.merge(summary, info_df, on='Code', how='inner')
             final_df['MarketCapitalization'] = pd.to_numeric(final_df['MarketCapitalization'], errors='coerce')
             
-            # --- 鉄の掟（フィルター）適用 ---
+            # --- 鉄の掟適用 ---
             final_df = final_df[final_df['latest_close'] >= min_price]
-            
             if exclude_short_spike:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 2.0)]
-                
             if exclude_long_peak:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 3.0)]
-            
             if exclude_ipo:
                 one_year_ago = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
                 final_df = final_df[final_df['ListingDate'] <= one_year_ago]
-            
             if exclude_going_concern:
                 final_df = final_df[~final_df['CompanyName'].str.contains("疑義|重要事象", na=False)]
-                
             if target_sector:
                 final_df = final_df[final_df['Sector17CodeName'].isin(target_sector)]
                 
             final_df['current_ratio'] = final_df['latest_close'] / final_df['recent_high']
-            
             if only_buy_signal:
                 final_df = final_df[final_df['current_ratio'] <= 0.50]
             
             results = final_df.sort_values('current_ratio').head(30)
-            
             st.success(f"審査完了！ボスの規律をクリアした銘柄を表示します。")
             
             for _, row in results.iterrows():
