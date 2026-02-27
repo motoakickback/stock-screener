@@ -12,7 +12,9 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="株式投資戦略本部", layout="wide")
-st.title("🛡️ 株式投資戦略本部")
+
+# 【変更箇所】標準のタイトルを廃止し、可変・強制1行のレスポンシブ仕様に変更
+st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ 株式投資戦略本部</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -125,7 +127,6 @@ def draw_chart(df, targ_p):
         name='目標(指定%押)', line=dict(color='#FFD700', width=2, dash='dash')
     ))
     
-    # 【変更箇所】凡例を下部に移動し、グラフを横幅最大に広げる設定
     fig.update_layout(
         height=350, 
         margin=dict(l=0, r=0, t=10, b=10),
@@ -169,7 +170,6 @@ tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（バ�
 master_df = load_master()
 
 with tab1:
-    # 【変更箇所】全軍スキャンの見出しテキストを変更
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全軍スキャン</h3>', unsafe_allow_html=True)
     run_scan = st.button("🚀 最新データで全軍スキャン開始")
 
