@@ -6,8 +6,8 @@ import numpy as np
 import concurrent.futures
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略アドバイザー (V13.0)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V13.0 自動通知版)")
+st.set_page_config(page_title="J-Quants 戦略アドバイザー (V13.1)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V13.1)")
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -17,24 +17,15 @@ LINE_USER_ID = st.secrets.get("LINE_USER_ID", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# 【V13.0追加】 LINE通知実行モジュール
 def send_line_message(text):
-    if not LINE_TOKEN or not LINE_USER_ID:
-        return False
+    if not LINE_TOKEN or not LINE_USER_ID: return False
     url = "https://api.line.me/v2/bot/message/push"
-    req_headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_TOKEN}"
-    }
-    payload = {
-        "to": LINE_USER_ID,
-        "messages": [{"type": "text", "text": text}]
-    }
+    req_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {LINE_TOKEN}"}
+    payload = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": text}]}
     try:
         res = requests.post(url, headers=req_headers, json=payload, timeout=10)
         return res.status_code == 200
-    except:
-        return False
+    except: return False
 
 # --- 3. 共通関数 ---
 def clean_df(df):
@@ -100,7 +91,6 @@ def get_hist_data():
     
     rows = []
     bar = st.progress(0, "最新の相場データを並列取得中 (神速モード)...")
-    
     def fetch(d):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={d}", headers=headers, timeout=10)
@@ -108,7 +98,6 @@ def get_hist_data():
             if r.status_code == 200: return r.json().get("data", [])
         except: pass
         return []
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = {exe.submit(fetch, d): d for d in dates}
         comp = 0
@@ -192,7 +181,6 @@ with tab1:
                 
                 if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
                 
-                # ルール執行
                 sum_df = sum_df[sum_df['lc'] >= f1_min]
                 sum_df = sum_df[sum_df['r30'] <= f2_max30]
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
@@ -212,18 +200,23 @@ with tab1:
             if res.empty: 
                 st.warning("現在の相場に、標的は存在しません。")
             else:
-                # 【V13.0】 LINEへの自動通知ロジック
+                # 【V13.1】 LINE通知に売値目安（3%、5%、8%）を追加
                 notify_msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
-                for i, r in res.head(10).iterrows(): # LINEが長すぎないよう最大10件に制限
+                for i, r in res.head(10).iterrows():
                     c = str(r['Code'])[:-1]
                     n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
-                    notify_msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {int(r['bt'])}円\n"
+                    bt_price = int(r['bt'])
+                    tp_3 = int(bt_price * 1.03)
+                    tp_5 = int(bt_price * 1.05)
+                    tp_8 = int(bt_price * 1.08)
+                    
+                    notify_msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bt_price}円\n・売値目安: +3%({tp_3}円) / +5%({tp_5}円) / +8%({tp_8}円)\n"
                 
                 with st.spinner("ボスのスマホ（LINE）へ標的データを送信中..."):
                     if send_line_message(notify_msg):
                         st.success("📱 ボスのスマホ（LINE）へ標的データを無事送信しました。")
                     else:
-                        st.error("⚠️ LINE送信に失敗しました。Secretsの設定（鍵の文字列）を再確認してください。")
+                        st.error("⚠️ LINE送信に失敗しました。Secretsの設定を再確認してください。")
 
                 st.success(f"超高速スキャン完了: {len(res)} 銘柄クリア")
                 for _, r in res.iterrows():
@@ -248,62 +241,4 @@ with tab2:
         cc1, cc2 = st.columns(2)
         bt_push = cc1.number_input("① 上げ幅に対する押し目 (%)", value=50, step=5)
         bt_buy_d = cc1.number_input("② 買い期限 (日)", value=4, step=1)
-        bt_tp = cc1.number_input("③ 利確 (+%)", value=8, step=1)
-        bt_lot = cc1.number_input("⑦ 株数 (基本100)", value=100, step=100)
-        bt_sl_i = cc2.number_input("④ 損切/ザラ場 (-%)", value=10, step=1)
-        bt_sl_c = cc2.number_input("⑤ 損切/終値 (-%)", value=8, step=1)
-        bt_sell_d = cc2.number_input("⑥ 売り期限 (日)", value=5, step=1)
-
-    if run_bt and bt_codes:
-        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', bt_codes)))
-        if not t_codes: st.warning("有効なコードなし")
-        else:
-            all_t = []
-            b_bar = st.progress(0, "仮想売買中...")
-            for idx, c in enumerate(t_codes):
-                raw = get_single_data(c+"0", 3)
-                if raw:
-                    df = clean_df(pd.DataFrame(raw))
-                    pos = None
-                    for i in range(14, len(df)):
-                        td = df.iloc[i]
-                        if pos is None:
-                            win = df.iloc[i-14:i]
-                            rh = win['AdjH'].max(); rl = win['AdjL'].min()
-                            if pd.isna(rh) or pd.isna(rl): continue
-                            h_d = len(win[win['Date'] > win.loc[win['AdjH'].idxmax(), 'Date']])
-                            r14 = rh/rl if rl>0 else 0
-                            if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
-                                bt_targ = rh - ((rh-rl)*(bt_push/100))
-                                if td['AdjL'] <= bt_targ:
-                                    pos = {'b_i':i, 'b_d':td['Date'], 'b_p':min(td['AdjO'], bt_targ), 'h':rh}
-                        else:
-                            bp = round(pos['b_p'], 1); held = i - pos['b_i']
-                            sp = 0; rsn = ""
-                            sl_i = bp*(1-(bt_sl_i/100)); tp = bp*(1+(bt_tp/100)); sl_c = bp*(1-(bt_sl_c/100))
-                            if td['AdjL'] <= sl_i: sp = min(td['AdjO'], sl_i); rsn = f"損切(ザ場 -{bt_sl_i}%)"
-                            elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{bt_tp}%)"
-                            elif td['AdjC'] <= sl_c: sp = td['AdjC']; rsn = f"損切(終値 -{bt_sl_c}%)"
-                            elif held >= bt_sell_d: sp = td['AdjC']; rsn = f"時間切れ({bt_sell_d}日)"
-                            if rsn:
-                                sp = round(sp, 1); p_amt = int((sp-bp)*bt_lot)
-                                all_t.append({'銘柄':c, '購入日':pos['b_d'].strftime('%Y-%m-%d'), '決済日':td['Date'].strftime('%Y-%m-%d'), '保有日数':held, '買値(円)':bp, '売値(円)':sp, '損益(%)':round(((sp/bp)-1)*100,2), '損益額(円)':p_amt, '決済理由':rsn})
-                                pos = None
-                b_bar.progress((idx+1)/len(t_codes))
-                time.sleep(0.5)
-            b_bar.empty()
-            st.success("シミュレーション完了")
-            if not all_t: st.warning("シグナル点灯なし")
-            else:
-                tdf = pd.DataFrame(all_t)
-                tot = len(tdf); wins = len(tdf[tdf['損益額(円)']>0])
-                n_prof = tdf['損益額(円)'].sum()
-                sprof = tdf[tdf['損益額(円)']>0]['損益額(円)'].sum(); sloss = abs(tdf[tdf['損益額(円)']<=0]['損益額(円)'].sum())
-                
-                st.markdown(f"### 💰 総合結果：差し引き利益額 **{n_prof:,} 円**")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("トレード回数", f"{tot} 回")
-                m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
-                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
-                m4.metric("PF", f"{round(sprof/sloss,2) if sloss>0 else 'inf'}")
-                st.dataframe(tdf, use_container_width=True)
+        bt_tp = cc1.number_input("③ 利確 (+%)",
