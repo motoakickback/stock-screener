@@ -214,8 +214,12 @@ with tab1:
                 sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0})
                 sum_df = sum_df.join(agg_30).join(agg_p).reset_index()
                 
+                # 【追加】買値目標と到達度（%）の計算
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+                
+                denom = sum_df['h14'] - sum_df['bt']
+                sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
                 
                 sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
                 sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
@@ -249,7 +253,8 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
                 
-                res = sum_df.sort_values('lc', ascending=False).head(30)
+                # 【変更】ソート順を「到達度（reach_pct）の高い順（降順）」に変更
+                res = sum_df.sort_values('reach_pct', ascending=False).head(30)
                 
             if res.empty: 
                 st.warning("現在の相場に、標的は存在しません。")
@@ -262,10 +267,12 @@ with tab1:
                     
                     st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
                     
+                    # 【変更】3カラムで到達度を表示し、日数はキャプションに移動
                     cc1, cc2, cc3 = st.columns(3)
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
-                    cc3.metric("高値から日数", f"{int(r['d_high'])}日")
+                    cc3.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    st.caption(f"⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
                     hist = df[df['Code'] == c].sort_values('Date').tail(14)
                     if not hist.empty:
@@ -295,6 +302,10 @@ with tab1:
                         
                         bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                         
+                        # 【追加】個別狙撃時の到達度計算
+                        denom_s = h14 - bt_single
+                        reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
+                        
                         c_name = f"銘柄 {target_code}"
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == target_code + "0"]
@@ -302,10 +313,13 @@ with tab1:
                                 c_name = m_row.iloc[0]['CompanyName']
 
                         st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{c_name} ({target_code})</h3>', unsafe_allow_html=True)
+                        
+                        # 【変更】個別狙撃の表示も3カラムに統一
                         sc1, sc2, sc3 = st.columns(3)
                         sc1.metric("最新終値", f"{int(lc)}円")
-                        sc2.metric(f"🎯 買値目標 ({push_r}%押)", f"{int(bt_single)}円")
-                        sc3.metric("直近14日高値", f"{int(h14)}円")
+                        sc2.metric(f"🎯 目標 ({push_r}%押)", f"{int(bt_single)}円")
+                        sc3.metric("到達度", f"{reach_s:.1f}%")
+                        st.caption(f"⏱️ 直近14日高値: {int(h14)}円")
                         
                         draw_chart(df_s_14, bt_single)
                     else:
@@ -316,7 +330,6 @@ with tab1:
             st.warning("4桁の半角数字で入力してください。")
 
 with tab2:
-    # 【変更箇所】バックテストの見出しをレスポンシブ化＆短縮
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
     
     col_1, col_2 = st.columns([1, 2])
@@ -418,7 +431,6 @@ with tab2:
                 
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                # 【変更箇所】総合結果の見出しもレスポンシブ化
                 st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                 
                 m1, m2, m3, m4 = st.columns(4)
