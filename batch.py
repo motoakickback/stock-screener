@@ -108,7 +108,9 @@ def main():
         return
 
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
-    push_r = 50; limit_d = 4
+    
+    # 【変更箇所】押し目を 45% に設定
+    push_r = 45; limit_d = 4
 
     master_df = load_master()
     raw = get_hist_data()
