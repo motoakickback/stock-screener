@@ -3,16 +3,40 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import plotly.graph_objects as go
 import numpy as np
-import concurrent.futures # 【V12.0 追加】マルチスレッド並列処理用
+import concurrent.futures
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略アドバイザー (V12.0)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V12.0 神速版)")
+st.set_page_config(page_title="J-Quants 戦略アドバイザー (V13.0)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V13.0 自動通知版)")
 
-API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
+# --- 2. 認証・通信設定 ---
+API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
+LINE_TOKEN = st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
+LINE_USER_ID = st.secrets.get("LINE_USER_ID", "").strip()
+
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
+# 【V13.0追加】 LINE通知実行モジュール
+def send_line_message(text):
+    if not LINE_TOKEN or not LINE_USER_ID:
+        return False
+    url = "https://api.line.me/v2/bot/message/push"
+    req_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_TOKEN}"
+    }
+    payload = {
+        "to": LINE_USER_ID,
+        "messages": [{"type": "text", "text": text}]
+    }
+    try:
+        res = requests.post(url, headers=req_headers, json=payload, timeout=10)
+        return res.status_code == 200
+    except:
+        return False
+
+# --- 3. 共通関数 ---
 def clean_df(df):
     rename_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'}
     df = df.rename(columns=rename_cols)
@@ -60,7 +84,6 @@ def get_single_data(code, yrs=3):
 
 @st.cache_data(ttl=3600)
 def get_hist_data():
-    """V12.0: マルチスレッドによる相場データの並列爆撃取得"""
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days = 0
@@ -81,7 +104,7 @@ def get_hist_data():
     def fetch(d):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={d}", headers=headers, timeout=10)
-            time.sleep(0.1) # API制限回避の微細なディレイ
+            time.sleep(0.1) 
             if r.status_code == 200: return r.json().get("data", [])
         except: pass
         return []
@@ -104,6 +127,7 @@ def draw_chart(df, target_p):
     fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
+# --- 4. UI構築 ---
 tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（一括バックテスト）"])
 master_df = load_master()
 
@@ -133,7 +157,6 @@ with tab1:
         if not raw: st.error("取得失敗")
         else:
             with st.spinner("全4000銘柄に鉄の掟を一括執行中 (ベクトル演算)..."):
-                # V12.0: 圧倒的高速化のためのPandasベクトル一括演算
                 df = clean_df(pd.DataFrame(raw))
                 df = df.dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
@@ -186,8 +209,22 @@ with tab1:
                 
                 res = sum_df.sort_values('lc', ascending=False).head(30)
                 
-            if res.empty: st.warning("現在の相場に、標的は存在しません。")
+            if res.empty: 
+                st.warning("現在の相場に、標的は存在しません。")
             else:
+                # 【V13.0】 LINEへの自動通知ロジック
+                notify_msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
+                for i, r in res.head(10).iterrows(): # LINEが長すぎないよう最大10件に制限
+                    c = str(r['Code'])[:-1]
+                    n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
+                    notify_msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {int(r['bt'])}円\n"
+                
+                with st.spinner("ボスのスマホ（LINE）へ標的データを送信中..."):
+                    if send_line_message(notify_msg):
+                        st.success("📱 ボスのスマホ（LINE）へ標的データを無事送信しました。")
+                    else:
+                        st.error("⚠️ LINE送信に失敗しました。Secretsの設定（鍵の文字列）を再確認してください。")
+
                 st.success(f"超高速スキャン完了: {len(res)} 銘柄クリア")
                 for _, r in res.iterrows():
                     st.divider()
