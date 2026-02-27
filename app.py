@@ -7,8 +7,8 @@ import os
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V8.5)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V8.5)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V8.6)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V8.6)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -17,7 +17,6 @@ BASE_URL = "https://api.jquants.com/v2"
 
 # --- 3. 銘柄マスター管理 ---
 def generate_brands_csv():
-    """JPXから全銘柄リストを強制取得してCSV化する"""
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tv0syu00000011xl-att/data_j.xls"
     try:
         df = pd.read_excel(url)
@@ -33,18 +32,18 @@ def load_brand_master():
     if not os.path.exists("brands.csv"): return pd.DataFrame()
     return pd.read_csv("brands.csv", dtype={'Code': str})
 
-# --- 4. サイドバー設定（鉄の掟：全6項目完全実装） ---
+# --- 4. サイドバー設定（鉄の掟：①〜⑥ 完全同期） ---
 st.sidebar.header("🔍 鉄の掟（フィルター）")
 min_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100)
 exclude_short_spike = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
-exclude_long_peak = st.sidebar.checkbox("③ 3倍以上上げ切りを除外", value=True)
-exclude_ipo = st.sidebar.checkbox("④ IPO除外 (上場1年未満)", value=True)
-exclude_risk = st.sidebar.checkbox("⑤ 疑義注記銘柄を除外", value=True)
+# ③は「高値から50%以下」の基本ロジックのため、ボタン式フィルターに統合
+exclude_long_peak = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
+exclude_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
+exclude_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
 st.sidebar.divider()
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
 
-# 銘柄名救済ボタン
 if st.sidebar.button("銘柄マスタを強制更新"):
     if generate_brands_csv():
         st.sidebar.success("完了！再試行してください。")
@@ -79,7 +78,7 @@ def get_historical_data():
 if st.button("スクリーニング開始"):
     master_df = load_brand_master()
     
-    with st.spinner("全規律を適用し、4,000銘柄を審査中..."):
+    with st.spinner("ボスの規律 ＆ 全4,000銘柄を解析中..."):
         raw_data = get_historical_data()
         if not raw_data:
             st.error("データの取得に失敗しました。")
@@ -88,18 +87,16 @@ if st.button("スクリーニング開始"):
             for col in ['AdjC', 'AdjH', 'AdjL']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # 集計
             summary = df.groupby('Code').agg(
                 latest_close=('AdjC', 'last'),
                 recent_high=('AdjH', 'max'),
                 recent_low=('AdjL', 'min')
             ).reset_index()
             
-            # マスター紐付け
             if not master_df.empty:
                 summary = pd.merge(summary, master_df, on='Code', how='left')
             
-            # --- 鉄の掟（物理フィルター）執行 ---
+            # --- 鉄の掟 執行 ---
             summary = summary[summary['latest_close'] >= min_price] # ①
             
             if exclude_short_spike: # ②
@@ -116,18 +113,18 @@ if st.button("スクリーニング開始"):
                 summary = summary[~summary['CompanyName'].str.contains("疑義|重要事象", na=False)]
             
             summary['current_ratio'] = summary['latest_close'] / summary['recent_high']
-            if only_buy_signal:
+            if only_buy_signal: # ③（ロジックの核）
                 summary = summary[summary['current_ratio'] <= 0.50]
             
             results = summary.sort_values('current_ratio').head(30)
-            st.success(f"審査完了: {len(results)} 銘柄が規律をクリア")
+            st.success(f"審査完了: {len(results)} 銘柄を表示")
             
             for _, row in results.iterrows():
                 st.divider()
                 code = str(row['Code'])
                 name = row['CompanyName'] if not pd.isna(row.get('CompanyName')) else f"銘柄 {code[:-1]}"
                 st.subheader(f"{name} ({code[:-1]})")
-                st.caption(f"業種: {row.get('Sector', '-')} | 上場日: {row.get('ListingDate', '-')}")
+                st.caption(f"業種: {row.get('Sector', '-')} | 市場: {row.get('Market', '-')}")
                 
                 c1, c2, c3 = st.columns(3)
                 ratio_pct = int(row['current_ratio'] * 100)
@@ -136,7 +133,7 @@ if st.button("スクリーニング開始"):
                 target_50 = int(row['recent_high'] * 0.50)
                 c3.metric("🎯 買値目安(50%)", f"{target_50}円")
 
-                # プロ仕様2色チャート (Plotly)
+                # プロ仕様2色チャート
                 hist = df[df['Code'] == row['Code']].sort_values('Date')
                 if not hist.empty:
                     fig = go.Figure()
