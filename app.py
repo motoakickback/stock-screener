@@ -9,8 +9,8 @@ from io import BytesIO
 import plotly.graph_objects as go
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V11.4)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V11.4)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V11.5)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V11.5)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -135,7 +135,6 @@ with tab1:
     st.markdown("### 🌐 ボスの「鉄の掟」全銘柄スクリーニング")
     run_full_scan = st.button("🚀 最新データで全軍スキャン開始")
     
-    # --- サイドバー：フィルターの完全復活 ---
     st.sidebar.header("🔍 ピックアップルール (①〜⑦)")
     f1_min_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100)
     f2_max_30d_ratio = st.sidebar.number_input("② 1ヶ月以内の暴騰上限 (倍)", value=2.0, step=0.1)
@@ -163,19 +162,25 @@ with tab1:
             df = clean_dataframe(pd.DataFrame(raw_data))
             
             def calc_metrics(g):
-                g = g.sort_values('Date')
-                past_dates = g.head(2) 
+                # エラー原因の排除：Nullデータを完全に消去し、ソート
+                g = g.dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values('Date')
+                if len(g) < 14: return pd.Series(dtype=float)
+                
                 recent_30 = g.tail(30)
                 recent_14 = recent_30.tail(14)
                 
-                if len(recent_14) == 0: return pd.Series(dtype=float)
+                # 安全なインデックス取得
+                idx_max = recent_14['AdjH'].idxmax()
+                if pd.isna(idx_max): return pd.Series(dtype=float)
+                
+                past_dates = g.iloc[:-len(recent_30)] if len(g) > len(recent_30) else pd.DataFrame()
                 
                 latest_close = recent_14['AdjC'].iloc[-1]
                 recent_14_high = recent_14['AdjH'].max()
                 recent_14_low = recent_14['AdjL'].min()
                 recent_30_low = recent_30['AdjL'].min()
                 
-                high_date = recent_14.loc[recent_14['AdjH'].idxmax(), 'Date']
+                high_date = recent_14.loc[idx_max, 'Date']
                 days_since_high = len(recent_14[recent_14['Date'] > high_date])
                 
                 upward_range = recent_14_high - recent_14_low
@@ -186,8 +191,8 @@ with tab1:
                 if len(past_dates) > 0:
                     old_max = past_dates['AdjH'].max()
                     old_min = past_dates['AdjL'].min()
-                    if old_max > 0: long_term_drop = ((latest_close / old_max) - 1) * 100
-                    if old_min > 0: long_term_rise = latest_close / old_min
+                    if pd.notna(old_max) and old_max > 0: long_term_drop = ((latest_close / old_max) - 1) * 100
+                    if pd.notna(old_min) and old_min > 0: long_term_rise = latest_close / old_min
                 
                 return pd.Series({
                     'latest_close': latest_close, 'recent_14_high': recent_14_high,
@@ -200,6 +205,9 @@ with tab1:
 
             with st.spinner("全4000銘柄に鉄の掟を執行中..."):
                 summary = df.groupby('Code').apply(calc_metrics).reset_index()
+                # 計算不能だった異常データ（NaN）をパージ
+                summary = summary.dropna(subset=['latest_close'])
+                
                 if not master_df.empty: summary = pd.merge(summary, master_df, on='Code', how='left')
                 
                 # --- ピックアップルール執行 ---
@@ -240,7 +248,7 @@ with tab1:
                     if not hist.empty: draw_candlestick(hist, row['buy_target'])
 
 # ==========================================
-# タブ2: 訓練（バックテストエンジン V11.4）※V11.3から変更なし
+# タブ2: 訓練（バックテストエンジン V11.5）
 # ==========================================
 with tab2:
     st.markdown("### 📉 鉄の掟：複数銘柄 一括検証 ＆ 損益算出")
@@ -291,6 +299,10 @@ with tab2:
                             window = df.iloc[i-14 : i] 
                             recent_high = window['AdjH'].max()
                             recent_low = window['AdjL'].min()
+                            
+                            # 空データ回避
+                            if pd.isna(recent_high) or pd.isna(recent_low): continue
+                                
                             high_date = window.loc[window['AdjH'].idxmax(), 'Date']
                             days_since_high = len(window[window['Date'] > high_date])
                             
