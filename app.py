@@ -12,7 +12,7 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="J-Quants 戦略アドバイザー", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V14.0 構造改革版)")
+st.title("🛡️ J-Quants 戦略アドバイザー (V14.2 個別狙撃復帰版)")
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -95,7 +95,6 @@ def get_single_data(code, yrs=3):
     except: pass
     return []
 
-# 【修正】UIクラッシュを防ぐためプログレスバーを排除し、裏側で高速取得
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_hist_data_cached():
     base = datetime.utcnow() + timedelta(hours=9)
@@ -164,6 +163,7 @@ f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
+# 【修正】ボスの指示通りデフォルトを45%に設定
 push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
@@ -290,111 +290,22 @@ with tab1:
                     if not hist.empty:
                         draw_chart(hist, r['bt'])
 
-with tab2:
-    st.markdown("### 📉 鉄の掟：複数銘柄 一括検証 ＆ 損益算出")
-    col_1, col_2 = st.columns([1, 2])
-    with col_1:
-        bt_c_in = st.text_area("銘柄コード（複数可）", value="6614, 3997, 4935", height=100)
-        run_bt = st.button("🔥 一括バックテスト")
-    with col_2:
-        st.caption("⚙️ パラメーター")
-        cc_1, cc_2 = st.columns(2)
-        bt_push = cc_1.number_input("① 押し目 (%)", value=45, step=5)
-        bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
-        bt_tp = cc_1.number_input("③ 利確 (+%)", value=8, step=1)
-        bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
-        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=10, step=1)
-        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=8, step=1)
-        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
+    # --- 【新規追加】個別狙撃モジュール ---
+    st.markdown("---")
+    st.markdown("### 🎯 個別狙撃（ピンポイント分析）")
+    col_s1, col_s2 = st.columns([1, 2])
+    with col_s1:
+        target_code = st.text_input("標的コード (例: 7203)", max_chars=4)
+        run_single = st.button("🔫 個別スキャン実行")
+    with col_s2:
+        st.caption("※指定した銘柄の現在値と、鉄の掟に基づく「指定%の押し目ライン」を即座に算出してチャートを表示します。全軍スキャンを待つ必要はありません。")
 
-    if run_bt and bt_c_in:
-        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', bt_c_in)))
-        if not t_codes:
-            st.warning("有効なコードが見つかりません。")
-        else:
-            all_t = []
-            b_bar = st.progress(0, "仮想売買中...")
-            for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 3)
-                if raw:
-                    df = clean_df(pd.DataFrame(raw))
-                    pos = None
-                    for i in range(14, len(df)):
-                        td = df.iloc[i]
-                        if pos is None:
-                            win = df.iloc[i-14:i]
-                            rh = win['AdjH'].max()
-                            rl = win['AdjL'].min()
-                            if pd.isna(rh) or pd.isna(rl):
-                                continue
-                                
-                            idxmax = win['AdjH'].idxmax()
-                            h_d = len(win[win['Date'] > win.loc[idxmax, 'Date']])
-                            r14 = rh / rl if rl > 0 else 0
-                            
-                            if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
-                                targ = rh - ((rh - rl) * (bt_push / 100))
-                                if td['AdjL'] <= targ:
-                                    exec_p = min(td['AdjO'], targ)
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
-                        else:
-                            bp = round(pos['b_p'], 1)
-                            held = i - pos['b_i']
-                            sp = 0
-                            rsn = ""
-                            
-                            sl_i = bp * (1 - (bt_sl_i / 100))
-                            tp = bp * (1 + (bt_tp / 100))
-                            sl_c = bp * (1 - (bt_sl_c / 100))
-                            
-                            if td['AdjL'] <= sl_i:
-                                sp = min(td['AdjO'], sl_i)
-                                rsn = f"損切(ザ場-{bt_sl_i}%)"
-                            elif td['AdjH'] >= tp:
-                                sp = max(td['AdjO'], tp)
-                                rsn = f"利確(+{bt_tp}%)"
-                            elif td['AdjC'] <= sl_c:
-                                sp = td['AdjC']
-                                rsn = f"損切(終値-{bt_sl_c}%)"
-                            elif held >= bt_sell_d:
-                                sp = td['AdjC']
-                                rsn = f"時間切れ({bt_sell_d}日)"
-                                
-                            if rsn:
-                                sp = round(sp, 1)
-                                p_pct = round(((sp / bp) - 1) * 100, 2)
-                                p_amt = int((sp - bp) * bt_lot)
-                                
-                                all_t.append({
-                                    '銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'),
-                                    '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held,
-                                    '買値(円)': bp, '売値(円)': sp, '損益(%)': p_pct,
-                                    '損益額(円)': p_amt, '決済理由': rsn
-                                })
-                                pos = None
-                                
-                b_bar.progress((idx + 1) / len(t_codes))
-                time.sleep(0.5)
-                
-            b_bar.empty()
-            st.success("シミュレーション完了")
-            
-            if not all_t:
-                st.warning("シグナル点灯はありませんでした。")
-            else:
-                tdf = pd.DataFrame(all_t)
-                tot = len(tdf)
-                wins = len(tdf[tdf['損益額(円)'] > 0])
-                n_prof = tdf['損益額(円)'].sum()
-                sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum()
-                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
-                
-                pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
-                
-                st.markdown(f"### 💰 総合結果：差し引き利益額 **{n_prof:,} 円**")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("トレード回数", f"{tot} 回")
-                m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
-                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
-                m4.metric("PF", f"{pf}")
-                st.dataframe(tdf, use_container_width=True)
+    if run_single and target_code:
+        if len(target_code) == 4 and target_code.isdigit():
+            with st.spinner(f"標的 {target_code} の軌道を計算中..."):
+                raw_single = get_single_data(target_code + "0", 1) 
+                if raw_single:
+                    df_s = clean_df(pd.DataFrame(raw_single))
+                    if not df_s.empty and len(df_s) >= 14:
+                        df_s_14 = df_s.tail(14)
+                        h1
