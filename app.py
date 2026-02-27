@@ -2,56 +2,52 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import os
+import re
 from datetime import datetime, timedelta
+from io import BytesIO
 import plotly.graph_objects as go
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V10.2)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V10.2)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V10.3)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V10.3)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理 (J-Quants API 純血版) ---
-def fetch_info(date_str=None):
-    for version in ["v2", "v1"]:
-        url = f"https://api.jquants.com/{version}/listed/info"
-        if date_str:
-            url += f"?date={date_str}"
-        try:
-            res = requests.get(url, headers=headers, timeout=15)
-            if res.status_code == 200:
-                return res.json().get("info", [])
-        except:
-            continue
-    return []
+# --- 3. 銘柄マスター管理 (JPX自動追尾・確実な名前取得) ---
+def generate_brands_csv():
+    try:
+        req_headers = {'User-Agent': 'Mozilla/5.0'}
+        page_url = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
+        page_res = requests.get(page_url, headers=req_headers, timeout=10)
+        page_res.raise_for_status()
+        
+        match = re.search(r'href="([^"]+data_j\.xls)"', page_res.text)
+        if not match: return False, "リンクが見つかりません"
+            
+        excel_url = "https://www.jpx.co.jp" + match.group(1)
+        res = requests.get(excel_url, headers=req_headers, timeout=15)
+        res.raise_for_status()
+        
+        df = pd.read_excel(BytesIO(res.content), engine='xlrd')
+        df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+        df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+        df['Code'] = df['Code'].astype(str) + "0"
+        df.to_csv("brands.csv", index=False)
+        return True, "成功"
+    except Exception as e:
+        return False, str(e)
 
 @st.cache_data(ttl=86400)
 def load_brand_master():
-    data = fetch_info()
-    if data:
-        df = pd.DataFrame(data)
-        rename_map = {}
-        if 'Sector33CodeName' in df.columns: rename_map['Sector33CodeName'] = 'Sector'
-        if 'MarketCodeName' in df.columns: rename_map['MarketCodeName'] = 'Market'
-        df = df.rename(columns=rename_map)
-        return df
+    if not os.path.exists("brands.csv"):
+        generate_brands_csv()
+    if os.path.exists("brands.csv"):
+        return pd.read_csv("brands.csv", dtype={'Code': str})
     return pd.DataFrame()
-
-@st.cache_data(ttl=86400)
-def get_old_codes():
-    """1年前の銘柄リストを取得（休日なら最大7日遡る）"""
-    base_date = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
-    for i in range(7):
-        target_date = (base_date - timedelta(days=i)).strftime('%Y%m%d')
-        data = fetch_info(target_date)
-        if data:
-            df = pd.DataFrame(data)
-            if 'Code' in df.columns:
-                return df['Code'].astype(str).tolist()
-    return []
 
 # --- 4. サイドバー設定 ---
 st.sidebar.header("🎯 個別狙撃（即時診断）")
@@ -68,13 +64,17 @@ f4_long = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
-if st.sidebar.button("マスターデータを手動更新"):
-    st.cache_data.clear()
-    st.rerun()
+if st.sidebar.button("銘柄データを最新に更新"):
+    with st.sidebar.spinner("JPXの最新ファイルを自動探索中..."):
+        success, err_msg = generate_brands_csv()
+        if success:
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.sidebar.error(f"更新失敗: {err_msg}")
 
 # --- 5. データ取得関数 ---
 def clean_dataframe(df):
-    """カラム名を統一し、4本値を数値に変換する"""
     rename_cols = {
         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH',
         'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
@@ -125,18 +125,26 @@ def get_single_stock_data(code):
     except: pass
     return []
 
-# --- 6. 描画共通モジュール ---
+def check_is_not_ipo(code):
+    """1年前に株価データが存在したかを確認（スマートIPO判定）"""
+    base_date = datetime.utcnow() + timedelta(hours=9)
+    from_date = (base_date - timedelta(days=370)).strftime('%Y%m%d')
+    to_date = (base_date - timedelta(days=360)).strftime('%Y%m%d')
+    url = f"{BASE_URL}/equities/bars/daily?code={code}&from={from_date}&to={to_date}"
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return len(res.json().get("data", [])) > 0
+    except: pass
+    return False
+
+# --- 6. 描画モジュール ---
 def draw_candlestick(df, target_50):
-    """Plotlyを用いたローソク足チャートの描画"""
     fig = go.Figure()
-    # ローソク足本体
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'],
-        name='株価',
-        increasing_line_color='#ef5350', # 陽線（赤系）
-        decreasing_line_color='#26a69a'  # 陰線（青・緑系）
+        name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
-    # 50%目標ライン
     fig.add_trace(go.Scatter(
         x=df['Date'], y=[target_50]*len(df),
         mode='lines', name='目標(50%)',
@@ -144,7 +152,7 @@ def draw_candlestick(df, target_50):
     ))
     fig.update_layout(
         height=320, margin=dict(l=0, r=0, t=10, b=0),
-        xaxis_rangeslider_visible=False, # 下部の不要なスライダーを消去
+        xaxis_rangeslider_visible=False,
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified"
     )
@@ -157,7 +165,6 @@ st.markdown("### 🌐 全4,000銘柄 スクリーニング")
 run_full_scan = st.button("🚀 最新データで全銘柄スクリーニング開始")
 st.divider()
 
-# ルートA: 個別狙撃
 if search_single:
     if not target_code:
         st.warning("⚠️ サイドバーに4桁の銘柄コードを入力してください。")
@@ -166,11 +173,9 @@ if search_single:
         with st.spinner(f"コード {target_code} のデータを即時抽出中..."):
             raw_data = get_single_stock_data(code_with_suffix)
             if not raw_data:
-                st.error(f"銘柄コード {target_code} のデータが見つかりませんでした。")
+                st.error("データが見つかりませんでした。")
             else:
-                df = clean_dataframe(pd.DataFrame(raw_data))
-                df = df.sort_values('Date')
-                
+                df = clean_dataframe(pd.DataFrame(raw_data)).sort_values('Date')
                 latest_close = df['AdjC'].iloc[-1]
                 recent_high = df['AdjH'].max()
                 current_ratio = latest_close / recent_high if recent_high > 0 else 0
@@ -193,10 +198,8 @@ if search_single:
                 c2.metric("最新終値", f"{int(latest_close)}円")
                 target_50 = int(recent_high * 0.50)
                 c3.metric("🎯 買値目安(50%)", f"{target_50}円")
-                
                 draw_candlestick(df, target_50)
 
-# ルートB: 全軍スキャン
 elif run_full_scan:
     with st.spinner("ボスの全規律を適用し、最新データで審査中..."):
         raw_data = get_historical_data()
@@ -204,54 +207,59 @@ elif run_full_scan:
             st.error("データの取得に失敗しました。")
         else:
             df = clean_dataframe(pd.DataFrame(raw_data))
-            
             summary = df.groupby('Code').agg(
-                latest_close=('AdjC', 'last'),
-                recent_high=('AdjH', 'max'),
-                recent_low=('AdjL', 'min')
+                latest_close=('AdjC', 'last'), recent_high=('AdjH', 'max'), recent_low=('AdjL', 'min')
             ).reset_index()
             
             if not master_df.empty:
                 summary = pd.merge(summary, master_df, on='Code', how='left')
             
-            # --- 鉄の掟 執行 ---
+            # 物理フィルター執行
             summary = summary[summary['latest_close'] >= f1_price]
-            
-            if f2_short:
-                summary = summary[summary['latest_close'] < (summary['recent_low'] * 2.0)]
-            if f3_signal:
-                summary = summary[(summary['latest_close'] / summary['recent_high']) <= 0.50]
-            if f4_long:
-                summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
-            
-            if f5_ipo:
-                old_codes = get_old_codes()
-                if old_codes:
-                    summary = summary[summary['Code'].isin(old_codes)]
-                else:
-                    st.warning("⚠️ 過去7日間のマスター取得に失敗したため、IPO除外をスキップしました。")
-                    
+            if f2_short: summary = summary[summary['latest_close'] < (summary['recent_low'] * 2.0)]
+            if f3_signal: summary = summary[(summary['latest_close'] / summary['recent_high']) <= 0.50]
+            if f4_long: summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
             if f6_risk and 'CompanyName' in summary.columns:
                 summary = summary[~summary['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
             
             summary['current_ratio'] = summary['latest_close'] / summary['recent_high']
-            results = summary.sort_values('current_ratio').head(30)
-            st.success(f"審査完了: {len(results)} 銘柄を表示")
+            results = summary.sort_values('current_ratio')
             
-            for _, row in results.iterrows():
-                st.divider()
-                code = str(row['Code'])
-                name = row['CompanyName'] if not pd.isna(row.get('CompanyName')) else f"銘柄 {code[:-1]}"
-                st.subheader(f"{name} ({code[:-1]})")
-                st.caption(f"業種: {row.get('Sector', '-')} | 市場: {row.get('Market', '-')}")
+            # ⑤ IPO除外（スマート・スナイパー方式：生存者のみ検査）
+            if f5_ipo:
+                candidates = results.head(50) # 上位50件だけを検査
+                final_results = []
+                ipo_bar = st.progress(0, text="IPO判定中（1年前の生存確認）...")
+                for i, (idx, row) in enumerate(candidates.iterrows()):
+                    if check_is_not_ipo(str(row['Code'])):
+                        final_results.append(row)
+                    ipo_bar.progress((i + 1) / len(candidates))
+                    time.sleep(0.1) # レート制限遵守
+                    if len(final_results) >= 30: break
+                ipo_bar.empty()
+                results = pd.DataFrame(final_results)
+            else:
+                results = results.head(30)
+            
+            if results.empty:
+                st.warning("規律をクリアした銘柄はありませんでした。")
+            else:
+                st.success(f"審査完了: {len(results)} 銘柄を表示")
                 
-                c1, c2, c3 = st.columns(3)
-                ratio_pct = int(row['current_ratio'] * 100)
-                c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{ratio_pct-50}%", delta_color="inverse")
-                c2.metric("最新終値", f"{int(row['latest_close'])}円")
-                target_50 = int(row['recent_high'] * 0.50)
-                c3.metric("🎯 買値目安(50%)", f"{target_50}円")
+                for _, row in results.iterrows():
+                    st.divider()
+                    code = str(row['Code'])
+                    name = row['CompanyName'] if not pd.isna(row.get('CompanyName')) else f"銘柄 {code[:-1]}"
+                    st.subheader(f"{name} ({code[:-1]})")
+                    st.caption(f"業種: {row.get('Sector', '-')} | 市場: {row.get('Market', '-')}")
+                    
+                    c1, c2, c3 = st.columns(3)
+                    ratio_pct = int(row['current_ratio'] * 100)
+                    c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{ratio_pct-50}%", delta_color="inverse")
+                    c2.metric("最新終値", f"{int(row['latest_close'])}円")
+                    target_50 = int(row['recent_high'] * 0.50)
+                    c3.metric("🎯 買値目安(50%)", f"{target_50}円")
 
-                hist = df[df['Code'] == row['Code']].sort_values('Date')
-                if not hist.empty:
-                    draw_candlestick(hist, target_50)
+                    hist = df[df['Code'] == row['Code']].sort_values('Date')
+                    if not hist.empty:
+                        draw_candlestick(hist, target_50)
