@@ -7,34 +7,30 @@ import os
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V8.4)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V8.4)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V8.5)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V8.5)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理（全属性取得版） ---
+# --- 3. 銘柄マスター管理 ---
 def generate_brands_csv():
-    """JPXから上場日を含む全銘柄リストを強制取得してCSV化する"""
+    """JPXから全銘柄リストを強制取得してCSV化する"""
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tv0syu00000011xl-att/data_j.xls"
     try:
         df = pd.read_excel(url)
-        # 上場日（新規上場日）を含むカラムを抽出
         df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分', '新市場区分上場日']]
         df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'ListingDate']
         df['Code'] = df['Code'].astype(str) + "0"
         df.to_csv("brands.csv", index=False)
         return True
-    except Exception as e:
-        st.sidebar.error(f"徴収失敗: {e}")
-        return False
+    except: return False
 
 @st.cache_data
 def load_brand_master():
-    if not os.path.exists("brands.csv"):
-        return pd.DataFrame()
+    if not os.path.exists("brands.csv"): return pd.DataFrame()
     return pd.read_csv("brands.csv", dtype={'Code': str})
 
 # --- 4. サイドバー設定（鉄の掟：全6項目完全実装） ---
@@ -50,13 +46,11 @@ only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", val
 
 # 銘柄名救済ボタン
 if st.sidebar.button("銘柄マスタを強制更新"):
-    with st.sidebar.spinner("JPXから全銘柄データを徴収中..."):
-        if generate_brands_csv():
-            st.sidebar.success("完了！再読み込み中...")
-            st.cache_data.clear()
-            st.rerun()
+    if generate_brands_csv():
+        st.sidebar.success("完了！再試行してください。")
+        st.rerun()
 
-# --- 5. 株価データ取得（レート制限遵守） ---
+# --- 5. 株価データ取得 ---
 @st.cache_data(ttl=3600)
 def get_historical_data():
     base_date = datetime(2025, 11, 28)
@@ -77,7 +71,7 @@ def get_historical_data():
                 all_rows.extend(res.json().get("data", []))
         except: pass
         progress_bar.progress((i + 1) / 14)
-        time.sleep(13) # Freeプラン 1分間5回制限対策
+        time.sleep(13) # Freeプラン制限遵守
     progress_bar.empty()
     return all_rows
 
@@ -85,18 +79,16 @@ def get_historical_data():
 if st.button("スクリーニング開始"):
     master_df = load_brand_master()
     
-    with st.spinner("ボスの規律 ＆ 全4,000銘柄を解析中..."):
+    with st.spinner("全規律を適用し、4,000銘柄を審査中..."):
         raw_data = get_historical_data()
-        
         if not raw_data:
-            st.error("データの取得に失敗しました。API Keyを確認してください。")
+            st.error("データの取得に失敗しました。")
         else:
             df = pd.DataFrame(raw_data)
-            # 数値変換とクリーニング
             for col in ['AdjC', 'AdjH', 'AdjL']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # 銘柄ごとに統計計算
+            # 集計
             summary = df.groupby('Code').agg(
                 latest_close=('AdjC', 'last'),
                 recent_high=('AdjH', 'max'),
@@ -107,29 +99,28 @@ if st.button("スクリーニング開始"):
             if not master_df.empty:
                 summary = pd.merge(summary, master_df, on='Code', how='left')
             
-            # --- 鉄の掟（全フィルター）物理実装 ---
-            summary = summary[summary['latest_close'] >= min_price] # ① 株価200円未満除外
+            # --- 鉄の掟（物理フィルター）執行 ---
+            summary = summary[summary['latest_close'] >= min_price] # ①
             
-            if exclude_short_spike: # ② 14日間で2倍になった過熱銘柄を除外
+            if exclude_short_spike: # ②
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 2.0)]
                 
-            if exclude_long_peak: # ④ 大底から3倍以上に「上げ切った」銘柄を除外
+            if exclude_long_peak: # ④
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
             
-            if exclude_ipo and 'ListingDate' in summary.columns: # ⑤ 上場1年未満を除外
+            if exclude_ipo and 'ListingDate' in summary.columns: # ⑤
                 one_year_ago = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
                 summary = summary[pd.to_datetime(summary['ListingDate']) <= one_year_ago]
             
-            if exclude_risk and 'CompanyName' in summary.columns: # ⑥ 疑義注記リスク銘柄を除外
+            if exclude_risk and 'CompanyName' in summary.columns: # ⑥
                 summary = summary[~summary['CompanyName'].str.contains("疑義|重要事象", na=False)]
             
-            # シグナル水準計算
             summary['current_ratio'] = summary['latest_close'] / summary['recent_high']
             if only_buy_signal:
                 summary = summary[summary['current_ratio'] <= 0.50]
             
             results = summary.sort_values('current_ratio').head(30)
-            st.success(f"審査完了: {len(results)} 銘柄を表示")
+            st.success(f"審査完了: {len(results)} 銘柄が規律をクリア")
             
             for _, row in results.iterrows():
                 st.divider()
@@ -149,11 +140,8 @@ if st.button("スクリーニング開始"):
                 hist = df[df['Code'] == row['Code']].sort_values('Date')
                 if not hist.empty:
                     fig = go.Figure()
-                    # 株価（青：太線）
                     fig.add_trace(go.Scatter(x=hist['Date'], y=hist['AdjC'], name='実績株価', line=dict(color='#007BFF', width=3)))
-                    # 50%目標ライン（赤：破線）
-                    fig.add_trace(go.Scatter(x=hist['Date'], y=[target_50]*len(hist), name='買値目標', line=dict(color='#FF4136', width=2, dash='dash')))
-                    
+                    fig.add_trace(go.Scatter(x=hist['Date'], y=[target_50]*len(hist), name='目標(50%)', line=dict(color='#FF4136', width=2, dash='dash')))
                     fig.update_layout(height=280, margin=dict(l=0, r=0, t=20, b=0), showlegend=True,
                                       xaxis_tickformat='%m/%d', hovermode="x unified",
                                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
