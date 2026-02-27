@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 import numpy as np
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略アドバイザー (V11.8)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V11.8)")
+st.set_page_config(page_title="J-Quants 戦略アドバイザー (V11.9)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V11.9)")
 
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
@@ -74,7 +74,7 @@ def get_hist_data():
     dates.append(d_year.strftime('%Y%m%d'))
     
     rows = []
-    bar = st.progress(0, "データ取得中...")
+    bar = st.progress(0, "最新の相場データを取得中...")
     for i, d in enumerate(dates):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={d}", headers=headers, timeout=10)
@@ -143,40 +143,4 @@ with tab1:
                 return pd.Series({'lc':lc, 'h14':h14, 'l14':l14, 'l30':l30, 'bt':bt, 'd_high':d_high, 'r14':h14/l14 if l14>0 else 0, 'r30':lc/l30 if l30>0 else 0, 'ldrop':ldrop, 'lrise':lrise})
 
             with st.spinner("全4000銘柄に鉄の掟を執行中..."):
-                sum_df = df.groupby('Code').apply(calc_m).reset_index()
-                if 'lc' in sum_df.columns: sum_df = sum_df.dropna(subset=['lc'])
-                else: st.error("有効データなし"); st.stop()
-                if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
-                
-                sum_df = sum_df[sum_df['lc'] >= f1_min]
-                sum_df = sum_df[sum_df['r30'] <= f2_max30]
-                sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
-                sum_df = sum_df[(sum_df['lrise'] <= f4_max_long) | (sum_df['lrise'] == 0)]
-                if f5_ipo:
-                    old_c = get_old_codes()
-                    if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
-                if f6_risk and 'CompanyName' in sum_df.columns:
-                    sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
-                
-                sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
-                sum_df = sum_df[sum_df['d_high'] <= limit_d]
-                sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
-                
-                res = sum_df.sort_values('lc', ascending=False).head(30)
-                
-            if res.empty: st.warning("標的は存在しません。")
-            else:
-                st.success(f"審査完了: {len(res)} 銘柄クリア")
-                for _, r in res.iterrows():
-                    st.divider()
-                    c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
-                    st.subheader(f"{n} ({c[:-1]})")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("最新終値", f"{int(r['lc'])}円")
-                    c2.metric("🎯 買値目標", f"{int(r['bt'])}円")
-                    c3.metric("高値から日数", f"{int(r['d_high'])}日")
-                    hist = df[df['Code']==r['Code']].sort_values('Date').tail(14)
-                    if not hist.empty: draw_chart(hist, r['bt'])
-
-with tab2:
-    st.markdown("### 📉 鉄の掟：複数銘柄 一括検証 ＆ 損益
+                sum_df = df.groupby('Code').apply(calc_m).reset_
