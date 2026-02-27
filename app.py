@@ -5,12 +5,14 @@ import time
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V5.8)", layout="wide")
-st.title("⚔️ J-Quants 戦略アドバイザー (V5.8)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V5.9)", layout="wide")
+st.title("⚔️ J-Quants 戦略アドバイザー (V5.9)")
 
-# --- 2. 認証情報の厳密な取得 ---
+# --- 2. 認証情報の取得 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
+# 【重要】ベースURLを最新のjpx-jquants版に修正
+BASE_URL = "https://api.jpx-jquants.com/v2"
 
 # --- 3. サイドバー設定（鉄の掟） ---
 st.sidebar.header("🔍 鉄の掟（フィルター）")
@@ -24,11 +26,10 @@ st.sidebar.divider()
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
 target_sector = st.sidebar.multiselect("業種絞り込み", ["情報・通信業", "サービス業", "電気機器", "小売業", "不動産業", "卸売業", "機械"])
 
-# --- 4. 銘柄詳細取得 (V2 /listed/info) ---
+# --- 4. 銘柄詳細取得 ---
 @st.cache_data(ttl=86400)
 def get_brand_info():
-    # Freeプランで確実に動く日付指定付きエンドポイント
-    url = "https://api.jquants.com/v2/listed/info?date=20251128"
+    url = f"{BASE_URL}/listed/info?date=20251128"
     try:
         res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200:
@@ -55,12 +56,12 @@ def get_historical_data():
     all_rows = []
     progress_bar = st.progress(0)
     for i, d in enumerate(target_dates[::-1]):
-        url = f"https://api.jquants.com/v2/equities/bars/daily?date={d}"
+        url = f"{BASE_URL}/equities/bars/daily?date={d}"
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             all_rows.extend(res.json().get("data", []))
         progress_bar.progress((i + 1) / 14)
-        time.sleep(13) # Freeプランレートリミット対策
+        time.sleep(13) # Freeプラン13秒待機
     progress_bar.empty()
     return all_rows
 
@@ -87,21 +88,16 @@ if st.button("スクリーニング開始"):
             final_df['MarketCapitalization'] = pd.to_numeric(final_df['MarketCapitalization'], errors='coerce')
             
             # --- 鉄の掟（フィルター）適用 ---
-            final_df = final_df[final_df['latest_close'] >= min_price] # ①
-            
-            if exclude_short_spike: # ②
+            final_df = final_df[final_df['latest_close'] >= min_price]
+            if exclude_short_spike:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 2.0)]
-                
-            if exclude_long_peak: # ④
+            if exclude_long_peak:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 3.0)]
-            
-            if exclude_ipo: # ⑤
+            if exclude_ipo:
                 one_year_ago = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
                 final_df = final_df[final_df['ListingDate'] <= one_year_ago]
-            
-            if exclude_going_concern: # ⑥ 疑義・注記銘柄を名称から検知
+            if exclude_going_concern:
                 final_df = final_df[~final_df['CompanyName'].str.contains("疑義|重要事象", na=False)]
-                
             if target_sector:
                 final_df = final_df[final_df['Sector17CodeName'].isin(target_sector)]
                 
@@ -110,7 +106,7 @@ if st.button("スクリーニング開始"):
                 final_df = final_df[final_df['current_ratio'] <= 0.50]
             
             results = final_df.sort_values('current_ratio').head(30)
-            st.success(f"審査完了: {len(results)} 銘柄が規律をクリアしました。")
+            st.success(f"審査完了: {len(results)} 銘柄を表示")
             
             for _, row in results.iterrows():
                 st.divider()
