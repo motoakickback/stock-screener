@@ -6,8 +6,8 @@ import os
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.1)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V9.1)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.2)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V9.2)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -41,7 +41,7 @@ search_single = st.sidebar.button("個別銘柄を解析")
 
 st.sidebar.divider()
 
-st.sidebar.header("🔍 鉄の掟（フィルター）")
+st.sidebar.header("🔍 鉄の掟（全銘柄用フィルター）")
 f1_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100)
 f2_short = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
 f3_signal = st.sidebar.checkbox("③ 買値目安(50%以下)のみ表示", value=True)
@@ -95,52 +95,60 @@ def get_single_stock_data(code):
     except: pass
     return []
 
-# --- 6. メイン実行 ---
+# --- 6. メイン画面のUI配置 ---
 master_df = load_brand_master()
 
-# ルートA: 個別狙撃モード（数秒で完了）
-if search_single and target_code:
-    code_with_suffix = target_code + "0"
-    with st.spinner(f"コード {target_code} のデータを即時抽出中..."):
-        raw_data = get_single_stock_data(code_with_suffix)
-        if not raw_data:
-            st.error(f"銘柄コード {target_code} のデータが見つかりませんでした。")
-        else:
-            df = pd.DataFrame(raw_data)
-            for col in ['AdjC', 'AdjH', 'AdjL']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            df = df.sort_values('Date')
-            latest_close = df['AdjC'].iloc[-1]
-            recent_high = df['AdjH'].max()
-            current_ratio = latest_close / recent_high if recent_high > 0 else 0
-            
-            name, sector, market = f"銘柄 {target_code}", "-", "-"
-            if not master_df.empty:
-                match = master_df[master_df['Code'] == code_with_suffix]
-                if not match.empty:
-                    name = match.iloc[0]['CompanyName']
-                    sector = match.iloc[0]['Sector']
-                    market = match.iloc[0]['Market']
-            
-            st.success(f"即時診断完了: {name}")
-            st.divider()
-            st.subheader(f"{name} ({target_code})")
-            st.caption(f"業種: {sector} | 市場: {market}")
-            
-            c1, c2, c3 = st.columns(3)
-            ratio_pct = int(current_ratio * 100)
-            c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{ratio_pct-50}%", delta_color="inverse")
-            c2.metric("最新終値", f"{int(latest_close)}円")
-            target_50 = int(recent_high * 0.50)
-            c3.metric("🎯 買値目安(50%)", f"{target_50}円")
-            
-            chart_data = df.set_index('Date')[['AdjC']].rename(columns={'AdjC': '実績株価'})
-            chart_data['目標ライン(50%)'] = target_50
-            st.line_chart(chart_data, color=["#007BFF", "#FF4136"])
+# 全スクリーニングボタンをメイン画面の目立つ場所に常時固定
+st.markdown("### 🌐 全4,000銘柄 スクリーニング")
+run_full_scan = st.button("🚀 全銘柄スクリーニング開始（約3分）")
+st.divider()
 
-# ルートB: 全銘柄スクリーニング（約3分）
-elif st.button("全銘柄スクリーニング開始"):
+# --- 7. 実行ロジック ---
+# ルートA: 個別狙撃モード
+if search_single:
+    if not target_code:
+        st.warning("⚠️ サイドバーに4桁の銘柄コードを入力してください。")
+    else:
+        code_with_suffix = target_code + "0"
+        with st.spinner(f"コード {target_code} のデータを即時抽出中..."):
+            raw_data = get_single_stock_data(code_with_suffix)
+            if not raw_data:
+                st.error(f"銘柄コード {target_code} のデータが見つかりませんでした。")
+            else:
+                df = pd.DataFrame(raw_data)
+                for col in ['AdjC', 'AdjH', 'AdjL']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                df = df.sort_values('Date')
+                latest_close = df['AdjC'].iloc[-1]
+                recent_high = df['AdjH'].max()
+                current_ratio = latest_close / recent_high if recent_high > 0 else 0
+                
+                name, sector, market = f"銘柄 {target_code}", "-", "-"
+                if not master_df.empty:
+                    match = master_df[master_df['Code'] == code_with_suffix]
+                    if not match.empty:
+                        name = match.iloc[0]['CompanyName']
+                        sector = match.iloc[0]['Sector']
+                        market = match.iloc[0]['Market']
+                
+                st.success(f"即時診断完了: {name}")
+                st.subheader(f"{name} ({target_code})")
+                st.caption(f"業種: {sector} | 市場: {market}")
+                
+                c1, c2, c3 = st.columns(3)
+                ratio_pct = int(current_ratio * 100)
+                c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{ratio_pct-50}%", delta_color="inverse")
+                c2.metric("最新終値", f"{int(latest_close)}円")
+                target_50 = int(recent_high * 0.50)
+                c3.metric("🎯 買値目安(50%)", f"{target_50}円")
+                
+                chart_data = df.set_index('Date')[['AdjC']].rename(columns={'AdjC': '実績株価'})
+                chart_data['目標ライン(50%)'] = target_50
+                st.line_chart(chart_data, color=["#007BFF", "#FF4136"])
+
+# ルートB: 全銘柄スクリーニング
+elif run_full_scan:
     with st.spinner("ボスの全規律を適用し、4,000銘柄を審査中..."):
         raw_data = get_historical_data()
         if not raw_data:
@@ -170,9 +178,29 @@ elif st.button("全銘柄スクリーニング開始"):
             if f5_ipo and 'ListingDate' in summary.columns:
                 limit = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
                 summary = summary[pd.to_datetime(summary['ListingDate'], errors='coerce') <= limit]
-                
-            # 【修正箇所】文法エラーを修正しました
             if f6_risk and 'CompanyName' in summary.columns:
                 summary = summary[~summary['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
             
-            summary['current_ratio']
+            summary['current_ratio'] = summary['latest_close'] / summary['recent_high']
+            results = summary.sort_values('current_ratio').head(30)
+            st.success(f"審査完了: {len(results)} 銘柄を表示")
+            
+            for _, row in results.iterrows():
+                st.divider()
+                code = str(row['Code'])
+                name = row['CompanyName'] if not pd.isna(row.get('CompanyName')) else f"銘柄 {code[:-1]}"
+                st.subheader(f"{name} ({code[:-1]})")
+                st.caption(f"業種: {row.get('Sector', '-')} | 市場: {row.get('Market', '-')}")
+                
+                c1, c2, c3 = st.columns(3)
+                ratio_pct = int(row['current_ratio'] * 100)
+                c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{ratio_pct-50}%", delta_color="inverse")
+                c2.metric("最新終値", f"{int(row['latest_close'])}円")
+                target_50 = int(row['recent_high'] * 0.50)
+                c3.metric("🎯 買値目安(50%)", f"{target_50}円")
+
+                hist = df[df['Code'] == row['Code']].sort_values('Date')
+                if not hist.empty:
+                    chart_data = hist.set_index('Date')[['AdjC']].rename(columns={'AdjC': '実績株価'})
+                    chart_data['目標ライン(50%)'] = target_50
+                    st.line_chart(chart_data, color=["#007BFF", "#FF4136"])
