@@ -127,7 +127,7 @@ if st.sidebar.button("▶ スクリーニング実行"):
 
     # --- 貯め込んだリストを「下落率が高い順（現在値/最高値 が小さい順）」にソート ---
     results_sorted = sorted(results, key=lambda x: x['drop_ratio'])
-
+  
     # --- ソート済みの結果を画面に一括出力 ---
     for item in results_sorted:
         st.divider()
@@ -139,21 +139,18 @@ if st.sidebar.button("▶ スクリーニング実行"):
         col2.metric("📉 現在水準", f"{int(item['drop_ratio'] * 100)}%") 
         col3.metric(f"最新値 ({item['latest_date']} 終値)", f"{int(item['current_price'])}円")
         
-    # --- 変更ここまで ---
-            
-            # 売値目標（50%基準）
-            target_3 = int(base_50_price * 1.03)
-            target_5 = int(base_50_price * 1.05)
-            target_8 = int(base_50_price * 1.08)
-            
-            # 損切り（買値=55%押し基準）
-            loss_10 = int(drop_55_price * 0.90)
-            loss_8  = int(drop_55_price * 0.92)
-            
-            st.markdown(f"<div class='responsive-text'>💰 売値目標: [+3%] <span style='color:#ff4b4b'>{target_3}円</span> / [+5%] <span style='color:#ff4b4b'>{target_5}円</span> / [+8%] <span style='color:#ff4b4b'>{target_8}円</span></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='responsive-text'>🛡️ 損切り線: ザラ場(-10%) <span style='color:#00fa9a'>{loss_10}円</span> / 終値(-8%) <span style='color:#00fa9a'>{loss_8}円</span></div>", unsafe_allow_html=True)
-            
-        except Exception as e:
-            st.error(f"{ticker_code} の処理中にエラーが発生しました")
-            
+        # --- 売値目標と損切り線の動的計算（新ロジック対応） ---
+        base_50_price = item['recent_high'] * 0.50
+        drop_55_price = item['drop_55_price']
+        
+        target_3 = int(base_50_price * 1.03)
+        target_5 = int(base_50_price * 1.05)
+        target_8 = int(base_50_price * 1.08)
+        
+        loss_10 = int(drop_55_price * 0.90)
+        loss_8 = int(drop_55_price * 0.92)
+        
+        st.markdown(f"<div class='responsive-text'>💰 売値目標: [+3%] <span style='color:#ff4b4b'>{target_3}円</span> / [+5%] {target_5}円 / [+8%] {target_8}円</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='responsive-text'>🛡️ 損切り線: ザラ場(-10%) <span style='color:#00fa9a'>{loss_10}円</span> / 終値(-8%) {loss_8}円</div>", unsafe_allow_html=True)
+   
     st.success(f"✅ スクリーニング完了: 条件合致【 {hit_count} 件 】")
