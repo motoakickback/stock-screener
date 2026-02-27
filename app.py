@@ -9,8 +9,8 @@ from io import BytesIO
 import plotly.graph_objects as go
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V11.0)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V11.0)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V11.2)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V11.2)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -28,8 +28,8 @@ def clean_dataframe(df):
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-    # 日付でソートしてインデックスをリセット
     if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values('Date').reset_index(drop=True)
     return df
 
@@ -51,6 +51,20 @@ def load_brand_master():
     except: pass
     return pd.DataFrame()
 
+@st.cache_data(ttl=86400)
+def get_old_codes():
+    base_date = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+    for i in range(7):
+        target_date = (base_date - timedelta(days=i)).strftime('%Y%m%d')
+        for version in ["v2", "v1"]:
+            try:
+                res = requests.get(f"https://api.jquants.com/{version}/listed/info?date={target_date}", headers=headers, timeout=10)
+                if res.status_code == 200:
+                    data = res.json().get("info", [])
+                    if data: return pd.DataFrame(data)['Code'].astype(str).tolist()
+            except: pass
+    return []
+
 def get_single_stock_data(code, years=3):
     base_date = datetime.utcnow() + timedelta(hours=9)
     from_date = (base_date - timedelta(days=365 * years)).strftime('%Y%m%d')
@@ -58,57 +72,199 @@ def get_single_stock_data(code, years=3):
     url = f"{BASE_URL}/equities/bars/daily?code={code}&from={from_date}&to={to_date}"
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200:
-            return res.json().get("data", [])
+        if res.status_code == 200: return res.json().get("data", [])
     except: pass
     return []
 
-# --- 4. UI構築（タブ分離） ---
+@st.cache_data(ttl=3600)
+def get_historical_data_for_screening():
+    """直近30営業日 ＋ 半年前 ＋ 1年前のデータを高速取得"""
+    base_date = datetime.utcnow() + timedelta(hours=9)
+    target_dates = []
+    days_count = 0
+    while len(target_dates) < 30:
+        d = base_date - timedelta(days=days_count)
+        if d.weekday() < 5: target_dates.append(d.strftime('%Y%m%d'))
+        days_count += 1
+    
+    d_half = base_date - timedelta(days=180)
+    while d_half.weekday() >= 5: d_half -= timedelta(days=1)
+    target_dates.append(d_half.strftime('%Y%m%d'))
+    
+    d_year = base_date - timedelta(days=365)
+    while d_year.weekday() >= 5: d_year -= timedelta(days=1)
+    target_dates.append(d_year.strftime('%Y%m%d'))
+    
+    all_rows = []
+    p_bar = st.progress(0, text="最新の相場データを取得中...")
+    for i, d in enumerate(target_dates):
+        url = f"{BASE_URL}/equities/bars/daily?date={d}"
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200: all_rows.extend(res.json().get("data", []))
+        except: pass
+        p_bar.progress((i + 1) / len(target_dates))
+        time.sleep(0.5) # Lightプラン用の高速通信
+    p_bar.empty()
+    return all_rows
+
+# --- 4. 描画モジュール ---
+def draw_candlestick(df, target_price):
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'],
+        name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=[target_price]*len(df),
+        mode='lines', name='買値目標(55%押)', line=dict(color='#FFD700', width=2, dash='dash')
+    ))
+    fig.update_layout(
+        height=320, margin=dict(l=0, r=0, t=10, b=0), xaxis_rangeslider_visible=False,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# --- 5. UI構築 ---
 tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（バックテスト）"])
 
-# ==========================================
-# タブ1: 実戦（スクリーナー） ※V10.3の機能
-# ==========================================
+master_df = load_brand_master()
+
 with tab1:
-    st.markdown("### 🌐 全銘柄スクリーニング（最新14日データ）")
-    # ここにV10.3のスクリーニングロジックが入りますが、今回はバックテスト機能の提示に集中するため、
-    # 簡略化してUIのみ配置しています（実際にはV10.3のコードを結合します）。
-    st.info("※ スクリーニング機能はV10.3のロジックがそのまま稼働します（今回はタブ2の検証にフォーカスします）。")
+    st.markdown("### 🌐 ボスの「鉄の掟」全銘柄スクリーニング")
+    run_full_scan = st.button("🚀 最新データで全軍スキャン開始")
+    
+    st.sidebar.header("🔍 スクリーニング条件調整")
+    f3_drop_rate = st.sidebar.number_input("③ 半年〜1年の下落除外 (基準%)", value=-30, step=5)
+    f4_long_peak = st.sidebar.checkbox("④ 3波上げ切り除外 (今回は⑦の2倍上限で担保)", value=True)
+    f5_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True)
+    f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
+
+    if run_full_scan:
+        raw_data = get_historical_data_for_screening()
+        if not raw_data:
+            st.error("データの取得に失敗しました。")
+        else:
+            df = clean_dataframe(pd.DataFrame(raw_data))
+            
+            def calc_metrics(g):
+                g = g.sort_values('Date')
+                # 過去の特定日データ（半年・1年前）
+                past_dates = g.head(2) 
+                # 直近30営業日
+                recent_30 = g.tail(30)
+                recent_14 = recent_30.tail(14)
+                
+                if len(recent_14) == 0: return pd.Series(dtype=float)
+                
+                latest_close = recent_14['AdjC'].iloc[-1]
+                recent_14_high = recent_14['AdjH'].max()
+                recent_14_low = recent_14['AdjL'].min()
+                recent_30_low = recent_30['AdjL'].min()
+                
+                # 高値からの経過日数
+                high_date = recent_14.loc[recent_14['AdjH'].idxmax(), 'Date']
+                days_since_high = len(recent_14[recent_14['Date'] > high_date])
+                
+                # 上げ幅の55%押し
+                upward_range = recent_14_high - recent_14_low
+                buy_target = recent_14_high - (upward_range * 0.55)
+                
+                # 長期下落判定（1年前・半年前からの下落率）
+                long_term_drop = 0
+                if len(past_dates) > 0:
+                    old_max = past_dates['AdjH'].max()
+                    if old_max > 0: long_term_drop = ((latest_close / old_max) - 1) * 100
+                
+                return pd.Series({
+                    'latest_close': latest_close,
+                    'recent_14_high': recent_14_high,
+                    'recent_14_low': recent_14_low,
+                    'recent_30_low': recent_30_low,
+                    'buy_target': buy_target,
+                    'days_since_high': days_since_high,
+                    'ratio_14d': recent_14_high / recent_14_low if recent_14_low > 0 else 0,
+                    'ratio_30d': latest_close / recent_30_low if recent_30_low > 0 else 0,
+                    'long_term_drop': long_term_drop
+                })
+
+            with st.spinner("全4000銘柄に鉄の掟を執行中..."):
+                summary = df.groupby('Code').apply(calc_metrics).reset_index()
+                if not master_df.empty: summary = pd.merge(summary, master_df, on='Code', how='left')
+                
+                # --- ピックアップルール執行 ---
+                summary = summary[summary['latest_close'] >= 200] # ① 200円未満除外
+                summary = summary[summary['ratio_30d'] < 2.0] # ② 1ヶ月2倍暴騰除外
+                summary = summary[summary['long_term_drop'] > f3_drop_rate] # ③ 長期大幅下落を除外
+                
+                if f5_ipo: # ⑤ IPO除外
+                    old_codes = get_old_codes()
+                    if old_codes: summary = summary[summary['Code'].isin(old_codes)]
+                
+                if f6_risk and 'CompanyName' in summary.columns: # ⑥ 疑義注記除外
+                    summary = summary[~summary['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
+                
+                # ⑦ 14日以内の安値から1.3～2倍暴騰
+                summary = summary[(summary['ratio_14d'] >= 1.3) & (summary['ratio_14d'] <= 2.0)]
+                
+                # 買いルール②：高値から4日以内
+                summary = summary[summary['days_since_high'] <= 4]
+                
+                # 現在値が買値ターゲット付近（+5%以内）まで落ちているものを抽出
+                summary = summary[summary['latest_close'] <= (summary['buy_target'] * 1.05)]
+                
+                results = summary.sort_values('latest_close', ascending=False).head(30)
+                
+            if results.empty:
+                st.warning("現在の相場に、ボスの全規律を満たす標的（ターゲット）は存在しません。")
+            else:
+                st.success(f"審査完了: {len(results)} 銘柄が鉄の掟をクリアしました。")
+                for _, row in results.iterrows():
+                    st.divider()
+                    code = str(row['Code'])
+                    name = row['CompanyName'] if not pd.isna(row.get('CompanyName')) else f"銘柄 {code[:-1]}"
+                    st.subheader(f"{name} ({code[:-1]})")
+                    
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("最新終値", f"{int(row['latest_close'])}円")
+                    c2.metric("🎯 買値目標(55%押)", f"{int(row['buy_target'])}円")
+                    c3.metric("高値からの日数", f"{int(row['days_since_high'])}日")
+
+                    hist = df[df['Code'] == row['Code']].sort_values('Date').tail(14)
+                    if not hist.empty: draw_candlestick(hist, row['buy_target'])
 
 # ==========================================
-# タブ2: 訓練（バックテストエンジン）
+# タブ2: 訓練（バックテストエンジン V11.2）
 # ==========================================
 with tab2:
-    st.markdown("### 📉 鉄の掟：3年間シミュレーション")
-    
+    st.markdown("### 📉 鉄の掟：3年間 完全一致シミュレーション")
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.caption("対象銘柄の設定")
-        bt_code = st.text_input("検証する銘柄コード（4桁）", value="8105", max_chars=4, key="bt_code")
-        run_bt = st.button("🔥 3年間のバックテストを実行")
+        bt_code = st.text_input("検証する銘柄コード（4桁）", value="6614", max_chars=4, key="bt_code")
+        run_bt = st.button("🔥 バックテストを実行")
         
     with col2:
-        st.caption("ボスのパラメーター（固定値）")
-        st.markdown("""
-        * **買値目安**: 過去14日の高値から **55%下落（高値の45%）**
-        * **買い期限**: 高値到達から **4営業日以内**
-        * **利益確定**: 買値から **+8%上昇**
-        * **損切(ザラ場)**: 買値から **-10%下落**（最優先）
-        * **損切(終値)**: 買値から **-8%下落**
-        * **売り期限**: 購入から **5営業日経過**
-        """)
+        st.caption("⚙️ 買いルール / 売りルール パラメーター")
+        c2_1, c2_2 = st.columns(2)
+        with c2_1:
+            push_rate = st.number_input("① 上げ幅に対する押し目 (%)", value=55, step=5)
+            buy_limit_days = st.number_input("② 買い期限 (高値から何日以内)", value=4, step=1)
+            tp_rate = st.number_input("③ 利益確定 (買値からの上昇率 %)", value=8, step=1)
+        with c2_2:
+            sl_intra_rate = st.number_input("④ 損切/ザラ場 (買値から下落 %)", value=10, step=1)
+            sl_close_rate = st.number_input("⑤ 損切/終値 (買値から下落 %)", value=8, step=1)
+            sell_limit_days = st.number_input("⑥ 売り期限 (購入から何日経過)", value=5, step=1)
 
     if run_bt and bt_code:
         code_with_suffix = bt_code + "0"
-        with st.spinner(f"銘柄 {bt_code} の過去3年分のデータをAPIから抽出し、仮想売買を実行中..."):
+        with st.spinner(f"銘柄 {bt_code} の過去3年分のデータを抽出し、仮想売買を実行中..."):
             raw_data = get_single_stock_data(code_with_suffix, years=3)
             
             if not raw_data:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_dataframe(pd.DataFrame(raw_data))
-                
-                # --- バックテストロジック ---
                 trades = []
                 position = None
                 
@@ -117,19 +273,21 @@ with tab2:
                     
                     if position is None:
                         # --- 買いの判定 ---
-                        window = df.iloc[i-14 : i] # 過去14営業日
+                        window = df.iloc[i-14 : i] 
                         recent_high = window['AdjH'].max()
-                        high_idx = window['AdjH'].idxmax()
-                        days_since_high = i - high_idx
+                        recent_low = window['AdjL'].min()
+                        high_date = window.loc[window['AdjH'].idxmax(), 'Date']
+                        days_since_high = len(window[window['Date'] > high_date])
                         
-                        # ルール: 高値から4日以内
-                        if days_since_high <= 4:
-                            # ルール: 55%押し（高値の45%）
-                            buy_target = recent_high * 0.45 
+                        # ピックアップ⑦: 1.3〜2倍の暴騰確認
+                        ratio_14d = recent_high / recent_low if recent_low > 0 else 0
+                        
+                        if (1.3 <= ratio_14d <= 2.0) and (days_since_high <= buy_limit_days):
+                            # 真の掟: 上げ幅の55%押し
+                            upward_range = recent_high - recent_low
+                            buy_target = recent_high - (upward_range * (push_rate / 100))
                             
-                            # ザラ場でターゲット価格に触れたか？
                             if today_data['AdjL'] <= buy_target:
-                                # 窓を開けて下落して始まった場合は始値で約定
                                 exec_price = min(today_data['AdjO'], buy_target)
                                 position = {
                                     'buy_idx': i,
@@ -141,58 +299,46 @@ with tab2:
                         # --- 売りの判定 ---
                         buy_price = position['buy_price']
                         days_held = i - position['buy_idx']
+                        sell_price, reason = 0, ""
                         
-                        sell_price = 0
-                        reason = ""
+                        sl_intraday = buy_price * (1 - (sl_intra_rate / 100))
+                        tp_target = buy_price * (1 + (tp_rate / 100))
+                        sl_close = buy_price * (1 - (sl_close_rate / 100))
                         
-                        # 1. ザラ場損切 (-10%)
-                        sl_intraday = buy_price * 0.90
-                        # 2. 利益確定 (+8%)
-                        tp_target = buy_price * 1.08
-                        # 3. 終値損切 (-8%)
-                        sl_close = buy_price * 0.92
-                        
-                        # 悲観的判定：同じ日にTPとSL両方に触れた場合は、SL（損切）が先に発動したとみなす
                         if today_data['AdjL'] <= sl_intraday:
-                            sell_price = min(today_data['AdjO'], sl_intraday) # 窓開け考慮
-                            reason = "損切(ザラ場-10%)"
+                            sell_price = min(today_data['AdjO'], sl_intraday)
+                            reason = f"損切(ザラ場 -{sl_intra_rate}%)"
                         elif today_data['AdjH'] >= tp_target:
-                            sell_price = max(today_data['AdjO'], tp_target) # 窓開け考慮
-                            reason = "利確(+8%)"
+                            sell_price = max(today_data['AdjO'], tp_target)
+                            reason = f"利確(+{tp_rate}%)"
                         elif today_data['AdjC'] <= sl_close:
                             sell_price = today_data['AdjC']
-                            reason = "損切(終値-8%)"
-                        elif days_held >= 5:
+                            reason = f"損切(終値 -{sl_close_rate}%)"
+                        elif days_held >= sell_limit_days:
                             sell_price = today_data['AdjC']
-                            reason = "時間切れ(5日経過)"
+                            reason = f"時間切れ({sell_limit_days}日経過)"
                             
-                        # 決済実行
                         if reason != "":
                             profit_pct = (sell_price / buy_price) - 1
                             trades.append({
-                                '購入日': position['buy_date'],
-                                '決済日': today_data['Date'],
+                                '購入日': position['buy_date'].strftime('%Y-%m-%d'),
+                                '決済日': today_data['Date'].strftime('%Y-%m-%d'),
                                 '保有日数': days_held,
                                 '買値': round(buy_price, 1),
                                 '売値': round(sell_price, 1),
                                 '損益(%)': round(profit_pct * 100, 2),
                                 '決済理由': reason
                             })
-                            position = None # ポジションリセット
+                            position = None 
                 
-                # --- 結果の集計と表示 ---
                 st.success("仮想売買シミュレーション完了")
                 if len(trades) == 0:
-                    st.warning(f"過去3年間で、銘柄 {bt_code} にボスの「鉄の掟」が発動した機会は0回でした。")
+                    st.warning(f"指定された厳格な条件では、過去3年間で銘柄 {bt_code} にシグナルは点灯しませんでした。")
                 else:
                     tdf = pd.DataFrame(trades)
                     total_trades = len(tdf)
                     wins = len(tdf[tdf['損益(%)'] > 0])
                     win_rate = (wins / total_trades) * 100
-                    avg_profit = tdf[tdf['損益(%)'] > 0]['損益(%)'].mean() if wins > 0 else 0
-                    avg_loss = tdf[tdf['損益(%)'] <= 0]['損益(%)'].mean() if wins < total_trades else 0
-                    
-                    # プロフィットファクター (総利益 / 総損失の絶対値)
                     sum_profit = tdf[tdf['損益(%)'] > 0]['損益(%)'].sum()
                     sum_loss = abs(tdf[tdf['損益(%)'] <= 0]['損益(%)'].sum())
                     pf = (sum_profit / sum_loss) if sum_loss > 0 else float('inf')
