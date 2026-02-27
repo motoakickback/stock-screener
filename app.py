@@ -13,7 +13,7 @@ import concurrent.futures
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="株式投資戦略本部", layout="wide")
 
-# 【変更箇所】標準のタイトルを廃止し、可変・強制1行のレスポンシブ仕様に変更
+# タイトルのレスポンシブ化
 st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ 株式投資戦略本部</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
@@ -316,7 +316,9 @@ with tab1:
             st.warning("4桁の半角数字で入力してください。")
 
 with tab2:
-    st.markdown("### 📉 鉄の掟：複数銘柄 一括検証 ＆ 損益算出")
+    # 【変更箇所】バックテストの見出しをレスポンシブ化＆短縮
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
+    
     col_1, col_2 = st.columns([1, 2])
     with col_1:
         bt_c_in = st.text_area("銘柄コード（複数可）", value="6614, 3997, 4935", height=100)
@@ -416,7 +418,9 @@ with tab2:
                 
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                st.markdown(f"### 💰 総合結果：差し引き利益額 **{n_prof:,} 円**")
+                # 【変更箇所】総合結果の見出しもレスポンシブ化
+                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回")
                 m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
