@@ -3,31 +3,41 @@ import requests
 import pandas as pd
 import time
 import os
+import re
 from datetime import datetime, timedelta
 from io import BytesIO
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.3)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V9.3)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.4)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V9.4)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理 (エラー可視化・完全版) ---
+# --- 3. 銘柄マスター管理 (自動追尾スクレイピング機能) ---
 def generate_brands_csv():
-    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tv0syu00000011xl-att/data_j.xls"
     try:
-        # アクセス拒否を防ぐためのヘッダー偽装
         req_headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=req_headers, timeout=10)
+        
+        # ① JPXの銘柄一覧ページにアクセス
+        page_url = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
+        page_res = requests.get(page_url, headers=req_headers, timeout=10)
+        page_res.raise_for_status()
+        
+        # ② 最新のExcelファイルURLを自動検索（正規表現）
+        match = re.search(r'href="([^"]+data_j\.xls)"', page_res.text)
+        if not match:
+            return False, "最新のファイルリンクが見つかりませんでした。"
+            
+        # ③ 見つけた最新URLでダウンロードを実行
+        excel_url = "https://www.jpx.co.jp" + match.group(1)
+        res = requests.get(excel_url, headers=req_headers, timeout=15)
         res.raise_for_status()
         
-        # xlrdエンジンで確実に読み込む
+        # ④ データの読み込みと整形
         df = pd.read_excel(BytesIO(res.content), engine='xlrd')
-        
-        # 実際に存在するカラムだけを抽出 (上場日は存在しないため除外)
         df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
         df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
         df['Code'] = df['Code'].astype(str) + "0"
@@ -63,7 +73,7 @@ st.sidebar.caption("⚠️ ⑤ IPO除外はデータ制限のため現在凍結�
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
 if st.sidebar.button("銘柄データを最新に更新"):
-    with st.sidebar.spinner("JPXから4000銘柄を徴収中..."):
+    with st.sidebar.spinner("JPXの最新ファイルを自動探索中..."):
         success, err_msg = generate_brands_csv()
         if success:
             st.cache_data.clear()
