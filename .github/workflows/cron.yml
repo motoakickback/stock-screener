@@ -21,20 +21,9 @@ jobs:
         run: |
           pip install requests pandas numpy openpyxl xlrd
 
-      - name: Debug Secrets
+      - name: Run batch script
         env:
           JQ: ${{ secrets.JQUANTS_API_KEY }}
           LT: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LI: ${{ secrets.LINE_USER_ID }}
-        run: |
-          echo "■ 金庫の鍵の文字数チェック"
-          echo "J-Quantsキー: ${#JQ} 文字"
-          echo "LINEトークン: ${#LT} 文字"
-          echo "LINEユーザーID: ${#LI} 文字"
-
-      - name: Run batch script
-        env:
-          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python batch.py
