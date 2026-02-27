@@ -1,5 +1,1 @@
-streamlit
-pandas
-requests
-plotly
-openpyxl
+
