@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V9.4)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V9.4)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V10.0)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V10.0)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
@@ -20,23 +20,18 @@ BASE_URL = "https://api.jquants.com/v2"
 def generate_brands_csv():
     try:
         req_headers = {'User-Agent': 'Mozilla/5.0'}
-        
-        # ① JPXの銘柄一覧ページにアクセス
         page_url = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
         page_res = requests.get(page_url, headers=req_headers, timeout=10)
         page_res.raise_for_status()
         
-        # ② 最新のExcelファイルURLを自動検索（正規表現）
         match = re.search(r'href="([^"]+data_j\.xls)"', page_res.text)
         if not match:
             return False, "最新のファイルリンクが見つかりませんでした。"
             
-        # ③ 見つけた最新URLでダウンロードを実行
         excel_url = "https://www.jpx.co.jp" + match.group(1)
         res = requests.get(excel_url, headers=req_headers, timeout=15)
         res.raise_for_status()
         
-        # ④ データの読み込みと整形
         df = pd.read_excel(BytesIO(res.content), engine='xlrd')
         df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
         df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
@@ -81,10 +76,11 @@ if st.sidebar.button("銘柄データを最新に更新"):
         else:
             st.sidebar.error(f"更新失敗: {err_msg}")
 
-# --- 5. データ取得関数 ---
+# --- 5. データ取得関数（UTC+9 リアルタイム基準に解放） ---
 @st.cache_data(ttl=3600)
 def get_historical_data():
-    base_date = datetime(2025, 11, 28)
+    # 基準日を「現在時刻（日本時間）」に設定
+    base_date = datetime.utcnow() + timedelta(hours=9)
     target_dates = []
     days_count = 0
     while len(target_dates) < 14:
@@ -102,12 +98,13 @@ def get_historical_data():
                 all_rows.extend(res.json().get("data", []))
         except: pass
         p_bar.progress((i + 1) / 14)
-        time.sleep(13)
+        time.sleep(5) # 有償プラン移行を想定し、待機時間を13秒から5秒へ短縮
     p_bar.empty()
     return all_rows
 
 def get_single_stock_data(code):
-    base_date = datetime(2025, 11, 28)
+    # 基準日を「現在時刻（日本時間）」に設定
+    base_date = datetime.utcnow() + timedelta(hours=9)
     from_date = (base_date - timedelta(days=30)).strftime('%Y%m%d')
     to_date = base_date.strftime('%Y%m%d')
     url = f"{BASE_URL}/equities/bars/daily?code={code}&from={from_date}&to={to_date}"
@@ -125,7 +122,7 @@ def get_single_stock_data(code):
 master_df = load_brand_master()
 
 st.markdown("### 🌐 全4,000銘柄 スクリーニング")
-run_full_scan = st.button("🚀 全銘柄スクリーニング開始（約3分）")
+run_full_scan = st.button("🚀 最新データで全銘柄スクリーニング開始")
 st.divider()
 
 # --- 7. 実行ロジック ---
@@ -174,7 +171,7 @@ if search_single:
 
 # ルートB: 全銘柄スクリーニング
 elif run_full_scan:
-    with st.spinner("ボスの全規律を適用し、4,000銘柄を審査中..."):
+    with st.spinner("ボスの全規律を適用し、最新データで審査中..."):
         raw_data = get_historical_data()
         if not raw_data:
             st.error("データの取得に失敗しました。")
