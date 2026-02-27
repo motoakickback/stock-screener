@@ -9,9 +9,9 @@ import numpy as np
 import concurrent.futures
 
 # --- 認証・通信設定（GitHubの金庫から自動取得） ---
-API_KEY = os.environ.get("JQUANTS_API_KEY", "").strip()
-LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
-LINE_USER_ID = os.environ.get("LINE_USER_ID", "").strip()
+API_KEY = os.environ.get("cLDli7sk1goP_d1fVisnyqPLUWm80on2eTpJln6u5TA", "").strip()
+LINE_TOKEN = os.environ.get("mAl47d5VfDIQb/OMpJdW3oqJF0U/TpIEARKSxNfNZahdQBvzHT91b1q/z3n6rRcziTDngTlXwMHv+1xnqMUnFQ5OQiCBhFBITAGKXidqBCdpAeyWFtAvQJC+KA4SVOkKm/vZeiPRk9trqg/Eujr0lQdB04t89/1O/w1cDnyilFU=", "").strip()
+LINE_USER_ID = os.environ.get("Uc7fddc13b393b7c8a6511a77832364ca", "").strip()
 
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
@@ -85,12 +85,17 @@ def get_hist_data():
     def fetch(dt):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            time.sleep(0.1)
-            if r.status_code == 200: return r.json().get("data", [])
-        except: pass
+            time.sleep(0.5) # API制限回避のため安全マージンを確保
+            if r.status_code == 200: 
+                return r.json().get("data", [])
+            else:
+                log(f"APIエラー(日付{dt}): HTTPステータス {r.status_code}")
+        except Exception as e: 
+            log(f"API通信例外: {e}")
         return []
         
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+    # 通信制限を避けるため、並列数を5から3へ減速
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
@@ -99,6 +104,10 @@ def get_hist_data():
 
 def main():
     log("=== バッチ処理開始 ===")
+    if not API_KEY:
+        log("致命的エラー: JQUANTS_API_KEY が取得できていません。GitHub Secretsの設定を確認してください。")
+        return
+
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
     push_r = 50; limit_d = 4
 
