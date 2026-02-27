@@ -164,7 +164,7 @@ f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
-push_r = st.sidebar.number_input("① 押し目(%)", value=50, step=5)
+push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
 # ==========================================
@@ -299,7 +299,7 @@ with tab2:
     with col_2:
         st.caption("⚙️ パラメーター")
         cc_1, cc_2 = st.columns(2)
-        bt_push = cc_1.number_input("① 押し目 (%)", value=50, step=5)
+        bt_push = cc_1.number_input("① 押し目 (%)", value=45, step=5)
         bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
         bt_tp = cc_1.number_input("③ 利確 (+%)", value=8, step=1)
         bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
