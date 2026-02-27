@@ -2,55 +2,54 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
-import os
-import re
 from datetime import datetime, timedelta
-from io import BytesIO
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V10.0)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V10.0)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V10.1)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V10.1)")
 
 # --- 2. 認証情報 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
-BASE_URL = "https://api.jquants.com/v2"
 
-# --- 3. 銘柄マスター管理 (自動追尾スクレイピング機能) ---
-def generate_brands_csv():
-    try:
-        req_headers = {'User-Agent': 'Mozilla/5.0'}
-        page_url = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
-        page_res = requests.get(page_url, headers=req_headers, timeout=10)
-        page_res.raise_for_status()
-        
-        match = re.search(r'href="([^"]+data_j\.xls)"', page_res.text)
-        if not match:
-            return False, "最新のファイルリンクが見つかりませんでした。"
-            
-        excel_url = "https://www.jpx.co.jp" + match.group(1)
-        res = requests.get(excel_url, headers=req_headers, timeout=15)
-        res.raise_for_status()
-        
-        df = pd.read_excel(BytesIO(res.content), engine='xlrd')
-        df = df[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-        df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-        df['Code'] = df['Code'].astype(str) + "0"
-        df.to_csv("brands.csv", index=False)
-        return True, "成功"
-    except Exception as e:
-        return False, str(e)
+# --- 3. 銘柄マスター管理 (J-Quants API 純血版) ---
+def fetch_info(date_str=None):
+    """J-Quants APIから直接銘柄マスターを取得する"""
+    for version in ["v2", "v1"]:
+        url = f"https://api.jquants.com/{version}/listed/info"
+        if date_str:
+            url += f"?date={date_str}"
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            if res.status_code == 200:
+                return res.json().get("info", [])
+        except:
+            continue
+    return []
 
-@st.cache_data
+@st.cache_data(ttl=86400)
 def load_brand_master():
-    if not os.path.exists("brands.csv"):
-        success, err_msg = generate_brands_csv()
-        if not success:
-            st.sidebar.error(f"⚠️ マスター取得エラー: {err_msg}")
-            
-    if os.path.exists("brands.csv"):
-        return pd.read_csv("brands.csv", dtype={'Code': str})
+    """現在の全銘柄リストを取得"""
+    data = fetch_info()
+    if data:
+        df = pd.DataFrame(data)
+        rename_map = {}
+        if 'Sector33CodeName' in df.columns: rename_map['Sector33CodeName'] = 'Sector'
+        if 'MarketCodeName' in df.columns: rename_map['MarketCodeName'] = 'Market'
+        df = df.rename(columns=rename_map)
+        return df
     return pd.DataFrame()
+
+@st.cache_data(ttl=86400)
+def get_old_codes():
+    """1年前の銘柄リストを取得（IPO判定用）"""
+    target_date = (datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)).strftime('%Y%m%d')
+    data = fetch_info(target_date)
+    if data:
+        df = pd.DataFrame(data)
+        if 'Code' in df.columns:
+            return df['Code'].astype(str).tolist()
+    return []
 
 # --- 4. サイドバー設定 ---
 st.sidebar.header("🎯 個別狙撃（即時診断）")
@@ -64,22 +63,18 @@ f1_price = st.sidebar.number_input("① 株価下限 (円)", value=200, step=100
 f2_short = st.sidebar.checkbox("② 短期2倍急騰を除外", value=True)
 f3_signal = st.sidebar.checkbox("③ 買値目安(50%以下)のみ表示", value=True)
 f4_long = st.sidebar.checkbox("④ 3倍以上上げ切りを除外", value=True)
-st.sidebar.caption("⚠️ ⑤ IPO除外はデータ制限のため現在凍結中")
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外 (上場1年未満)", value=True) # 凍結解除
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄を除外", value=True)
 
-if st.sidebar.button("銘柄データを最新に更新"):
-    with st.sidebar.spinner("JPXの最新ファイルを自動探索中..."):
-        success, err_msg = generate_brands_csv()
-        if success:
-            st.cache_data.clear()
-            st.rerun()
-        else:
-            st.sidebar.error(f"更新失敗: {err_msg}")
+if st.sidebar.button("マスターデータを手動更新"):
+    st.cache_data.clear()
+    st.rerun()
 
-# --- 5. データ取得関数（UTC+9 リアルタイム基準に解放） ---
+# --- 5. データ取得関数 ---
+BASE_URL = "https://api.jquants.com/v2"
+
 @st.cache_data(ttl=3600)
 def get_historical_data():
-    # 基準日を「現在時刻（日本時間）」に設定
     base_date = datetime.utcnow() + timedelta(hours=9)
     target_dates = []
     days_count = 0
@@ -98,12 +93,11 @@ def get_historical_data():
                 all_rows.extend(res.json().get("data", []))
         except: pass
         p_bar.progress((i + 1) / 14)
-        time.sleep(5) # 有償プラン移行を想定し、待機時間を13秒から5秒へ短縮
+        time.sleep(5)
     p_bar.empty()
     return all_rows
 
 def get_single_stock_data(code):
-    # 基準日を「現在時刻（日本時間）」に設定
     base_date = datetime.utcnow() + timedelta(hours=9)
     from_date = (base_date - timedelta(days=30)).strftime('%Y%m%d')
     to_date = base_date.strftime('%Y%m%d')
@@ -118,7 +112,7 @@ def get_single_stock_data(code):
     except: pass
     return []
 
-# --- 6. メイン画面のUI配置 ---
+# --- 6. メイン画面 ---
 master_df = load_brand_master()
 
 st.markdown("### 🌐 全4,000銘柄 スクリーニング")
@@ -126,7 +120,7 @@ run_full_scan = st.button("🚀 最新データで全銘柄スクリーニング
 st.divider()
 
 # --- 7. 実行ロジック ---
-# ルートA: 個別狙撃モード
+# ルートA: 個別狙撃
 if search_single:
     if not target_code:
         st.warning("⚠️ サイドバーに4桁の銘柄コードを入力してください。")
@@ -150,9 +144,9 @@ if search_single:
                 if not master_df.empty:
                     match = master_df[master_df['Code'] == code_with_suffix]
                     if not match.empty:
-                        name = match.iloc[0]['CompanyName']
-                        sector = match.iloc[0]['Sector']
-                        market = match.iloc[0]['Market']
+                        name = match.iloc[0].get('CompanyName', name)
+                        sector = match.iloc[0].get('Sector', sector)
+                        market = match.iloc[0].get('Market', market)
                 
                 st.success(f"即時診断完了: {name}")
                 st.subheader(f"{name} ({target_code})")
@@ -169,7 +163,7 @@ if search_single:
                 chart_data['目標ライン(50%)'] = target_50
                 st.line_chart(chart_data, color=["#007BFF", "#FF4136"])
 
-# ルートB: 全銘柄スクリーニング
+# ルートB: 全軍スキャン
 elif run_full_scan:
     with st.spinner("ボスの全規律を適用し、最新データで審査中..."):
         raw_data = get_historical_data()
@@ -191,13 +185,22 @@ elif run_full_scan:
             
             # --- 鉄の掟 執行 ---
             summary = summary[summary['latest_close'] >= f1_price]
+            
             if f2_short:
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 2.0)]
             if f3_signal:
                 summary = summary[(summary['latest_close'] / summary['recent_high']) <= 0.50]
             if f4_long:
                 summary = summary[summary['latest_close'] < (summary['recent_low'] * 3.0)]
-                
+            
+            # ⑤ IPO除外（1年前のリストとの照合）
+            if f5_ipo:
+                old_codes = get_old_codes()
+                if old_codes:
+                    summary = summary[summary['Code'].isin(old_codes)]
+                else:
+                    st.warning("⚠️ 過去マスターの取得に失敗したため、IPO除外をスキップしました。")
+                    
             if f6_risk and 'CompanyName' in summary.columns:
                 summary = summary[~summary['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
             
