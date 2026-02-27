@@ -12,7 +12,7 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="J-Quants 戦略アドバイザー", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V14.3 サイレントスキャン版)")
+st.title("🛡️ J-Quants 戦略アドバイザー (V14.4 スマホ最適化版)")
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -132,7 +132,7 @@ def draw_chart(df, targ_p):
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 4. UI構築（サイドバーをタブから完全に独立）
+# 4. UI構築
 # ==========================================
 st.sidebar.header("🔍 ピックアップルール")
 f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
@@ -157,7 +157,8 @@ tab1, tab2 = st.tabs(["🚀 実戦（スクリーナー）", "🔬 訓練（バ�
 master_df = load_master()
 
 with tab1:
-    st.markdown("### 🌐 ボスの「鉄の掟」全銘柄スクリーニング")
+    # 【変更箇所】全軍スキャンの見出しを1行に収めるレスポンシブ仕様に変更
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全銘柄スクリーニング</h3>', unsafe_allow_html=True)
     run_scan = st.button("🚀 最新データで全軍スキャン開始")
 
     if run_scan:
@@ -241,13 +242,14 @@ with tab1:
             if res.empty: 
                 st.warning("現在の相場に、標的は存在しません。")
             else:
-                # 【修正】LINE送信モジュールを物理的に排除し、画面表示のみに専念
                 st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code'])
                     n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
-                    st.subheader(f"{n} ({c[:-1]})")
+                    
+                    # 【変更箇所】銘柄名の見出しを1行に収めるレスポンシブ仕様に変更
+                    st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
                     
                     cc1, cc2, cc3 = st.columns(3)
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
@@ -260,7 +262,8 @@ with tab1:
 
     # --- 個別狙撃モジュール ---
     st.markdown("---")
-    st.markdown("### 🎯 個別狙撃（ピンポイント分析）")
+    # 【変更箇所】個別狙撃の見出しも1行に収めるよう統一
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 個別狙撃（ピンポイント分析）</h3>', unsafe_allow_html=True)
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         target_code = st.text_input("標的コード (例: 7203)", max_chars=4)
@@ -288,7 +291,8 @@ with tab1:
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
 
-                        st.subheader(f"{c_name} ({target_code})")
+                        # 【変更箇所】個別狙撃結果の銘柄名も1行に収めるレスポンシブ仕様に変更
+                        st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{c_name} ({target_code})</h3>', unsafe_allow_html=True)
                         sc1, sc2, sc3 = st.columns(3)
                         sc1.metric("最新終値", f"{int(lc)}円")
                         sc2.metric(f"🎯 買値目標 ({push_r}%押)", f"{int(bt_single)}円")
