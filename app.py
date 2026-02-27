@@ -5,13 +5,13 @@ import time
 from datetime import datetime, timedelta
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="J-Quants 戦略スクリーナー (V6.0)", layout="wide")
-st.title("🛡️ J-Quants 戦略アドバイザー (V6.0)")
+st.set_page_config(page_title="J-Quants 戦略スクリーナー (V6.1)", layout="wide")
+st.title("🛡️ J-Quants 戦略アドバイザー (V6.1)")
 
 # --- 2. 認証情報の取得 ---
 API_KEY = st.secrets["JQUANTS_API_KEY"].strip()
 headers = {"x-api-key": API_KEY}
-# 正しいベースURLに復元
+# 確実に疎通するベースURL
 BASE_URL = "https://api.jquants.com/v2"
 
 # --- 3. サイドバー設定（鉄の掟） ---
@@ -26,18 +26,17 @@ st.sidebar.divider()
 only_buy_signal = st.sidebar.checkbox("買値目安(50%以下)のみ表示", value=True)
 target_sector = st.sidebar.multiselect("業種絞り込み", ["情報・通信業", "サービス業", "電気機器", "小売業", "不動産業", "卸売業", "機械"])
 
-# --- 4. 銘柄詳細取得 (Freeプラン安定版) ---
+# --- 4. 銘柄詳細取得 (Freeプラン安定版：日付指定必須) ---
 @st.cache_data(ttl=86400)
 def get_brand_info():
-    # エンドポイントを /list に変更し、パラメータを排除
-    url = f"{BASE_URL}/listed/list"
+    # 無料枠では必ず過去の日付を指定する必要があります
+    url = f"{BASE_URL}/listed/info?date=20251128"
     try:
         res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200:
-            # V2の階層名は list です
-            return pd.DataFrame(res.json().get("list", []))
+            return pd.DataFrame(res.json().get("info", []))
         else:
-            st.error(f"❌ 銘柄情報取得失敗: HTTP {res.status_code}")
+            st.error(f"❌ 銘柄情報APIエラー: HTTP {res.status_code}")
             st.code(res.text) 
             return pd.DataFrame()
     except Exception as e:
@@ -63,7 +62,7 @@ def get_historical_data():
         if res.status_code == 200:
             all_rows.extend(res.json().get("data", []))
         progress_bar.progress((i + 1) / 14)
-        time.sleep(13) # Freeプラン13秒待機
+        time.sleep(13) # Freeプランレートリミット対策
     progress_bar.empty()
     return all_rows
 
@@ -72,9 +71,10 @@ if st.button("スクリーニング開始"):
     info_df = get_brand_info()
     if info_df.empty: st.stop()
         
-    with st.spinner("鉄の掟に基づき全銘柄を審査中..."):
+    with st.spinner("鉄の掟に基づき、全4,000銘柄を厳格に審査中..."):
         raw_data = get_historical_data()
-        if not raw_data: st.error("株価データの取得に失敗しました。")
+        if not raw_data:
+            st.error("株価データの取得に失敗しました。")
         else:
             df = pd.DataFrame(raw_data)
             for col in ['AdjC', 'AdjH', 'AdjL']:
@@ -86,31 +86,37 @@ if st.button("スクリーニング開始"):
                 recent_low=('AdjL', 'min')
             ).reset_index()
             
-            # マージ
+            # 銘柄情報の統合
             final_df = pd.merge(summary, info_df, on='Code', how='inner')
             final_df['MarketCapitalization'] = pd.to_numeric(final_df['MarketCapitalization'], errors='coerce')
             
-            # --- 鉄の掟適用 ---
+            # --- 鉄の掟（フィルター）適用 ---
             final_df = final_df[final_df['latest_close'] >= min_price]
+            
             if exclude_short_spike:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 2.0)]
+                
             if exclude_long_peak:
                 final_df = final_df[final_df['latest_close'] < (final_df['recent_low'] * 3.0)]
+            
             if exclude_ipo:
                 one_year_ago = (datetime(2025, 11, 28) - timedelta(days=365)).strftime('%Y-%m-%d')
                 final_df = final_df[final_df['ListingDate'] <= one_year_ago]
+            
             if exclude_going_concern:
-                # CompanyNameFull や CompanyName から判定
                 final_df = final_df[~final_df['CompanyName'].str.contains("疑義|重要事象", na=False)]
+                
             if target_sector:
                 final_df = final_df[final_df['Sector17CodeName'].isin(target_sector)]
                 
             final_df['current_ratio'] = final_df['latest_close'] / final_df['recent_high']
+            
             if only_buy_signal:
                 final_df = final_df[final_df['current_ratio'] <= 0.50]
             
             results = final_df.sort_values('current_ratio').head(30)
-            st.success(f"審査完了: {len(results)} 銘柄を表示")
+            
+            st.success(f"審査完了！ボスの規律をクリアした銘柄を表示します。")
             
             for _, row in results.iterrows():
                 st.divider()
@@ -124,4 +130,4 @@ if st.button("スクリーニング開始"):
                 c1.metric("📉 現在水準", f"{ratio_pct}%", delta=f"{delta_val}%" if ratio_pct > 50 else "🎯 SIGNAL", delta_color="inverse")
                 c2.metric("最新終値", f"{int(row['latest_close'])}円")
                 c3.metric("🎯 買値目安(50%)", f"{int(row['recent_high'] * 0.50)}円")
-                st.write(f"🛡️ 損切目安: {int(row['latest_close'] * 0.92)}円 (-8%)")
+                st.write(f"🛡️ 損切目安(終値-8%): {int(row['latest_close'] * 0.92)}円")
