@@ -8,30 +8,24 @@ from io import BytesIO
 import numpy as np
 import concurrent.futures
 
-# --- 認証・通信設定（極小エイリアスで直結） ---
+# --- 認証・通信設定 ---
 API_KEY = os.environ.get("JQ", "").strip()
 LINE_TOKEN = os.environ.get("LT", "").strip()
 LINE_USER_ID = os.environ.get("LI", "").strip()
-
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+def log(msg): print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 def send_line(text):
-    if not LINE_TOKEN or not LINE_USER_ID:
-        log("エラー: LINEキーが未設定です")
-        return False
+    if not LINE_TOKEN or not LINE_USER_ID: return False
     url = "https://api.line.me/v2/bot/message/push"
     req_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {LINE_TOKEN}"}
     payload = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": text}]}
     try:
         res = requests.post(url, headers=req_headers, json=payload, timeout=10)
         return res.status_code == 200
-    except Exception as e:
-        log(f"LINE送信エラー: {e}")
-        return False
+    except: return False
 
 def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'}
@@ -52,7 +46,7 @@ def load_master():
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
             df['Code'] = df['Code'].astype(str) + "0"
             return df
-    except Exception as e: log(f"マスター取得エラー: {e}")
+    except: pass
     return pd.DataFrame()
 
 def get_old_codes():
@@ -86,12 +80,8 @@ def get_hist_data():
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
             time.sleep(0.5)
-            if r.status_code == 200: 
-                return r.json().get("data", [])
-            else:
-                log(f"APIエラー(日付{dt}): HTTPステータス {r.status_code}")
-        except Exception as e: 
-            log(f"API通信例外: {e}")
+            if r.status_code == 200: return r.json().get("data", [])
+        except: pass
         return []
         
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
@@ -101,21 +91,70 @@ def get_hist_data():
             if res: rows.extend(res)
     return rows
 
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        if len(v) < 15: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 3): peaks.append((i, v[i]))
+        if len(v) >= 2 and v[-1] > v[-2]:
+            if not peaks or (len(v)-1 - peaks[-1][0] > 3): peaks.append((len(v)-1, v[-1]))
+        if len(peaks) >= 2:
+            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95:
+                    if c[-1] < p2_val * 0.97: return True
+        return False
+    except: return False
+
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 20: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 2): peaks.append((i, v[i]))
+        if len(peaks) >= 3:
+            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val:
+                if abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10:
+                    if c[-1] < p3_val * 0.97: return True
+        return False
+    except: return False
+
+def check_double_bottom(df_sub):
+    try:
+        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        if len(l) < 15: return False
+        valleys = []
+        for i in range(1, len(l)-1):
+            if l[i] == min(l[i-1:i+2]):
+                if not valleys or (i - valleys[-1][0] > 3): valleys.append((i, l[i]))
+        if len(l) >= 3 and l[-2] == min(l[-3:]):
+             if not valleys or (len(l)-2 - valleys[-1][0] > 3): valleys.append((len(l)-2, l[-2]))
+        if len(valleys) >= 2:
+            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
+                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
+                if peak > max(v1_val, v2_val) * 1.04: 
+                    if c[-1] > v2_val * 1.01: return True
+        return False
+    except: return False
+
 def main():
     log("=== バッチ処理開始 ===")
-    if not API_KEY:
-        log("致命的エラー: JQUANTS_API_KEY が取得できていません。")
-        return
+    if not API_KEY: log("致命的エラー: APIキーがありません。"); return
 
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
     push_r = 45; limit_d = 4
 
     master_df = load_master()
     raw = get_hist_data()
-    
-    if not raw:
-        log("エラー: 相場データの取得に失敗しました。")
-        return
+    if not raw: log("エラー: 相場データの取得に失敗しました。"); return
 
     log("データ取得完了。分析を開始します...")
     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
@@ -125,9 +164,7 @@ def main():
     counts = df_14.groupby('Code').size()
     valid = counts[counts == 14].index
     
-    if valid.empty:
-        log("条件を満たす銘柄データが存在しません。LINE通知はスキップします。")
-        return
+    if valid.empty: log("条件を満たす銘柄データが存在しません。LINE通知はスキップします。"); return
         
     df_14 = df_14[df_14['Code'].isin(valid)]; df_30 = df_30[df_30['Code'].isin(valid)]
     df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
@@ -144,16 +181,23 @@ def main():
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+    sum_df['tp3'] = sum_df['bt'] * 1.03; sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp8'] = sum_df['bt'] * 1.08
     
-    # 【追加】到達度（%）の計算
     denom = sum_df['h14'] - sum_df['bt']
     sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
     
     sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
     sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
-    
     sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
     sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
+    
+    dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
+    hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
+    db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
+    sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left')
+    sum_df = sum_df.fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
+    
+    sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
     
@@ -167,25 +211,31 @@ def main():
         if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
     if f6_risk and 'CompanyName' in sum_df.columns:
         sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
+        
+    # バッチ処理では危険波形を絶対排除
+    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
     
     sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
     sum_df = sum_df[sum_df['d_high'] <= limit_d]
     sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
     
-    # 【変更】到達度（reach_pct）で降順ソート
-    res = sum_df.sort_values('reach_pct', ascending=False).head(30)
+    # バッチは攻め（三川）を最優先でソート
+    res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(10)
     
     if res.empty: 
         log("現在の相場に、標的は存在しません。LINE通知はスキップします。")
     else:
         log(f"{len(res)}銘柄の標的を検出しました。LINEへ送信します。")
         msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
-        for i, r in res.head(10).iterrows():
+        for i, r in res.iterrows():
             c = str(r['Code'])[:-1]
             n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
             bp = int(r['bt'])
-            # 【変更】LINEメッセージに到達度を追加
-            msg += f"\n■ {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +3%({int(bp*1.03)}) / +5%({int(bp*1.05)}) / +8%({int(bp*1.08)})\n"
+            
+            # シグナルアイコンの付与
+            icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "■")
+            
+            msg += f"\n{icon} {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +3%({int(r['tp3'])}) / +5%({int(r['tp5'])}) / +8%({int(r['tp8'])})\n"
         
         if send_line(msg): log("LINE通知 成功")
         else: log("エラー: LINE通知 失敗")
