@@ -225,10 +225,10 @@ with tab1:
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
                 
-                sum_df['half_push'] = sum_df['h14'] - (ur * 0.50)
-                sum_df['tp3'] = sum_df['half_push'] * 1.03
-                sum_df['tp5'] = sum_df['half_push'] * 1.05
-                sum_df['tp8'] = sum_df['half_push'] * 1.08
+                # 【変更】買い目標（bt）を起点とした売り目標の算出
+                sum_df['tp3'] = sum_df['bt'] * 1.03
+                sum_df['tp5'] = sum_df['bt'] * 1.05
+                sum_df['tp8'] = sum_df['bt'] * 1.08
                 
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
@@ -295,7 +295,6 @@ with tab1:
                     cc3.markdown(html_sell_targets, unsafe_allow_html=True)
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                     
-                    # 【追加】市場と業種をキャプションに統合
                     mkt = r['Market'] if not pd.isna(r.get('Market')) else "不明"
                     sct = r['Sector'] if not pd.isna(r.get('Sector')) else "不明"
                     st.caption(f"🏢 {mkt} ｜ 🏭 {sct} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
@@ -351,10 +350,10 @@ with tab2:
                             
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                             
-                            half_push_s = h14 - ((h14 - l14) * 0.50)
-                            tp3_s = half_push_s * 1.03
-                            tp5_s = half_push_s * 1.05
-                            tp8_s = half_push_s * 1.08
+                            # 【変更】局地戦でも買い目標（bt_single）を起点とした売り目標の算出
+                            tp3_s = bt_single * 1.03
+                            tp5_s = bt_single * 1.05
+                            tp8_s = bt_single * 1.08
                             
                             denom_s = h14 - bt_single
                             reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
@@ -435,7 +434,6 @@ with tab2:
                         sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                         sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                         
-                        # 【追加】市場と業種をキャプションに統合
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         
                         df_chart, bt_chart, tp3_c, tp5_c, tp8_c = charts_data[r['Code']]
