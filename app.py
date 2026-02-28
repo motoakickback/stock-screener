@@ -99,7 +99,7 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-# 防衛用：ダブルトップ（危険波形）検知
+# 波形認識1：ダブルトップ（二番天井）
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
@@ -119,7 +119,24 @@ def check_double_top(df_sub):
         return False
     except: return False
 
-# 【新規】攻撃用：三川（ダブルボトム/底打ち反転）検知
+# 【新規】波形認識2：三尊（ヘッド＆ショルダー / 最強の天井サイン）
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 20: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 2): peaks.append((i, v[i]))
+        if len(peaks) >= 3:
+            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val: # 中央が一番高い
+                if abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10: # 両肩の高さが近い
+                    if c[-1] < p3_val * 0.97: return True # 右肩から下落開始
+        return False
+    except: return False
+
+# 波形認識3：三川（ダブルボトム / 底打ち反転・攻めシグナル）
 def check_double_bottom(df_sub):
     try:
         l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
@@ -128,21 +145,15 @@ def check_double_bottom(df_sub):
         for i in range(1, len(l)-1):
             if l[i] == min(l[i-1:i+2]):
                 if not valleys or (i - valleys[-1][0] > 3): valleys.append((i, l[i]))
-        if len(l) >= 2 and l[-1] < l[-2]:
-            pass # 最安値更新中はまだ底を打っていない
-        elif len(l) >= 3 and l[-2] == min(l[-3:]):
+        if len(l) >= 3 and l[-2] == min(l[-3:]):
              if not valleys or (len(l)-2 - valleys[-1][0] > 3): valleys.append((len(l)-2, l[-2]))
                 
         if len(valleys) >= 2:
             v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
-            # 条件1: 2つの谷の深さの誤差が5%以内
             if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
                 peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                # 条件2: 谷の間に明確な山（ネックライン）がある（谷より4%以上高い）
                 if peak > max(v1_val, v2_val) * 1.04: 
-                    # 条件3: 現在値が直近の谷から反発し始めている（1%以上上昇）
-                    if c[-1] > v2_val * 1.01:
-                        return True
+                    if c[-1] > v2_val * 1.01: return True
         return False
     except: return False
 
@@ -164,6 +175,14 @@ def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
 # ==========================================
 # 4. UI構築
 # ==========================================
+# 【新規】戦術モード切替（攻め・守り）
+st.sidebar.header("🕹️ 戦術モード切替")
+tactics_mode = st.sidebar.radio(
+    "抽出・ソート優先度",
+    ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"],
+    help="攻め: 反発し始めた銘柄を優先。守り: 危険波形がなくサポートラインに近い安全な銘柄を優先。"
+)
+
 st.sidebar.header("🔍 ピックアップルール")
 f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
@@ -174,7 +193,7 @@ f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 c_f7_1, c_f7_2 = st.sidebar.columns(2)
 f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
-f8_dt = st.sidebar.checkbox("⑧ 危険波形(Wトップ)除外", value=True, help="ダブルトップ等の相場転換サインが出ている銘柄をリストから強制排除します。")
+f8_dt = st.sidebar.checkbox("⑧ 危険波形(Wトップ/三尊)除外", value=True, help="相場転換サインが出ている銘柄を強制排除します。")
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
@@ -188,14 +207,14 @@ master_df = load_master()
 
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全軍スキャン</h3>', unsafe_allow_html=True)
-    run_scan = st.button("🚀 最新データで全軍スキャン開始")
+    run_scan = st.button(f"🚀 最新データで全軍スキャン開始 ({tactics_mode.split()[0]}モード)")
 
     if run_scan:
         with st.spinner("神速モードで相場データを並列取得中..."):
             raw = get_hist_data_cached()
         if not raw: st.error("データの取得に失敗しました。")
         else:
-            with st.spinner("全4000銘柄に鉄の掟を一括執行中..."):
+            with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中..."):
                 d_raw = pd.DataFrame(raw)
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
@@ -229,15 +248,15 @@ with tab1:
                 sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
                 sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
                 
-                # 防衛波形（ダブルトップ）判定
-                dt_s = df_30.groupby('Code').apply(check_double_top)
-                dt_s.name = 'is_dt'
-                sum_df = sum_df.merge(dt_s, on='Code', how='left').fillna({'is_dt': False})
+                # 波形判定群の実行
+                dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
+                hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
+                db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
+                sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left')
+                sum_df = sum_df.fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
                 
-                # 【追加】攻撃波形（三川・ダブルボトム）判定
-                db_s = df_30.groupby('Code').apply(check_double_bottom)
-                db_s.name = 'is_db'
-                sum_df = sum_df.merge(db_s, on='Code', how='left').fillna({'is_db': False})
+                # 【新規】守り（鉄壁）シグナルの定義：危険波形がなく、現在値が直近の谷底から+3%以内
+                sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
                 
                 if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
                 
@@ -252,14 +271,23 @@ with tab1:
                 if f6_risk and 'CompanyName' in sum_df.columns:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                 
-                if f8_dt: sum_df = sum_df[~sum_df['is_dt']]
+                if f8_dt: 
+                    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+                
+                # 掟達成率の計算用（全軍スキャンではフルスコアのものが基本残るが、比較用に計算）
+                sum_df['rule_pct'] = 100.0
                 
                 sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
                 
-                # 【変更】ソート順を「①三川検知(最優先) ＞ ②到達度」に
-                res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
+                # 【変更】戦術モードに応じた動的ソート
+                if tactics_mode.startswith("⚔️"):
+                    res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
+                elif tactics_mode.startswith("🛡️"):
+                    res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(30)
+                else:
+                    res = sum_df.sort_values('reach_pct', ascending=False).head(30)
                 
             if res.empty: st.warning("現在の相場に、標的は存在しません。")
             else:
@@ -269,9 +297,9 @@ with tab1:
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
                     st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
                     
-                    if r['is_dt']: st.error("🚨 【警告】ダブルトップ（二番天井）波形を検知！ 下落トレンド転換の危険性が極めて高い状態です。")
-                    # 【追加】三川検知時の激熱バッジ
-                    if r['is_db']: st.success("🔥 【激熱シグナル】三川（ダブルボトム）底打ち反転波形を検知！ 絶好の狙撃ポイントです。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
+                    if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
+                    if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.2, 1])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
@@ -285,12 +313,12 @@ with tab1:
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
-    st.caption("※指定された銘柄すべての押し目ラインを計算し、「鉄の掟の達成率」と「買値への到達度」を算出して、条件が良い順に並び替えます。")
+    st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         target_codes_str = st.text_area("標的コード（複数可）", value="7203\n2764", height=100)
-        run_single = st.button("🔫 指定銘柄 一斉スキャン")
-    with col_s2: st.caption("改行やカンマ区切りで複数の4桁コードを入力してください。結果は「三川シグナル点灯」＞「掟達成率」＞「到達度」が高い順に自動で並び替えて表示されます。")
+        run_single = st.button(f"🔫 指定銘柄 一斉スキャン ({tactics_mode.split()[0]})")
+    with col_s2: st.caption("左側の「戦術モード切替」の設定に従って、並び順がダイナミックに変化します。")
 
     if run_single and target_codes_str:
         t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', target_codes_str)))
@@ -323,8 +351,9 @@ with tab2:
                             lrise = lc / omin if pd.notna(omin) and omin > 0 else 0
                             
                             is_dt = check_double_top(df_30)
-                            # 【追加】局地戦でも三川検知を実行
+                            is_hs = check_head_shoulders(df_30)
                             is_db = check_double_bottom(df_30)
+                            is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
                             
                             c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"
                             if not master_df.empty:
@@ -341,22 +370,30 @@ with tab2:
                                 old_c = get_old_codes()
                                 if old_c: score_list.append((c + "0") in old_c)
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
-                            if f8_dt: score_list.append(not is_dt)
+                            if f8_dt: score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'lc': lc, 'bt': bt_single, 'tp3': tp3_s, 'tp5': tp5_s, 'tp8': tp8_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_db': is_db})
+                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'lc': lc, 'bt': bt_single, 'tp3': tp3_s, 'tp5': tp5_s, 'tp8': tp8_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
                             charts_data[c] = (df_14, bt_single, tp3_s, tp5_s, tp8_s)
                 
                 if results:
-                    # 【変更】ソート順を「①三川検知(最優先) ＞ ②掟達成率 ＞ ③到達度」に
-                    res_df = pd.DataFrame(results).sort_values(['is_db', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
-                    st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（三川 ＞ 掟達成率 ＞ 到達度順）")
+                    res_df = pd.DataFrame(results)
+                    # 【変更】戦術モードに応じた動的ソート
+                    if tactics_mode.startswith("⚔️"):
+                        res_df = res_df.sort_values(['is_db', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
+                    elif tactics_mode.startswith("🛡️"):
+                        res_df = res_df.sort_values(['is_defense', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
+                    else:
+                        res_df = res_df.sort_values(['rule_pct', 'reach_pct'], ascending=[False, False])
+                        
+                    st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（モード: {tactics_mode.split()[0]}）")
                     for _, r in res_df.iterrows():
                         st.divider()
                         st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{r["Name"]} ({r["Code"]})</h3>', unsafe_allow_html=True)
                         
-                        if r['is_dt']: st.error("🚨 【警告】ダブルトップ（二番天井）波形を検知！ 下落トレンド転換の危険性が極めて高い状態です。")
-                        if r['is_db']: st.success("🔥 【激熱シグナル】三川（ダブルボトム）底打ち反転波形を検知！ 絶好の狙撃ポイントです。")
+                        if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
+                        if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
+                        if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.2, 1, 1])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
