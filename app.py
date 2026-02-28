@@ -163,7 +163,7 @@ push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
 # ==========================================
-# メイン画面（3タブ構成に変更）
+# メイン画面（3タブ構成）
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）"])
 master_df = load_master()
@@ -278,27 +278,26 @@ with tab1:
                         draw_chart(hist, r['bt'])
 
 # ----------------------------------------
-# タブ2：局地戦（個別狙撃・複数対応）
+# タブ2：局地戦（個別狙撃・掟ハイブリッド）
 # ----------------------------------------
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
-    st.caption("※「鉄の掟」を完全に無視し、指定された銘柄すべての押し目ラインと到達度だけを強制算出します。")
+    st.caption("※指定された銘柄すべての押し目ラインを計算し、「鉄の掟の達成率」と「買値への到達度」を算出して、条件が良い順に並び替えます。")
     
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         target_codes_str = st.text_area("標的コード（複数可）", value="7203\n9984", height=100)
         run_single = st.button("🔫 指定銘柄 一斉スキャン")
     with col_s2:
-        st.caption("改行やカンマ区切りで複数の4桁コードを入力してください。結果は到達度が高い順（100%超えから）に自動で並び替えて表示されます。")
+        st.caption("改行やカンマ区切りで複数の4桁コードを入力してください。結果は「掟達成率」と「到達度」が高い順に自動で並び替えて表示されます。")
 
     if run_single and target_codes_str:
-        # 入力から4桁の数字だけを抽出し、重複を排除
         t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', target_codes_str)))
         
         if not t_codes:
             st.warning("4桁の有効な銘柄コードが見つかりません。")
         else:
-            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を計算中..."):
+            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道と掟達成率を計算中..."):
                 results = []
                 charts_data = {}
                 
@@ -307,46 +306,86 @@ with tab2:
                     if raw_single:
                         df_s = clean_df(pd.DataFrame(raw_single))
                         if not df_s.empty and len(df_s) >= 14:
-                            df_s_14 = df_s.tail(14)
-                            h14 = df_s_14['AdjH'].max()
-                            l14 = df_s_14['AdjL'].min()
+                            df_30 = df_s.tail(30)
+                            df_14 = df_s.tail(14)
+                            df_past = df_s[~df_s.index.isin(df_30.index)]
+                            
+                            h14 = df_14['AdjH'].max()
+                            l14 = df_14['AdjL'].min()
                             lc = df_s['AdjC'].iloc[-1]
+                            
+                            idxmax = df_14['AdjH'].idxmax()
+                            h_date = df_14.loc[idxmax, 'Date']
+                            d_high = len(df_14[df_14['Date'] > h_date])
+                            
+                            l30 = df_30['AdjL'].min() if not df_30.empty else np.nan
+                            omax = df_past['AdjH'].max() if not df_past.empty else np.nan
+                            omin = df_past['AdjL'].min() if not df_past.empty else np.nan
                             
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                             
                             denom_s = h14 - bt_single
                             reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
                             
+                            r14 = h14 / l14 if l14 > 0 else 0
+                            r30 = lc / l30 if pd.notna(l30) and l30 > 0 else 0
+                            ldrop = ((lc / omax) - 1) * 100 if pd.notna(omax) and omax > 0 else 0
+                            lrise = lc / omin if pd.notna(omin) and omin > 0 else 0
+                            
                             c_name = f"銘柄 {c}"
                             if not master_df.empty:
                                 m_row = master_df[master_df['Code'] == c + "0"]
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']
-                                    
+                            
+                            # 【追加】鉄の掟の達成度判定ロジック
+                            score_list = [
+                                lc >= f1_min,
+                                r30 <= f2_m30,
+                                ldrop >= f3_drop,
+                                (lrise <= f4_mlong) or (lrise == 0),
+                                (f7_min14 <= r14 <= f7_max14),
+                                d_high <= limit_d,
+                                lc <= (bt_single * 1.05)
+                            ]
+                            if f5_ipo:
+                                old_c = get_old_codes()
+                                if old_c: score_list.append((c + "0") in old_c)
+                            if f6_risk:
+                                score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
+                            
+                            rule_pct = (sum(score_list) / len(score_list)) * 100
+                            
                             results.append({
                                 'Code': c,
                                 'Name': c_name,
                                 'lc': lc,
                                 'bt': bt_single,
                                 'h14': h14,
-                                'reach_pct': reach_s
+                                'reach_pct': reach_s,
+                                'rule_pct': rule_pct,
+                                'passed': sum(score_list),
+                                'total': len(score_list)
                             })
-                            charts_data[c] = (df_s_14, bt_single)
+                            charts_data[c] = (df_14, bt_single)
                 
                 if results:
-                    # 到達度（reach_pct）で降順ソート
-                    res_df = pd.DataFrame(results).sort_values('reach_pct', ascending=False)
-                    st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（到達度順）")
+                    # 【変更】掟達成率（優先）と到達度（次点）で降順ソート
+                    res_df = pd.DataFrame(results).sort_values(['rule_pct', 'reach_pct'], ascending=[False, False])
+                    st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（掟達成率 ＞ 到達度順）")
                     
                     for _, r in res_df.iterrows():
                         st.divider()
                         st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{r["Name"]} ({r["Code"]})</h3>', unsafe_allow_html=True)
                         
-                        sc1, sc2, sc3 = st.columns(3)
+                        # 4カラムにして「掟達成率」を追加表示
+                        sc1, sc2, sc3, sc4 = st.columns(4)
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
-                        sc2.metric(f"🎯 目標 ({push_r}%押)", f"{int(r['bt'])}円")
+                        sc2.metric(f"🎯 目標", f"{int(r['bt'])}円")
                         sc3.metric("到達度", f"{r['reach_pct']:.1f}%")
-                        st.caption(f"⏱️ 直近14日高値: {int(r['h14'])}円")
+                        sc4.metric("掟達成率", f"{r['rule_pct']:.0f}%")
+                        
+                        st.caption(f"⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         
                         df_chart, bt_chart = charts_data[r['Code']]
                         draw_chart(df_chart, bt_chart)
