@@ -114,17 +114,26 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-def draw_chart(df, targ_p):
+# 【変更】チャート描画関数に売り目標（tp3, tp5, tp8）の引数を追加
+def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
+    
+    # 買い目標（黄色ダッシュ）
     fig.add_trace(go.Scatter(
         x=df['Date'], y=[targ_p]*len(df), mode='lines',
-        name='目標(指定%押)', line=dict(color='#FFD700', width=2, dash='dash')
+        name='買い目標', line=dict(color='#FFD700', width=2, dash='dash')
     ))
+    
+    # 売り目標（緑色ドット・太さと透明度でグラデーション）
+    if tp3 and tp5 and tp8:
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp3]*len(df), mode='lines', name='売(3%)', line=dict(color='rgba(76, 175, 80, 0.5)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売(5%)', line=dict(color='rgba(76, 175, 80, 0.7)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp8]*len(df), mode='lines', name='売(8%)', line=dict(color='rgba(76, 175, 80, 0.9)', width=1.5, dash='dot')))
     
     fig.update_layout(
         height=350, 
@@ -219,6 +228,12 @@ with tab1:
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
                 
+                # 【追加】50%押し価格を起点とした売り目標の算出
+                sum_df['half_push'] = sum_df['h14'] - (ur * 0.50)
+                sum_df['tp3'] = sum_df['half_push'] * 1.03
+                sum_df['tp5'] = sum_df['half_push'] * 1.05
+                sum_df['tp8'] = sum_df['half_push'] * 1.08
+                
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
                 
@@ -267,15 +282,30 @@ with tab1:
                     
                     st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
                     
-                    cc1, cc2, cc3 = st.columns(3)
+                    # 【変更】4カラム構成にし、売り目標をリスト形式で表示
+                    cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.2, 1])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
-                    cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
-                    cc3.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    cc2.metric("🎯 買い目標", f"{int(r['bt'])}円")
+                    
+                    html_sell_targets = f"""
+                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                      <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div>
+                      <div style="font-size: 16px;">
+                        <span style="display: inline-block; width: 2.5em;">3%</span> {int(r['tp3']):,}円<br>
+                        <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br>
+                        <span style="display: inline-block; width: 2.5em;">8%</span> {int(r['tp8']):,}円
+                      </div>
+                    </div>
+                    """
+                    cc3.markdown(html_sell_targets, unsafe_allow_html=True)
+                    cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    
                     st.caption(f"⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
                     hist = df[df['Code'] == c].sort_values('Date').tail(14)
                     if not hist.empty:
-                        draw_chart(hist, r['bt'])
+                        # チャートに売り目標の数値を引き渡す
+                        draw_chart(hist, r['bt'], r['tp3'], r['tp5'], r['tp8'])
 
 # ----------------------------------------
 # タブ2：局地戦（個別狙撃・掟ハイブリッド）
@@ -324,6 +354,12 @@ with tab2:
                             
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                             
+                            # 【追加】局地戦でも50%押し価格を起点とした売り目標の算出
+                            half_push_s = h14 - ((h14 - l14) * 0.50)
+                            tp3_s = half_push_s * 1.03
+                            tp5_s = half_push_s * 1.05
+                            tp8_s = half_push_s * 1.08
+                            
                             denom_s = h14 - bt_single
                             reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
                             
@@ -338,7 +374,6 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']
                             
-                            # 【追加】鉄の掟の達成度判定ロジック
                             score_list = [
                                 lc >= f1_min,
                                 r30 <= f2_m30,
@@ -361,16 +396,18 @@ with tab2:
                                 'Name': c_name,
                                 'lc': lc,
                                 'bt': bt_single,
+                                'tp3': tp3_s,
+                                'tp5': tp5_s,
+                                'tp8': tp8_s,
                                 'h14': h14,
                                 'reach_pct': reach_s,
                                 'rule_pct': rule_pct,
                                 'passed': sum(score_list),
                                 'total': len(score_list)
                             })
-                            charts_data[c] = (df_14, bt_single)
+                            charts_data[c] = (df_14, bt_single, tp3_s, tp5_s, tp8_s)
                 
                 if results:
-                    # 【変更】掟達成率（優先）と到達度（次点）で降順ソート
                     res_df = pd.DataFrame(results).sort_values(['rule_pct', 'reach_pct'], ascending=[False, False])
                     st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（掟達成率 ＞ 到達度順）")
                     
@@ -378,17 +415,29 @@ with tab2:
                         st.divider()
                         st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{r["Name"]} ({r["Code"]})</h3>', unsafe_allow_html=True)
                         
-                        # 4カラムにして「掟達成率」を追加表示
-                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        # 【変更】5カラム構成にし、売り目標を追加
+                        sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.2, 1, 1])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
-                        sc2.metric(f"🎯 目標", f"{int(r['bt'])}円")
-                        sc3.metric("到達度", f"{r['reach_pct']:.1f}%")
-                        sc4.metric("掟達成率", f"{r['rule_pct']:.0f}%")
+                        sc2.metric(f"🎯 買い目標", f"{int(r['bt'])}円")
+                        
+                        html_sell_targets_s = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                          <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div>
+                          <div style="font-size: 16px;">
+                            <span style="display: inline-block; width: 2.5em;">3%</span> {int(r['tp3']):,}円<br>
+                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br>
+                            <span style="display: inline-block; width: 2.5em;">8%</span> {int(r['tp8']):,}円
+                          </div>
+                        </div>
+                        """
+                        sc3.markdown(html_sell_targets_s, unsafe_allow_html=True)
+                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                        sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                         
                         st.caption(f"⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         
-                        df_chart, bt_chart = charts_data[r['Code']]
-                        draw_chart(df_chart, bt_chart)
+                        df_chart, bt_chart, tp3_c, tp5_c, tp8_c = charts_data[r['Code']]
+                        draw_chart(df_chart, bt_chart, tp3_c, tp5_c, tp8_c)
                 else:
                     st.error("データの取得に失敗しました。上場廃止やコード誤りの可能性があります。")
 
