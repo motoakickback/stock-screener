@@ -169,27 +169,56 @@ def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
     fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
 
-
 # ==========================================
-# 4. UI構築（黄金比強制ギミック搭載）
+# 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
 
-# --- サイドバー用の黄金比リセット ---
+# --- セッションステートの初期化 ---
+if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (黄金比・絶対防衛)"
 if 'push_r' not in st.session_state: st.session_state.push_r = 50
 if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
+if 'bt_push' not in st.session_state: st.session_state.bt_push = 50
+if 'bt_buy_d' not in st.session_state: st.session_state.bt_buy_d = 4
+if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 15
+if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
+if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 5
+if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
+if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
-def reset_sidebar_to_golden():
-    if "バランス" in st.session_state.sidebar_tactics:
+def apply_market_preset():
+    # 選択された市場プリセットに応じて数値を強制上書き
+    if "大型株" in st.session_state.preset_target:
+        st.session_state.push_r = 45
+        st.session_state.bt_push = 45
+        st.session_state.bt_sl_i = 15
+    else:
         st.session_state.push_r = 50
-        st.session_state.limit_d = 4
+        st.session_state.bt_push = 50
+        st.session_state.bt_sl_i = 8
+    
+    # 共通のベースパラメーター（利確15%、終値損切5%、期限等）
+    st.session_state.limit_d = 4
+    st.session_state.bt_buy_d = 4
+    st.session_state.bt_tp = 15
+    st.session_state.bt_sl_c = 5
+    st.session_state.bt_sell_d = 10
+
+st.sidebar.header("🎯 対象市場 (一括換装)")
+st.sidebar.radio(
+    "プリセット選択",
+    ["🚀 中小型株 (黄金比・絶対防衛)", "🏢 大型株 (ノイズ許容・トレンド追従)"],
+    key="preset_target",
+    on_change=apply_market_preset,
+    help="中小型株: グロースや下位銘柄用（50%押し/ザラ場損切8%）。 大型株: プライムや上位銘柄用（45%押し/ザラ場損切15%）。"
+)
 
 st.sidebar.header("🕹️ 戦術モード切替")
 tactics_mode = st.sidebar.radio(
     "抽出・ソート優先度",
     ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"],
     key="sidebar_tactics",
-    on_change=reset_sidebar_to_golden,
-    help="バランス: 落ちてくるナイフを拾います。攻め: 反発し始めた銘柄を優先。守り: サポートラインに近い安全な銘柄を優先。"
+    on_change=apply_market_preset,
+    help="モードを切り替えた際も、現在の市場プリセット（黄金比等）へパラメーターが自動復元されます。"
 )
 
 st.sidebar.header("🔍 ピックアップルール")
@@ -433,30 +462,12 @@ with tab3:
     with col_2:
         st.caption("⚙️ パラメーター")
         
-        # --- タブ3用の黄金比リセット ---
-        if 'bt_push' not in st.session_state: st.session_state.bt_push = 50
-        if 'bt_buy_d' not in st.session_state: st.session_state.bt_buy_d = 4
-        if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 15
-        if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
-        if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 5
-        if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
-        if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
-
-        def reset_bt_to_golden():
-            if "バランス" in st.session_state.bt_mode_radio:
-                st.session_state.bt_push = 50
-                st.session_state.bt_buy_d = 4
-                st.session_state.bt_tp = 15
-                st.session_state.bt_sl_i = 8
-                st.session_state.bt_sl_c = 5
-                st.session_state.bt_sell_d = 10
-
         bt_mode = st.radio(
             "戦術モード (波形認識)", 
             ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], 
             key="bt_mode_radio",
-            on_change=reset_bt_to_golden,
-            help="バランスを選択した瞬間、システム設定が『黄金比』へカシャッと自動復元されます。"
+            on_change=apply_market_preset,
+            help="戦術モードを切り替えた際も、左サイドバーで選択中の「対象市場プリセット」へパラメーターが自動復元されます。"
         )
         
         cc_1, cc_2 = st.columns(2)
