@@ -189,7 +189,6 @@ f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 c_f7_1, c_f7_2 = st.sidebar.columns(2)
 f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
-# 【変更】⑧危険波形除外のチェックボックスを廃止（システム深部へ完全統合）
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
@@ -265,7 +264,6 @@ with tab1:
                 if f6_risk and 'CompanyName' in sum_df.columns:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                 
-                # 【変更】全軍スキャンでは、危険波形を無条件で絶対排除（パッシブスキル化）
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
                 
                 sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
@@ -304,13 +302,27 @@ with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
     st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
+    
+    # 【追加】局地戦の入力データをファイルから読み込む
+    T2_FILE = "saved_t2_codes.txt"
+    default_t2 = "7203\n2764"
+    if os.path.exists(T2_FILE):
+        with open(T2_FILE, "r", encoding="utf-8") as f:
+            default_t2 = f.read()
+
     with col_s1:
-        target_codes_str = st.text_area("標的コード（複数可）", value="7203\n2764", height=100)
+        target_codes_str = st.text_area("標的コード（複数可）", value=default_t2, height=100)
         run_single = st.button(f"🔫 指定銘柄 一斉スキャン ({tactics_mode.split()[0]})")
     with col_s2: st.caption("左側の「戦術モード切替」の設定に従って、並び順がダイナミックに変化します。")
 
     if run_single and target_codes_str:
-        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', target_codes_str)))
+        # 【追加】スキャン実行時、入力内容をファイルに保存する
+        with open(T2_FILE, "w", encoding="utf-8") as f:
+            f.write(target_codes_str)
+            
+        # 【変更】英文字コード（402Aなど）を拾えるように正規表現を修正し、大文字に統一
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
+        
         if not t_codes: st.warning("4桁の有効な銘柄コードが見つかりません。")
         else:
             with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道と掟達成率を計算中..."):
@@ -359,8 +371,6 @@ with tab2:
                                 old_c = get_old_codes()
                                 if old_c: score_list.append((c + "0") in old_c)
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
-                            
-                            # 【変更】第8の掟としてシステム深部に完全固定
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
@@ -399,7 +409,18 @@ with tab2:
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
     col_1, col_2 = st.columns([1, 2])
-    with col_1: bt_c_in = st.text_area("銘柄コード（複数可）", value="6614, 3997, 4935", height=100); run_bt = st.button("🔥 一括バックテスト")
+    
+    # 【追加】訓練（バックテスト）の入力データをファイルから読み込む
+    T3_FILE = "saved_t3_codes.txt"
+    default_t3 = "6614, 3997, 4935"
+    if os.path.exists(T3_FILE):
+        with open(T3_FILE, "r", encoding="utf-8") as f:
+            default_t3 = f.read()
+
+    with col_1: 
+        bt_c_in = st.text_area("銘柄コード（複数可）", value=default_t3, height=100)
+        run_bt = st.button("🔥 一括バックテスト")
+        
     with col_2:
         st.caption("⚙️ パラメーター")
         cc_1, cc_2 = st.columns(2)
@@ -409,7 +430,13 @@ with tab3:
         bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
 
     if run_bt and bt_c_in:
-        t_codes = list(dict.fromkeys(re.findall(r'\b\d{4}\b', bt_c_in)))
+        # 【追加】バックテスト実行時、入力内容をファイルに保存する
+        with open(T3_FILE, "w", encoding="utf-8") as f:
+            f.write(bt_c_in)
+            
+        # 【変更】英文字コード（402Aなど）を拾えるように正規表現を修正し、大文字に統一
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
+        
         if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
