@@ -11,8 +11,8 @@ import numpy as np
 import concurrent.futures
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="株式投資戦略本部", layout="wide")
-st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ 株式投資戦略本部</h1>', unsafe_allow_html=True)
+st.set_page_config(page_title="Investment Strategy Group", layout="wide")
+st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ Investment Strategy Group</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -154,7 +154,7 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
-def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
+def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
@@ -162,10 +162,11 @@ def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買い目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    if tp3 and tp5 and tp8:
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp3]*len(df), mode='lines', name='売(3%)', line=dict(color='rgba(76, 175, 80, 0.5)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売(5%)', line=dict(color='rgba(76, 175, 80, 0.7)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp8]*len(df), mode='lines', name='売(8%)', line=dict(color='rgba(76, 175, 80, 0.9)', width=1.5, dash='dot')))
+    if tp5 and tp10 and tp15 and tp20:
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売(5%)', line=dict(color='rgba(76, 175, 80, 0.4)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売(10%)', line=dict(color='rgba(76, 175, 80, 0.6)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
     fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -186,7 +187,6 @@ if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
-    # 選択された市場プリセットに応じて数値を強制上書き
     if "大型株" in st.session_state.preset_target:
         st.session_state.push_r = 45
         st.session_state.bt_push = 45
@@ -196,7 +196,6 @@ def apply_market_preset():
         st.session_state.bt_push = 50
         st.session_state.bt_sl_i = 8
     
-    # 共通のベースパラメーター（利確15%、終値損切5%、期限等）
     st.session_state.limit_d = 4
     st.session_state.bt_buy_d = 4
     st.session_state.bt_tp = 15
@@ -276,7 +275,8 @@ with tab1:
                 
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
-                sum_df['tp3'] = sum_df['bt'] * 1.03; sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp8'] = sum_df['bt'] * 1.08
+                # 【変更】黄金比スケール（5%, 10%, 15%, 20%）に対応
+                sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
                 
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
@@ -333,12 +333,12 @@ with tab1:
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.2, 1])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
                     cc2.metric("🎯 買い目標", f"{int(r['bt'])}円")
-                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">3%</span> {int(r['tp3']):,}円<br><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">8%</span> {int(r['tp8']):,}円</div></div>"""
+                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円<br><span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br><span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円</div></div>"""
                     cc3.markdown(html_sell, unsafe_allow_html=True)
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     hist = df[df['Code'] == c].sort_values('Date').tail(14)
-                    if not hist.empty: draw_chart(hist, r['bt'], r['tp3'], r['tp5'], r['tp8'])
+                    if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
@@ -380,7 +380,7 @@ with tab2:
                             omin = df_past['AdjL'].min() if not df_past.empty else np.nan
                             
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
-                            tp3_s = bt_single * 1.03; tp5_s = bt_single * 1.05; tp8_s = bt_single * 1.08
+                            tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                             
                             denom_s = h14 - bt_single
                             reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
@@ -413,8 +413,8 @@ with tab2:
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'lc': lc, 'bt': bt_single, 'tp3': tp3_s, 'tp5': tp5_s, 'tp8': tp8_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
-                            charts_data[c] = (df_14, bt_single, tp3_s, tp5_s, tp8_s)
+                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
+                            charts_data[c] = (df_14, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
                     res_df = pd.DataFrame(results)
@@ -437,13 +437,13 @@ with tab2:
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.2, 1, 1])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
                         sc2.metric(f"🎯 買い目標", f"{int(r['bt'])}円")
-                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">3%</span> {int(r['tp3']):,}円<br><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">8%</span> {int(r['tp8']):,}円</div></div>"""
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円<br><span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br><span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円</div></div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                         sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
-                        df_chart, bt_chart, tp3_c, tp5_c, tp8_c = charts_data[r['Code']]
-                        draw_chart(df_chart, bt_chart, tp3_c, tp5_c, tp8_c)
+                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                        draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
