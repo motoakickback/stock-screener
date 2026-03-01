@@ -32,7 +32,9 @@ def clean_df(df):
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
-    if 'Date' in df.columns: df['Date'] = pd.to_datetime(df['Date']); df = df.sort_values('Date').reset_index(drop=True)
+    if 'Date' in df.columns: 
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
 def load_master():
@@ -150,7 +152,8 @@ def main():
     if not API_KEY: log("致命的エラー: APIキーがありません。"); return
 
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
-    push_r = 45; limit_d = 4
+    # 【変更】黄金比（50%押し）へロック
+    push_r = 50; limit_d = 4
 
     master_df = load_master()
     raw = get_hist_data()
@@ -212,15 +215,14 @@ def main():
     if f6_risk and 'CompanyName' in sum_df.columns:
         sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
         
-    # バッチ処理では危険波形を絶対排除
     sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
     
     sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
     sum_df = sum_df[sum_df['d_high'] <= limit_d]
     sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
     
-    # バッチは攻め（三川）を最優先でソート
-    res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(10)
+    # 【変更】黄金比に基づき、到達度（50%押しラインへの近さ）を最優先でソート
+    res = sum_df.sort_values('reach_pct', ascending=False).head(10)
     
     if res.empty: 
         log("現在の相場に、標的は存在しません。LINE通知はスキップします。")
@@ -232,8 +234,7 @@ def main():
             n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
             bp = int(r['bt'])
             
-            # シグナルアイコンの付与
-            icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "■")
+            icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "⚖️")
             
             msg += f"\n{icon} {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +3%({int(r['tp3'])}) / +5%({int(r['tp5'])}) / +8%({int(r['tp8'])})\n"
         
