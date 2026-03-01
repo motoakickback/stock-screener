@@ -27,7 +27,8 @@ def clean_df(df):
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values('Date').reset_index(drop=True)
+        # 欠損値を含む行を排除し、エラーを完全防御
+        df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
 @st.cache_data(ttl=86400)
@@ -419,10 +420,12 @@ with tab3:
         
     with col_2:
         st.caption("⚙️ パラメーター")
+        # 【新規】バックテスト専用の戦術モード切替を実装
+        bt_mode = st.radio("戦術モード (波形認識)", ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], help="バランス: 落ちてくるナイフを拾います(三尊は回避)。攻め: Wボトムで底を打った事を確認してから飛び乗ります。")
         cc_1, cc_2 = st.columns(2)
         bt_push = cc_1.number_input("① 押し目 (%)", value=45, step=5); bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
-        bt_tp = cc_1.number_input("③ 利確 (+%)", value=8, step=1); bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
-        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=10, step=1); bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=8, step=1)
+        bt_tp = cc_1.number_input("③ 利確 (+%)", value=12, step=1); bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
+        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=10, step=1); bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=5, step=1)
         bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
 
     if run_bt and bt_c_in:
@@ -435,30 +438,53 @@ with tab3:
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
-                # 【修正】期間を3年から1年に変更し、APIリクエストを軽量化
                 raw = get_single_data(c + "0", 1)
                 if raw:
-                    # 【修正】取引不成立によるNaN（空データ）を含む日を削除し、エラーを完全防御
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
-                    for i in range(14, len(df)):
+                    # 【変更】波形認識（過去30日分）の計算余白を持たせるため、検証開始地点を14から30へシフト
+                    for i in range(30, len(df)):
                         td = df.iloc[i]
                         if pos is None:
-                            win = df.iloc[i-14:i]; rh = win['AdjH'].max(); rl = win['AdjL'].min()
+                            win_14 = df.iloc[i-14:i]
+                            win_30 = df.iloc[i-30:i]
+                            rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+                            
                             if pd.isna(rh) or pd.isna(rl) or rl == 0: continue
-                            idxmax = win['AdjH'].idxmax(); h_d = len(win[win['Date'] > win.loc[idxmax, 'Date']])
+                            
+                            idxmax = win_14['AdjH'].idxmax()
+                            h_d = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']])
                             r14 = rh / rl if rl > 0 else 0
+                            
                             if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
-                                targ = rh - ((rh - rl) * (bt_push / 100))
-                                if td['AdjL'] <= targ:
-                                    exec_p = min(td['AdjO'], targ); pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
+                                # 【新規】絶対防衛網（三山・Wトップの検知）
+                                is_dt = check_double_top(win_30)
+                                is_hs = check_head_shoulders(win_30)
+                                if is_dt or is_hs:
+                                    continue # 危険波形の場合は問答無用で買付キャンセル
+                                
+                                # 【新規】戦術モードによるエントリーロジックの分岐
+                                if "攻め" in bt_mode:
+                                    # 攻めモード：三川（Wボトム）が確認された時点（翌日）で成行買い
+                                    is_db = check_double_bottom(win_30)
+                                    if is_db:
+                                        exec_p = td['AdjO'] # 反発確認済みのため、目標価格を待たずに始値で飛び乗る
+                                        pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
+                                else:
+                                    # バランスモード：従来通りの押し目（指値）待ち
+                                    targ = rh - ((rh - rl) * (bt_push / 100))
+                                    if td['AdjL'] <= targ:
+                                        exec_p = min(td['AdjO'], targ)
+                                        pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
                         else:
                             bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
                             sl_i = bp * (1 - (bt_sl_i / 100)); tp = bp * (1 + (bt_tp / 100)); sl_c = bp * (1 - (bt_sl_c / 100))
+                            
                             if td['AdjL'] <= sl_i: sp = min(td['AdjO'], sl_i); rsn = f"損切(ザ場-{bt_sl_i}%)"
                             elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{bt_tp}%)"
                             elif td['AdjC'] <= sl_c: sp = td['AdjC']; rsn = f"損切(終値-{bt_sl_c}%)"
                             elif held >= bt_sell_d: sp = td['AdjC']; rsn = f"時間切れ({bt_sell_d}日)"
+                            
                             if rsn:
                                 sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2); p_amt = int((sp - bp) * bt_lot)
                                 all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held, '買値(円)': bp, '売値(円)': sp, '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn})
