@@ -11,8 +11,9 @@ import numpy as np
 import concurrent.futures
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="Investment Strategy Group", layout="wide")
-st.markdown('<h1 style="font-size: clamp(20px, 6.5vw, 40px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1rem; padding-bottom: 1rem;">🛡️ Investment Strategy Group</h1>', unsafe_allow_html=True)
+st.set_page_config(page_title="株式投資作戦企画室", layout="wide")
+# 【変更】タイトルの装飾を強化（極太文字、字送り、アンダーライン追加）
+st.markdown('<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; letter-spacing: 0.05em; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -275,7 +276,6 @@ with tab1:
                 
                 ur = sum_df['h14'] - sum_df['l14']
                 sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
-                # 【変更】黄金比スケール（5%, 10%, 15%, 20%）に対応
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
                 
                 denom = sum_df['h14'] - sum_df['bt']
