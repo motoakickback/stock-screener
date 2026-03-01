@@ -441,7 +441,7 @@ with tab3:
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 3)
+                raw = get_single_data(c + "0", 1)
                 if raw:
                     df = clean_df(pd.DataFrame(raw)); pos = None
                     for i in range(14, len(df)):
