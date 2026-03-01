@@ -169,15 +169,27 @@ def draw_chart(df, targ_p, tp3=None, tp5=None, tp8=None):
     fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
 
+
 # ==========================================
-# 4. UI構築
+# 4. UI構築（黄金比強制ギミック搭載）
 # ==========================================
+
+# --- サイドバー用の黄金比リセット ---
+if 'push_r' not in st.session_state: st.session_state.push_r = 50
+if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
+
+def reset_sidebar_to_golden():
+    if "バランス" in st.session_state.sidebar_tactics:
+        st.session_state.push_r = 50
+        st.session_state.limit_d = 4
+
 st.sidebar.header("🕹️ 戦術モード切替")
 tactics_mode = st.sidebar.radio(
     "抽出・ソート優先度",
     ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"],
-    index=0,
-    help="攻め: 反発し始めた銘柄を優先。守り: サポートラインに近い安全な銘柄を優先。※全モード共通で危険波形(Wトップ等)は自動排除・減点されます。"
+    key="sidebar_tactics",
+    on_change=reset_sidebar_to_golden,
+    help="バランス: 落ちてくるナイフを拾います。攻め: 反発し始めた銘柄を優先。守り: サポートラインに近い安全な銘柄を優先。"
 )
 
 st.sidebar.header("🔍 ピックアップルール")
@@ -192,9 +204,8 @@ f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
-# 【変更】押し目のデフォルトを「50%」の黄金比へロック
-push_r = st.sidebar.number_input("① 押し目(%)", value=50, step=5)
-limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
+push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
+limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
 
 # ==========================================
 # メイン画面（3タブ構成）
@@ -421,16 +432,42 @@ with tab3:
         
     with col_2:
         st.caption("⚙️ パラメーター")
-        # 【変更】すべてを勝利の「黄金比率」へ完全ロック
-        bt_mode = st.radio("戦術モード (波形認識)", ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], index=0, help="バランス: 落ちてくるナイフを拾います(三尊は回避)。攻め: Wボトムで底を打った事を確認してから飛び乗ります。")
+        
+        # --- タブ3用の黄金比リセット ---
+        if 'bt_push' not in st.session_state: st.session_state.bt_push = 50
+        if 'bt_buy_d' not in st.session_state: st.session_state.bt_buy_d = 4
+        if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 15
+        if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
+        if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 5
+        if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
+        if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
+
+        def reset_bt_to_golden():
+            if "バランス" in st.session_state.bt_mode_radio:
+                st.session_state.bt_push = 50
+                st.session_state.bt_buy_d = 4
+                st.session_state.bt_tp = 15
+                st.session_state.bt_sl_i = 8
+                st.session_state.bt_sl_c = 5
+                st.session_state.bt_sell_d = 10
+
+        bt_mode = st.radio(
+            "戦術モード (波形認識)", 
+            ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], 
+            key="bt_mode_radio",
+            on_change=reset_bt_to_golden,
+            help="バランスを選択した瞬間、システム設定が『黄金比』へカシャッと自動復元されます。"
+        )
+        
         cc_1, cc_2 = st.columns(2)
-        bt_push = cc_1.number_input("① 押し目 (%)", value=50, step=5)
-        bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
-        bt_tp = cc_1.number_input("③ 利確 (+%)", value=15, step=1)
-        bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
-        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=8, step=1)
-        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=5, step=1)
-        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=10, step=1)
+        bt_push = cc_1.number_input("① 押し目 (%)", step=5, key="bt_push")
+        bt_buy_d = cc_1.number_input("② 買い期限 (日)", step=1, key="bt_buy_d")
+        bt_tp = cc_1.number_input("③ 利確 (+%)", step=1, key="bt_tp")
+        bt_lot = cc_1.number_input("⑦ 株数(基本100)", step=100, key="bt_lot")
+        
+        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", step=1, key="bt_sl_i")
+        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", step=1, key="bt_sl_c")
+        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", step=1, key="bt_sell_d")
 
     if run_bt and bt_c_in:
         with open(T3_FILE, "w", encoding="utf-8") as f:
