@@ -303,7 +303,6 @@ with tab2:
     st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
     
-    # 【追加】局地戦の入力データをファイルから読み込む
     T2_FILE = "saved_t2_codes.txt"
     default_t2 = "7203\n2764"
     if os.path.exists(T2_FILE):
@@ -316,11 +315,9 @@ with tab2:
     with col_s2: st.caption("左側の「戦術モード切替」の設定に従って、並び順がダイナミックに変化します。")
 
     if run_single and target_codes_str:
-        # 【追加】スキャン実行時、入力内容をファイルに保存する
         with open(T2_FILE, "w", encoding="utf-8") as f:
             f.write(target_codes_str)
             
-        # 【変更】英文字コード（402Aなど）を拾えるように正規表現を修正し、大文字に統一
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
         
         if not t_codes: st.warning("4桁の有効な銘柄コードが見つかりません。")
@@ -410,7 +407,6 @@ with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
     col_1, col_2 = st.columns([1, 2])
     
-    # 【追加】訓練（バックテスト）の入力データをファイルから読み込む
     T3_FILE = "saved_t3_codes.txt"
     default_t3 = "6614, 3997, 4935"
     if os.path.exists(T3_FILE):
@@ -430,25 +426,26 @@ with tab3:
         bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
 
     if run_bt and bt_c_in:
-        # 【追加】バックテスト実行時、入力内容をファイルに保存する
         with open(T3_FILE, "w", encoding="utf-8") as f:
             f.write(bt_c_in)
             
-        # 【変更】英文字コード（402Aなど）を拾えるように正規表現を修正し、大文字に統一
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
         if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
+                # 【修正】期間を3年から1年に変更し、APIリクエストを軽量化
                 raw = get_single_data(c + "0", 1)
                 if raw:
-                    df = clean_df(pd.DataFrame(raw)); pos = None
+                    # 【修正】取引不成立によるNaN（空データ）を含む日を削除し、エラーを完全防御
+                    df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                    pos = None
                     for i in range(14, len(df)):
                         td = df.iloc[i]
                         if pos is None:
                             win = df.iloc[i-14:i]; rh = win['AdjH'].max(); rl = win['AdjL'].min()
-                            if pd.isna(rh) or pd.isna(rl): continue
+                            if pd.isna(rh) or pd.isna(rl) or rl == 0: continue
                             idxmax = win['AdjH'].idxmax(); h_d = len(win[win['Date'] > win.loc[idxmax, 'Date']])
                             r14 = rh / rl if rl > 0 else 0
                             if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
