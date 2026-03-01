@@ -27,7 +27,6 @@ def clean_df(df):
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        # 欠損値を含む行を排除し、エラーを完全防御
         df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
@@ -177,6 +176,7 @@ st.sidebar.header("🕹️ 戦術モード切替")
 tactics_mode = st.sidebar.radio(
     "抽出・ソート優先度",
     ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"],
+    index=0,
     help="攻め: 反発し始めた銘柄を優先。守り: サポートラインに近い安全な銘柄を優先。※全モード共通で危険波形(Wトップ等)は自動排除・減点されます。"
 )
 
@@ -192,7 +192,8 @@ f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
 f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
-push_r = st.sidebar.number_input("① 押し目(%)", value=45, step=5)
+# 【変更】押し目のデフォルトを「50%」の黄金比へロック
+push_r = st.sidebar.number_input("① 押し目(%)", value=50, step=5)
 limit_d = st.sidebar.number_input("② 買い期限(日)", value=4, step=1)
 
 # ==========================================
@@ -420,13 +421,16 @@ with tab3:
         
     with col_2:
         st.caption("⚙️ パラメーター")
-        # 【新規】バックテスト専用の戦術モード切替を実装
-        bt_mode = st.radio("戦術モード (波形認識)", ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], help="バランス: 落ちてくるナイフを拾います(三尊は回避)。攻め: Wボトムで底を打った事を確認してから飛び乗ります。")
+        # 【変更】すべてを勝利の「黄金比率」へ完全ロック
+        bt_mode = st.radio("戦術モード (波形認識)", ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], index=0, help="バランス: 落ちてくるナイフを拾います(三尊は回避)。攻め: Wボトムで底を打った事を確認してから飛び乗ります。")
         cc_1, cc_2 = st.columns(2)
-        bt_push = cc_1.number_input("① 押し目 (%)", value=45, step=5); bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
-        bt_tp = cc_1.number_input("③ 利確 (+%)", value=12, step=1); bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
-        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=10, step=1); bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=5, step=1)
-        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=5, step=1)
+        bt_push = cc_1.number_input("① 押し目 (%)", value=50, step=5)
+        bt_buy_d = cc_1.number_input("② 買い期限 (日)", value=4, step=1)
+        bt_tp = cc_1.number_input("③ 利確 (+%)", value=15, step=1)
+        bt_lot = cc_1.number_input("⑦ 株数(基本100)", value=100, step=100)
+        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", value=8, step=1)
+        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", value=5, step=1)
+        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", value=10, step=1)
 
     if run_bt and bt_c_in:
         with open(T3_FILE, "w", encoding="utf-8") as f:
@@ -442,7 +446,6 @@ with tab3:
                 if raw:
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
-                    # 【変更】波形認識（過去30日分）の計算余白を持たせるため、検証開始地点を14から30へシフト
                     for i in range(30, len(df)):
                         td = df.iloc[i]
                         if pos is None:
@@ -457,21 +460,17 @@ with tab3:
                             r14 = rh / rl if rl > 0 else 0
                             
                             if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
-                                # 【新規】絶対防衛網（三山・Wトップの検知）
                                 is_dt = check_double_top(win_30)
                                 is_hs = check_head_shoulders(win_30)
                                 if is_dt or is_hs:
-                                    continue # 危険波形の場合は問答無用で買付キャンセル
+                                    continue 
                                 
-                                # 【新規】戦術モードによるエントリーロジックの分岐
                                 if "攻め" in bt_mode:
-                                    # 攻めモード：三川（Wボトム）が確認された時点（翌日）で成行買い
                                     is_db = check_double_bottom(win_30)
                                     if is_db:
-                                        exec_p = td['AdjO'] # 反発確認済みのため、目標価格を待たずに始値で飛び乗る
+                                        exec_p = td['AdjO']
                                         pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
                                 else:
-                                    # バランスモード：従来通りの押し目（指値）待ち
                                     targ = rh - ((rh - rl) * (bt_push / 100))
                                     if td['AdjL'] <= targ:
                                         exec_p = min(td['AdjO'], targ)
