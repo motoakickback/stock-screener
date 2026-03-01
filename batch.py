@@ -152,7 +152,6 @@ def main():
     if not API_KEY: log("致命的エラー: APIキーがありません。"); return
 
     f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
-    # 【変更】黄金比（50%押し）へロック
     push_r = 50; limit_d = 4
 
     master_df = load_master()
@@ -184,7 +183,9 @@ def main():
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
-    sum_df['tp3'] = sum_df['bt'] * 1.03; sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp8'] = sum_df['bt'] * 1.08
+    
+    # 【変更】黄金比スケール（5%, 10%, 15%, 20%）に対応
+    sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
     
     denom = sum_df['h14'] - sum_df['bt']
     sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
@@ -221,7 +222,6 @@ def main():
     sum_df = sum_df[sum_df['d_high'] <= limit_d]
     sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
     
-    # 【変更】黄金比に基づき、到達度（50%押しラインへの近さ）を最優先でソート
     res = sum_df.sort_values('reach_pct', ascending=False).head(10)
     
     if res.empty: 
@@ -236,7 +236,8 @@ def main():
             
             icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "⚖️")
             
-            msg += f"\n{icon} {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +3%({int(r['tp3'])}) / +5%({int(r['tp5'])}) / +8%({int(r['tp8'])})\n"
+            # 【変更】LINEへの送信メッセージも 5%, 10%, 15%, 20% にフォーマット
+            msg += f"\n{icon} {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +5%({int(r['tp5'])}) / +10%({int(r['tp10'])}) / +15%({int(r['tp15'])}) / +20%({int(r['tp20'])})\n"
         
         if send_line(msg): log("LINE通知 成功")
         else: log("エラー: LINE通知 失敗")
