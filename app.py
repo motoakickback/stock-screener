@@ -12,7 +12,6 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="株式投資作戦企画室", layout="wide")
-# 【変更】タイトルの装飾を強化（極太文字、字送り、アンダーライン追加）
 st.markdown('<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; letter-spacing: 0.05em; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
@@ -177,6 +176,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 
 # --- セッションステートの初期化 ---
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (黄金比・絶対防衛)"
+if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
+if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
 if 'push_r' not in st.session_state: st.session_state.push_r = 50
 if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
 if 'bt_push' not in st.session_state: st.session_state.bt_push = 50
@@ -188,18 +189,35 @@ if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
-    if "大型株" in st.session_state.preset_target:
-        st.session_state.push_r = 45
-        st.session_state.bt_push = 45
+    is_large = "大型株" in st.session_state.preset_target
+    
+    if is_large:
+        # --- 大型株の場合 ---
+        # サイドバー（抽出用）
+        if "バランス" in st.session_state.sidebar_tactics:
+            st.session_state.push_r = 25
+        else:
+            st.session_state.push_r = 45
+            
+        # タブ3（検証用）
+        if "バランス" in st.session_state.bt_mode_radio:
+            st.session_state.bt_push = 25
+            st.session_state.bt_tp = 20
+        else:
+            st.session_state.bt_push = 45
+            st.session_state.bt_tp = 15
+            
         st.session_state.bt_sl_i = 15
     else:
+        # --- 中小型株の場合（黄金比） ---
         st.session_state.push_r = 50
         st.session_state.bt_push = 50
+        st.session_state.bt_tp = 15
         st.session_state.bt_sl_i = 8
     
+    # --- 共通設定 ---
     st.session_state.limit_d = 4
     st.session_state.bt_buy_d = 4
-    st.session_state.bt_tp = 15
     st.session_state.bt_sl_c = 5
     st.session_state.bt_sell_d = 10
 
@@ -209,7 +227,7 @@ st.sidebar.radio(
     ["🚀 中小型株 (黄金比・絶対防衛)", "🏢 大型株 (ノイズ許容・トレンド追従)"],
     key="preset_target",
     on_change=apply_market_preset,
-    help="中小型株: グロースや下位銘柄用（50%押し/ザラ場損切8%）。 大型株: プライムや上位銘柄用（45%押し/ザラ場損切15%）。"
+    help="中小型株: グロースや下位銘柄用（50%押し/ザラ場損切8%）。 大型株: プライム等でバランス型なら（25%押し/利確20%）。"
 )
 
 st.sidebar.header("🕹️ 戦術モード切替")
