@@ -347,18 +347,18 @@ with tab1:
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    # 【変更】表示エリアを拡張し、損切目安を追加
+                    # 【変更】-15%損切ラインを追加
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
                     cc2.metric("🎯 買い目標", f"{int(r['bt'])}円")
                     
-                    sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92)
+                    sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br>
+                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span><br>
                             <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
                         </div>
                     </div>"""
@@ -470,18 +470,18 @@ with tab2:
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
-                        # 【変更】表示エリアを拡張し、損切目安を追加（局地戦用）
+                        # 【変更】-15%損切ラインを追加（局地戦用）
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
                         sc2.metric(f"🎯 買い目標", f"{int(r['bt'])}円")
                         
-                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92)
+                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br>
+                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span><br>
                                 <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
                             </div>
                         </div>"""
