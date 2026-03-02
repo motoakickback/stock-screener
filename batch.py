@@ -44,8 +44,8 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers=h, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
             df['Code'] = df['Code'].astype(str) + "0"
             return df
     except: pass
@@ -184,7 +184,6 @@ def main():
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
     
-    # 【変更】黄金比スケール（5%, 10%, 15%, 20%）に対応
     sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
     
     denom = sum_df['h14'] - sum_df['bt']
@@ -236,8 +235,17 @@ def main():
             
             icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "⚖️")
             
-            # 【変更】LINEへの送信メッセージも 5%, 10%, 15%, 20% にフォーマット
-            msg += f"\n{icon} {n} ({c})\n・現在値: {int(r['lc'])}円\n・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n・売値: +5%({int(r['tp5'])}) / +10%({int(r['tp10'])}) / +15%({int(r['tp15'])}) / +20%({int(r['tp20'])})\n"
+            # 【変更】損切目安の計算を追加
+            sl5 = int(bp * 0.95)
+            sl8 = int(bp * 0.92)
+            sl15 = int(bp * 0.85)
+            
+            # 【変更】LINEの送信フォーマットに損切目安を追記
+            msg += f"\n{icon} {n} ({c})\n"
+            msg += f"・現在値: {int(r['lc'])}円\n"
+            msg += f"・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n"
+            msg += f"・利確: 5%({int(r['tp5'])}) / 10%({int(r['tp10'])}) / 15%({int(r['tp15'])}) / 20%({int(r['tp20'])})\n"
+            msg += f"・損切: -5%({sl5}) / -8%({sl8}) / -15%({sl15})\n"
         
         if send_line(msg): log("LINE通知 成功")
         else: log("エラー: LINE通知 失敗")
