@@ -38,7 +38,6 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers=h, timeout=15)
-            # 【変更】「規模区分」を抽出リストに追加
             df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
             df['Code'] = df['Code'].astype(str) + "0"
@@ -337,7 +336,6 @@ with tab1:
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
                     
-                    # 【追加】規模判定ロジックとバッジ生成
                     scale_val = str(r.get('Scale', ''))
                     if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                         badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
@@ -349,12 +347,24 @@ with tab1:
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.2, 1])
+                    # 【変更】表示エリアを拡張し、損切目安を追加
+                    cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
                     cc2.metric("🎯 買い目標", f"{int(r['bt'])}円")
-                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円<br><span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br><span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円</div></div>"""
+                    
+                    sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92)
+                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
+                        <div style="font-size: 16px;">
+                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br>
+                            <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
+                        </div>
+                    </div>"""
                     cc3.markdown(html_sell, unsafe_allow_html=True)
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     hist = df[df['Code'] == c].sort_values('Date').tail(14)
                     if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
@@ -448,7 +458,6 @@ with tab2:
                     for _, r in res_df.iterrows():
                         st.divider()
                         
-                        # 【追加】規模判定ロジックとバッジ生成（局地戦用）
                         scale_val = str(r.get('Scale', ''))
                         if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                             badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
@@ -461,13 +470,25 @@ with tab2:
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
-                        sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.2, 1, 1])
+                        # 【変更】表示エリアを拡張し、損切目安を追加（局地戦用）
+                        sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
                         sc2.metric(f"🎯 買い目標", f"{int(r['bt'])}円")
-                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標</div><div style="font-size: 16px;"><span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円<br><span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円<br><span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br><span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円</div></div>"""
+                        
+                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92)
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.5em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円<br>
+                                <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
+                            </div>
+                        </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                         sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
+                        
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
                         draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
