@@ -38,8 +38,9 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers=h, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            # 【変更】「規模区分」を抽出リストに追加
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
             df['Code'] = df['Code'].astype(str) + "0"
             return df
     except: pass
@@ -174,7 +175,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
 
-# --- セッションステートの初期化 ---
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (黄金比・絶対防衛)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
@@ -190,32 +190,25 @@ if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
     is_large = "大型株" in st.session_state.preset_target
-    
     if is_large:
-        # --- 大型株の場合 ---
-        # サイドバー（抽出用）
         if "バランス" in st.session_state.sidebar_tactics:
             st.session_state.push_r = 25
         else:
             st.session_state.push_r = 45
             
-        # タブ3（検証用）
         if "バランス" in st.session_state.bt_mode_radio:
             st.session_state.bt_push = 25
             st.session_state.bt_tp = 20
         else:
             st.session_state.bt_push = 45
             st.session_state.bt_tp = 15
-            
         st.session_state.bt_sl_i = 15
     else:
-        # --- 中小型株の場合（黄金比） ---
         st.session_state.push_r = 50
         st.session_state.bt_push = 50
         st.session_state.bt_tp = 15
         st.session_state.bt_sl_i = 8
     
-    # --- 共通設定 ---
     st.session_state.limit_d = 4
     st.session_state.bt_buy_d = 4
     st.session_state.bt_sl_c = 5
@@ -343,7 +336,15 @@ with tab1:
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
-                    st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{n} ({c[:-1]})</h3>', unsafe_allow_html=True)
+                    
+                    # 【追加】規模判定ロジックとバッジ生成
+                    scale_val = str(r.get('Scale', ''))
+                    if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
+                        badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
+                    else:
+                        badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🚀 小型/新興 (推奨: 50%押し)</span>'
+                    
+                    st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{n} ({c[:-1]})</h3>{badge}</div>', unsafe_allow_html=True)
                     
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
@@ -413,11 +414,11 @@ with tab2:
                             is_db = check_double_bottom(df_30)
                             is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
                             
-                            c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"
+                            c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                             if not master_df.empty:
                                 m_row = master_df[master_df['Code'] == c + "0"]
                                 if not m_row.empty:
-                                    c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']
+                                    c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
                             score_list = [
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
@@ -431,7 +432,7 @@ with tab2:
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
+                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
                             charts_data[c] = (df_14, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
@@ -446,7 +447,15 @@ with tab2:
                     st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（モード: {tactics_mode.split()[0]}）")
                     for _, r in res_df.iterrows():
                         st.divider()
-                        st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.5rem;">{r["Name"]} ({r["Code"]})</h3>', unsafe_allow_html=True)
+                        
+                        # 【追加】規模判定ロジックとバッジ生成（局地戦用）
+                        scale_val = str(r.get('Scale', ''))
+                        if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
+                            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
+                        else:
+                            badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🚀 小型/新興 (推奨: 50%押し)</span>'
+                        
+                        st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>{badge}</div>', unsafe_allow_html=True)
                         
                         if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
