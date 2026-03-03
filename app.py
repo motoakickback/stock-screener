@@ -45,6 +45,18 @@ def load_master():
     except: pass
     return pd.DataFrame()
 
+@st.cache_data(ttl=86400)
+def get_old_codes():
+    base = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+    for i in range(7):
+        d = (base - timedelta(days=i)).strftime('%Y%m%d')
+        for v in ["v2", "v1"]:
+            try:
+                r = requests.get(f"https://api.jquants.com/{v}/listed/info?date={d}", headers=headers, timeout=10)
+                if r.status_code == 200 and r.json().get("info"): return pd.DataFrame(r.json()["info"])['Code'].astype(str).tolist()
+            except: pass
+    return []
+
 @st.cache_data(ttl=3600)
 def get_single_data(code, yrs=3):
     base = datetime.utcnow() + timedelta(hours=9)
@@ -259,8 +271,8 @@ f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, ste
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 
-f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="1690等のマクロ連動型や不動産投信を弾きます")
-f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True, help="4593等のテクニカルが効かない赤字バイオ株を弾きます")
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="マクロ連動型や不動産投信を弾きます")
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True, help="テクニカルが効かない赤字バイオ株を弾きます")
 
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
@@ -329,7 +341,7 @@ with tab1:
                 
                 if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
                 
-                # 【イージス防壁1】マスターに存在しない（SectorがNaN）ETF等の完全排除
+                # 【イージス防壁1（修正）】ETF等を除外（Null対策）
                 if f7_ex_etf and 'Sector' in sum_df.columns:
                     sum_df = sum_df[sum_df['Sector'].notna()] 
                     sum_df = sum_df[sum_df['Sector'] != '-']
@@ -344,9 +356,10 @@ with tab1:
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
                 sum_df = sum_df[(sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0)]
                 
-                # 【イージス防壁3】過去データ(omax)を持たないIPOの完全排除
+                # 【イージス防壁3（修正）】IPO除外（元の安定したロジックに戻す）
                 if f5_ipo:
-                    sum_df = sum_df[sum_df['omax'].notna()]
+                    old_c = get_old_codes()
+                    if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
                 
                 if f6_risk and 'CompanyName' in sum_df.columns:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
@@ -355,9 +368,8 @@ with tab1:
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 
-                # 【イージス防壁4】ザラ場損切ラインを割っている「落ちるナイフ」の完全排除
-                sl_ratio = 1.0 - (st.session_state.bt_sl_i / 100.0)
-                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * sl_ratio))]
+                # 【イージス防壁4（修正）】落ちるナイフ判定の緩和（目標値の+5%〜-15%まで許容）
+                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
@@ -472,15 +484,15 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
-                            sl_ratio = 1.0 - (st.session_state.bt_sl_i / 100.0)
                             score_list = [
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
                                 (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
-                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * sl_ratio)) # 下限バリアの追加
+                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85)) # 下限バリアの緩和
                             ]
                             if f5_ipo:
-                                score_list.append(len(df_s) >= 200) # 1年分(約240営業日)のデータがない＝IPO
+                                old_c = get_old_codes()
+                                if old_c: score_list.append((c + "0") in old_c)
                             
                             if f7_ex_etf:
                                 is_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
