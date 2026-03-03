@@ -206,7 +206,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
 
-# 最初にすべてのSession Stateの初期化を行う（これがないとエラーになる）
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (黄金比・絶対防衛)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
@@ -279,7 +278,6 @@ c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
-# 【修正】先に損切ラインの数値をSession Stateから取得し、エラーを回避
 current_sl = st.session_state.bt_sl_i
 f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(単日暴落)", value=True, help=f"前日比が【-{current_sl}.0%】以上の暴落をしている銘柄を強制的に弾きます（損切設定と連動）")
 
@@ -509,33 +507,48 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
+                            # 【追加】局地戦用の警告フラグの判定
+                            flag_knife = False
+                            if f10_ex_knife:
+                                dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
+                                flag_knife = daily_pct < dynamic_sl_ratio
+                                
+                            flag_etf = False
+                            if f7_ex_etf:
+                                flag_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
+                                
+                            flag_bio = False
+                            if f8_ex_bio:
+                                flag_bio = (c_sector == '医薬品')
+                                
+                            flag_ipo = False
+                            if f5_ipo:
+                                old_c = get_old_codes()
+                                if (old_c and (c + "0") not in old_c) or re.search(r'[a-zA-Z]', c):
+                                    flag_ipo = True
+                            
                             score_list = [
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
                                 (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
                                 (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85))
                             ]
-                            if f5_ipo:
-                                old_c = get_old_codes()
-                                if old_c: score_list.append((c + "0") in old_c)
-                                if re.search(r'[a-zA-Z]', c):
-                                    score_list.append(False)
-                            
-                            if f7_ex_etf:
-                                is_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
-                                score_list.append(not is_etf)
-                            if f8_ex_bio:
-                                score_list.append(c_sector != '医薬品')
-                                
-                            if f10_ex_knife:
-                                dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
-                                score_list.append(daily_pct >= dynamic_sl_ratio)
-                                
+                            score_list.append(not flag_ipo)
+                            score_list.append(not flag_etf)
+                            score_list.append(not flag_bio)
+                            score_list.append(not flag_knife)
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense, 'daily_pct': daily_pct})
+                            results.append({
+                                'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
+                                'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 
+                                'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
+                                'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
+                                'is_defense': is_defense, 'daily_pct': daily_pct,
+                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo # フラグを保存
+                            })
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
@@ -558,6 +571,16 @@ with tab2:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
                         st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>{badge}</div>', unsafe_allow_html=True)
+                        
+                        # 【追加】局地戦専用の「尋問アラート（警告）」
+                        if r.get('flag_knife'): 
+                            st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
+                        if r.get('flag_etf'): 
+                            st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
+                        if r.get('flag_bio'): 
+                            st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
+                        if r.get('flag_ipo'): 
+                            st.error("🚨 【警告】この銘柄は上場1年未満のIPO・新興銘柄です。データ不足のため予測不能です。")
                         
                         if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
