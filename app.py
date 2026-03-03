@@ -161,12 +161,13 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買い目標', line=dict(color='#FFD700', width=2, dash='dash')))
+    # ラベルを「買値目標」に統一
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売(5%)', line=dict(color='rgba(76, 175, 80, 0.4)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売(10%)', line=dict(color='rgba(76, 175, 80, 0.6)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(76, 175, 80, 0.4)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(76, 175, 80, 0.6)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
     fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -347,19 +348,20 @@ with tab1:
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    # 【変更】-15%損切ラインを追加
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
-                    cc2.metric("🎯 買い目標", f"{int(r['bt'])}円")
+                    # ラベル変更：買値目標
+                    cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                    # ラベル変更＆降順（価格順）に並べ替え
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円<br>
+                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
                             <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
+                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span>
                         </div>
                     </div>"""
                     cc3.markdown(html_sell, unsafe_allow_html=True)
@@ -470,19 +472,20 @@ with tab2:
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
-                        # 【変更】-15%損切ラインを追加（局地戦用）
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
-                        sc2.metric(f"🎯 買い目標", f"{int(r['bt'])}円")
+                        # ラベル変更：買値目標
+                        sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                        # ラベル変更＆降順（価格順）に並べ替え
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売り目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円<br>
+                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
                                 <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円
+                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span>
                             </div>
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
