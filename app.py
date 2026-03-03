@@ -278,11 +278,19 @@ c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(単日暴落)", value=True, help="前日比が損切ライン(例:-8%)以上の暴落をしている銘柄を弾きます")
-
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
+
+# ここで定義されるUIの「ザラ場損切」の値を、動的フィルターとして使用する
+bt_sl_i = st.sidebar.number_input("④ 損切/ザラ場(-%)", step=1, key="bt_sl_i")
+
+# UIの説明文も動的に変化させる
+f10_ex_knife = st.sidebar.checkbox(
+    "⑩ 落ちるナイフ除外(単日暴落)", 
+    value=True, 
+    help=f"前日比が【-{bt_sl_i}.0%】以上の暴落をしている銘柄を強制的に弾きます（損切設定と連動）"
+)
 
 # ==========================================
 # メイン画面（3タブ構成）
@@ -377,9 +385,10 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
+                # 【動的防壁】現在のUIで設定されている「損切ライン(bt_sl_i)」をナイフ判定の閾値にする
                 if f10_ex_knife:
-                    sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0)
-                    sum_df = sum_df[sum_df['daily_pct'] > sl_ratio_daily]
+                    dynamic_sl_ratio = - (bt_sl_i / 100.0) # 例: -0.08 や -0.15
+                    sum_df = sum_df[sum_df['daily_pct'] >= dynamic_sl_ratio]
                 
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
@@ -411,7 +420,6 @@ with tab1:
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
-                    # 【変更】買値目標のテキストを黄色(#FFD700)に変更
                     html_buy = f"""
                     <div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
@@ -421,7 +429,6 @@ with tab1:
                     cc2.markdown(html_buy, unsafe_allow_html=True)
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
-                    
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
@@ -527,8 +534,9 @@ with tab2:
                                 score_list.append(c_sector != '医薬品')
                                 
                             if f10_ex_knife:
-                                sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0)
-                                score_list.append(daily_pct > sl_ratio_daily)
+                                # 局地戦でも動的に連動
+                                dynamic_sl_ratio = - (bt_sl_i / 100.0)
+                                score_list.append(daily_pct >= dynamic_sl_ratio)
                                 
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
                             score_list.append(not is_dt and not is_hs)
@@ -567,7 +575,6 @@ with tab2:
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                         
-                        # 【変更】局地戦タブでも買値目標を黄色に変更
                         html_buy = f"""
                         <div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
