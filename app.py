@@ -172,8 +172,22 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     padding_days = timedelta(days=1)
 
-    # 【変更】凡例（legend）のy座標を元の-0.1へロールバックし、スライダーとの衝突を回避
-    fig.update_layout(
+    # 【新規追加】初期表示範囲（45日間）の中での最高値と最安値を計算し、Y軸をオートスケール
+    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
+    if not visible_df.empty:
+        # 現在の波形と、20%利確ライン・最深損切(-15%)ラインが全て収まるように計算
+        y_max_vals = [visible_df['AdjH'].max(), targ_p]
+        y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85] 
+        if tp20: y_max_vals.append(tp20)
+        
+        y_max = max(y_max_vals)
+        y_min = min(y_min_vals)
+        margin = (y_max - y_min) * 0.05 # 上下に5%のゆとりを持たせる
+        y_range = [y_min - margin, y_max + margin]
+    else:
+        y_range = None
+
+    layout_args = dict(
         height=450, 
         margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
@@ -183,6 +197,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         hovermode="x unified", 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
+    
+    # 計算したY軸の範囲をレイアウトに適用
+    if y_range:
+        layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
+
+    fig.update_layout(**layout_args)
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
