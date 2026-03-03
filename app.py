@@ -14,26 +14,33 @@ import concurrent.futures
 st.set_page_config(page_title="株式投資作戦企画室", layout="wide")
 
 # --- 1.5 ユーザー認証（ゲートキーパー） ---
-CORRECT_PASSWORD = st.secrets.get("APP_PASSWORD", "sniper2026")
+ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
+        st.session_state["current_user"] = "" 
 
     if not st.session_state["password_correct"]:
-        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="text-align: center;">システムへアクセスするためのアクセスコードを入力してください。</p>', unsafe_allow_html=True)
+        # 【修正】スマホで折り返さないように、文字サイズを画面幅に連動(clamp)させ、説明文もスマートに。
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh; font-size: clamp(20px, 6vw, 42px); white-space: nowrap;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; font-size: clamp(12px, 3vw, 16px); color: #888;">アクセスコードを入力してください</p>', unsafe_allow_html=True)
         
-        with st.form("login_form"):
-            password = st.text_input("アクセスコード", type="password")
-            submitted = st.form_submit_button("認証 (ENTER)")
-            
-            if submitted:
-                if password == CORRECT_PASSWORD:
-                    st.session_state["password_correct"] = True
-                    st.rerun()
-                else:
-                    st.error("🚨 認証失敗：アクセスコードが間違っています。")
+        # フォームの幅をスマホでもPCでも丁度良くするためのダミーカラム
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            with st.form("login_form"):
+                password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード")
+                # スマホでボタンが押しやすいように、ボタンを幅いっぱいに広げるCSSを後で追加
+                submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
+                
+                if submitted:
+                    if password in ALLOWED_PASSWORDS:
+                        st.session_state["password_correct"] = True
+                        st.session_state["current_user"] = password 
+                        st.rerun()
+                    else:
+                        st.error("🚨 認証失敗：コードが違います。")
         return False
     return True
 
@@ -43,7 +50,8 @@ if not check_password():
 # ==========================================
 # 認証成功後のメインシステム
 # ==========================================
-st.markdown('<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; letter-spacing: 0.05em; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
+user_id = st.session_state["current_user"]
+st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; letter-spacing: 0.05em; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 株式投資作戦企画室 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
@@ -249,10 +257,6 @@ if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
 if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 5
 if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
-
-# 【追加】テキストエリアの個別セッション管理
-if 't2_codes' not in st.session_state: st.session_state.t2_codes = "7203\n2764"
-if 't3_codes' not in st.session_state: st.session_state.t3_codes = "6614, 3997, 4935"
 
 def apply_market_preset():
     is_large = "大型株" in st.session_state.preset_target
@@ -484,15 +488,20 @@ with tab2:
     st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
 
+    T2_FILE = f"saved_t2_codes_{user_id}.txt"
+    default_t2 = "7203\n2764"
+    if os.path.exists(T2_FILE):
+        with open(T2_FILE, "r", encoding="utf-8") as f:
+            default_t2 = f.read()
+
     with col_s1:
-        # 【修正】物理ファイルへの保存を廃止し、セッションステート（個人のブラウザ記憶）を使用
-        target_codes_str = st.text_area("標的コード（複数可）", value=st.session_state.t2_codes, height=100)
+        target_codes_str = st.text_area("標的コード（複数可）", value=default_t2, height=100)
         run_single = st.button(f"🔫 指定銘柄 一斉スキャン ({tactics_mode.split()[0]})")
     with col_s2: st.caption("左側の「戦術モード切替」の設定に従って、並び順がダイナミックに変化します。")
 
     if run_single and target_codes_str:
-        # 入力されたコードをこのユーザーのセッションだけに記録する
-        st.session_state.t2_codes = target_codes_str
+        with open(T2_FILE, "w", encoding="utf-8") as f:
+            f.write(target_codes_str)
             
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
         
@@ -651,9 +660,14 @@ with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
     col_1, col_2 = st.columns([1, 2])
 
+    T3_FILE = f"saved_t3_codes_{user_id}.txt"
+    default_t3 = "6614, 3997, 4935"
+    if os.path.exists(T3_FILE):
+        with open(T3_FILE, "r", encoding="utf-8") as f:
+            default_t3 = f.read()
+
     with col_1: 
-        # 【修正】こちらも物理ファイル保存を廃止し、セッションステート化
-        bt_c_in = st.text_area("銘柄コード（複数可）", value=st.session_state.t3_codes, height=100)
+        bt_c_in = st.text_area("銘柄コード（複数可）", value=default_t3, height=100)
         run_bt = st.button("🔥 一括バックテスト")
         
     with col_2:
@@ -678,8 +692,8 @@ with tab3:
         bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", step=1, key="bt_sell_d")
 
     if run_bt and bt_c_in:
-        # 入力をこのユーザーのセッションだけに記録する
-        st.session_state.t3_codes = bt_c_in
+        with open(T3_FILE, "w", encoding="utf-8") as f:
+            f.write(bt_c_in)
             
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
