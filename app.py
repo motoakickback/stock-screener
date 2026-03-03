@@ -170,10 +170,9 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-
-    # 【変更】表示期間の限界を「未来に1日間」に調整し、最小限のクリアランスを確保
     padding_days = timedelta(days=1)
 
+    # 【変更】凡例（legend）のy座標を元の-0.1へロールバックし、スライダーとの衝突を回避
     fig.update_layout(
         height=450, 
         margin=dict(l=10, r=60, t=20, b=40), 
@@ -182,7 +181,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
-        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     st.plotly_chart(fig, use_container_width=True)
 
