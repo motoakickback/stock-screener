@@ -206,6 +206,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
 
+# 最初にすべてのSession Stateの初期化を行う（これがないとエラーになる）
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (黄金比・絶対防衛)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
@@ -278,19 +279,13 @@ c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
+# 【修正】先に損切ラインの数値をSession Stateから取得し、エラーを回避
+current_sl = st.session_state.bt_sl_i
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(単日暴落)", value=True, help=f"前日比が【-{current_sl}.0%】以上の暴落をしている銘柄を強制的に弾きます（損切設定と連動）")
+
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
-
-# ここで定義されるUIの「ザラ場損切」の値を、動的フィルターとして使用する
-bt_sl_i = st.sidebar.number_input("④ 損切/ザラ場(-%)", step=1, key="bt_sl_i")
-
-# UIの説明文も動的に変化させる
-f10_ex_knife = st.sidebar.checkbox(
-    "⑩ 落ちるナイフ除外(単日暴落)", 
-    value=True, 
-    help=f"前日比が【-{bt_sl_i}.0%】以上の暴落をしている銘柄を強制的に弾きます（損切設定と連動）"
-)
 
 # ==========================================
 # メイン画面（3タブ構成）
@@ -385,9 +380,8 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
-                # 【動的防壁】現在のUIで設定されている「損切ライン(bt_sl_i)」をナイフ判定の閾値にする
                 if f10_ex_knife:
-                    dynamic_sl_ratio = - (bt_sl_i / 100.0) # 例: -0.08 や -0.15
+                    dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
                     sum_df = sum_df[sum_df['daily_pct'] >= dynamic_sl_ratio]
                 
                 if tactics_mode.startswith("⚔️"):
@@ -534,8 +528,7 @@ with tab2:
                                 score_list.append(c_sector != '医薬品')
                                 
                             if f10_ex_knife:
-                                # 局地戦でも動的に連動
-                                dynamic_sl_ratio = - (bt_sl_i / 100.0)
+                                dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
                                 score_list.append(daily_pct >= dynamic_sl_ratio)
                                 
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
