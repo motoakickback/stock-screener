@@ -312,7 +312,6 @@ with tab1:
                 df_30 = df_30[df_30['Code'].isin(valid)]
                 df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
                 
-                # 【追加】前日の終値（prev_c）を計算し、1日の下落速度を測る
                 agg_14 = df_14.groupby('Code').agg(
                     lc=('AdjC', 'last'), 
                     prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
@@ -340,7 +339,6 @@ with tab1:
                 sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
                 sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
                 
-                # 単日騰落率（前日比）の計算
                 sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
                 
                 dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
@@ -379,10 +377,8 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
-                # 【新規追加】落ちるナイフ（単日暴落）の完全除外
                 if f10_ex_knife:
-                    sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0) # 例：-0.08
-                    # 前日比の下落率が、損切ライン(例:-8%)よりも「マシ」なものだけ残す
+                    sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0)
                     sum_df = sum_df[sum_df['daily_pct'] > sl_ratio_daily]
                 
                 if tactics_mode.startswith("⚔️"):
@@ -411,9 +407,11 @@ with tab1:
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
-                    # 前日比の表示を追加
+                    
+                    # 【変更】delta_color="inverse" を追加し、赤色＝プラス、緑色＝マイナス に反転
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                    cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
+                    cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                    
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
@@ -558,8 +556,11 @@ with tab2:
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
+                        
+                        # 【変更】局地戦タブでも delta_color="inverse" を追加
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                        sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
+                        sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                        
                         sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
