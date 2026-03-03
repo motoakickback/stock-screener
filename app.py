@@ -434,11 +434,17 @@ with tab1:
                     
                     scale_val = str(r.get('Scale', ''))
                     if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
-                        badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
+                        badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
                     else:
-                        badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🚀 小型/新興 (推奨: 50%押し)</span>'
+                        badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                     
-                    st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{n} ({c[:-1]})</h3>{badge}</div>', unsafe_allow_html=True)
+                    # 【修正】display: blockにして、企業名の下にバッジを配置する
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{n} ({c[:-1]})</h3>
+                            <div>{badge}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
@@ -602,11 +608,17 @@ with tab2:
                         
                         scale_val = str(r.get('Scale', ''))
                         if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
-                            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🏢 大型/中型 (推奨: 25%押し)</span>'
+                            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
                         else:
-                            badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 14px; margin-left: 10px; vertical-align: middle;">🚀 小型/新興 (推奨: 50%押し)</span>'
+                            badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>{badge}</div>', unsafe_allow_html=True)
+                        # 【修正】局地戦でも企業名の下にバッジを配置する
+                        st.markdown(f"""
+                            <div style="margin-bottom: 0.8rem;">
+                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>
+                                <div>{badge}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
                         
                         if r.get('flag_knife'): 
                             st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
