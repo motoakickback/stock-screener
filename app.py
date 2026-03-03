@@ -268,7 +268,7 @@ f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
 f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
 f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
-f5_ipo = st.sidebar.checkbox("⑤ IPO除外", value=True)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 
 f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="マクロ連動型や不動産投信を弾きます")
@@ -277,6 +277,8 @@ f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True,
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
+
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(単日暴落)", value=True, help="前日比が損切ライン(例:-8%)以上の暴落をしている銘柄を弾きます")
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
@@ -310,7 +312,14 @@ with tab1:
                 df_30 = df_30[df_30['Code'].isin(valid)]
                 df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
                 
-                agg_14 = df_14.groupby('Code').agg(lc=('AdjC', 'last'), h14=('AdjH', 'max'), l14=('AdjL', 'min'))
+                # 【追加】前日の終値（prev_c）を計算し、1日の下落速度を測る
+                agg_14 = df_14.groupby('Code').agg(
+                    lc=('AdjC', 'last'), 
+                    prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
+                    h14=('AdjH', 'max'), 
+                    l14=('AdjL', 'min')
+                )
+                
                 idx_max = df_14.groupby('Code')['AdjH'].idxmax()
                 h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
                 df_14_m = df_14.merge(h_dates, on='Code')
@@ -331,6 +340,9 @@ with tab1:
                 sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
                 sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
                 
+                # 単日騰落率（前日比）の計算
+                sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
+                
                 dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
                 hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
                 db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
@@ -341,13 +353,11 @@ with tab1:
                 
                 if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
                 
-                # 【イージス防壁1（修正）】ETF等を除外（Null対策）
                 if f7_ex_etf and 'Sector' in sum_df.columns:
                     sum_df = sum_df[sum_df['Sector'].notna()] 
                     sum_df = sum_df[sum_df['Sector'] != '-']
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
                 
-                # 【イージス防壁2】バイオ株の完全排除
                 if f8_ex_bio and 'Sector' in sum_df.columns:
                     sum_df = sum_df[sum_df['Sector'] != '医薬品']
 
@@ -356,10 +366,10 @@ with tab1:
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
                 sum_df = sum_df[(sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0)]
                 
-                # 【イージス防壁3（修正）】IPO除外（元の安定したロジックに戻す）
                 if f5_ipo:
                     old_c = get_old_codes()
                     if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
+                    sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
                 
                 if f6_risk and 'CompanyName' in sum_df.columns:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
@@ -367,9 +377,13 @@ with tab1:
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
-                
-                # 【イージス防壁4（修正）】落ちるナイフ判定の緩和（目標値の+5%〜-15%まで許容）
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+                
+                # 【新規追加】落ちるナイフ（単日暴落）の完全除外
+                if f10_ex_knife:
+                    sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0) # 例：-0.08
+                    # 前日比の下落率が、損切ライン(例:-8%)よりも「マシ」なものだけ残す
+                    sum_df = sum_df[sum_df['daily_pct'] > sl_ratio_daily]
                 
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
@@ -397,7 +411,9 @@ with tab1:
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
-                    cc1.metric("最新終値", f"{int(r['lc'])}円")
+                    # 前日比の表示を追加
+                    daily_sign = "+" if r['daily_pct'] >= 0 else ""
+                    cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
@@ -462,6 +478,9 @@ with tab2:
                             omax = df_past['AdjH'].max() if not df_past.empty else np.nan
                             omin = df_past['AdjL'].min() if not df_past.empty else np.nan
                             
+                            prev_c = df_s['AdjC'].iloc[-2] if len(df_s) >= 2 else np.nan
+                            daily_pct = (lc / prev_c) - 1 if pd.notna(prev_c) and prev_c > 0 else 0
+                            
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                             tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                             
@@ -488,11 +507,13 @@ with tab2:
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
                                 (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
-                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85)) # 下限バリアの緩和
+                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85))
                             ]
                             if f5_ipo:
                                 old_c = get_old_codes()
                                 if old_c: score_list.append((c + "0") in old_c)
+                                if re.search(r'[a-zA-Z]', c):
+                                    score_list.append(False)
                             
                             if f7_ex_etf:
                                 is_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
@@ -500,11 +521,15 @@ with tab2:
                             if f8_ex_bio:
                                 score_list.append(c_sector != '医薬品')
                                 
+                            if f10_ex_knife:
+                                sl_ratio_daily = - (st.session_state.bt_sl_i / 100.0)
+                                score_list.append(daily_pct > sl_ratio_daily)
+                                
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
+                            results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense, 'daily_pct': daily_pct})
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
@@ -533,7 +558,8 @@ with tab2:
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
-                        sc1.metric("最新終値", f"{int(r['lc'])}円")
+                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
+                        sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
                         sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
