@@ -161,12 +161,14 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
+    # 買値＝黄、売値（プラス）＝赤系、に統一
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(76, 175, 80, 0.4)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(76, 175, 80, 0.6)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
+        # 売値ラインを赤系（#ef5350）に変更
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
@@ -408,20 +410,21 @@ with tab1:
                         
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
                     
-                    # 【変更】delta_color="inverse" を追加し、赤色＝プラス、緑色＝マイナス に反転
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                    
+                    # 【変更】売値目標を赤色(#ef5350)、損切目標を緑色(#26a69a)に完全反転
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円<br>
-                            <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{int(r['tp20']):,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{int(r['tp15']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{int(r['tp10']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{int(r['tp5']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
                         </div>
                     </div>"""
                     cc3.markdown(html_sell, unsafe_allow_html=True)
@@ -557,20 +560,21 @@ with tab2:
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         
-                        # 【変更】局地戦タブでも delta_color="inverse" を追加
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                         
                         sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                        
+                        # 【変更】局地戦タブでも売値を赤、損切を緑に反転
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em;">20%</span> {int(r['tp20']):,}円<br>
-                                <span style="display: inline-block; width: 2.5em;">15%</span> {int(r['tp15']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-5%</span> <span style="color: #ef5350;">{sl5:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">10%</span> {int(r['tp10']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-8%</span> <span style="color: #ef5350;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em;">5%</span> {int(r['tp5']):,}円 <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #ef5350;">-15%</span> <span style="color: #ef5350;">{sl15:,}円</span>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{int(r['tp20']):,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{int(r['tp15']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{int(r['tp10']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{int(r['tp5']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
                             </div>
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
