@@ -407,7 +407,8 @@ with tab1:
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
+                    # 【変更】全軍スキャンでも5列構成(cc5を追加)にしてUIを局地戦と統一
+                    cc1, cc2, cc3, cc4, cc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                     
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
@@ -433,7 +434,10 @@ with tab1:
                     cc3.markdown(html_sell, unsafe_allow_html=True)
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                     
-                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
+                    # 【追加】全軍スキャンを生き残った銘柄は「掟達成率100%」として明示
+                    cc5.metric("掟達成率", "100%")
+                    
+                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
                     raw_s = get_single_data(c, 1)
                     if raw_s:
@@ -507,7 +511,6 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
-                            # 【追加】局地戦用の警告フラグの判定
                             flag_knife = False
                             if f10_ex_knife:
                                 dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
@@ -547,7 +550,7 @@ with tab2:
                                 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
                                 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                 'is_defense': is_defense, 'daily_pct': daily_pct,
-                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo # フラグを保存
+                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo
                             })
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
@@ -572,7 +575,6 @@ with tab2:
                         
                         st.markdown(f'<div style="display: flex; align-items: center; margin-bottom: 0.5rem;"><h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>{badge}</div>', unsafe_allow_html=True)
                         
-                        # 【追加】局地戦専用の「尋問アラート（警告）」
                         if r.get('flag_knife'): 
                             st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
                         if r.get('flag_etf'): 
