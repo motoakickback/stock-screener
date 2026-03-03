@@ -22,16 +22,13 @@ def check_password():
         st.session_state["current_user"] = "" 
 
     if not st.session_state["password_correct"]:
-        # 【修正】スマホで折り返さないように、文字サイズを画面幅に連動(clamp)させ、説明文もスマートに。
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh; font-size: clamp(20px, 6vw, 42px); white-space: nowrap;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
         st.markdown('<p style="text-align: center; font-size: clamp(12px, 3vw, 16px); color: #888;">アクセスコードを入力してください</p>', unsafe_allow_html=True)
         
-        # フォームの幅をスマホでもPCでも丁度良くするためのダミーカラム
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.form("login_form"):
                 password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード")
-                # スマホでボタンが押しやすいように、ボタンを幅いっぱいに広げるCSSを後で追加
                 submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
                 
                 if submitted:
