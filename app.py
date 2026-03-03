@@ -12,6 +12,41 @@ import concurrent.futures
 
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="株式投資作戦企画室", layout="wide")
+
+# --- 1.5 ユーザー認証（ゲートキーパー） ---
+# StreamlitのSecretsからパスワードを取得（設定されていない場合はデフォルトで 'sniper2026'）
+CORRECT_PASSWORD = st.secrets.get("APP_PASSWORD", "sniper2026")
+
+def check_password():
+    """パスワードが正しいかチェックし、ログイン画面を表示する関数"""
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if not st.session_state["password_correct"]:
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center;">システムへアクセスするためのアクセスコードを入力してください。</p>', unsafe_allow_html=True)
+        
+        # パスワード入力フォーム
+        with st.form("login_form"):
+            password = st.text_input("アクセスコード", type="password")
+            submitted = st.form_submit_button("認証 (ENTER)")
+            
+            if submitted:
+                if password == CORRECT_PASSWORD:
+                    st.session_state["password_correct"] = True
+                    st.rerun() # リロードしてメイン画面へ移行
+                else:
+                    st.error("🚨 認証失敗：アクセスコードが間違っています。")
+        return False
+    return True
+
+# パスワードチェックに合格しない場合は、ここで処理を停止（以降のコードは実行されない）
+if not check_password():
+    st.stop()
+
+# ==========================================
+# 認証成功後のメインシステム
+# ==========================================
 st.markdown('<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; letter-spacing: 0.05em; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
 
 # --- 2. 認証・通信設定 ---
@@ -407,7 +442,6 @@ with tab1:
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    # 【変更】全軍スキャンでも5列構成(cc5を追加)にしてUIを局地戦と統一
                     cc1, cc2, cc3, cc4, cc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                     
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
@@ -433,8 +467,6 @@ with tab1:
                     </div>"""
                     cc3.markdown(html_sell, unsafe_allow_html=True)
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
-                    
-                    # 【追加】全軍スキャンを生き残った銘柄は「掟達成率100%」として明示
                     cc5.metric("掟達成率", "100%")
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
