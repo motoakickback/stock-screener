@@ -1,38 +1,30 @@
 import os
 import requests
 import pandas as pd
-import time
-import re
-from datetime import datetime, timedelta
-from io import BytesIO
 import numpy as np
+from datetime import datetime, timedelta
 import concurrent.futures
+import re
+from io import BytesIO
 
-# --- 認証・通信設定 ---
-API_KEY = os.environ.get("JQ", "").strip()
-LINE_TOKEN = os.environ.get("LT", "").strip()
-LINE_USER_ID = os.environ.get("LI", "").strip()
+# --- 1. 環境変数 ---
+API_KEY = os.getenv("JQUANTS_API_KEY", "").strip()
+LINE_TOKEN = os.getenv("LINE_NOTIFY_TOKEN", "").strip()
+
+if not API_KEY or not LINE_TOKEN:
+    print("エラー: 必要な環境変数が設定されていません。")
+    exit(1)
+
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-def log(msg): print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-
-def send_line(text):
-    if not LINE_TOKEN or not LINE_USER_ID: return False
-    url = "https://api.line.me/v2/bot/message/push"
-    req_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {LINE_TOKEN}"}
-    payload = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": text}]}
-    try:
-        res = requests.post(url, headers=req_headers, json=payload, timeout=10)
-        return res.status_code == 200
-    except: return False
-
+# --- 2. 共通関数 ---
 def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
-    if 'Date' in df.columns: 
+    if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
@@ -81,12 +73,11 @@ def get_hist_data():
     def fetch(dt):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            time.sleep(0.5)
             if r.status_code == 200: return r.json().get("data", [])
         except: pass
         return []
         
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
@@ -138,6 +129,7 @@ def check_double_bottom(df_sub):
                 if not valleys or (i - valleys[-1][0] > 3): valleys.append((i, l[i]))
         if len(l) >= 3 and l[-2] == min(l[-3:]):
              if not valleys or (len(l)-2 - valleys[-1][0] > 3): valleys.append((len(l)-2, l[-2]))
+                
         if len(valleys) >= 2:
             v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
             if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
@@ -147,31 +139,46 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
+def send_line_notify(message):
+    headers = {"Authorization": f"Bearer {LINE_TOKEN}"}
+    data = {"message": message}
+    requests.post("https://notify-api.line.me/api/notify", headers=headers, data=data)
+
+# --- 3. メインロジック ---
 def main():
-    log("=== バッチ処理開始 ===")
-    if not API_KEY: log("致命的エラー: APIキーがありません。"); return
-
-    f1_min = 200; f2_m30 = 2.0; f3_drop = -30; f4_mlong = 3.0; f5_ipo = True; f6_risk = True; f7_min14 = 1.3; f7_max14 = 2.0
-    push_r = 50; limit_d = 4
-
+    print("データ取得開始...")
     master_df = load_master()
+    old_codes = get_old_codes()
     raw = get_hist_data()
-    if not raw: log("エラー: 相場データの取得に失敗しました。"); return
-
-    log("データ取得完了。分析を開始します...")
-    df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+    
+    if not raw:
+        send_line_notify("\n🚨 データの取得に失敗しました。")
+        return
+        
+    d_raw = pd.DataFrame(raw)
+    df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
     
     df_30 = df.groupby('Code').tail(30)
     df_14 = df_30.groupby('Code').tail(14)
     counts = df_14.groupby('Code').size()
     valid = counts[counts == 14].index
     
-    if valid.empty: log("条件を満たす銘柄データが存在しません。LINE通知はスキップします。"); return
-        
-    df_14 = df_14[df_14['Code'].isin(valid)]; df_30 = df_30[df_30['Code'].isin(valid)]
+    if valid.empty:
+        send_line_notify("\n🚨 条件を満たすデータが存在しません。")
+        return
+
+    df_14 = df_14[df_14['Code'].isin(valid)]
+    df_30 = df_30[df_30['Code'].isin(valid)]
     df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
     
-    agg_14 = df_14.groupby('Code').agg(lc=('AdjC', 'last'), h14=('AdjH', 'max'), l14=('AdjL', 'min'))
+    # 【変更箇所1】前日終値を計算し、当日の騰落率（速度）を測る準備
+    agg_14 = df_14.groupby('Code').agg(
+        lc=('AdjC', 'last'), 
+        prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
+        h14=('AdjH', 'max'), 
+        l14=('AdjL', 'min')
+    )
+    
     idx_max = df_14.groupby('Code')['AdjH'].idxmax()
     h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
     df_14_m = df_14.merge(h_dates, on='Code')
@@ -179,20 +186,26 @@ def main():
     
     agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
     agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
-    
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
+    
+    # --- パラメーター（中小型株の黄金比プリセットを適用） ---
+    push_r = 50
+    limit_d = 4
+    sl_i = 8 # 損切8%
+    
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
-    
     sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
     
     denom = sum_df['h14'] - sum_df['bt']
     sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
-    
     sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
     sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
     sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
     sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
+    
+    # 【変更箇所2】当日騰落率の計算
+    sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
     
     dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
     hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
@@ -204,53 +217,86 @@ def main():
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
     
-    sum_df = sum_df[sum_df['lc'] >= f1_min]
-    sum_df = sum_df[sum_df['r30'] <= f2_m30]
-    sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
-    sum_df = sum_df[(sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0)]
+    # --- フィルター適用（Webコンソールの完全移植） ---
     
-    if f5_ipo:
-        old_c = get_old_codes()
-        if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
-    if f6_risk and 'CompanyName' in sum_df.columns:
+    # 1. 基礎フィルター
+    sum_df = sum_df[sum_df['lc'] >= 200]
+    sum_df = sum_df[sum_df['r30'] <= 2.0]
+    sum_df = sum_df[sum_df['ldrop'] >= -30]
+    sum_df = sum_df[(sum_df['lrise'] <= 3.0) | (sum_df['lrise'] == 0)]
+    
+    # 2. 波形・高値フィルター
+    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+    sum_df = sum_df[(sum_df['r14'] >= 1.3) & (sum_df['r14'] <= 2.0)]
+    sum_df = sum_df[sum_df['d_high'] <= limit_d]
+    
+    # 3. 疑義注記除外
+    if 'CompanyName' in sum_df.columns:
         sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
         
-    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+    # 4. イージス防壁（ETF・REIT・マクロ除外）
+    if 'Sector' in sum_df.columns:
+        sum_df = sum_df[sum_df['Sector'].notna()] 
+        sum_df = sum_df[sum_df['Sector'] != '-']
+        sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
     
-    sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
-    sum_df = sum_df[sum_df['d_high'] <= limit_d]
-    sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
-    
-    res = sum_df.sort_values('reach_pct', ascending=False).head(10)
-    
-    if res.empty: 
-        log("現在の相場に、標的は存在しません。LINE通知はスキップします。")
-    else:
-        log(f"{len(res)}銘柄の標的を検出しました。LINEへ送信します。")
-        msg = f"🎯 【鉄の掟】標的抽出完了 ({len(res)}銘柄)\n"
-        for i, r in res.iterrows():
-            c = str(r['Code'])[:-1]
-            n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c}"
-            bp = int(r['bt'])
-            
-            icon = "🔥" if r['is_db'] else ("🛡️" if r['is_defense'] else "⚖️")
-            
-            # 【変更】損切目安の計算を追加
-            sl5 = int(bp * 0.95)
-            sl8 = int(bp * 0.92)
-            sl15 = int(bp * 0.85)
-            
-            # 【変更】LINEの送信フォーマットに損切目安を追記
-            msg += f"\n{icon} {n} ({c})\n"
-            msg += f"・現在値: {int(r['lc'])}円\n"
-            msg += f"・買値目安: {bp}円 (到達度: {r['reach_pct']:.1f}%)\n"
-            msg += f"・利確: 5%({int(r['tp5'])}) / 10%({int(r['tp10'])}) / 15%({int(r['tp15'])}) / 20%({int(r['tp20'])})\n"
-            msg += f"・損切: -5%({sl5}) / -8%({sl8}) / -15%({sl15})\n"
-        
-        if send_line(msg): log("LINE通知 成功")
-        else: log("エラー: LINE通知 失敗")
+    # 5. イージス防壁（バイオ株除外）
+    if 'Sector' in sum_df.columns:
+        sum_df = sum_df[sum_df['Sector'] != '医薬品']
 
-    log("=== バッチ処理終了 ===")
+    # 6. イージス防壁（IPO・英字コード除外）
+    if old_codes: sum_df = sum_df[sum_df['Code'].isin(old_codes)]
+    sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
+
+    # 7. イージス防壁（距離感の適正化 ＆ 落ちるナイフ除外）
+    sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+    sl_ratio_daily = - (sl_i / 100.0) # -0.08
+    sum_df = sum_df[sum_df['daily_pct'] > sl_ratio_daily] # 前日比-8%以上の暴落は弾く
+    
+    # --- ソート（到達度順）---
+    res = sum_df.sort_values('reach_pct', ascending=False).head(10) # LINEは上位10件に絞る
+    
+    # --- LINEメッセージ生成 ---
+    if res.empty:
+        msg = "\n📊 本日の全軍スキャン結果\n\n🎯 標的：なし\n全てのノイズと危険波形を排除しました。本日は待ち伏せを継続します。"
+    else:
+        msg = f"\n📊 本日の全軍スキャン結果\n\n🎯 標的：{len(res)} 銘柄捕捉\n"
+        for _, r in res.iterrows():
+            c = str(r['Code'])[:-1]
+            n = str(r['CompanyName'])[:8] if 'CompanyName' in r else "不明"
+            lc = int(r['lc'])
+            bt = int(r['bt'])
+            reach = round(r['reach_pct'], 1)
+            
+            # 騰落率の表示（+-符号付き）
+            dpct = r['daily_pct'] * 100
+            sign = "+" if dpct >= 0 else ""
+            dpct_str = f"{sign}{dpct:.1f}%"
+            
+            # シグナル
+            sig = ""
+            if r['is_db']: sig = " 🔥三川底打ち"
+            if r['is_defense']: sig = " 🛡️鉄壁"
+            
+            msg += f"\n🏢 {n}({c}){sig}\n"
+            msg += f"  現在: {lc}円 ({dpct_str})\n"
+            msg += f"  目標: {bt}円\n"
+            
+            # 降順（高い順）の売値・損切リストをLINEにも表示
+            tp20 = int(r['tp20'])
+            tp15 = int(r['tp15'])
+            tp10 = int(r['tp10'])
+            tp5 = int(r['tp5'])
+            sl5 = int(bt * 0.95)
+            sl8 = int(bt * 0.92)
+            sl15 = int(bt * 0.85)
+            
+            msg += f"  [利確] 20%:{tp20} / 15%:{tp15}\n"
+            msg += f"  [損切] -5%:{sl5} / -8%:{sl8}\n"
+            msg += f"  到達度: {reach}%\n"
+
+    send_line_notify(msg)
+    print("LINE通知完了")
 
 if __name__ == "__main__":
     main()
