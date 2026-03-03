@@ -172,17 +172,15 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     padding_days = timedelta(days=1)
 
-    # 【新規追加】初期表示範囲（45日間）の中での最高値と最安値を計算し、Y軸をオートスケール
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
-        # 現在の波形と、20%利確ライン・最深損切(-15%)ラインが全て収まるように計算
         y_max_vals = [visible_df['AdjH'].max(), targ_p]
         y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85] 
         if tp20: y_max_vals.append(tp20)
         
         y_max = max(y_max_vals)
         y_min = min(y_min_vals)
-        margin = (y_max - y_min) * 0.05 # 上下に5%のゆとりを持たせる
+        margin = (y_max - y_min) * 0.05
         y_range = [y_min - margin, y_max + margin]
     else:
         y_range = None
@@ -198,7 +196,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     
-    # 計算したY軸の範囲をレイアウトに適用
     if y_range:
         layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
 
@@ -273,9 +270,14 @@ f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30,
 f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
-c_f7_1, c_f7_2 = st.sidebar.columns(2)
-f7_min14 = c_f7_1.number_input("⑦下限(倍)", value=1.3, step=0.1)
-f7_max14 = c_f7_2.number_input("⑦上限(倍)", value=2.0, step=0.1)
+
+# 【追加】マクロ・バイオ除外のUI新設
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="1690等のマクロ連動型や不動産投信を弾きます")
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True, help="4593等のテクニカルが効かない赤字バイオ株を弾きます")
+
+c_f9_1, c_f9_2 = st.sidebar.columns(2)
+f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
+f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
@@ -340,6 +342,14 @@ with tab1:
                 
                 if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
                 
+                # 【追加】ETF・バイオ・落ちるナイフの防壁適用
+                if f7_ex_etf and 'Sector' in sum_df.columns:
+                    sum_df = sum_df[sum_df['Sector'].fillna('') != '-']
+                    sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
+                
+                if f8_ex_bio and 'Sector' in sum_df.columns:
+                    sum_df = sum_df[sum_df['Sector'] != '医薬品']
+
                 sum_df = sum_df[sum_df['lc'] >= f1_min]
                 sum_df = sum_df[sum_df['r30'] <= f2_m30]
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
@@ -353,9 +363,11 @@ with tab1:
                 
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
                 
-                sum_df = sum_df[(sum_df['r14'] >= f7_min14) & (sum_df['r14'] <= f7_max14)]
+                sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
-                sum_df = sum_df[sum_df['lc'] <= (sum_df['bt'] * 1.05)]
+                
+                # 【修正】落ちるナイフ完全除外（目標値より上、または目標値から最大-15%までしか許容しない）
+                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
@@ -473,12 +485,20 @@ with tab2:
                             score_list = [
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
-                                (f7_min14 <= r14 <= f7_max14), d_high <= limit_d, lc <= (bt_single * 1.05)
+                                (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
+                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85)) # 下限バリアの追加
                             ]
                             if f5_ipo:
                                 old_c = get_old_codes()
                                 if old_c: score_list.append((c + "0") in old_c)
                             if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
+                            
+                            if f7_ex_etf:
+                                is_etf = (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
+                                score_list.append(not is_etf)
+                            if f8_ex_bio:
+                                score_list.append(c_sector != '医薬品')
+                                
                             score_list.append(not is_dt and not is_hs)
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
