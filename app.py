@@ -161,10 +161,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
-    # 買値＝黄、売値（プラス）＝赤系、に統一
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
-        # 売値ラインを赤系（#ef5350）に変更
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
@@ -413,11 +411,17 @@ with tab1:
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
-                    cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
+                    # 【変更】買値目標のテキストを黄色(#FFD700)に変更
+                    html_buy = f"""
+                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['bt']):,}円</div>
+                    </div>
+                    """
+                    cc2.markdown(html_buy, unsafe_allow_html=True)
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
                     
-                    # 【変更】売値目標を赤色(#ef5350)、損切目標を緑色(#26a69a)に完全反転
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
@@ -563,11 +567,17 @@ with tab2:
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                         
-                        sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
+                        # 【変更】局地戦タブでも買値目標を黄色に変更
+                        html_buy = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['bt']):,}円</div>
+                        </div>
+                        """
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
                         
-                        # 【変更】局地戦タブでも売値を赤、損切を緑に反転
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
