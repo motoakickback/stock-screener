@@ -171,12 +171,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
 
-    # 【変更】表示期間の限界を「未来に7日間」延長し、右端の見切れを完全に解消
-    padding_days = timedelta(days=7)
+    # 【変更】表示期間の限界を「未来に3日間」に調整し、最適なクリアランスを確保
+    padding_days = timedelta(days=3)
 
     fig.update_layout(
         height=450, 
-        margin=dict(l=10, r=80, t=20, b=40), 
+        margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
         paper_bgcolor='rgba(0,0,0,0)', 
