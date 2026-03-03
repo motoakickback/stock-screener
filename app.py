@@ -315,7 +315,8 @@ f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
 current_sl = st.session_state.bt_sl_i
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(単日暴落)", value=True, help=f"前日比が【-{current_sl}.0%】以上の暴落をしている銘柄を強制的に弾きます（損切設定と連動）")
+# 【説明文修正】連続下落も検知するように変更したことを明記
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True, help=f"単日で【-{current_sl}.0%】以上、または直近3日間で【-{int(current_sl * 1.5)}.0%】以上の連続暴落をしている銘柄を弾きます")
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
@@ -352,6 +353,7 @@ with tab1:
                 agg_14 = df_14.groupby('Code').agg(
                     lc=('AdjC', 'last'), 
                     prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
+                    c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan), # 3日前の終値を取得
                     h14=('AdjH', 'max'), 
                     l14=('AdjL', 'min')
                 )
@@ -377,6 +379,8 @@ with tab1:
                 sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
                 
                 sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
+                # 3日間のトータル下落率を計算
+                sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
                 
                 dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
                 hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
@@ -414,9 +418,11 @@ with tab1:
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
+                # 【防壁強化】単日暴落、または「3日間で損切設定の1.5倍以上の下落」があれば弾く
                 if f10_ex_knife:
                     dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
-                    sum_df = sum_df[sum_df['daily_pct'] >= dynamic_sl_ratio]
+                    three_days_sl = dynamic_sl_ratio * 1.5 # -8%なら-12%を基準にする
+                    sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
@@ -438,7 +444,6 @@ with tab1:
                     else:
                         badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                     
-                    # 【修正】display: blockにして、企業名の下にバッジを配置する
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
                             <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{n} ({c[:-1]})</h3>
@@ -528,6 +533,13 @@ with tab2:
                             prev_c = df_s['AdjC'].iloc[-2] if len(df_s) >= 2 else np.nan
                             daily_pct = (lc / prev_c) - 1 if pd.notna(prev_c) and prev_c > 0 else 0
                             
+                            # 3日間の下落率を計算
+                            if len(df_s) >= 4:
+                                c_3days_ago = df_s['AdjC'].iloc[-4]
+                                pct_3days = (lc / c_3days_ago) - 1 if c_3days_ago > 0 else 0
+                            else:
+                                pct_3days = 0
+                            
                             bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
                             tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                             
@@ -550,10 +562,13 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
+                            # 【警告強化】単日暴落、または「3日間で損切設定の1.5倍以上の下落」があれば警告を出す
                             flag_knife = False
                             if f10_ex_knife:
                                 dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
-                                flag_knife = daily_pct < dynamic_sl_ratio
+                                three_days_sl = dynamic_sl_ratio * 1.5
+                                if daily_pct < dynamic_sl_ratio or pct_3days < three_days_sl:
+                                    flag_knife = True
                                 
                             flag_etf = False
                             if f7_ex_etf:
@@ -589,6 +604,7 @@ with tab2:
                                 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
                                 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                 'is_defense': is_defense, 'daily_pct': daily_pct,
+                                'pct_3days': pct_3days, # 3日間の下落率も保存
                                 'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo
                             })
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
@@ -612,7 +628,6 @@ with tab2:
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        # 【修正】局地戦でも企業名の下にバッジを配置する
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
                                 <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{r["Name"]} ({r["Code"]})</h3>
@@ -620,8 +635,13 @@ with tab2:
                             </div>
                         """, unsafe_allow_html=True)
                         
+                        # 警告メッセージも状況に合わせて変化させる
                         if r.get('flag_knife'): 
-                            st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
+                            if r['daily_pct'] < - (st.session_state.bt_sl_i / 100.0):
+                                st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
+                            else:
+                                st.error(f"🚨 【警告】直近3日間で継続的な大暴落({r['pct_3days']*100:.1f}%)を検知。サイレント・ナイフのため迎撃非推奨です。")
+                                
                         if r.get('flag_etf'): 
                             st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
                         if r.get('flag_bio'): 
