@@ -168,19 +168,19 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
     
-    # 【変更】初期表示は直近1.5ヶ月にズームし、全体は1年間スクロール可能にする
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
 
+    # 【変更】高さの拡張、右側・上下の余白（margin）の追加、凡例（legend）のy軸オフセット
     fig.update_layout(
-        height=400, 
-        margin=dict(l=0, r=0, t=10, b=10), 
-        xaxis_rangeslider_visible=True,  # 【変更】レンジスライダー（期間調整バー）を有効化
-        xaxis=dict(range=[start_date, last_date], type="date"), # 初期表示範囲
+        height=450, 
+        margin=dict(l=10, r=60, t=20, b=40), 
+        xaxis_rangeslider_visible=True,
+        xaxis=dict(range=[start_date, last_date], type="date"),
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -380,7 +380,6 @@ with tab1:
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
-                    # 【変更】全軍スキャンでも1年分のデータを取得して描画する
                     raw_s = get_single_data(c, 1)
                     if raw_s:
                         hist = clean_df(pd.DataFrame(raw_s))
@@ -463,7 +462,6 @@ with tab2:
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
                             results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
-                            # 【変更】df_14ではなく、1年分のデータ(df_s)をチャート描画用に保存
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
