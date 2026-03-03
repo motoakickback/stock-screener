@@ -161,14 +161,27 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
-    # ラベルを「買値目標」に統一
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(76, 175, 80, 0.4)', width=1, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(76, 175, 80, 0.6)', width=1, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(76, 175, 80, 0.8)', width=1.5, dash='dot')))
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(76, 175, 80, 1.0)', width=1.5, dash='dot')))
-    fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
+    
+    # 【変更】初期表示は直近1.5ヶ月にズームし、全体は1年間スクロール可能にする
+    last_date = df['Date'].max()
+    start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+
+    fig.update_layout(
+        height=400, 
+        margin=dict(l=0, r=0, t=10, b=10), 
+        xaxis_rangeslider_visible=True,  # 【変更】レンジスライダー（期間調整バー）を有効化
+        xaxis=dict(range=[start_date, last_date], type="date"), # 初期表示範囲
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified", 
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
@@ -350,11 +363,9 @@ with tab1:
                         
                     cc1, cc2, cc3, cc4 = st.columns([1, 1, 1.8, 0.8])
                     cc1.metric("最新終値", f"{int(r['lc'])}円")
-                    # ラベル変更：買値目標
                     cc2.metric("🎯 買値目標", f"{int(r['bt'])}円")
                     
                     sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
-                    # ラベル変更＆降順（価格順）に並べ替え
                     html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                         <div style="font-size: 16px;">
@@ -368,8 +379,15 @@ with tab1:
                     cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
-                    hist = df[df['Code'] == c].sort_values('Date').tail(14)
-                    if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    
+                    # 【変更】全軍スキャンでも1年分のデータを取得して描画する
+                    raw_s = get_single_data(c, 1)
+                    if raw_s:
+                        hist = clean_df(pd.DataFrame(raw_s))
+                        draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    else:
+                        hist = df[df['Code'] == c].sort_values('Date').tail(30)
+                        if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
@@ -445,7 +463,8 @@ with tab2:
                             
                             rule_pct = (sum(score_list) / len(score_list)) * 100
                             results.append({'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 'lc': lc, 'bt': bt_single, 'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense})
-                            charts_data[c] = (df_14, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
+                            # 【変更】df_14ではなく、1年分のデータ(df_s)をチャート描画用に保存
+                            charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
                     res_df = pd.DataFrame(results)
@@ -474,11 +493,9 @@ with tab2:
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         sc1.metric("最新終値", f"{int(r['lc'])}円")
-                        # ラベル変更：買値目標
                         sc2.metric(f"🎯 買値目標", f"{int(r['bt'])}円")
                         
                         sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
-                        # ラベル変更＆降順（価格順）に並べ替え
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
