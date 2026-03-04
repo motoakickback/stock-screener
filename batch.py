@@ -7,19 +7,14 @@ import concurrent.futures
 import re
 from io import BytesIO
 
-# --- 1. 環境変数（超高感度センサー搭載） ---
+# --- 1. 環境変数（Discord仕様に換装） ---
 API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
-LINE_TOKEN = os.getenv("LINE_NOTIFY_TOKEN", os.getenv("LT", "")).strip()
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", "")).strip()
 
-# どちらの鍵が欠落しているかを明確にログに出力する
-print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / LTセンサー反応: {bool(LINE_TOKEN)}")
+print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / Discordアンテナ反応: {bool(DISCORD_WEBHOOK)}")
 
-if not API_KEY or not LINE_TOKEN:
-    print("🚨 【緊急警告】V15.5: 必要な暗号鍵が欠落しています！")
-    if not API_KEY:
-        print("👉 J-Quants APIキー (JQ) を取得できませんでした。GitHubのSecretsを確認してください。")
-    if not LINE_TOKEN:
-        print("👉 LINE Notify トークン (LT) を取得できませんでした。GitHubのSecretsを確認してください。")
+if not API_KEY or not DISCORD_WEBHOOK:
+    print("🚨 【緊急警告】必要な暗号鍵またはWebhook URLが欠落しています！")
     exit(1)
 
 headers = {"x-api-key": API_KEY}
@@ -146,10 +141,10 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
-def send_line_notify(message):
-    headers = {"Authorization": f"Bearer {LINE_TOKEN}"}
-    data = {"message": message}
-    requests.post("https://notify-api.line.me/api/notify", headers=headers, data=data)
+# 【変更箇所】LINEではなくDiscordへ送信する関数
+def send_discord_notify(message):
+    data = {"content": message}
+    requests.post(DISCORD_WEBHOOK, json=data)
 
 # --- 3. メインロジック ---
 def main():
@@ -159,7 +154,7 @@ def main():
     raw = get_hist_data()
     
     if not raw:
-        send_line_notify("\n🚨 データの取得に失敗しました。")
+        send_discord_notify("🚨 **データの取得に失敗しました。**")
         return
         
     d_raw = pd.DataFrame(raw)
@@ -171,7 +166,7 @@ def main():
     valid = counts[counts == 14].index
     
     if valid.empty:
-        send_line_notify("\n🚨 条件を満たすデータが存在しません。")
+        send_discord_notify("🚨 **条件を満たすデータが存在しません。**")
         return
 
     df_14 = df_14[df_14['Code'].isin(valid)]
@@ -263,11 +258,11 @@ def main():
     # --- ソート（到達度順）---
     res = sum_df.sort_values('reach_pct', ascending=False).head(10)
     
-    # --- LINEメッセージ生成 ---
+    # --- Discordメッセージ生成 ---
     if res.empty:
-        msg = "\n📊 本日の全軍スキャン結果\n\n🎯 標的：なし\n全てのノイズと危険波形を排除しました。本日は待ち伏せを継続します。"
+        msg = "📊 **本日の全軍スキャン結果**\n\n🎯 **標的：なし**\n全てのノイズと危険波形を排除しました。本日は待ち伏せを継続します。"
     else:
-        msg = f"\n📊 本日の全軍スキャン結果\n\n🎯 標的：{len(res)} 銘柄捕捉\n"
+        msg = f"📊 **本日の全軍スキャン結果**\n\n🎯 **標的：{len(res)} 銘柄捕捉**\n"
         for _, r in res.iterrows():
             c = str(r['Code'])[:-1]
             n = str(r['CompanyName'])[:8] if 'CompanyName' in r else "不明"
@@ -283,24 +278,21 @@ def main():
             if r['is_db']: sig = " 🔥三川底打ち"
             if r['is_defense']: sig = " 🛡️鉄壁"
             
-            msg += f"\n🏢 {n}({c}){sig}\n"
-            msg += f"  現在: {lc}円 ({dpct_str})\n"
-            msg += f"  目標: {bt}円\n"
+            # Discord上で見やすいようにMarkdown記法（コードブロックなど）を活用
+            msg += f"\n> **🏢 {n} ({c})** {sig}\n"
+            msg += f"> 🟢 現在: {lc}円 ({dpct_str})\n"
+            msg += f"> 🎯 目標: **{bt}円**\n"
             
             tp20 = int(r['tp20'])
             tp15 = int(r['tp15'])
-            tp10 = int(r['tp10'])
-            tp5 = int(r['tp5'])
-            sl5 = int(bt * 0.95)
             sl8 = int(bt * 0.92)
-            sl15 = int(bt * 0.85)
             
-            msg += f"  [利確] 20%:{tp20} / 15%:{tp15}\n"
-            msg += f"  [損切] -5%:{sl5} / -8%:{sl8}\n"
-            msg += f"  到達度: {reach}%\n"
+            msg += f"> 📈 [利確] 20%:{tp20} / 15%:{tp15}\n"
+            msg += f"> 📉 [損切] -8%:{sl8}\n"
+            msg += f"> ゲージ: {reach}%\n"
 
-    send_line_notify(msg)
-    print("LINE通知完了")
+    send_discord_notify(msg)
+    print("Discord通知完了")
 
 if __name__ == "__main__":
     main()
