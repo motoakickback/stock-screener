@@ -7,12 +7,19 @@ import concurrent.futures
 import re
 from io import BytesIO
 
-# --- 1. 環境変数 ---
-API_KEY = os.getenv("JQUANTS_API_KEY", "").strip()
-LINE_TOKEN = os.getenv("LINE_NOTIFY_TOKEN", "").strip()
+# --- 1. 環境変数（超高感度センサー搭載） ---
+API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
+LINE_TOKEN = os.getenv("LINE_NOTIFY_TOKEN", os.getenv("LT", "")).strip()
+
+# どちらの鍵が欠落しているかを明確にログに出力する
+print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / LTセンサー反応: {bool(LINE_TOKEN)}")
 
 if not API_KEY or not LINE_TOKEN:
-    print("エラー: 必要な環境変数が設定されていません。")
+    print("🚨 【緊急警告】V15.5: 必要な暗号鍵が欠落しています！")
+    if not API_KEY:
+        print("👉 J-Quants APIキー (JQ) を取得できませんでした。GitHubのSecretsを確認してください。")
+    if not LINE_TOKEN:
+        print("👉 LINE Notify トークン (LT) を取得できませんでした。GitHubのSecretsを確認してください。")
     exit(1)
 
 headers = {"x-api-key": API_KEY}
@@ -171,10 +178,10 @@ def main():
     df_30 = df_30[df_30['Code'].isin(valid)]
     df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
     
-    # 【変更箇所1】前日終値を計算し、当日の騰落率（速度）を測る準備
     agg_14 = df_14.groupby('Code').agg(
         lc=('AdjC', 'last'), 
         prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
+        c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan),
         h14=('AdjH', 'max'), 
         l14=('AdjL', 'min')
     )
@@ -204,8 +211,8 @@ def main():
     sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
     sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
     
-    # 【変更箇所2】当日騰落率の計算
     sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
+    sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
     
     dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
     hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
@@ -216,8 +223,6 @@ def main():
     sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
-    
-    # --- フィルター適用（Webコンソールの完全移植） ---
     
     # 1. 基礎フィルター
     sum_df = sum_df[sum_df['lc'] >= 200]
@@ -248,13 +253,15 @@ def main():
     if old_codes: sum_df = sum_df[sum_df['Code'].isin(old_codes)]
     sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
 
-    # 7. イージス防壁（距離感の適正化 ＆ 落ちるナイフ除外）
+    # 7. イージス防壁（距離感の適正化 ＆ 落ちるナイフ除外 V15.5完全版）
     sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
-    sl_ratio_daily = - (sl_i / 100.0) # -0.08
-    sum_df = sum_df[sum_df['daily_pct'] > sl_ratio_daily] # 前日比-8%以上の暴落は弾く
+    
+    sl_ratio_daily = - (sl_i / 100.0)
+    three_days_sl = sl_ratio_daily * 1.5
+    sum_df = sum_df[(sum_df['daily_pct'] >= sl_ratio_daily) & (sum_df['pct_3days'] >= three_days_sl)]
     
     # --- ソート（到達度順）---
-    res = sum_df.sort_values('reach_pct', ascending=False).head(10) # LINEは上位10件に絞る
+    res = sum_df.sort_values('reach_pct', ascending=False).head(10)
     
     # --- LINEメッセージ生成 ---
     if res.empty:
@@ -268,12 +275,10 @@ def main():
             bt = int(r['bt'])
             reach = round(r['reach_pct'], 1)
             
-            # 騰落率の表示（+-符号付き）
             dpct = r['daily_pct'] * 100
             sign = "+" if dpct >= 0 else ""
             dpct_str = f"{sign}{dpct:.1f}%"
             
-            # シグナル
             sig = ""
             if r['is_db']: sig = " 🔥三川底打ち"
             if r['is_defense']: sig = " 🛡️鉄壁"
@@ -282,7 +287,6 @@ def main():
             msg += f"  現在: {lc}円 ({dpct_str})\n"
             msg += f"  目標: {bt}円\n"
             
-            # 降順（高い順）の売値・損切リストをLINEにも表示
             tp20 = int(r['tp20'])
             tp15 = int(r['tp15'])
             tp10 = int(r['tp10'])
