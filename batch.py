@@ -7,7 +7,7 @@ import concurrent.futures
 import re
 from io import BytesIO
 
-# --- 1. 環境変数（Discord仕様に換装） ---
+# --- 1. 環境変数 ---
 API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", "")).strip()
 
@@ -141,7 +141,6 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
-# 【変更箇所】LINEではなくDiscordへ送信する関数
 def send_discord_notify(message):
     data = {"content": message}
     requests.post(DISCORD_WEBHOOK, json=data)
@@ -278,18 +277,23 @@ def main():
             if r['is_db']: sig = " 🔥三川底打ち"
             if r['is_defense']: sig = " 🛡️鉄壁"
             
-            # Discord上で見やすいようにMarkdown記法（コードブロックなど）を活用
             msg += f"\n> **🏢 {n} ({c})** {sig}\n"
             msg += f"> 🟢 現在: {lc}円 ({dpct_str})\n"
             msg += f"> 🎯 目標: **{bt}円**\n"
             
+            # 利確・損切の全数値を算出
             tp20 = int(r['tp20'])
             tp15 = int(r['tp15'])
+            tp10 = int(r['tp10'])
+            tp5 = int(r['tp5'])
+            sl5 = int(bt * 0.95)
             sl8 = int(bt * 0.92)
+            sl15 = int(bt * 0.85)
             
-            msg += f"> 📈 [利確] 20%:{tp20} / 15%:{tp15}\n"
-            msg += f"> 📉 [損切] -8%:{sl8}\n"
-            msg += f"> ゲージ: {reach}%\n"
+            # LINE版と同じフルスペック表示へ変更
+            msg += f"> 📈 [利確] 20%:{tp20} / 15%:{tp15} / 10%:{tp10} / 5%:{tp5}\n"
+            msg += f"> 📉 [損切] -5%:{sl5} / -8%:{sl8} / -15%:{sl15}\n"
+            msg += f"> 🎯 到達度: {reach}%\n"
 
     send_discord_notify(msg)
     print("Discord通知完了")
