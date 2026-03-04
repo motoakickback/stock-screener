@@ -254,8 +254,16 @@ def main():
     three_days_sl = sl_ratio_daily * 1.5
     sum_df = sum_df[(sum_df['daily_pct'] >= sl_ratio_daily) & (sum_df['pct_3days'] >= three_days_sl)]
     
-    # --- ソート（到達度順）---
-    res = sum_df.sort_values('reach_pct', ascending=False).head(10)
+    # --- ソート（Sクラス・高機動銘柄優先ロジック）---
+    if 'Market' in sum_df.columns:
+        # プライム(1)・スタンダード(2)を優先し、値動きの荒いグロースやその他(3)を降格させる
+        sum_df['m_rank'] = sum_df['Market'].astype(str).apply(
+            lambda x: 1 if 'プライム' in x else (2 if 'スタンダード' in x else 3)
+        )
+        # 第1優先: 市場の安定度（1が上） / 第2優先: 到達度（高い順）
+        res = sum_df.sort_values(['m_rank', 'reach_pct'], ascending=[True, False]).head(10)
+    else:
+        res = sum_df.sort_values('reach_pct', ascending=False).head(10)
     
     # --- Discordメッセージ生成 ---
     if res.empty:
