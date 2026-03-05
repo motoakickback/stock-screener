@@ -241,7 +241,6 @@ def main():
     # ==========================================
     # 3. Discord用メッセージの構築（スマホ視認性UP ＋ コピペ弾倉）
     # ==========================================
-    # 先に名前圧縮ツールを定義しておく（ここが抜けていました！）
     def compress_name(name):
         if not isinstance(name, str): return "不明"
         reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
@@ -257,7 +256,7 @@ def main():
         for index, row in res.iterrows():
             c_name = compress_name(row.get('CompanyName', '不明'))
             code = str(row['Code'])[:4]
-            market = str(row.get('Market', '不明')).split('（')[0] 
+            market = str(row.get('Market', '不明')).split('（')[0]
             sector = row.get('Sector', '不明')
             
             d_pct = row.get('daily_pct', 0) * 100
