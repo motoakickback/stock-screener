@@ -220,6 +220,7 @@ def main():
     
     import time
     import requests
+    import os
 
     # ==========================================
     # 1. 基礎フィルター（ノイズ排除）
@@ -228,55 +229,59 @@ def main():
     sum_df = sum_df[sum_df['lc'] >= 500]  
     sum_df = sum_df[sum_df['r30'] <= 2.0]
 
-    # （※もしここにその他の既存フィルターや計算式があれば、そのまま残してください）
+    # （※ここに計算式などがあれば残す）
 
     # ==========================================
     # 2. ソート（15銘柄への広視野角解放）
     # ==========================================
-    # 純粋な到達度順でトップ15銘柄を抽出
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
 
     # ==========================================
-    # 3. Discord用メッセージの構築
+    # 3. Discord用メッセージの構築（安全装置付き）
     # ==========================================
-    # （※ここの message += の中身は、現在の指揮官のスタイリッシュな装飾のままにしてください）
-    message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
-    for index, row in res.iterrows():
-        # --- 指揮官の既存のメッセージ作成ロジック ---
-        message += f"> **{row['name']} ({index})**\n"
-        message += f"> 🟢 現在値: **{row['lc']}円** (目標到達度: {row['reach_pct']}%)\n"
-        message += f"> 📈 [利確目安] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
-        message += f"> 📉 [損切目安] -8%: {int(row['lc']*0.92)}円\n\n"
+    if len(res) == 0:
+        message = "🎯 **本日のSクラススナイプ候補**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
+    else:
+        message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
+        for index, row in res.iterrows():
+            message += f"> **{row['name']} ({index})**\n"
+            message += f"> 🟢 現在値: **{row['lc']}円** (目標到達度: {row['reach_pct']}%)\n"
+            message += f"> 📈 [利確目安] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+            message += f"> 📉 [損切目安] -8%: {int(row['lc']*0.92)}円\n\n"
 
     # ==========================================
     # 4. 新型・Discord分割連射システム（限界突破）
     # ==========================================
-    # WEBHOOK_URL = 'ここにDiscordのWebhookURL' （※一番上で定義済みなら不要です）
-    
-    max_length = 1800 # Discordの2000文字制限に対する安全マージン
-    message_chunks = []
-    current_chunk = ""
+    # 環境変数からDiscordのURLを【確実】に取得する
+    target_webhook_url = os.environ.get("DISCORD_WEBHOOK")
 
-    # 装飾崩れを防ぐため、文章を「改行（行）」ごとに判定して綺麗に分割
-    for line in message.split('\n'):
-        if len(current_chunk) + len(line) + 1 > max_length:
-            message_chunks.append(current_chunk)
-            current_chunk = line + "\n"
-        else:
-            current_chunk += line + "\n"
-    
-    # 最後の余りブロックを追加
-    if current_chunk:
-        message_chunks.append(current_chunk)
+    if not target_webhook_url:
+        print("【致命的エラー】DiscordのWebhookURLが見つかりません。環境変数を確認してください。")
+    else:
+        max_length = 1800 
+        message_chunks = []
+        current_chunk = ""
 
-    # 分割したブロックを順番に連射（送信）
-    for i, chunk in enumerate(message_chunks):
-        payload = {"content": chunk}
-        response = requests.post(WEBHOOK_URL, json=payload) # ※WEBHOOK_URLの変数名は環境に合わせてください
+        for line in message.split('\n'):
+            if len(current_chunk) + len(line) + 1 > max_length:
+                message_chunks.append(current_chunk)
+                current_chunk = line + "\n"
+            else:
+                current_chunk += line + "\n"
         
-        # エラーログの出力
-        if response.status_code not in [200, 204]:
-            print(f"Discord通信エラー (Part {i+1}): {response.status_code} - {response.text}")
+        if current_chunk:
+            message_chunks.append(current_chunk)
+
+        print(f"【システムログ】Discordへの送信準備完了。全 {len(message_chunks)} 分割で投下します。")
+
+        # 分割したブロックを順番に連射
+        for i, chunk in enumerate(message_chunks):
+            payload = {"content": chunk}
+            response = requests.post(target_webhook_url, json=payload)
             
-        # Discordのスパム判定（Rate Limit）を回避するため1秒待機
-        time.sleep(1)
+            if response.status_code not in [200, 204]:
+                print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
+                
+            time.sleep(1) # 1秒待機
+        
+        print("【システムログ】全ミッション完了。通信回線を閉じます。")
