@@ -802,12 +802,12 @@ with tab3:
         return name[:10] + "…" if len(name) > 10 else name
 
     # 企業名の圧縮実行
-    if 'CompanyName' in tdf.columns:
-        tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
+        if 'CompanyName' in tdf.columns:
+            tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
 
     # ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
-    st.markdown("### 📋 監視リスト一括コピペ用コード")
-    if not tdf.empty and 'Code' in tdf.columns:
+        st.markdown("### 📋 監視リスト一括コピペ用コード")
+        if not tdf.empty and 'Code' in tdf.columns:
         # tdf内の全銘柄コードを抽出し、4桁にしてカンマで繋ぐ
         copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
         # Streamlit標準のコードブロック（右上にコピーボタンが自動で付きます）
