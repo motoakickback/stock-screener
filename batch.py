@@ -248,6 +248,20 @@ def main():
         for index, row in res.iterrows():
             c_name = row.get('CompanyName', '不明')
             code = str(row['Code'])[:4]
+        # （既存のコード：forループで15銘柄分のメッセージを作る処理）
+        for index, row in res.iterrows():
+            c_name = compress_name(row.get('CompanyName', '不明'))
+        # ... (中略) ...
+            message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
+
+        # ▼▼▼ NEW: ここを追加（一括コピペ弾倉の生成） ▼▼▼
+            copy_codes = ",".join([str(code)[:4] for code in res['Code']])
+            message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
+        # ▲▲▲ ここまで ▲▲▲
+
+    # ==========================================
+    # 4. 新型・Discord分割連射システム（限界突破）
+    # ==========================================
             # 「プライム（内国株式）」などの表記を「プライム」だけスッキリ切り取る
             market = str(row.get('Market', '不明')).split('（')[0] 
             sector = row.get('Sector', '不明')
