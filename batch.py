@@ -233,7 +233,7 @@ def main():
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
 
     # ==========================================
-    # 3. Discord用メッセージの構築（安全装置付き）
+    # 3. Discord用メッセージの構築（フルデータ仕様）
     # ==========================================
     if len(res) == 0:
         message = "🎯 **本日のSクラススナイプ候補**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
@@ -241,10 +241,21 @@ def main():
         message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
         for index, row in res.iterrows():
             c_name = row.get('CompanyName', '不明')
-            message += f"> **{c_name} ({row['Code'][:4]})**\n"
-            message += f"> 🟢 現在値: **{int(row['lc'])}円** (目標到達度: {row['reach_pct']:.1f}%)\n"
-            message += f"> 📈 [利確目安] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
-            message += f"> 📉 [損切目安] -8%: {int(row['lc']*0.92)}円\n\n"
+            code = str(row['Code'])[:4]
+            # 「プライム（内国株式）」などの表記を「プライム」だけスッキリ切り取る
+            market = str(row.get('Market', '不明')).split('（')[0] 
+            sector = row.get('Sector', '不明')
+            
+            # 前日比の計算とプラスマイナス表記
+            d_pct = row.get('daily_pct', 0) * 100
+            sign = "+" if d_pct > 0 else ""
+            
+            message += f"**【{code}】{c_name}** （{market} / {sector}）\n"
+            message += f"> 🟢 現在値: **{int(row['lc'])}円** （前日比: {sign}{d_pct:.1f}%）\n"
+            message += f"> 🎯 50%目標: **{int(row['bt'])}円** （到達度: {row['reach_pct']:.1f}%）\n"
+            message += f"> 📈 [利確] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+            message += f"> 📉 [損切] -8%: {int(row['lc']*0.92)}円\n"
+            message += f"> 📊 [直近波形] 高値 {int(row['h14'])}円 ➡️ 安値 {int(row['l14'])}円\n\n"
 
     # ==========================================
     # 4. 新型・Discord分割連射システム（限界突破）
