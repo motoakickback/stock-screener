@@ -790,28 +790,30 @@ with tab3:
                 m1.metric("トレード回数", f"{tot} 回"); m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
                 
-    # ==========================================
-    # 📱 スマホ視認性UP ＆ 📋 一括コピペ弾倉パッチ
-    # ==========================================
-    def compress_name(name):
-        if not isinstance(name, str): return "不明"
-        reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
-                "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
-                "フィナンシャルグループ": "FG"}
-        for k, v in reps.items(): name = name.replace(k, v)
-        return name[:10] + "…" if len(name) > 10 else name
+                # ==========================================
+                # 📱 スマホ視認性UP ＆ 📋 一括コピペ弾倉パッチ
+                # ==========================================
+                def compress_name(name):
+                    if not isinstance(name, str): return "不明"
+                    reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
+                            "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
+                            "フィナンシャルグループ": "FG"}
+                    for k, v in reps.items(): name = name.replace(k, v)
+                    return name[:10] + "…" if len(name) > 10 else name
 
-    # 企業名の圧縮実行
-        if 'CompanyName' in tdf.columns:
-            tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
+                # 企業名の圧縮実行
+                if 'CompanyName' in tdf.columns:
+                    tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
 
-    # ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
-    st.markdown("### 📋 監視リスト一括コピペ用コード")
-    if not tdf.empty and 'Code' in tdf.columns:
-        copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
-        st.code(copy_codes, language="text")
-    else:
-        st.write("対象銘柄がありません（全軍待機）。")
-    # ▲▲▲ ここまで ▲▲▲
-    # 圧縮済みのデータを画面いっぱいに表示
-    st.dataframe(tdf, use_container_width=True)
+                # ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
+                st.markdown("### 📋 監視リスト一括コピペ用コード")
+                if not tdf.empty and 'Code' in tdf.columns:
+                    copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
+                    st.code(copy_codes, language="text")
+                else:
+                    st.write("対象銘柄がありません（全軍待機）。")
+                # ▲▲▲ ここまで ▲▲▲
+                
+                # 圧縮済みのデータを画面いっぱいに表示
+                st.dataframe(tdf, use_container_width=True)
+    
