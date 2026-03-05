@@ -235,7 +235,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     if y_range:
         layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
 
-    fig.update_layout(**layout_args)
+    #fig.update_layout(**layout_args)
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
