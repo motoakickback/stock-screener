@@ -805,17 +805,12 @@ with tab3:
         if 'CompanyName' in tdf.columns:
             tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
 
-　　# ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
+    # ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
     st.markdown("### 📋 監視リスト一括コピペ用コード")
-    
-        if not tdf.empty and 'Code' in tdf.columns:
-        # ↓ ここ！ この行の先頭で「半角スペースを4回」押して右にズラす！
+    if not tdf.empty and 'Code' in tdf.columns:
         copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
-        # ↓ ここも「半角スペース4回」！
         st.code(copy_codes, language="text")
-        
     else:
-        # ↓ ここも「半角スペース4回」！
         st.write("対象銘柄がありません（全軍待機）。")
     # ▲▲▲ ここまで ▲▲▲
     # 圧縮済みのデータを画面いっぱいに表示
