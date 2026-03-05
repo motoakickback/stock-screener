@@ -808,7 +808,7 @@ with tab3:
 　　# ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
     st.markdown("### 📋 監視リスト一括コピペ用コード")
     
-    if not tdf.empty and 'Code' in tdf.columns:
+        if not tdf.empty and 'Code' in tdf.columns:
         # ↓ ここ！ この行の先頭で「半角スペースを4回」押して右にズラす！
         copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
         # ↓ ここも「半角スペース4回」！
