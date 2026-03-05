@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import concurrent.futures
 import re
 from io import BytesIO
+import time
 
 # --- 1. 環境変数 ---
 API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
@@ -145,6 +146,15 @@ def send_discord_notify(message):
     data = {"content": message}
     requests.post(DISCORD_WEBHOOK, json=data)
 
+# 名前圧縮ツール（安全な場所に配置）
+def compress_name(name):
+    if not isinstance(name, str): return "不明"
+    reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
+            "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
+            "フィナンシャルグループ": "FG"}
+    for k, v in reps.items(): name = name.replace(k, v)
+    return name[:9] + "…" if len(name) > 9 else name
+
 # --- 3. メインロジック ---
 def main():
     print("データ取得開始...")
@@ -189,10 +199,9 @@ def main():
     agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
     
-    # --- パラメーター（中小型株の黄金比プリセットを適用） ---
     push_r = 50
     limit_d = 4
-    sl_i = 8 # 損切8%
+    sl_i = 8 
     
     ur = sum_df['h14'] - sum_df['l14']
     sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
@@ -217,38 +226,18 @@ def main():
     sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
-    
-    import time
 
-    # ==========================================
-    # 1. 基礎フィルター（ノイズ排除）
-    # ==========================================
-    # 500円未満の低位株（ボロ株）を完全に排除
+    # --- 1. 基礎フィルター ---
     sum_df = sum_df[sum_df['lc'] >= 500]  
     sum_df = sum_df[sum_df['r30'] <= 2.0]
+    if 'Sector' in sum_df.columns:
+        sum_df = sum_df[sum_df['Sector'].notna()]
+        sum_df = sum_df[sum_df['Sector'] != '-']
 
-    # ▼▼▼ NEW: ここを追加 ▼▼▼
-    # ETFやREIT（業種区分が「-」または空欄の銘柄）をレーダーから消去
-    sum_df = sum_df[sum_df['Sector'].notna()]
-    sum_df = sum_df[sum_df['Sector'] != '-']
-    # ▲▲▲ ここまで ▲▲▲
-
-    # ==========================================
-    # 2. ソート（15銘柄への広視野角解放）
-    # ==========================================
+    # --- 2. ソート ---
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
 
-    # ==========================================
-    # 3. Discord用メッセージの構築（スマホ視認性UP ＋ コピペ弾倉）
-    # ==========================================
-    def compress_name(name):
-        if not isinstance(name, str): return "不明"
-        reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
-                "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
-                "フィナンシャルグループ": "FG"}
-        for k, v in reps.items(): name = name.replace(k, v)
-        return name[:9] + "…" if len(name) > 9 else name
-
+    # --- 3. Discord用メッセージの構築 ---
     if len(res) == 0:
         message = "🎯 **本日のSクラススナイプ候補**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
     else:
@@ -256,7 +245,7 @@ def main():
         for index, row in res.iterrows():
             c_name = compress_name(row.get('CompanyName', '不明'))
             code = str(row['Code'])[:4]
-            market = str(row.get('Market', '不明')).split('（')[0]
+            market = str(row.get('Market', '不明')).split('（')[0] 
             sector = row.get('Sector', '不明')
             
             d_pct = row.get('daily_pct', 0) * 100
@@ -270,32 +259,11 @@ def main():
             message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
 
         # ▼▼▼ NEW: 一括コピペ弾倉の追加 ▼▼▼
-        copy_codes = ",".join([str(c)[:4] for c in res['Code']])
+        copy_codes = ",".join([str(code)[:4] for code in res['Code']])
         message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
 
-    # ==========================================
-    # 4. 新型・Discord分割連射システム（限界突破）
-    # ==========================================
-            # 「プライム（内国株式）」などの表記を「プライム」だけスッキリ切り取る
-            market = str(row.get('Market', '不明')).split('（')[0] 
-            sector = row.get('Sector', '不明')
-            
-            # 前日比の計算とプラスマイナス表記
-            d_pct = row.get('daily_pct', 0) * 100
-            sign = "+" if d_pct > 0 else ""
-            
-            message += f"**【{code}】{c_name}** （{market} / {sector}）\n"
-            message += f"> 🟢 現在値: **{int(row['lc'])}円** （前日比: {sign}{d_pct:.1f}%）\n"
-            message += f"> 🎯 50%目標: **{int(row['bt'])}円** （到達度: {row['reach_pct']:.1f}%）\n"
-            message += f"> 📈 [利確] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
-            message += f"> 📉 [損切] -8%: {int(row['lc']*0.92)}円\n"
-            message += f"> 📊 [直近波形] 高値 {int(row['h14'])}円 ➡️ 安値 {int(row['l14'])}円\n\n"
-
-    # ==========================================
-    # 4. 新型・Discord分割連射システム（限界突破）
-    # ==========================================
+    # --- 4. 新型・Discord分割連射システム ---
     target_webhook_url = os.environ.get("DISCORD_WEBHOOK")
-
     if not target_webhook_url:
         print("【致命的エラー】DiscordのWebhookURLが見つかりません。")
     else:
@@ -318,10 +286,8 @@ def main():
         for i, chunk in enumerate(message_chunks):
             payload = {"content": chunk}
             response = requests.post(target_webhook_url, json=payload)
-            
             if response.status_code not in [200, 204]:
                 print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
-                
             time.sleep(1)
         
         print("【システムログ】全ミッション完了。通信回線を閉じます。")
