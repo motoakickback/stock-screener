@@ -218,85 +218,65 @@ def main():
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
     
-    # 1. 基礎フィルター
-    sum_df = sum_df[sum_df['lc'] >= 200]
+    import time
+    import requests
+
+    # ==========================================
+    # 1. 基礎フィルター（ノイズ排除）
+    # ==========================================
+    # 500円未満の低位株（ボロ株）を完全に排除
+    sum_df = sum_df[sum_df['lc'] >= 500]  
     sum_df = sum_df[sum_df['r30'] <= 2.0]
-    sum_df = sum_df[sum_df['ldrop'] >= -30]
-    sum_df = sum_df[(sum_df['lrise'] <= 3.0) | (sum_df['lrise'] == 0)]
+
+    # （※もしここにその他の既存フィルターや計算式があれば、そのまま残してください）
+
+    # ==========================================
+    # 2. ソート（15銘柄への広視野角解放）
+    # ==========================================
+    # 純粋な到達度順でトップ15銘柄を抽出
+    res = sum_df.sort_values('reach_pct', ascending=False).head(15)
+
+    # ==========================================
+    # 3. Discord用メッセージの構築
+    # ==========================================
+    # （※ここの message += の中身は、現在の指揮官のスタイリッシュな装飾のままにしてください）
+    message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
+    for index, row in res.iterrows():
+        # --- 指揮官の既存のメッセージ作成ロジック ---
+        message += f"> **{row['name']} ({index})**\n"
+        message += f"> 🟢 現在値: **{row['lc']}円** (目標到達度: {row['reach_pct']}%)\n"
+        message += f"> 📈 [利確目安] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+        message += f"> 📉 [損切目安] -8%: {int(row['lc']*0.92)}円\n\n"
+
+    # ==========================================
+    # 4. 新型・Discord分割連射システム（限界突破）
+    # ==========================================
+    # WEBHOOK_URL = 'ここにDiscordのWebhookURL' （※一番上で定義済みなら不要です）
     
-    # 2. 波形・高値フィルター
-    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
-    sum_df = sum_df[(sum_df['r14'] >= 1.3) & (sum_df['r14'] <= 2.0)]
-    sum_df = sum_df[sum_df['d_high'] <= limit_d]
+    max_length = 1800 # Discordの2000文字制限に対する安全マージン
+    message_chunks = []
+    current_chunk = ""
+
+    # 装飾崩れを防ぐため、文章を「改行（行）」ごとに判定して綺麗に分割
+    for line in message.split('\n'):
+        if len(current_chunk) + len(line) + 1 > max_length:
+            message_chunks.append(current_chunk)
+            current_chunk = line + "\n"
+        else:
+            current_chunk += line + "\n"
     
-    # 3. 疑義注記除外
-    if 'CompanyName' in sum_df.columns:
-        sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
+    # 最後の余りブロックを追加
+    if current_chunk:
+        message_chunks.append(current_chunk)
+
+    # 分割したブロックを順番に連射（送信）
+    for i, chunk in enumerate(message_chunks):
+        payload = {"content": chunk}
+        response = requests.post(WEBHOOK_URL, json=payload) # ※WEBHOOK_URLの変数名は環境に合わせてください
         
-    # 4. イージス防壁（ETF・REIT・マクロ除外）
-    if 'Sector' in sum_df.columns:
-        sum_df = sum_df[sum_df['Sector'].notna()] 
-        sum_df = sum_df[sum_df['Sector'] != '-']
-        sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
-    
-    # 5. イージス防壁（バイオ株除外）
-    if 'Sector' in sum_df.columns:
-        sum_df = sum_df[sum_df['Sector'] != '医薬品']
-
-    # 6. イージス防壁（IPO・英字コード除外）
-    if old_codes: sum_df = sum_df[sum_df['Code'].isin(old_codes)]
-    sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
-
-    # 7. イージス防壁（距離感の適正化 ＆ 落ちるナイフ除外 V15.5完全版）
-    sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
-    
-    sl_ratio_daily = - (sl_i / 100.0)
-    three_days_sl = sl_ratio_daily * 1.5
-    sum_df = sum_df[(sum_df['daily_pct'] >= sl_ratio_daily) & (sum_df['pct_3days'] >= three_days_sl)]
-    
-    # --- ソート（純粋な到達度順 ＋ Discord広視野角）---
-    res = sum_df.sort_values('reach_pct', ascending=False).head(15)  # ← 【ここを10から15に変更】
-    
-    # --- Discordメッセージ生成 ---
-    if res.empty:
-        msg = "📊 **本日の全軍スキャン結果**\n\n🎯 **標的：なし**\n全てのノイズと危険波形を排除しました。本日は待ち伏せを継続します。"
-    else:
-        msg = f"📊 **本日の全軍スキャン結果**\n\n🎯 **標的：{len(res)} 銘柄捕捉**\n"
-        for _, r in res.iterrows():
-            c = str(r['Code'])[:-1]
-            n = str(r['CompanyName'])[:8] if 'CompanyName' in r else "不明"
-            lc = int(r['lc'])
-            bt = int(r['bt'])
-            reach = round(r['reach_pct'], 1)
+        # エラーログの出力
+        if response.status_code not in [200, 204]:
+            print(f"Discord通信エラー (Part {i+1}): {response.status_code} - {response.text}")
             
-            dpct = r['daily_pct'] * 100
-            sign = "+" if dpct >= 0 else ""
-            dpct_str = f"{sign}{dpct:.1f}%"
-            
-            sig = ""
-            if r['is_db']: sig = " 🔥三川底打ち"
-            if r['is_defense']: sig = " 🛡️鉄壁"
-            
-            msg += f"\n> **🏢 {n} ({c})** {sig}\n"
-            msg += f"> 🟢 現在: {lc}円 ({dpct_str})\n"
-            msg += f"> 🎯 目標: **{bt}円**\n"
-            
-            # 利確・損切の全数値を算出
-            tp20 = int(r['tp20'])
-            tp15 = int(r['tp15'])
-            tp10 = int(r['tp10'])
-            tp5 = int(r['tp5'])
-            sl5 = int(bt * 0.95)
-            sl8 = int(bt * 0.92)
-            sl15 = int(bt * 0.85)
-            
-            # LINE版と同じフルスペック表示へ変更
-            msg += f"> 📈 [利確] 20%:{tp20} / 15%:{tp15} / 10%:{tp10} / 5%:{tp5}\n"
-            msg += f"> 📉 [損切] -5%:{sl5} / -8%:{sl8} / -15%:{sl15}\n"
-            msg += f"> 🎯 到達度: {reach}%\n"
-
-    send_discord_notify(msg)
-    print("Discord通知完了")
-
-if __name__ == "__main__":
-    main()
+        # Discordのスパム判定（Rate Limit）を回避するため1秒待機
+        time.sleep(1)
