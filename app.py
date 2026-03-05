@@ -236,6 +236,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
 
     fig.update_layout(**layout_args)
+    # グラフの右側(r)と左側(l)の自動余白（マージン）を強制的に0にする
+    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
