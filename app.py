@@ -206,7 +206,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    padding_days = timedelta(days=1)
+    padding_days = timedelta(days=0)
 
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
