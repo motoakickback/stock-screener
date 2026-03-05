@@ -238,26 +238,41 @@ def main():
     # ==========================================
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
 
+# ==========================================
+    # 3. Discord用メッセージの構築（スマホ視認性UP ＋ コピペ弾倉）
     # ==========================================
-    # 3. Discord用メッセージの構築（フルデータ仕様）
-    # ==========================================
+    # 先に名前圧縮ツールを定義しておく（ここが抜けていました！）
+    def compress_name(name):
+        if not isinstance(name, str): return "不明"
+        reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
+                "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
+                "フィナンシャルグループ": "FG"}
+        for k, v in reps.items(): name = name.replace(k, v)
+        return name[:9] + "…" if len(name) > 9 else name
+
     if len(res) == 0:
         message = "🎯 **本日のSクラススナイプ候補**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
     else:
         message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
         for index, row in res.iterrows():
-            c_name = row.get('CompanyName', '不明')
-            code = str(row['Code'])[:4]
-        # （既存のコード：forループで15銘柄分のメッセージを作る処理）
-        for index, row in res.iterrows():
             c_name = compress_name(row.get('CompanyName', '不明'))
-        # ... (中略) ...
+            code = str(row['Code'])[:4]
+            market = str(row.get('Market', '不明')).split('（')[0] 
+            sector = row.get('Sector', '不明')
+            
+            d_pct = row.get('daily_pct', 0) * 100
+            sign = "+" if d_pct > 0 else ""
+            
+            message += f"**【{code}】{c_name}** ({market}/{sector})\n"
+            message += f"> 🟢 値: **{int(row['lc'])}円** (前日: {sign}{d_pct:.1f}%)\n"
+            message += f"> 🎯 50%的: **{int(row['bt'])}円** (到達: {row['reach_pct']:.1f}%)\n"
+            message += f"> 📈 [利] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+            message += f"> 📉 [損] -8%: {int(row['lc']*0.92)}円\n"
             message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
 
-        # ▼▼▼ NEW: ここを追加（一括コピペ弾倉の生成） ▼▼▼
-            copy_codes = ",".join([str(code)[:4] for code in res['Code']])
-            message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
-        # ▲▲▲ ここまで ▲▲▲
+        # ▼▼▼ NEW: 一括コピペ弾倉の追加 ▼▼▼
+        copy_codes = ",".join([str(c)[:4] for c in res['Code']])
+        message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
 
     # ==========================================
     # 4. 新型・Discord分割連射システム（限界突破）
