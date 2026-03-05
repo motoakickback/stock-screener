@@ -787,4 +787,23 @@ with tab3:
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回"); m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
-                st.dataframe(tdf, use_container_width=True)
+                
+                # ==========================================
+                # 📱 スマホ視認性UPパッチ（表示する直前にデータを圧縮する）
+                # ==========================================
+                def compress_name(name):
+                    if not isinstance(name, str): return "不明"
+                    reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
+                            "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
+                            "フィナンシャルグループ": "FG"}
+                    for k, v in reps.items(): name = name.replace(k, v)
+                    # 10文字を超える場合はカットして「…」をつける
+                    return name[:10] + "…" if len(name) > 10 else name
+
+                    # tdfの中にある企業名（CompanyName）に圧縮フィルターをかける
+                    # ※もし実際の列名が '銘柄名' や 'name' の場合は、以下の 'CompanyName' を書き換えてください
+                    if 'CompanyName' in tdf.columns:
+                        tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
+
+                    # 圧縮済みのデータを画面いっぱいに表示（指揮官が見つけた元のコード）
+                    st.dataframe(tdf, use_container_width=True)
