@@ -219,8 +219,6 @@ def main():
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
     
     import time
-    import requests
-    import os
 
     # ==========================================
     # 1. 基礎フィルター（ノイズ排除）
@@ -228,8 +226,6 @@ def main():
     # 500円未満の低位株（ボロ株）を完全に排除
     sum_df = sum_df[sum_df['lc'] >= 500]  
     sum_df = sum_df[sum_df['r30'] <= 2.0]
-
-    # （※ここに計算式などがあれば残す）
 
     # ==========================================
     # 2. ソート（15銘柄への広視野角解放）
@@ -244,19 +240,19 @@ def main():
     else:
         message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
         for index, row in res.iterrows():
-            message += f"> **{row['name']} ({index})**\n"
-            message += f"> 🟢 現在値: **{row['lc']}円** (目標到達度: {row['reach_pct']}%)\n"
+            c_name = row.get('CompanyName', '不明')
+            message += f"> **{c_name} ({row['Code'][:4]})**\n"
+            message += f"> 🟢 現在値: **{int(row['lc'])}円** (目標到達度: {row['reach_pct']:.1f}%)\n"
             message += f"> 📈 [利確目安] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
             message += f"> 📉 [損切目安] -8%: {int(row['lc']*0.92)}円\n\n"
 
     # ==========================================
     # 4. 新型・Discord分割連射システム（限界突破）
     # ==========================================
-    # 環境変数からDiscordのURLを【確実】に取得する
     target_webhook_url = os.environ.get("DISCORD_WEBHOOK")
 
     if not target_webhook_url:
-        print("【致命的エラー】DiscordのWebhookURLが見つかりません。環境変数を確認してください。")
+        print("【致命的エラー】DiscordのWebhookURLが見つかりません。")
     else:
         max_length = 1800 
         message_chunks = []
@@ -274,7 +270,6 @@ def main():
 
         print(f"【システムログ】Discordへの送信準備完了。全 {len(message_chunks)} 分割で投下します。")
 
-        # 分割したブロックを順番に連射
         for i, chunk in enumerate(message_chunks):
             payload = {"content": chunk}
             response = requests.post(target_webhook_url, json=payload)
@@ -282,7 +277,10 @@ def main():
             if response.status_code not in [200, 204]:
                 print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
                 
-            time.sleep(1) # 1秒待機
+            time.sleep(1)
         
         print("【システムログ】全ミッション完了。通信回線を閉じます。")
-        
+
+# --- 実行トリガー ---
+if __name__ == "__main__":
+    main()
