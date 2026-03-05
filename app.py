@@ -814,20 +814,3 @@ with tab3:
                     st.write("対象銘柄がありません（全軍待機）。")
                 # ▲▲▲ ここまで ▲▲▲
                 
-# ▼▼▼ NEW: 一括コピペ用UIの配置（大トリ） ▼▼▼
-    st.markdown("### 📋 監視リスト一括コピペ用コード")
-    
-    # 日本語・英語の列名に対応する自動探索センサー
-    code_col = None
-    for col in ['Code', 'コード', '銘柄コード']:
-        if col in tdf.columns:
-            code_col = col
-            break
-            
-    if not tdf.empty and code_col:
-        copy_codes = ",".join([str(c)[:4] for c in tdf[code_col]])
-        st.code(copy_codes, language="text")
-    # ▲▲▲ ここまで ▲▲▲
-    
-    # 圧縮済みのデータを画面いっぱいに表示
-    st.dataframe(tdf, use_container_width=True)
