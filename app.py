@@ -437,8 +437,6 @@ with tab1:
             else:
                 st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                 if res.empty: st.warning("現在の相場に、標的は存在しません。")
-                else:
-                    st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                 
                 # ==========================================
                 # 📋 一括コピペ弾倉パッチ（メイン画面用）
@@ -450,9 +448,6 @@ with tab1:
                     st.code(copy_codes, language="text")
                 # ==========================================
 
-                for _, r in res.iterrows():
-                    st.divider()
-                    c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
