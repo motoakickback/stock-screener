@@ -236,7 +236,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
 
     fig.update_layout(**layout_args)
-    # グラフの右側(r)と左側(l)の自動余白（マージン）を強制的に0にする
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -317,7 +316,6 @@ f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
 current_sl = st.session_state.bt_sl_i
-# 【説明文修正】連続下落も検知するように変更したことを明記
 f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True, help=f"単日で【-{current_sl}.0%】以上、または直近3日間で【-{int(current_sl * 1.5)}.0%】以上の連続暴落をしている銘柄を弾きます")
 
 st.sidebar.header("🎯 買いルール")
@@ -355,7 +353,7 @@ with tab1:
                 agg_14 = df_14.groupby('Code').agg(
                     lc=('AdjC', 'last'), 
                     prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
-                    c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan), # 3日前の終値を取得
+                    c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan),
                     h14=('AdjH', 'max'), 
                     l14=('AdjL', 'min')
                 )
@@ -370,7 +368,20 @@ with tab1:
                 sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
                 
                 ur = sum_df['h14'] - sum_df['l14']
-                sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+                
+                # ▼▼▼ 新システム【コードB-Alert】実装 ▼▼▼
+                bt_primary = sum_df['h14'] - (ur * (push_r / 100.0))
+                # push_rが40以上の場合は黄金比(61.8%)、それ以外は設定値+15%を第二防衛線とする
+                shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
+                bt_secondary = sum_df['h14'] - (ur * shift_ratio)
+                
+                # 第一防衛線を割っているか判定
+                sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary
+                
+                # 割っていれば第二防衛線へ自動シフト
+                sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
+                # ▲▲▲ ここまで ▲▲▲
+                
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
                 
                 denom = sum_df['h14'] - sum_df['bt']
@@ -381,7 +392,6 @@ with tab1:
                 sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
                 
                 sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
-                # 3日間のトータル下落率を計算
                 sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
                 
                 dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
@@ -418,12 +428,13 @@ with tab1:
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
-                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.05)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
-                # 【防壁強化】単日暴落、または「3日間で損切設定の1.5倍以上の下落」があれば弾く
+                # ▼▼▼ フィルター拡張（買値シフト時に上の方にいる銘柄を弾かないため 1.35 まで拡張） ▼▼▼
+                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+                
                 if f10_ex_knife:
                     dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
-                    three_days_sl = dynamic_sl_ratio * 1.5 # -8%なら-12%を基準にする
+                    three_days_sl = dynamic_sl_ratio * 1.5
                     sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 
                 if tactics_mode.startswith("⚔️"):
@@ -438,20 +449,14 @@ with tab1:
                 st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                 if res.empty: st.warning("現在の相場に、標的は存在しません。")
                 
-                # ==========================================
-                # 📋 一括コピペ弾倉パッチ（メイン画面用）
-                # ==========================================
                 st.markdown("#### 📋 コピペ用コード")
                 if 'Code' in res.columns:
                     copy_codes = ",".join([str(c)[:4] for c in res['Code']])
                     st.code(copy_codes, language="text")
-                # ==========================================
 
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
-                    
-                    # ※ ここにあった「Pythonによる名前の強制圧縮処理」を完全撤去しました！
                     
                     scale_val = str(r.get('Scale', ''))
                     if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
@@ -459,13 +464,16 @@ with tab1:
                     else:
                         badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                     
-                    # CSSの「text-overflow: ellipsis;」が、画面幅に合わせて自動でいい感じに末尾を「...」にしてくれます
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
                             <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">({c[:-1]}) {n}</h3>
                             <div>{badge}</div>
                         </div>
                     """, unsafe_allow_html=True)
+                    
+                    # ▼▼▼ 防衛線突破アラートの追加 ▼▼▼
+                    if r.get('is_bt_broken', False):
+                        st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線（黄金比等）へ自動シフトし、損切値を再設定しました。")
                     
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
@@ -549,14 +557,21 @@ with tab2:
                             prev_c = df_s['AdjC'].iloc[-2] if len(df_s) >= 2 else np.nan
                             daily_pct = (lc / prev_c) - 1 if pd.notna(prev_c) and prev_c > 0 else 0
                             
-                            # 3日間の下落率を計算
                             if len(df_s) >= 4:
                                 c_3days_ago = df_s['AdjC'].iloc[-4]
                                 pct_3days = (lc / c_3days_ago) - 1 if c_3days_ago > 0 else 0
                             else:
                                 pct_3days = 0
                             
-                            bt_single = h14 - ((h14 - l14) * (push_r / 100.0))
+                            # ▼▼▼ 新システム【コードB-Alert】局地戦にも実装 ▼▼▼
+                            bt_primary = h14 - ((h14 - l14) * (push_r / 100.0))
+                            shift_ratio_s = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
+                            bt_secondary = h14 - ((h14 - l14) * shift_ratio_s)
+                            
+                            is_bt_broken = lc < bt_primary
+                            bt_single = bt_secondary if is_bt_broken else bt_primary
+                            # ▲▲▲ ここまで ▲▲▲
+                            
                             tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                             
                             denom_s = h14 - bt_single
@@ -578,7 +593,6 @@ with tab2:
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
                             
-                            # 【警告強化】単日暴落、または「3日間で損切設定の1.5倍以上の下落」があれば警告を出す
                             flag_knife = False
                             if f10_ex_knife:
                                 dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
@@ -604,7 +618,8 @@ with tab2:
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
                                 (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
-                                (lc <= (bt_single * 1.05)) and (lc >= (bt_single * 0.85))
+                                # 局地戦のスコアリングでも、ターゲット上限を 1.35倍 に緩和して評価
+                                (lc <= (bt_single * 1.35)) and (lc >= (bt_single * 0.85))
                             ]
                             score_list.append(not flag_ipo)
                             score_list.append(not flag_etf)
@@ -620,7 +635,7 @@ with tab2:
                                 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
                                 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                 'is_defense': is_defense, 'daily_pct': daily_pct,
-                                'pct_3days': pct_3days, # 3日間の下落率も保存
+                                'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken, # アラートフラグを保持
                                 'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo
                             })
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
@@ -651,7 +666,10 @@ with tab2:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # 警告メッセージも状況に合わせて変化させる
+                        # ▼▼▼ 防衛線突破アラートの追加（局地戦用） ▼▼▼
+                        if r.get('is_bt_broken'):
+                            st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
+
                         if r.get('flag_knife'): 
                             if r['daily_pct'] < - (st.session_state.bt_sl_i / 100.0):
                                 st.error(f"🚨 【警告】損切設定({st.session_state.bt_sl_i}%)を上回る単日暴落({r['daily_pct']*100:.1f}%)を検知。落ちるナイフのため迎撃非推奨です。")
@@ -804,9 +822,6 @@ with tab3:
                 m1.metric("トレード回数", f"{tot} 回"); m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
                 
-                # ==========================================
-                # 📱 スマホ視認性UP ＆ 📋 一括コピペ弾倉パッチ（改修版）
-                # ==========================================
                 def compress_name(name):
                     if not isinstance(name, str): return "不明"
                     reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
@@ -815,14 +830,11 @@ with tab3:
                     for k, v in reps.items(): name = name.replace(k, v)
                     return name[:10] + "…" if len(name) > 10 else name
 
-                # 企業名の圧縮実行
                 if 'CompanyName' in tdf.columns:
                     tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
 
-                # ▼▼▼ 1. 一括コピペ用UIの配置 ▼▼▼
                 st.markdown("### 📋 監視リスト一括コピペ用コード")
                 
-                # 自動探索センサー
                 code_col = None
                 for col in ['Code', 'コード', '銘柄コード']:
                     if col in tdf.columns:
@@ -835,9 +847,7 @@ with tab3:
                 else:
                     st.write("対象銘柄がありません（全軍待機）。")
 
-                # ▼▼▼ 2. スマホ見切れ防止（コードを強制的に一番左へ移動） ▼▼▼
                 if code_col:
                     cols = tdf.columns.tolist()
-                    cols.insert(0, cols.pop(cols.index(code_col))) # 銘柄コード列を先頭に引き抜く
+                    cols.insert(0, cols.pop(cols.index(code_col)))
                     tdf = tdf[cols]
-                # ▲▲▲ ここまで ▲▲▲
