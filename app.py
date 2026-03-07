@@ -791,7 +791,7 @@ with tab3:
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
                 
                 # ==========================================
-                # 📱 スマホ視認性UP ＆ 📋 一括コピペ弾倉パッチ
+                # 📱 スマホ視認性UP ＆ 📋 一括コピペ弾倉パッチ（改修版）
                 # ==========================================
                 def compress_name(name):
                     if not isinstance(name, str): return "不明"
@@ -805,12 +805,25 @@ with tab3:
                 if 'CompanyName' in tdf.columns:
                     tdf['CompanyName'] = tdf['CompanyName'].apply(compress_name)
 
-                # ▼▼▼ NEW: 一括コピペ用UIの配置 ▼▼▼
+                # ▼▼▼ 1. 一括コピペ用UIの配置 ▼▼▼
                 st.markdown("### 📋 監視リスト一括コピペ用コード")
-                if not tdf.empty and 'Code' in tdf.columns:
-                    copy_codes = ",".join([str(code)[:4] for code in tdf['Code']])
+                
+                # 自動探索センサー
+                code_col = None
+                for col in ['Code', 'コード', '銘柄コード']:
+                    if col in tdf.columns:
+                        code_col = col
+                        break
+
+                if not tdf.empty and code_col:
+                    copy_codes = ",".join([str(c)[:4] for c in tdf[code_col]])
                     st.code(copy_codes, language="text")
                 else:
                     st.write("対象銘柄がありません（全軍待機）。")
+
+                # ▼▼▼ 2. スマホ見切れ防止（コードを強制的に一番左へ移動） ▼▼▼
+                if code_col:
+                    cols = tdf.columns.tolist()
+                    cols.insert(0, cols.pop(cols.index(code_col))) # 銘柄コード列を先頭に引き抜く
+                    tdf = tdf[cols]
                 # ▲▲▲ ここまで ▲▲▲
-                
