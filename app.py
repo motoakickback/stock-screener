@@ -441,7 +441,8 @@ with tab1:
                 # ==========================================
                 # 📋 一括コピペ弾倉パッチ（メイン画面用）
                 # ==========================================
-                st.markdown("### 📋 監視リスト一括コピペ用コード")
+                # 【修正1】スマホでの折り返しを防ぐため、見出しを小さく・短くしました
+                st.markdown("#### 📋 コピペ用コード")
                 if 'Code' in res.columns:
                     # 4桁の数字だけを抽出してカンマ区切りで結合
                     copy_codes = ",".join([str(c)[:4] for c in res['Code']])
@@ -452,15 +453,23 @@ with tab1:
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
                     
+                    # ▼▼▼ 【修正2】長すぎる企業名を強制圧縮（HD等に変換＆10文字カット） ▼▼▼
+                    if isinstance(n, str):
+                        reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech"}
+                        for k, v in reps.items(): n = n.replace(k, v)
+                        n = n[:10] + "…" if len(n) > 10 else n
+                    # ▲▲▲ 圧縮ここまで ▲▲▲
+                    
                     scale_val = str(r.get('Scale', ''))
                     if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                         badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
                     else:
                         badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                     
+                    # ▼▼▼ 【修正3】見切れの完全防止：「企業名 (コード)」を「(コード) 企業名」の順に逆転 ▼▼▼
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{n} ({c[:-1]})</h3>
+                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">({c[:-1]}) {n}</h3>
                             <div>{badge}</div>
                         </div>
                     """, unsafe_allow_html=True)
