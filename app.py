@@ -436,6 +436,23 @@ with tab1:
             if res.empty: st.warning("現在の相場に、標的は存在しません。")
             else:
                 st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
+                if res.empty: st.warning("現在の相場に、標的は存在しません。")
+                else:
+                    st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
+                
+                # ==========================================
+                # 📋 一括コピペ弾倉パッチ（メイン画面用）
+                # ==========================================
+                st.markdown("### 📋 監視リスト一括コピペ用コード")
+                if 'Code' in res.columns:
+                    # 4桁の数字だけを抽出してカンマ区切りで結合
+                    copy_codes = ",".join([str(c)[:4] for c in res['Code']])
+                    st.code(copy_codes, language="text")
+                # ==========================================
+
+                for _, r in res.iterrows():
+                    st.divider()
+                    c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
                 for _, r in res.iterrows():
                     st.divider()
                     c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
