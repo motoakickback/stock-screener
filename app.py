@@ -190,6 +190,69 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
+# ==========================================
+# 🚀 新機能：酒田五法（波形認識）検知モジュール
+# ==========================================
+def check_sakata_patterns(df_sub):
+    """
+    直近のローソク足から、酒田五法（赤三兵、黒三兵、たくり線）を検知し、
+    結果を文字列（シグナル）で返す関数。
+    """
+    if len(df_sub) < 25:
+        return None
+        
+    df = df_sub.copy()
+    
+    # テクニカル指標の計算（25MA）
+    df['SMA_25'] = df['AdjC'].rolling(window=25).mean()
+    
+    # 最新のデータを抽出
+    current = df.iloc[-1]
+    prev1 = df.iloc[-2]
+    prev2 = df.iloc[-3]
+    
+    # 陽線・陰線の判定
+    is_bullish = current['AdjC'] > current['AdjO']
+    is_bullish_1 = prev1['AdjC'] > prev1['AdjO']
+    is_bullish_2 = prev2['AdjC'] > prev2['AdjO']
+
+    is_bearish = current['AdjC'] < current['AdjO']
+    is_bearish_1 = prev1['AdjC'] < prev1['AdjO']
+    is_bearish_2 = prev2['AdjC'] < prev2['AdjO']
+
+    # 🟢 赤三兵の条件
+    red_three_soldiers = (
+        is_bullish and is_bullish_1 and is_bullish_2 and
+        (current['AdjC'] > prev1['AdjC']) and (prev1['AdjC'] > prev2['AdjC']) and
+        (current['AdjH'] > prev1['AdjH']) and (prev1['AdjH'] > prev2['AdjH'])
+    )
+
+    # 🔴 黒三兵の条件
+    black_three_crows = (
+        is_bearish and is_bearish_1 and is_bearish_2 and
+        (current['AdjC'] < prev1['AdjC']) and (prev1['AdjC'] < prev2['AdjC']) and
+        (current['AdjL'] < prev1['AdjL']) and (prev1['AdjL'] < prev2['AdjL'])
+    )
+
+    # 🟢 たくり線（長い下ヒゲ）の条件
+    body = abs(current['AdjC'] - current['AdjO'])
+    lower_shadow = min(current['AdjO'], current['AdjC']) - current['AdjL']
+    takuri_line = (lower_shadow >= body * 2.5) and (body > 0)
+
+    # 判定とシグナルの生成
+    sma25 = current['SMA_25']
+    if pd.isna(sma25):
+        return None
+
+    if red_three_soldiers and (current['AdjC'] < sma25):
+        return "🟢 赤三兵（底打ち反転）"
+    elif takuri_line and (current['AdjC'] < sma25):
+        return "🟢 たくり線（強力な床）"
+    elif black_three_crows and (current['AdjC'] > sma25):
+        return "🔴 黒三兵（下落警戒）"
+        
+    return None
+
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -369,18 +432,12 @@ with tab1:
                 
                 ur = sum_df['h14'] - sum_df['l14']
                 
-                # ▼▼▼ 新システム【コードB-Alert】実装 ▼▼▼
                 bt_primary = sum_df['h14'] - (ur * (push_r / 100.0))
-                # push_rが40以上の場合は黄金比(61.8%)、それ以外は設定値+15%を第二防衛線とする
                 shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
                 bt_secondary = sum_df['h14'] - (ur * shift_ratio)
                 
-                # 第一防衛線を割っているか判定
                 sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary
-                
-                # 割っていれば第二防衛線へ自動シフト
                 sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
-                # ▲▲▲ ここまで ▲▲▲
                 
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
                 
@@ -397,7 +454,11 @@ with tab1:
                 dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
                 hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
                 db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
-                sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left')
+                
+                # ▼▼▼ 酒田五法の適用 ▼▼▼
+                sakata_s = df_30.groupby('Code').apply(check_sakata_patterns).rename('sakata_signal')
+                
+                sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left').merge(sakata_s, on='Code', how='left')
                 sum_df = sum_df.fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
                 
                 sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
@@ -426,10 +487,13 @@ with tab1:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                 
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+                
+                # 🔴 黒三兵が出ている銘柄はここで強制除外（撤退推奨のため）
+                sum_df = sum_df[sum_df['sakata_signal'] != "🔴 黒三兵（下落警戒）"]
+                
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
                 
-                # ▼▼▼ フィルター拡張（買値シフト時に上の方にいる銘柄を弾かないため 1.35 まで拡張） ▼▼▼
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 
                 if f10_ex_knife:
@@ -471,12 +535,15 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # ▼▼▼ 防衛線突破アラートの追加 ▼▼▼
                     if r.get('is_bt_broken', False):
                         st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線（黄金比等）へ自動シフトし、損切値を再設定しました。")
                     
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
+                    
+                    # ▼▼▼ 酒田五法のシグナル表示 ▼▼▼
+                    if pd.notna(r.get('sakata_signal')):
+                        st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                         
                     cc1, cc2, cc3, cc4, cc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                     
@@ -563,14 +630,12 @@ with tab2:
                             else:
                                 pct_3days = 0
                             
-                            # ▼▼▼ 新システム【コードB-Alert】局地戦にも実装 ▼▼▼
                             bt_primary = h14 - ((h14 - l14) * (push_r / 100.0))
                             shift_ratio_s = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
                             bt_secondary = h14 - ((h14 - l14) * shift_ratio_s)
                             
                             is_bt_broken = lc < bt_primary
                             bt_single = bt_secondary if is_bt_broken else bt_primary
-                            # ▲▲▲ ここまで ▲▲▲
                             
                             tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                             
@@ -587,6 +652,9 @@ with tab2:
                             is_db = check_double_bottom(df_30)
                             is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
                             
+                            # ▼▼▼ 局地戦にも酒田五法を適用 ▼▼▼
+                            sakata_signal = check_sakata_patterns(df_30)
+                            
                             c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                             if not master_df.empty:
                                 m_row = master_df[master_df['Code'] == c + "0"]
@@ -599,7 +667,7 @@ with tab2:
                                 three_days_sl = dynamic_sl_ratio * 1.5
                                 if daily_pct < dynamic_sl_ratio or pct_3days < three_days_sl:
                                     flag_knife = True
-                                
+                            
                             flag_etf = False
                             if f7_ex_etf:
                                 flag_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
@@ -618,7 +686,6 @@ with tab2:
                                 lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
                                 (lrise <= f4_mlong) or (lrise == 0),
                                 (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
-                                # 局地戦のスコアリングでも、ターゲット上限を 1.35倍 に緩和して評価
                                 (lc <= (bt_single * 1.35)) and (lc >= (bt_single * 0.85))
                             ]
                             score_list.append(not flag_ipo)
@@ -635,8 +702,9 @@ with tab2:
                                 'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
                                 'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                 'is_defense': is_defense, 'daily_pct': daily_pct,
-                                'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken, # アラートフラグを保持
-                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo
+                                'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
+                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
+                                'sakata_signal': sakata_signal
                             })
                             charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
@@ -666,7 +734,6 @@ with tab2:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # ▼▼▼ 防衛線突破アラートの追加（局地戦用） ▼▼▼
                         if r.get('is_bt_broken'):
                             st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
 
@@ -686,6 +753,13 @@ with tab2:
                         if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
+                        
+                        # ▼▼▼ 局地戦にも酒田五法のシグナル表示 ▼▼▼
+                        if pd.notna(r.get('sakata_signal')):
+                            if "🔴" in r['sakata_signal']:
+                                st.error(f"🚨 【波形警告】{r['sakata_signal']}")
+                            else:
+                                st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                             
                         sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
                         
