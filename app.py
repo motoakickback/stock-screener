@@ -250,9 +250,11 @@ def check_sakata_patterns(df_sub):
         return "🟢 たくり線（強力な床）"
     elif black_three_crows and (current['AdjC'] > sma25):
         return "🔴 黒三兵（下落警戒）"
+    elif black_three_crows and (current['AdjC'] < sma25):
+        return "🔥 陰の極み（底値の黒三兵・セリクラ反発待ち）"
         
     return None
-
+    
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
