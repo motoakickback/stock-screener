@@ -485,7 +485,8 @@ with tab1:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                 
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
-                sum_df = sum_df[sum_df['sakata_signal'] != "🔴 黒三兵（下落警戒）"]
+                # 「下落警戒」の文字が含まれる危険な黒三兵だけを全軍から除外する（陰の極みは残す）
+                sum_df = sum_df[~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False)]
                 
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
                 sum_df = sum_df[sum_df['d_high'] <= limit_d]
