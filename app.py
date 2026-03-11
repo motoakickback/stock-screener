@@ -540,7 +540,10 @@ with tab1:
                     if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                     
                     if pd.notna(r.get('sakata_signal')):
-                        st.success(f"✨ 【波形検知】{r['sakata_signal']}")
+                        if "下落警戒" in str(r['sakata_signal']):
+                            st.error(f"🚨 【波形警告・撤退推奨】{r['sakata_signal']}")
+                        else:
+                            st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
                         
                     # --- 【完全防衛型 UI描画ブロック】全軍・局地戦 共通 ---
                     lc_val = int(r.get('lc', 0))
