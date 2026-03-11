@@ -491,6 +491,9 @@ with tab1:
                     three_days_sl = dynamic_sl_ratio * 1.5
                     sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 
+                # --- 【修正】全軍スキャンでは正しい達成率が出せないため、NaN（空データ）を入れてUI側に知らせる ---
+                sum_df['rule_pct'] = float('nan')
+                
                 if tactics_mode.startswith("⚔️"):
                     res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
                 elif tactics_mode.startswith("🛡️"):
