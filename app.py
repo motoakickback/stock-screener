@@ -474,7 +474,8 @@ with tab1:
                 if f8_ex_bio and 'Sector' in sum_df.columns:
                     sum_df = sum_df[sum_df['Sector'] != '医薬品']
 
-                sum_df = sum_df[sum_df['lc'] >= f1_min]
+                # 【修正】下限だけでなく、上限（f1_max）以下の条件も追加して挟み撃ちにする
+                sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max)]
                 sum_df = sum_df[sum_df['r30'] <= f2_m30]
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
                 sum_df = sum_df[(sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0)]
