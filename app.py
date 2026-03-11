@@ -547,32 +547,39 @@ with tab1:
                     if pd.notna(r.get('sakata_signal')):
                         st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                         
-                    cc1, cc2, cc3, cc4, cc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
-                    
-                    daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                    cc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
-                    
-                    html_buy = f"""
-                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['bt']):,}円</div>
-                    </div>
-                    """
-                    cc2.markdown(html_buy, unsafe_allow_html=True)
-                    
-                    sl5 = int(r['bt'] * 0.85); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.95)
-                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
-                        <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{int(r['tp20']):,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{int(r['tp15']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{int(r['tp10']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{int(r['tp5']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                        # 【修正】カラムを6つに増やし、一番左に「sc0」を追加しました
+                        sc0, sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1, 1.8, 0.8, 0.8])
+                        
+                        # 【追加】一番左（sc0）に直近高値を表示
+                        # ※注意：データ取得部分で r['high']（またはそれに該当する高値の変数）が辞書に格納されている必要があります
+                        sc0.metric("直近高値", f"{int(r['high'])}円")
+                        
+                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
+                        sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                        
+                        html_buy = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['bt']):,}円</div>
                         </div>
-                    </div>"""
-                    cc3.markdown(html_sell, unsafe_allow_html=True)
-                    cc4.metric("到達度", f"{r['reach_pct']:.1f}%")
-                    cc5.metric("掟達成率", "100%")
+                        """
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                        
+                        # 【バグ修正】掛け算の数値を正しいパーセンテージに修正しました
+                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                        
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{int(r['tp20']):,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{int(r['tp15']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{int(r['tp10']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{int(r['tp5']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                            </div>
+                        </div>"""
+                        sc3.markdown(html_sell, unsafe_allow_html=True)
+                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                        sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
