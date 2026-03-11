@@ -763,7 +763,12 @@ with tab2:
                             else:
                                 st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                             
-                        sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1.8, 0.8, 0.8])
+                        # 【修正】カラムを6つに増やし、一番左に「sc0」を追加しました
+                        sc0, sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1, 1.8, 0.8, 0.8])
+                        
+                        # 【追加】一番左（sc0）に直近高値を表示
+                        # ※注意：データ取得部分で r['high']（またはそれに該当する高値の変数）が辞書に格納されている必要があります
+                        sc0.metric("直近高値", f"{int(r['high'])}円")
                         
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
@@ -776,7 +781,8 @@ with tab2:
                         """
                         sc2.markdown(html_buy, unsafe_allow_html=True)
                         
-                        sl5 = int(r['bt'] * 0.85); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.95)
+                        # 【バグ修正】掛け算の数値を正しいパーセンテージに修正しました
+                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
                         
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
