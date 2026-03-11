@@ -777,39 +777,51 @@ with tab2:
                             else:
                                 st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                             
-                        # 【修正】カラムを6つに増やし、一番左に「sc0」を追加しました
+                        # --- 【完全防衛型UIパッチ】全軍・局地戦 共通 ---
                         sc0, sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1, 1.8, 0.8, 0.8])
                         
-                        # 【追加】一番左（sc0）に直近高値を表示
-                        # ※注意：データ取得部分で r['high']（またはそれに該当する高値の変数）が辞書に格納されている必要があります
-                        sc0.metric("直近高値", f"{int(r['high'])}円")
+                        # ① 直近高値の安全取得（NaNやデータ無しの場合は、最新終値を代入してクラッシュを防ぐ）
+                        high_price = r.get('high', r.get('lc', 0))
+                        import pandas as pd # 念のため
+                        if pd.isna(high_price): high_price = r.get('lc', 0)
+                        sc0.metric("直近高値", f"{int(high_price):,}円")
                         
-                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                        sc1.metric("最新終値", f"{int(r['lc'])}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                        # ② 最新終値の安全表示
+                        lc = r.get('lc', 0)
+                        daily_pct = r.get('daily_pct', 0)
+                        daily_sign = "+" if daily_pct >= 0 else ""
+                        sc1.metric("最新終値", f"{int(lc):,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                        
+                        # ③ 買値・売値・損切の計算
+                        bt = r.get('bt', 0)
+                        if pd.isna(bt): bt = 0
                         
                         html_buy = f"""
                         <div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['bt']):,}円</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(bt):,}円</div>
                         </div>
                         """
                         sc2.markdown(html_buy, unsafe_allow_html=True)
                         
-                        # 【バグ修正】掛け算の数値を正しいパーセンテージに修正しました
-                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                        sl5 = int(bt * 0.95); sl8 = int(bt * 0.92); sl15 = int(bt * 0.85)
+                        tp20 = int(r.get('tp20', bt * 1.2)); tp15 = int(r.get('tp15', bt * 1.15))
+                        tp10 = int(r.get('tp10', bt * 1.1)); tp5 = int(r.get('tp5', bt * 1.05))
                         
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{int(r['tp20']):,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{int(r['tp15']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{int(r['tp10']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{int(r['tp5']):,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
                             </div>
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
-                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
-                        sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
+                        
+                        # ④ 局地戦で「掟達成率」等のデータが無くてもエラーにしない絶対防衛線
+                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%" if 'reach_pct' in r else "---")
+                        sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%" if 'rule_pct' in r else "---")
                         
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
