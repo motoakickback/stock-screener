@@ -443,21 +443,12 @@ with tab1:
                 
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
 
-                # --- 【ここを修正！】全銘柄の直近高値を一括計算（エラー回避＆自動索敵版） ---
-                # データフレーム(df)の中に、どんな名前で高値が隠れているか順番に探り当てます
-                if 'High' in df.columns:
-                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['High'].max())
-                elif '高値' in df.columns:
-                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['高値'].max())
-                elif 'high' in df.columns:
-                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['high'].max())
+                # --- 【最終完了版】大元の履歴データ(df)から、各銘柄(Code)ごとの最高値(H)を抽出 ---
+                # 'H' (High:高値) または 'AdjH' (Adjusted High:調整後高値) を使用します
+                if 'H' in df.columns:
+                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['H'].max())
                 else:
-                    # 万が一どれにも当てはまらない場合、アプリを強制終了させず「最新終値(lc)」を仮置きして防衛します
-                    sum_df['high'] = sum_df['lc']
-                    
-                    # さらに、画面のどこかに「本当のデータ名（カラム名）」を赤いエラー文字で表示させて犯人を炙り出します
-                    import streamlit as st
-                    st.error(f"⚠️ 【要確認】高値のデータ名が不明です。実際のデータ名は以下の通りです： {df.columns.tolist()}")
+                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['AdjH'].max())
                     
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
