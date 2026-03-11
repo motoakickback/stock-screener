@@ -135,16 +135,19 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
+# ==========================================
+# 🚀 2週間（14日間）専用の波形判定モジュール
+# ==========================================
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
-        if len(v) < 15: return False
+        if len(v) < 6: return False # 14日以内の短いスパンで検知できるよう感度アップ
         peaks = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 3): peaks.append((i, v[i]))
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
         if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 3): peaks.append((len(v)-1, v[-1]))
+            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
         if len(peaks) >= 2:
             p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
             if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
@@ -157,11 +160,11 @@ def check_double_top(df_sub):
 def check_head_shoulders(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
-        if len(v) < 20: return False
+        if len(v) < 8: return False
         peaks = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 2): peaks.append((i, v[i]))
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
         if len(peaks) >= 3:
             p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
             if p2_val > p1_val and p2_val > p3_val:
@@ -173,13 +176,13 @@ def check_head_shoulders(df_sub):
 def check_double_bottom(df_sub):
     try:
         l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
-        if len(l) < 15: return False
+        if len(l) < 6: return False
         valleys = []
         for i in range(1, len(l)-1):
             if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 3): valleys.append((i, l[i]))
+                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
         if len(l) >= 3 and l[-2] == min(l[-3:]):
-             if not valleys or (len(l)-2 - valleys[-1][0] > 3): valleys.append((len(l)-2, l[-2]))
+             if not valleys or (len(l)-2 - valleys[-1][0] > 1): valleys.append((len(l)-2, l[-2]))
                 
         if len(valleys) >= 2:
             v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
@@ -190,9 +193,6 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
-# ==========================================
-# 🚀 新機能：酒田五法（波形認識）検知モジュール
-# ==========================================
 def check_sakata_patterns(df_sub):
     if len(df_sub) < 25:
         return None
@@ -200,6 +200,7 @@ def check_sakata_patterns(df_sub):
     df = df_sub.copy()
     df['SMA_25'] = df['AdjC'].rolling(window=25).mean()
     
+    # 完全に直近3日間のローソク足のみで判定するため、過去のシグナルは拾いません
     current = df.iloc[-1]
     prev1 = df.iloc[-2]
     prev2 = df.iloc[-3]
@@ -233,11 +234,11 @@ def check_sakata_patterns(df_sub):
         return None
 
     if red_three_soldiers and (current['AdjC'] < sma25):
-        return "🔴 赤三兵（底打ち反転）"
+        return "🟢 赤三兵（底打ち反転）"
     elif takuri_line and (current['AdjC'] < sma25):
-        return "🔴 たくり線（強力な床）"
+        return "🟢 たくり線（強力な床）"
     elif black_three_crows and (current['AdjC'] > sma25):
-        return "🟢 黒三兵（下落警戒）"
+        return "🔴 黒三兵（下落警戒）"
     elif black_three_crows and (current['AdjC'] < sma25):
         return "🔥 陰の極み（底値の黒三兵・セリクラ反発待ち）"
         
@@ -394,9 +395,14 @@ with tab1:
                 d_raw = pd.DataFrame(raw)
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
-                df_14 = df_30.groupby('Code').tail(14)
+                
+                # --- カレンダー通りの「直近14日間」を厳密に抽出 ---
+                max_date_all = df['Date'].max()
+                cutoff_date_14 = max_date_all - timedelta(days=14)
+                df_14 = df_30[df_30['Date'] >= cutoff_date_14]
+                
                 counts = df_14.groupby('Code').size()
-                valid = counts[counts == 14].index
+                valid = counts[counts >= 5].index # 14日間に最低5営業日はデータがある銘柄のみ
                 if valid.empty: st.warning("条件を満たすデータが存在しません。"); st.stop()
                 
                 df_14 = df_14[df_14['Code'].isin(valid)]
@@ -407,8 +413,8 @@ with tab1:
                     lc=('AdjC', 'last'), 
                     prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
                     c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan),
-                    h14=('AdjH', 'max'), 
-                    l14=('AdjL', 'min')
+                    h14=('AdjH', 'max'), # この h14 は厳密に「過去14日カレンダー」の最高値
+                    l14=('AdjL', 'min')  # この l14 も厳密に「過去14日カレンダー」の最安値
                 )
                 
                 idx_max = df_14.groupby('Code')['AdjH'].idxmax()
@@ -419,9 +425,7 @@ with tab1:
                 agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
                 agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
                 
-                # 【重要パッチ】司令塔で直近高値（全期間の最高値）を確実に計算してマージする
-                agg_all_high = df.groupby('Code').agg(recent_high=('AdjH', 'max'))
-                sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).join(agg_all_high).reset_index()
+                sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
                 
                 ur = sum_df['h14'] - sum_df['l14']
                 
@@ -444,10 +448,12 @@ with tab1:
                 sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
                 sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
                 
-                dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
-                hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
-                db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
+                # --- 波形分析も「直近14日カレンダー」に限定 ---
+                dt_s = df_14.groupby('Code').apply(check_double_top).rename('is_dt')
+                hs_s = df_14.groupby('Code').apply(check_head_shoulders).rename('is_hs')
+                db_s = df_14.groupby('Code').apply(check_double_bottom).rename('is_db')
                 
+                # 酒田五法は直近3日しか見ないためdf_30を渡し、SMA25の計算を担保
                 sakata_s = df_30.groupby('Code').apply(check_sakata_patterns).rename('sakata_signal')
                 
                 sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left').merge(sakata_s, on='Code', how='left')
@@ -491,7 +497,6 @@ with tab1:
                     three_days_sl = dynamic_sl_ratio * 1.5
                     sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 
-                # --- 【修正】全軍スキャンでは正しい達成率が出せないため、NaN（空データ）を入れてUI側に知らせる ---
                 sum_df['rule_pct'] = float('nan')
                 
                 if tactics_mode.startswith("⚔️"):
@@ -540,11 +545,9 @@ with tab1:
                     lc_val = int(r.get('lc', 0))
                     bt_val = int(r.get('bt', 0))
                     
-                    # 直近高値はデータフレームで計算済みの recent_high を呼ぶだけ。無ければ14日高値。
-                    high_val = int(r.get('recent_high', r.get('h14', lc_val)))
-                    if pd.isna(high_val) or high_val == 0: high_val = lc_val
+                    # 画面表示用の高値も「直近14日カレンダーの最高値（h14）」に限定
+                    high_val = int(r.get('h14', lc_val))
 
-                    # 損切目安の計算（バグ修正済みの正しい掛け算）
                     sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
                     tp20 = int(r.get('tp20', bt_val * 1.2)); tp15 = int(r.get('tp15', bt_val * 1.15))
                     tp10 = int(r.get('tp10', bt_val * 1.1)); tp5 = int(r.get('tp5', bt_val * 1.05))
@@ -580,9 +583,8 @@ with tab1:
                     reach_val = r.get('reach_pct', float('nan'))
                     sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                     
-                    # 掟達成率の表示（NaNの場合は「局地戦へ」とナビゲートする）
                     rule_val = r.get('rule_pct', float('nan'))
-                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
+                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
                 
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r.get('d_high', 0))}日")
                     
@@ -624,105 +626,111 @@ with tab2:
                     raw_single = get_single_data(c + "0", 1) 
                     if raw_single:
                         df_s = clean_df(pd.DataFrame(raw_single))
-                        if not df_s.empty and len(df_s) >= 14:
-                            df_30 = df_s.tail(30); df_14 = df_s.tail(14); df_past = df_s[~df_s.index.isin(df_30.index)]
-                            h14 = df_14['AdjH'].max(); l14 = df_14['AdjL'].min(); lc = df_s['AdjC'].iloc[-1]
+                        
+                        # カレンダー通りの直近14日間を厳密に抽出
+                        if not df_s.empty:
+                            max_date_s = df_s['Date'].max()
+                            cutoff_date_s = max_date_s - timedelta(days=14)
+                            df_14 = df_s[df_s['Date'] >= cutoff_date_s]
+                            df_30 = df_s.tail(30)
                             
-                            # 【重要パッチ】局地戦でも直近高値（全期間の最高値）を確実に計算
-                            recent_high = df_s['AdjH'].max()
-                            
-                            idxmax = df_14['AdjH'].idxmax(); h_date = df_14.loc[idxmax, 'Date']
-                            d_high = len(df_14[df_14['Date'] > h_date])
-                            l30 = df_30['AdjL'].min() if not df_30.empty else np.nan
-                            omax = df_past['AdjH'].max() if not df_past.empty else np.nan
-                            omin = df_past['AdjL'].min() if not df_past.empty else np.nan
-                            
-                            prev_c = df_s['AdjC'].iloc[-2] if len(df_s) >= 2 else np.nan
-                            daily_pct = (lc / prev_c) - 1 if pd.notna(prev_c) and prev_c > 0 else 0
-                            
-                            if len(df_s) >= 4:
-                                c_3days_ago = df_s['AdjC'].iloc[-4]
-                                pct_3days = (lc / c_3days_ago) - 1 if c_3days_ago > 0 else 0
-                            else:
-                                pct_3days = 0
-                            
-                            bt_primary = h14 - ((h14 - l14) * (push_r / 100.0))
-                            shift_ratio_s = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
-                            bt_secondary = h14 - ((h14 - l14) * shift_ratio_s)
-                            
-                            is_bt_broken = lc < bt_primary
-                            bt_single = bt_secondary if is_bt_broken else bt_primary
-                            
-                            tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
-                            
-                            denom_s = h14 - bt_single
-                            reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
-                            
-                            r14 = h14 / l14 if l14 > 0 else 0
-                            r30 = lc / l30 if pd.notna(l30) and l30 > 0 else 0
-                            ldrop = ((lc / omax) - 1) * 100 if pd.notna(omax) and omax > 0 else 0
-                            lrise = lc / omin if pd.notna(omin) and omin > 0 else 0
-                            
-                            is_dt = check_double_top(df_30)
-                            is_hs = check_head_shoulders(df_30)
-                            is_db = check_double_bottom(df_30)
-                            is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
-                            
-                            sakata_signal = check_sakata_patterns(df_30)
-                            
-                            c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
-                            if not master_df.empty:
-                                m_row = master_df[master_df['Code'] == c + "0"]
-                                if not m_row.empty:
-                                    c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
-                            
-                            flag_knife = False
-                            if f10_ex_knife:
-                                dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
-                                three_days_sl = dynamic_sl_ratio * 1.5
-                                if daily_pct < dynamic_sl_ratio or pct_3days < three_days_sl:
-                                    flag_knife = True
-                            
-                            flag_etf = False
-                            if f7_ex_etf:
-                                flag_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
+                            if not df_14.empty:
+                                df_past = df_s[~df_s.index.isin(df_30.index)]
+                                h14 = df_14['AdjH'].max(); l14 = df_14['AdjL'].min(); lc = df_s['AdjC'].iloc[-1]
                                 
-                            flag_bio = False
-                            if f8_ex_bio:
-                                flag_bio = (c_sector == '医薬品')
+                                idxmax = df_14['AdjH'].idxmax(); h_date = df_14.loc[idxmax, 'Date']
+                                d_high = len(df_14[df_14['Date'] > h_date])
+                                l30 = df_30['AdjL'].min() if not df_30.empty else np.nan
+                                omax = df_past['AdjH'].max() if not df_past.empty else np.nan
+                                omin = df_past['AdjL'].min() if not df_past.empty else np.nan
                                 
-                            flag_ipo = False
-                            if f5_ipo:
-                                old_c = get_old_codes()
-                                if (old_c and (c + "0") not in old_c) or re.search(r'[a-zA-Z]', c):
-                                    flag_ipo = True
-                            
-                            score_list = [
-                                lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
-                                (lrise <= f4_mlong) or (lrise == 0),
-                                (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
-                                (lc <= (bt_single * 1.35)) and (lc >= (bt_single * 0.85))
-                            ]
-                            score_list.append(not flag_ipo)
-                            score_list.append(not flag_etf)
-                            score_list.append(not flag_bio)
-                            score_list.append(not flag_knife)
-                            if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
-                            score_list.append(not is_dt and not is_hs)
-                            
-                            rule_pct = (sum(score_list) / len(score_list)) * 100
-                            results.append({
-                                'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
-                                'recent_high': recent_high, 'lc': lc, 'bt': bt_single, 
-                                'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 
-                                'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
-                                'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
-                                'is_defense': is_defense, 'daily_pct': daily_pct,
-                                'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
-                                'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
-                                'sakata_signal': sakata_signal
-                            })
-                            charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
+                                prev_c = df_s['AdjC'].iloc[-2] if len(df_s) >= 2 else np.nan
+                                daily_pct = (lc / prev_c) - 1 if pd.notna(prev_c) and prev_c > 0 else 0
+                                
+                                if len(df_s) >= 4:
+                                    c_3days_ago = df_s['AdjC'].iloc[-4]
+                                    pct_3days = (lc / c_3days_ago) - 1 if c_3days_ago > 0 else 0
+                                else:
+                                    pct_3days = 0
+                                
+                                bt_primary = h14 - ((h14 - l14) * (push_r / 100.0))
+                                shift_ratio_s = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
+                                bt_secondary = h14 - ((h14 - l14) * shift_ratio_s)
+                                
+                                is_bt_broken = lc < bt_primary
+                                bt_single = bt_secondary if is_bt_broken else bt_primary
+                                
+                                tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
+                                
+                                denom_s = h14 - bt_single
+                                reach_s = ((h14 - lc) / denom_s * 100) if denom_s > 0 else 0
+                                
+                                r14 = h14 / l14 if l14 > 0 else 0
+                                r30 = lc / l30 if pd.notna(l30) and l30 > 0 else 0
+                                ldrop = ((lc / omax) - 1) * 100 if pd.notna(omax) and omax > 0 else 0
+                                lrise = lc / omin if pd.notna(omin) and omin > 0 else 0
+                                
+                                # 波形分析も「直近14日カレンダー」に限定
+                                is_dt = check_double_top(df_14)
+                                is_hs = check_head_shoulders(df_14)
+                                is_db = check_double_bottom(df_14)
+                                is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
+                                
+                                sakata_signal = check_sakata_patterns(df_30)
+                                
+                                c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
+                                if not master_df.empty:
+                                    m_row = master_df[master_df['Code'] == c + "0"]
+                                    if not m_row.empty:
+                                        c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
+                                
+                                flag_knife = False
+                                if f10_ex_knife:
+                                    dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
+                                    three_days_sl = dynamic_sl_ratio * 1.5
+                                    if daily_pct < dynamic_sl_ratio or pct_3days < three_days_sl:
+                                        flag_knife = True
+                                
+                                flag_etf = False
+                                if f7_ex_etf:
+                                    flag_etf = (c_sector == '不明') or (c_sector == '-') or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))
+                                    
+                                flag_bio = False
+                                if f8_ex_bio:
+                                    flag_bio = (c_sector == '医薬品')
+                                    
+                                flag_ipo = False
+                                if f5_ipo:
+                                    old_c = get_old_codes()
+                                    if (old_c and (c + "0") not in old_c) or re.search(r'[a-zA-Z]', c):
+                                        flag_ipo = True
+                                
+                                score_list = [
+                                    lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
+                                    (lrise <= f4_mlong) or (lrise == 0),
+                                    (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
+                                    (lc <= (bt_single * 1.35)) and (lc >= (bt_single * 0.85))
+                                ]
+                                score_list.append(not flag_ipo)
+                                score_list.append(not flag_etf)
+                                score_list.append(not flag_bio)
+                                score_list.append(not flag_knife)
+                                if f6_risk: score_list.append(not bool(re.search("疑義|重要事象", str(c_name))))
+                                score_list.append(not is_dt and not is_hs)
+                                
+                                rule_pct = (sum(score_list) / len(score_list)) * 100
+                                results.append({
+                                    'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
+                                    'lc': lc, 'bt': bt_single, 
+                                    'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 
+                                    'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
+                                    'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
+                                    'is_defense': is_defense, 'daily_pct': daily_pct,
+                                    'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
+                                    'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
+                                    'sakata_signal': sakata_signal
+                                })
+                                charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
                     res_df = pd.DataFrame(results)
@@ -780,11 +788,9 @@ with tab2:
                         lc_val = int(r.get('lc', 0))
                         bt_val = int(r.get('bt', 0))
                         
-                        # 直近高値はデータフレームで計算済みの recent_high を呼ぶだけ。無ければ14日高値。
-                        high_val = int(r.get('recent_high', r.get('h14', lc_val)))
-                        if pd.isna(high_val) or high_val == 0: high_val = lc_val
+                        # 画面表示用の高値も「直近14日カレンダーの最高値（h14）」に限定
+                        high_val = int(r.get('h14', lc_val))
 
-                        # 損切目安の計算
                         sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
                         tp20 = int(r.get('tp20', bt_val * 1.2)); tp15 = int(r.get('tp15', bt_val * 1.15))
                         tp10 = int(r.get('tp10', bt_val * 1.1)); tp5 = int(r.get('tp5', bt_val * 1.05))
@@ -820,9 +826,8 @@ with tab2:
                         reach_val = r.get('reach_pct', float('nan'))
                         sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                         
-                        # 掟達成率の表示（NaNの場合は「局地戦へ」とナビゲートする）
                         rule_val = r.get('rule_pct', float('nan'))
-                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "局地戦へ➡")
+                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
                         
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
