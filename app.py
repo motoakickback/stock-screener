@@ -776,7 +776,7 @@ with tab2:
                         """
                         sc2.markdown(html_buy, unsafe_allow_html=True)
                         
-                        sl5 = int(r['bt'] * 0.95); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.85)
+                        sl5 = int(r['bt'] * 0.85); sl8 = int(r['bt'] * 0.92); sl15 = int(r['bt'] * 0.95)
                         
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
