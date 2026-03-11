@@ -355,7 +355,10 @@ tactics_mode = st.sidebar.radio(
 )
 
 st.sidebar.header("🔍 ピックアップルール")
-f1_min = st.sidebar.number_input("① 株価下限(円)", value=200, step=100)
+# 【追加】下限と上限を横並び（カラム）にして、交戦レンジを設定する
+c_f1_1, c_f1_2 = st.sidebar.columns(2)
+f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
+f1_max = c_f1_2.number_input("① 上限(円)", value=3000, step=100) 
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
 f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
 f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
