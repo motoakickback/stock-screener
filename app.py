@@ -582,7 +582,7 @@ with tab1:
                     
                     # 掟達成率の表示（NaNの場合は「局地戦へ」とナビゲートする）
                     rule_val = r.get('rule_pct', float('nan'))
-                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "局地戦へ➡")
+                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
                 
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r.get('d_high', 0))}日")
                     
