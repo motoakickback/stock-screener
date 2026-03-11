@@ -442,6 +442,7 @@ with tab1:
                 sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
                 
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
+
                 # --- 【ここに追加！】全銘柄の直近高値を一括計算して sum_df に格納します ---
                 # 大元の履歴データ(df)から、各銘柄(Code)ごとの最高値(High)を抽出してマッピングします
                 try:
@@ -449,7 +450,7 @@ with tab1:
                 except KeyError:
                     # もし生のデータが小文字の 'high' だった場合の保険です
                     sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['high'].max())
-                
+                    
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
                 sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
