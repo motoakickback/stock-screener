@@ -234,11 +234,11 @@ def check_sakata_patterns(df_sub):
         return None
 
     if red_three_soldiers and (current['AdjC'] < sma25):
-        return "🟢 赤三兵（底打ち反転）"
+        return "🔴 赤三兵（底打ち反転）"
     elif takuri_line and (current['AdjC'] < sma25):
-        return "🟢 たくり線（強力な床）"
+        return "🔴 たくり線（強力な床）"
     elif black_three_crows and (current['AdjC'] > sma25):
-        return "🔴 黒三兵（下落警戒）"
+        return "🟢 黒三兵（下落警戒）"
     elif black_three_crows and (current['AdjC'] < sma25):
         return "🔥 陰の極み（底値の黒三兵・セリクラ反発待ち）"
         
@@ -584,7 +584,7 @@ with tab1:
                     sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                     
                     rule_val = r.get('rule_pct', float('nan'))
-                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
+                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
                 
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r.get('d_high', 0))}日")
                     
@@ -827,7 +827,7 @@ with tab2:
                         sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                         
                         rule_val = r.get('rule_pct', float('nan'))
-                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
+                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
                         
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
