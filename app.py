@@ -713,8 +713,9 @@ with tab2:
                                     if (old_c and (c + "0") not in old_c) or re.search(r'[a-zA-Z]', c):
                                         flag_ipo = True
                                 
+                                # 【修正】局地戦のスコア判定も、上限・下限のレンジ内に収まっているかを条件にする
                                 score_list = [
-                                    lc >= f1_min, r30 <= f2_m30, ldrop >= f3_drop,
+                                    (lc >= f1_min) and (lc <= f1_max), r30 <= f2_m30, ldrop >= f3_drop,
                                     (lrise <= f4_mlong) or (lrise == 0),
                                     (f9_min14 <= r14 <= f9_max14), d_high <= limit_d, 
                                     (lc <= (bt_single * 1.35)) and (lc >= (bt_single * 0.85))
