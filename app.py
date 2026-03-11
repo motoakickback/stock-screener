@@ -547,36 +547,105 @@ with tab1:
                     if pd.notna(r.get('sakata_signal')):
                         st.success(f"✨ 【波形検知】{r['sakata_signal']}")
                         
-                        # --- 【完全防衛型UIパッチ】全軍・局地戦 共通 ---
+                        # --- 【最強独立防衛型 UIパッチ】全軍・局地戦 共通 ---
+                        import pandas as pd
+                        
+                        # 【安全装置】NaN（空データ）を検知して0に変換する関数
+                        def safe_int(v, default=0):
+                            try:
+                                if pd.isna(v) or v is None: return default
+                                return int(float(v))
+                            except:
+                                return default
+
+                        # 1. 銘柄コードの取得（全軍・局地戦の違いを吸収）
+                        code_val = r.get('Code', r.name if hasattr(r, 'name') else None)
+
+                        # 2. 直近高値の「その場」での自力計算
+                        high_price = r.get('lc', 0) # 初期値は最新終値
+                        try:
+                            # 局地戦(hist)と全軍(df)、今存在しているデータ群を自動判別
+                            target_data = hist if 'hist' in locals() else df
+                            # 文字列に変換して確実に該当銘柄をロックオン
+                            stock_data = target_data[target_data['Code'].astype(str) == str(code_val)]
+                            if not stock_data.empty:
+                                high_col = 'H' if 'H' in stock_data.columns else 'AdjH'
+                                max_h = stock_data[high_col].max()
+                                if not pd.isna(max_h):
+                                    high_price = max_h
+                        except Exception:
+                            pass # 万が一計算できなくても、エラーで止めずに初期値（lc）を使う
+
+                        # 3. すべての数値を安全に整数化（ここでクラッシュを完全防止）
+                        lc_val = safe_int(r.get('lc', 0))
+                        bt_val = safe_int(r.get('bt', 0))
+                        high_val = safe_int(high_price)
+                        if high_val == 0: high_val = lc_val
+
+                        sl5 = safe_int(bt_val * 0.95); sl8 = safe_int(bt_val * 0.92); sl15 = safe_int(bt_val * 0.85)
+                        tp20 = safe_int(r.get('tp20', bt_val * 1.2)); tp15 = safe_int(r.get('tp15', bt_val * 1.15))
+                        tp10 = safe_int(r.get('tp10', bt_val * 1.1)); tp5 = safe_int(r.get('tp5', bt_val * 1.05))
+
+                        daily_pct = r.get('daily_pct', 0)
+                        if pd.isna(daily_pct): daily_pct = 0
+                        daily_sign = "+" if daily_pct >= 0 else ""
+
+                        # --- 【最強独立防衛型 UIパッチ】全軍・局地戦 共通 ---
+                        import pandas as pd
+                        
+                        # 【安全装置】NaN（空データ）を検知して0に変換する関数
+                        def safe_int(v, default=0):
+                            try:
+                                if pd.isna(v) or v is None: return default
+                                return int(float(v))
+                            except:
+                                return default
+
+                        # 1. 銘柄コードの取得（全軍・局地戦の違いを吸収）
+                        code_val = r.get('Code', r.name if hasattr(r, 'name') else None)
+
+                        # 2. 直近高値の「その場」での自力計算
+                        high_price = r.get('lc', 0) # 初期値は最新終値
+                        try:
+                            # 局地戦(hist)と全軍(df)、今存在しているデータ群を自動判別
+                            target_data = hist if 'hist' in locals() else df
+                            # 文字列に変換して確実に該当銘柄をロックオン
+                            stock_data = target_data[target_data['Code'].astype(str) == str(code_val)]
+                            if not stock_data.empty:
+                                high_col = 'H' if 'H' in stock_data.columns else 'AdjH'
+                                max_h = stock_data[high_col].max()
+                                if not pd.isna(max_h):
+                                    high_price = max_h
+                        except Exception:
+                            pass # 万が一計算できなくても、エラーで止めずに初期値（lc）を使う
+
+                        # 3. すべての数値を安全に整数化（ここでクラッシュを完全防止）
+                        lc_val = safe_int(r.get('lc', 0))
+                        bt_val = safe_int(r.get('bt', 0))
+                        high_val = safe_int(high_price)
+                        if high_val == 0: high_val = lc_val
+
+                        sl5 = safe_int(bt_val * 0.95); sl8 = safe_int(bt_val * 0.92); sl15 = safe_int(bt_val * 0.85)
+                        tp20 = safe_int(r.get('tp20', bt_val * 1.2)); tp15 = safe_int(r.get('tp15', bt_val * 1.15))
+                        tp10 = safe_int(r.get('tp10', bt_val * 1.1)); tp5 = safe_int(r.get('tp5', bt_val * 1.05))
+
+                        daily_pct = r.get('daily_pct', 0)
+                        if pd.isna(daily_pct): daily_pct = 0
+                        daily_sign = "+" if daily_pct >= 0 else ""
+
+                        # 4. 画面描画（UI）
                         sc0, sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1, 1.8, 0.8, 0.8])
                         
-                        # ① 直近高値の安全取得（NaNやデータ無しの場合は、最新終値を代入してクラッシュを防ぐ）
-                        high_price = r.get('high', r.get('lc', 0))
-                        import pandas as pd # 念のため
-                        if pd.isna(high_price): high_price = r.get('lc', 0)
-                        sc0.metric("直近高値", f"{int(high_price):,}円")
-                        
-                        # ② 最新終値の安全表示
-                        lc = r.get('lc', 0)
-                        daily_pct = r.get('daily_pct', 0)
-                        daily_sign = "+" if daily_pct >= 0 else ""
-                        sc1.metric("最新終値", f"{int(lc):,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
-                        
-                        # ③ 買値・売値・損切の計算
-                        bt = r.get('bt', 0)
-                        if pd.isna(bt): bt = 0
+                        sc0.metric("直近高値", f"{high_val:,}円")
+                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
                         
                         html_buy = f"""
                         <div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(bt):,}円</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
                         </div>
                         """
                         sc2.markdown(html_buy, unsafe_allow_html=True)
-                        
-                        sl5 = int(bt * 0.95); sl8 = int(bt * 0.92); sl15 = int(bt * 0.85)
-                        tp20 = int(r.get('tp20', bt * 1.2)); tp15 = int(r.get('tp15', bt * 1.15))
-                        tp10 = int(r.get('tp10', bt * 1.1)); tp5 = int(r.get('tp5', bt * 1.05))
                         
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
@@ -589,9 +658,11 @@ with tab1:
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        # ④ 局地戦で「掟達成率」等のデータが無くてもエラーにしない絶対防衛線
-                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%" if 'reach_pct' in r else "---")
-                        sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%" if 'rule_pct' in r else "---")
+                        reach_val = r.get('reach_pct', float('nan'))
+                        sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
+                        
+                        rule_val = r.get('rule_pct', float('nan'))
+                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ ⏱️ 高値からの経過日数: {int(r['d_high'])}日")
                     
