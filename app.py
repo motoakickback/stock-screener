@@ -443,13 +443,6 @@ with tab1:
                 
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
 
-                # --- 【最終完了版】大元の履歴データ(df)から、各銘柄(Code)ごとの最高値(H)を抽出 ---
-                # 'H' (High:高値) または 'AdjH' (Adjusted High:調整後高値) を使用します
-                if 'H' in df.columns:
-                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['H'].max())
-                else:
-                    sum_df['high'] = sum_df['Code'].map(df.groupby('Code')['AdjH'].max())
-                    
                 denom = sum_df['h14'] - sum_df['bt']
                 sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
                 sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
