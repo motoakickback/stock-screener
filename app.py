@@ -819,8 +819,9 @@ with tab2:
                         reach_val = r.get('reach_pct', float('nan'))
                         sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                         
+                        # 掟達成率の表示（NaNの場合は「局地戦へ」とナビゲートする）
                         rule_val = r.get('rule_pct', float('nan'))
-                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "---")
+                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "局地戦へ➡")
                         
                         st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 直近14日高値: {int(r['h14'])}円 ｜ 🛡️ 掟クリア状況: {r['passed']} / {r['total']} 条件")
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
