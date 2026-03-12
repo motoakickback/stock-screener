@@ -22,7 +22,7 @@ def check_password():
         st.session_state["current_user"] = "" 
 
     if not st.session_state["password_correct"]:
-        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh; font-size: clamp(20px, 6vw, 42px); white-space: nowrap;">🎯 株式投資作戦企画室</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh; font-size: clamp(20px, 6vw, 42px); white-space: nowrap;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         st.markdown('<p style="text-align: center; font-size: clamp(12px, 3vw, 16px); color: #888;">アクセスコードを入力してください</p>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 2, 1])
