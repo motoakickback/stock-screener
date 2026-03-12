@@ -11,7 +11,7 @@ import numpy as np
 import concurrent.futures
 
 # --- 1. ページ設定 ---
-st.set_page_config(page_title="株式投資作戦企画室", layout="wide")
+st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide")
 
 # --- 1.5 ユーザー認証（ゲートキーパー） ---
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
