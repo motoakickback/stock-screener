@@ -199,7 +199,8 @@ def main():
     agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
     sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
     
-    push_r = 50
+    # --- 🎯 狙撃パラメーター（大型株・25%押し仕様に変更） ---
+    push_r = 25  # 50%から25%押しへ変更（大型株は落ちにくいため浅めに設定）
     limit_d = 4
     sl_i = 8 
     
@@ -227,12 +228,22 @@ def main():
     
     if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
 
-    # --- 1. 基礎フィルター ---
+    # --- 🛡️ 1. 基礎フィルター（完全防衛・大型株専用へ進化） ---
     sum_df = sum_df[sum_df['lc'] >= 500]  
     sum_df = sum_df[sum_df['r30'] <= 2.0]
+    
+    # ⚠️ 危険波形（ダブルトップ・三尊）をリストから完全除外
+    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+    
     if 'Sector' in sum_df.columns:
         sum_df = sum_df[sum_df['Sector'].notna()]
         sum_df = sum_df[sum_df['Sector'] != '-']
+        # 医薬品（バイオ等）を除外
+        sum_df = sum_df[sum_df['Sector'] != '医薬品']
+
+    # 🏢 【追加】規模区分で「大型・中型株（Core30, Large70, Mid400）」のみに厳選！
+    if 'Scale' in sum_df.columns:
+        sum_df = sum_df[sum_df['Scale'].astype(str).str.contains("Core30|Large70|Mid400", na=False)]
 
     # --- 2. ソート ---
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
