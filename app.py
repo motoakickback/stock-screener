@@ -290,11 +290,13 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     else:
         y_range = None
 
+    # ---------------- ここから下を修正 ----------------
     layout_args = dict(
         height=450, 
         margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
+        yaxis=dict(tickformat=",.0f"),  # 👈 【追加】Y軸とホバーの数値を「カンマ区切りの整数」に強制する
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
@@ -302,7 +304,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     )
     
     if y_range:
-        layout_args['yaxis'] = dict(range=y_range, fixedrange=False)
+        # 👈 【修正】すでに定義したyaxisに、range（表示範囲）の設定を「追加」する形に変更
+        layout_args['yaxis'].update(range=y_range, fixedrange=False)
 
     fig.update_layout(**layout_args)
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
