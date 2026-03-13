@@ -605,7 +605,7 @@ with tab1:
                         if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
-st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
     st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
 
