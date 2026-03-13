@@ -245,12 +245,24 @@ def check_sakata_patterns(df_sub):
     return None
     
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+    # --- 📈 追加: 移動平均線(MA)の計算 ---
+    df = df.copy() # 元データを壊さないようにコピー
+    df['MA5'] = df['AdjC'].rolling(window=5).mean()
+    df['MA25'] = df['AdjC'].rolling(window=25).mean()
+    df['MA75'] = df['AdjC'].rolling(window=75).mean()
+
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
+
+    # --- 📈 追加: 移動平均線(MA)の描画（うるさくない色と太さに調整） ---
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      # 薄い紫
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     # 薄い青
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      # 薄いオレンジ
+
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
@@ -264,12 +276,15 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
-        y_max_vals = [visible_df['AdjH'].max(), targ_p]
-        y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85] 
+        # y_max_vals/y_min_vals にMAの値も考慮して、線が見切れないようにする
+        y_max_vals = [visible_df['AdjH'].max(), targ_p, visible_df['MA5'].max(), visible_df['MA25'].max(), visible_df['MA75'].max()]
+        y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85, visible_df['MA5'].min(), visible_df['MA25'].min(), visible_df['MA75'].min()] 
         if tp20: y_max_vals.append(tp20)
         
-        y_max = max(y_max_vals)
-        y_min = min(y_min_vals)
+        # NaN（計算できない期間）を除外して最大・最小を計算
+        y_max = max([v for v in y_max_vals if not pd.isna(v)])
+        y_min = min([v for v in y_min_vals if not pd.isna(v)])
+        
         margin = (y_max - y_min) * 0.05
         y_range = [y_min - margin, y_max + margin]
     else:
