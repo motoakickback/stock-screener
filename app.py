@@ -472,6 +472,10 @@ with tab1:
                 sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary
                 sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
                 
+                # 🚫 【完全除外フィルター】黄金比(61.8%)を完全に下抜けた銘柄はリストから抹消（全軍スキャン用）
+                dead_line = sum_df['h14'] - (ur * 0.618)
+                sum_df = sum_df[sum_df['lc'] >= (dead_line * 0.98)]
+                
                 sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
 
                 denom = sum_df['h14'] - sum_df['bt']
