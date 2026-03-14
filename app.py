@@ -362,47 +362,26 @@ def apply_market_preset():
     st.session_state.bt_sl_c = 5
     st.session_state.bt_sell_d = 10
 
+# 👇👇 対象市場と買いルールのUIを上書き 👇👇
+
 st.sidebar.header("🎯 対象市場 (一括換装)")
 st.sidebar.radio(
     "プリセット選択",
-    ["🚀 中小型株 (黄金比・絶対防衛)", "🏢 大型株 (ノイズ許容・トレンド追従)"],
+    [
+        "🚀 中小型株 (50%押し・標準)", 
+        "⚓ 中小型株 (61.8%押し・黄金比深海)", 
+        "🏢 大型株 (25%押し・トレンド追従)"
+    ],
     key="preset_target",
     on_change=apply_market_preset,
-    help="中小型株: グロースや下位銘柄用（50%押し/ザラ場損切8%）。 大型株: プライム等でバランス型なら（25%押し/利確20%）。"
+    help="中小型株(標準): 50%押し。中小型株(深海): パニック相場用の61.8%待ち伏せ。大型株: 25%押し。"
 )
 
-st.sidebar.header("🕹️ 戦術モード切替")
-tactics_mode = st.sidebar.radio(
-    "抽出・ソート優先度",
-    ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"],
-    key="sidebar_tactics",
-    on_change=apply_market_preset,
-    help="モードを切り替えた際も、現在の市場プリセット（黄金比等）へパラメーターが自動復元されます。"
-)
-
-st.sidebar.header("🔍 ピックアップルール")
-# 【追加】下限と上限を横並び（カラム）にして、交戦レンジを設定する
-c_f1_1, c_f1_2 = st.sidebar.columns(2)
-f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
-f1_max = c_f1_2.number_input("① 上限(円)", value=3000, step=100) 
-f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
-f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
-f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
-f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=True)
-f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
-
-f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="マクロ連動型や不動産投信を弾きます")
-f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True, help="テクニカルが効かない赤字バイオ株を弾きます")
-
-c_f9_1, c_f9_2 = st.sidebar.columns(2)
-f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
-f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
-
-current_sl = st.session_state.bt_sl_i
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True, help=f"単日で【-{current_sl}.0%】以上、または直近3日間で【-{int(current_sl * 1.5)}.0%】以上の連続暴落をしている銘柄を弾きます")
+# （※中略：戦術モード切替やピックアップルールは現在のコードのままでOKです）
 
 st.sidebar.header("🎯 買いルール")
-push_r = st.sidebar.number_input("① 押し目(%)", step=5, key="push_r")
+# ★step=5から step=0.1、format="%.1f" を追加し、61.8等の小数を自由に調整可能に進化
+push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r")
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
 
 # ==========================================
