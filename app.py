@@ -705,6 +705,10 @@ with tab2:
                                 is_bt_broken = lc < bt_primary
                                 bt_single = bt_secondary if is_bt_broken else bt_primary
                                 
+                                # 🔬 【解剖ラボ機能】弾かずに「トレンド崩壊フラグ」を立てる（局地戦用）
+                                dead_line_s = h14 - ((h14 - l14) * 0.618)
+                                is_trend_broken = lc < (dead_line_s * 0.98)
+                                
                                 tp5_s = bt_single * 1.05; tp10_s = bt_single * 1.10; tp15_s = bt_single * 1.15; tp20_s = bt_single * 1.20
                                 
                                 denom_s = h14 - bt_single
