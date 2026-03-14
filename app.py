@@ -914,7 +914,7 @@ with tab3:
         )
         
         cc_1, cc_2 = st.columns(2)
-        bt_push = col1.number_input("① 押し目(%)", value=float(st.session_state.bt_push), step=0.1, format="%.1f")
+        bt_push = cc_1.number_input("① 押し目(%)", value=float(st.session_state.bt_push), step=0.1, format="%.1f")
         bt_buy_d = cc_1.number_input("② 買い期限 (日)", step=1, key="bt_buy_d")
         bt_tp = cc_1.number_input("③ 利確 (+%)", step=1, key="bt_tp")
         bt_lot = cc_1.number_input("⑦ 株数(基本100)", step=100, key="bt_lot")
