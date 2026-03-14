@@ -810,7 +810,9 @@ with tab2:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        if r.get('is_bt_broken'):
+                        if r.get('is_trend_broken'):
+                            st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
+                        elif r.get('is_bt_broken'):
                             st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
 
                         if r.get('flag_knife'): 
