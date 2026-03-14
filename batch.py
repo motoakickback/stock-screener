@@ -269,8 +269,8 @@ def main():
             message += f"> 🟢 値: **{int(row['lc'])}円** (前日: {sign}{d_pct:.1f}%)\n"
             # 👇 【修正】「50%的」を「25%的」に変更し、到達度の小数点を非表示（.0f）に調整
             message += f"> 🎯 25%的: **{int(row['bt'])}円** (到達: {row['reach_pct']:.0f}%)\n"
-            message += f"> 📈 [利] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
-            message += f"> 📉 [損] -8%: {int(row['lc']*0.92)}円\n"
+            message += f"> 📈 [利] +10%: {int(row['bt']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+            message += f"> 📉 [損] -8%: {int(row['bt']*0.92)}円\n"
             message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
 
         # ▼▼▼ NEW: 一括コピペ弾倉の追加 ▼▼▼
