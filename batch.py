@@ -250,9 +250,9 @@ def main():
 
     # --- 3. Discord用メッセージの構築 ---
     if len(res) == 0:
-        message = "🎯 **本日のSクラススナイプ候補**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
+        message = "🎯 **本日のSクラススナイプ候補（大型安定・25%押し）**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
     else:
-        message = "🎯 **本日のSクラススナイプ候補（トップ15銘柄）**\n\n"
+        message = "🎯 **本日のSクラススナイプ候補（大型安定・25%押しトップ15）**\n\n"
         for index, row in res.iterrows():
             c_name = compress_name(row.get('CompanyName', '不明'))
             code = str(row['Code'])[:4]
@@ -264,7 +264,8 @@ def main():
             
             message += f"**【{code}】{c_name}** ({market}/{sector})\n"
             message += f"> 🟢 値: **{int(row['lc'])}円** (前日: {sign}{d_pct:.1f}%)\n"
-            message += f"> 🎯 50%的: **{int(row['bt'])}円** (到達: {row['reach_pct']:.1f}%)\n"
+            # 👇 【修正】「50%的」を「25%的」に変更し、到達度の小数点を非表示（.0f）に調整
+            message += f"> 🎯 25%的: **{int(row['bt'])}円** (到達: {row['reach_pct']:.0f}%)\n"
             message += f"> 📈 [利] +10%: {int(row['lc']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
             message += f"> 📉 [損] -8%: {int(row['lc']*0.92)}円\n"
             message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
