@@ -1020,3 +1020,27 @@ with tab3:
                     cols = tdf.columns.tolist()
                     cols.insert(0, cols.pop(cols.index(code_col)))
                     tdf = tdf[cols]
+                # 👇👇👇 【Tab 3 の一番下（サマリー表示の直後）にこれを追加してください】 👇👇👇
+
+                # トレード履歴（詳細データ）が存在する場合のみ、テーブルを描画する
+                if 'history' in locals() and len(history) > 0:
+                    st.markdown("### 📜 詳細交戦記録（トレード履歴）")
+                    
+                    # 履歴リストをデータフレーム（表）に変換
+                    hist_df = pd.DataFrame(history)
+                    
+                    # 見やすくするために列の名前を日本語に整理（元のコードに合わせて調整可能）
+                    hist_df = hist_df.rename(columns={
+                        'entry_date': 'エントリー日',
+                        'entry_price': '買値',
+                        'exit_date': '決済日',
+                        'exit_price': '決済価格',
+                        'profit': '損益額',
+                        'result': '勝敗'
+                    })
+                    
+                    # Streamlitの機能で、美しい表として画面に出力
+                    st.dataframe(hist_df, use_container_width=True)
+                else:
+                    st.warning("⚠️ 表示できるトレード履歴がありません（条件に合致しませんでした）。")
+                    
