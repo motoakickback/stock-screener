@@ -769,6 +769,7 @@ with tab2:
                                 score_list.append(not is_dt and not is_hs)
                                 
                                 rule_pct = (sum(score_list) / len(score_list)) * 100
+                                # 👇 results.append の中身に 'is_trend_broken' を追加します
                                 results.append({
                                     'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
                                     'lc': lc, 'bt': bt_single, 
@@ -777,6 +778,7 @@ with tab2:
                                     'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                     'is_defense': is_defense, 'daily_pct': daily_pct,
                                     'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
+                                    'is_trend_broken': is_trend_broken,  # 👈★これを追加！
                                     'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
                                     'sakata_signal': sakata_signal
                                 })
