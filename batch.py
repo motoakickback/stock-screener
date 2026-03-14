@@ -245,6 +245,9 @@ def main():
     if 'Scale' in sum_df.columns:
         sum_df = sum_df[sum_df['Scale'].astype(str).str.contains("Core30|Large70|Mid400", na=False)]
 
+    # 👇👇👇 【ここに追加】行き過ぎた暴落（到達度135%超え）と、遠すぎる標的を排除 👇👇👇
+    sum_df = sum_df[(sum_df['reach_pct'] >= 50) & (sum_df['reach_pct'] <= 135)]
+    
     # --- 2. ソート ---
     res = sum_df.sort_values('reach_pct', ascending=False).head(15)
 
