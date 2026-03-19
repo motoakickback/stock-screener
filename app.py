@@ -586,7 +586,7 @@ with tab1:
                         else:
                             st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
                         
-                        # --- 【完全防衛型 UI描画ブロック】全軍・局地戦 共通 ---
+                        # --- 【完全防衛型 UI描画ブロック】全軍スキャン用 ---
                         lc_val = int(r.get('lc', 0))
                         bt_val = int(r.get('bt', 0))
                         
@@ -607,7 +607,6 @@ with tab1:
                         if pd.isna(daily_pct): daily_pct = 0
                         daily_sign = "+" if daily_pct >= 0 else ""
 
-                        # 👈【復活】8列編成に変更し、消えた数値をすべて「大きな数字」で復元！
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
                         
                         sc0.metric("直近高値", f"{high_val:,}円")
@@ -634,24 +633,23 @@ with tab1:
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        # 👈【完全復活】大きなメトリクス表示（sc4, sc5）
                         reach_val = r.get('reach_pct', float('nan'))
                         sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                         
                         rule_val = r.get('rule_pct', float('nan'))
                         sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
                         
-                        # キャプションは最小限の情報（市場やセクターなど）のみにスッキリさせる
                         passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
-                    
-                    raw_s = get_single_data(c, 1)
-                    if raw_s:
-                        hist = clean_df(pd.DataFrame(raw_s))
-                        draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
-                    else:
-                        hist = df[df['Code'] == c].sort_values('Date').tail(30)
-                        if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                        
+                        # 👇 ここから下が【Tab1専用】のチャート描画
+                        raw_s = get_single_data(c, 1)
+                        if raw_s:
+                            hist = clean_df(pd.DataFrame(raw_s))
+                            draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                        else:
+                            hist = df[df['Code'] == c].sort_values('Date').tail(30)
+                            if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
