@@ -279,9 +279,8 @@ def main():
         copy_codes = ",".join([str(code)[:4] for code in res['Code']])
         message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
 
-    # --- 4. 新型・Discord分割連射システム ---
-    target_webhook_url = os.environ.get("DISCORD_WEBHOOK")
-    if not target_webhook_url:
+    # --- 4. 新型・Discord分割連射システム（多弾頭対応） ---
+    if not DISCORD_WEBHOOKS:
         print("【致命的エラー】DiscordのWebhookURLが見つかりません。")
     else:
         max_length = 1800 
@@ -300,15 +299,17 @@ def main():
 
         print(f"【システムログ】Discordへの送信準備完了。全 {len(message_chunks)} 分割で投下します。")
 
-        for i, chunk in enumerate(message_chunks):
-            payload = {"content": chunk}
-            response = requests.post(target_webhook_url, json=payload)
-            if response.status_code not in [200, 204]:
-                print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
-            time.sleep(1)
+        # 👇 登録されたすべてのURL（指揮官・戦友）に順番に発射するループ
+        for target_url in DISCORD_WEBHOOKS:
+            for i, chunk in enumerate(message_chunks):
+                payload = {"content": chunk}
+                response = requests.post(target_url, json=payload)
+                if response.status_code not in [200, 204]:
+                    print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
+                time.sleep(1)
         
         print("【システムログ】全ミッション完了。通信回線を閉じます。")
-
+        
 # --- 実行トリガー ---
 if __name__ == "__main__":
     main()
