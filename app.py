@@ -849,7 +849,7 @@ with tab2:
                             else:
                                 st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
                                 
-                        # --- 【完全防衛型 UI描画ブロック】全軍・局地戦 共通 ---
+                        # --- 【完全防衛型 UI描画ブロック】局地戦用 ---
                         lc_val = int(r.get('lc', 0))
                         bt_val = int(r.get('bt', 0))
                         
@@ -870,7 +870,6 @@ with tab2:
                         if pd.isna(daily_pct): daily_pct = 0
                         daily_sign = "+" if daily_pct >= 0 else ""
 
-                        # 👈【復活】8列編成に変更し、消えた数値をすべて「大きな数字」で復元！
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
                         
                         sc0.metric("直近高値", f"{high_val:,}円")
@@ -897,18 +896,18 @@ with tab2:
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        # 👈【完全復活】大きなメトリクス表示（sc4, sc5）
                         reach_val = r.get('reach_pct', float('nan'))
                         sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
                         
                         rule_val = r.get('rule_pct', float('nan'))
                         sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
                         
-                        # キャプションは最小限の情報（市場やセクターなど）のみにスッキリさせる
                         passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
-                    df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
-                    draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
+                        
+                        # 👇 ここから下が【Tab2専用】のチャート描画
+                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                        draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
