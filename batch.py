@@ -145,7 +145,8 @@ def check_double_bottom(df_sub):
 
 def send_discord_notify(message):
     data = {"content": message}
-    requests.post(DISCORD_WEBHOOK, json=data)
+    for url in DISCORD_WEBHOOKS:
+        requests.post(url, json=data)
 
 # 名前圧縮ツール（安全な場所に配置）
 def compress_name(name):
