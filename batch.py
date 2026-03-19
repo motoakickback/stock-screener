@@ -10,11 +10,12 @@ import time
 
 # --- 1. 環境変数 ---
 API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", "")).strip()
+raw_webhooks = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", ""))
+DISCORD_WEBHOOKS = [url.strip() for url in raw_webhooks.split(",") if url.strip()]
 
-print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / Discordアンテナ反応: {bool(DISCORD_WEBHOOK)}")
+print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / Discordアンテナ反応: {len(DISCORD_WEBHOOKS)}基")
 
-if not API_KEY or not DISCORD_WEBHOOK:
+if not API_KEY or not DISCORD_WEBHOOKS:
     print("🚨 【緊急警告】必要な暗号鍵またはWebhook URLが欠落しています！")
     exit(1)
 
