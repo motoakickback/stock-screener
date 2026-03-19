@@ -901,8 +901,8 @@ with tab2:
                     rule_str = f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫"
                     
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 🎯 到達度: {reach_str} ｜ 🎯 掟達成率: {rule_str}")
-                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
-                        draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
+                    df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                    draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
