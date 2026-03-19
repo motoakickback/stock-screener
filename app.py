@@ -141,7 +141,7 @@ def get_hist_data_cached():
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
-        if len(v) < 6: return False # 14日以内の短いスパンで検知できるよう感度アップ
+        if len(v) < 6: return False
         peaks = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
@@ -200,7 +200,6 @@ def check_sakata_patterns(df_sub):
     df = df_sub.copy()
     df['SMA_25'] = df['AdjC'].rolling(window=25).mean()
     
-    # 完全に直近3日間のローソク足のみで判定するため、過去のシグナルは拾いません
     current = df.iloc[-1]
     prev1 = df.iloc[-2]
     prev2 = df.iloc[-3]
@@ -245,8 +244,7 @@ def check_sakata_patterns(df_sub):
     return None
     
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
-    # --- 📈 追加: 移動平均線(MA)の計算 ---
-    df = df.copy() # 元データを壊さないようにコピー
+    df = df.copy()
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
     df['MA75'] = df['AdjC'].rolling(window=75).mean()
@@ -258,10 +256,9 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
 
-    # --- 📈 追加: 移動平均線(MA)の描画（うるさくない色と太さに調整） ---
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      # 薄い紫
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     # 薄い青
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      # 薄いオレンジ
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      
 
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
@@ -276,12 +273,10 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
-        # y_max_vals/y_min_vals にMAの値も考慮して、線が見切れないようにする
         y_max_vals = [visible_df['AdjH'].max(), targ_p, visible_df['MA5'].max(), visible_df['MA25'].max(), visible_df['MA75'].max()]
         y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85, visible_df['MA5'].min(), visible_df['MA25'].min(), visible_df['MA75'].min()] 
         if tp20: y_max_vals.append(tp20)
         
-        # NaN（計算できない期間）を除外して最大・最小を計算
         y_max = max([v for v in y_max_vals if not pd.isna(v)])
         y_min = min([v for v in y_min_vals if not pd.isna(v)])
         
@@ -290,13 +285,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     else:
         y_range = None
 
-    # ---------------- ここから下を修正 ----------------
     layout_args = dict(
         height=450, 
         margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
-        yaxis=dict(tickformat=",.0f"),  # 👈 【追加】Y軸とホバーの数値を「カンマ区切りの整数」に強制する
+        yaxis=dict(tickformat=",.0f"),
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
@@ -304,7 +298,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     )
     
     if y_range:
-        # 👈 【修正】すでに定義したyaxisに、range（表示範囲）の設定を「追加」する形に変更
         layout_args['yaxis'].update(range=y_range, fixedrange=False)
 
     fig.update_layout(**layout_args)
@@ -314,14 +307,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # ==========================================
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
-
-# 👇👇 初期値（小数に対応）とプリセット関数を上書き 👇👇
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
-if 'push_r' not in st.session_state: st.session_state.push_r = 50.0  # ★小数を扱えるよう .0 を追加
+if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
 if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
-if 'bt_push' not in st.session_state: st.session_state.bt_push = 50.0  # ★小数を扱えるよう .0 を追加
+if 'bt_push' not in st.session_state: st.session_state.bt_push = 50.0 
 if 'bt_buy_d' not in st.session_state: st.session_state.bt_buy_d = 4
 if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 15
 if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
@@ -345,13 +336,11 @@ def apply_market_preset():
             st.session_state.bt_tp = 15
         st.session_state.bt_sl_i = 15
     elif "61.8%" in preset:
-        # ⚓ 【新規追加】61.8%押し（黄金比深海）用設定
         st.session_state.push_r = 61.8
         st.session_state.bt_push = 61.8
         st.session_state.bt_tp = 15
         st.session_state.bt_sl_i = 8
     else:
-        # 🚀 50%押し（標準）用設定
         st.session_state.push_r = 50.0
         st.session_state.bt_push = 50.0
         st.session_state.bt_tp = 15
@@ -361,8 +350,6 @@ def apply_market_preset():
     st.session_state.bt_buy_d = 4
     st.session_state.bt_sl_c = 5
     st.session_state.bt_sell_d = 10
-
-# 👇👇 対象市場と買いルールのUIを上書き 👇👇
 
 st.sidebar.header("🎯 対象市場 (一括換装)")
 st.sidebar.radio(
@@ -387,7 +374,6 @@ tactics_mode = st.sidebar.radio(
 )
 
 st.sidebar.header("🔍 ピックアップルール")
-# 【追加】下限と上限を横並び（カラム）にして、交戦レンジを設定する
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
 f1_max = c_f1_2.number_input("① 上限(円)", value=3000, step=100) 
@@ -408,7 +394,6 @@ current_sl = st.session_state.bt_sl_i
 f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True, help=f"単日で【-{current_sl}.0%】以上、または直近3日間で【-{int(current_sl * 1.5)}.0%】以上の連続暴落をしている銘柄を弾きます")
 
 st.sidebar.header("🎯 買いルール")
-# ★「61.8%」などの小数を扱えるように進化した押し目設定
 push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r")
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
 
@@ -432,13 +417,12 @@ with tab1:
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
                 
-                # --- カレンダー通りの「直近14日間」を厳密に抽出 ---
                 max_date_all = df['Date'].max()
                 cutoff_date_14 = max_date_all - timedelta(days=14)
                 df_14 = df_30[df_30['Date'] >= cutoff_date_14]
                 
                 counts = df_14.groupby('Code').size()
-                valid = counts[counts >= 5].index # 14日間に最低5営業日はデータがある銘柄のみ
+                valid = counts[counts >= 5].index
                 if valid.empty: st.warning("条件を満たすデータが存在しません。"); st.stop()
                 
                 df_14 = df_14[df_14['Code'].isin(valid)]
@@ -449,8 +433,8 @@ with tab1:
                     lc=('AdjC', 'last'), 
                     prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
                     c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan),
-                    h14=('AdjH', 'max'), # この h14 は厳密に「過去14日カレンダー」の最高値
-                    l14=('AdjL', 'min')  # この l14 も厳密に「過去14日カレンダー」の最安値
+                    h14=('AdjH', 'max'),
+                    l14=('AdjL', 'min') 
                 )
                 
                 idx_max = df_14.groupby('Code')['AdjH'].idxmax()
@@ -472,7 +456,6 @@ with tab1:
                 sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary
                 sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
                 
-                # 🚫 【完全除外フィルター】黄金比(61.8%)を完全に下抜けた銘柄はリストから抹消（全軍スキャン用）
                 dead_line = sum_df['h14'] - (ur * 0.618)
                 sum_df = sum_df[sum_df['lc'] >= (dead_line * 0.98)]
                 
@@ -488,12 +471,10 @@ with tab1:
                 sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
                 sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
                 
-                # --- 波形分析も「直近14日カレンダー」に限定 ---
                 dt_s = df_14.groupby('Code').apply(check_double_top).rename('is_dt')
                 hs_s = df_14.groupby('Code').apply(check_head_shoulders).rename('is_hs')
                 db_s = df_14.groupby('Code').apply(check_double_bottom).rename('is_db')
                 
-                # 酒田五法は直近3日しか見ないためdf_30を渡し、SMA25の計算を担保
                 sakata_s = df_30.groupby('Code').apply(check_sakata_patterns).rename('sakata_signal')
                 
                 sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left').merge(sakata_s, on='Code', how='left')
@@ -511,7 +492,6 @@ with tab1:
                 if f8_ex_bio and 'Sector' in sum_df.columns:
                     sum_df = sum_df[sum_df['Sector'] != '医薬品']
 
-                # 【修正】下限だけでなく、上限（f1_max）以下の条件も追加して挟み撃ちにする
                 sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max)]
                 sum_df = sum_df[sum_df['r30'] <= f2_m30]
                 sum_df = sum_df[sum_df['ldrop'] >= f3_drop]
@@ -526,7 +506,6 @@ with tab1:
                     sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                 
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
-                # 「下落警戒」の文字が含まれる危険な黒三兵だけを全軍から除外する（陰の極みは残す）
                 sum_df = sum_df[~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False)]
                 
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
@@ -589,9 +568,7 @@ with tab1:
                     # --- 【完全防衛型 UI描画ブロック】全軍スキャン用 ---
                     lc_val = int(r.get('lc', 0))
                     bt_val = int(r.get('bt', 0))
-                    
                     high_val = int(r.get('h14', lc_val))
-                    
                     low_val = int(r.get('l14', 0))
                     if low_val == 0:
                         bt_ratio = st.session_state.push_r / 100.0 if not r.get('is_bt_broken', False) else 0.618
@@ -681,7 +658,6 @@ with tab2:
                     if raw_single:
                         df_s = clean_df(pd.DataFrame(raw_single))
                         
-                        # カレンダー通りの直近14日間を厳密に抽出
                         if not df_s.empty:
                             max_date_s = df_s['Date'].max()
                             cutoff_date_s = max_date_s - timedelta(days=14)
@@ -714,7 +690,6 @@ with tab2:
                                 is_bt_broken = lc < bt_primary
                                 bt_single = bt_secondary if is_bt_broken else bt_primary
                                 
-                                # 🔬 【解剖ラボ機能】弾かずに「トレンド崩壊フラグ」を立てる（局地戦用）
                                 dead_line_s = h14 - ((h14 - l14) * 0.618)
                                 is_trend_broken = lc < (dead_line_s * 0.98)
                                 
@@ -728,7 +703,6 @@ with tab2:
                                 ldrop = ((lc / omax) - 1) * 100 if pd.notna(omax) and omax > 0 else 0
                                 lrise = lc / omin if pd.notna(omin) and omin > 0 else 0
                                 
-                                # 波形分析も「直近14日カレンダー」に限定
                                 is_dt = check_double_top(df_14)
                                 is_hs = check_head_shoulders(df_14)
                                 is_db = check_double_bottom(df_14)
@@ -763,7 +737,6 @@ with tab2:
                                     if (old_c and (c + "0") not in old_c) or re.search(r'[a-zA-Z]', c):
                                         flag_ipo = True
                                 
-                                # 【修正】局地戦のスコア判定も、上限・下限のレンジ内に収まっているかを条件にする
                                 score_list = [
                                     (lc >= f1_min) and (lc <= f1_max), r30 <= f2_m30, ldrop >= f3_drop,
                                     (lrise <= f4_mlong) or (lrise == 0),
@@ -778,16 +751,16 @@ with tab2:
                                 score_list.append(not is_dt and not is_hs)
                                 
                                 rule_pct = (sum(score_list) / len(score_list)) * 100
-                                # 👇 results.append の中身に 'is_trend_broken' を追加します
                                 results.append({
                                     'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
                                     'lc': lc, 'bt': bt_single, 
                                     'tp5': tp5_s, 'tp10': tp10_s, 'tp15': tp15_s, 'tp20': tp20_s, 
-                                    'h14': h14, 'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
+                                    'h14': h14, 'l14': l14, 'd_high': d_high,
+                                    'reach_pct': reach_s, 'rule_pct': rule_pct, 'passed': sum(score_list), 
                                     'total': len(score_list), 'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 
                                     'is_defense': is_defense, 'daily_pct': daily_pct,
                                     'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
-                                    'is_trend_broken': is_trend_broken,  # 👈★これを追加！
+                                    'is_trend_broken': is_trend_broken, 
                                     'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
                                     'sakata_signal': sakata_signal
                                 })
@@ -841,70 +814,68 @@ with tab2:
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                         
-                    if pd.notna(r.get('sakata_signal')):
-                        if "下落警戒" in str(r['sakata_signal']):
-                            st.error(f"🚨 【波形警告・撤退推奨】{r['sakata_signal']}")
-                        else:
-                            st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
-                            
-                    # --- 【完全防衛型 UI描画ブロック】局地戦用 ---
-                    lc_val = int(r.get('lc', 0))
-                    bt_val = int(r.get('bt', 0))
-                    
-                    high_val = int(r.get('h14', lc_val))
-                    
-                    low_val = int(r.get('l14', 0))
-                    if low_val == 0:
-                        bt_ratio = st.session_state.push_r / 100.0 if not r.get('is_bt_broken', False) else 0.618
-                        ur_approx = (high_val - bt_val) / bt_ratio if bt_ratio > 0 else 0
-                        low_val = int(high_val - ur_approx)
-                    wave_len = high_val - low_val
+                        if pd.notna(r.get('sakata_signal')):
+                            if "下落警戒" in str(r['sakata_signal']):
+                                st.error(f"🚨 【波形警告・撤退推奨】{r['sakata_signal']}")
+                            else:
+                                st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
+                                
+                        # --- 【完全防衛型 UI描画ブロック】局地戦用 ---
+                        lc_val = int(r.get('lc', 0))
+                        bt_val = int(r.get('bt', 0))
+                        high_val = int(r.get('h14', lc_val))
+                        low_val = int(r.get('l14', 0))
+                        if low_val == 0:
+                            bt_ratio = st.session_state.push_r / 100.0 if not r.get('is_bt_broken', False) else 0.618
+                            ur_approx = (high_val - bt_val) / bt_ratio if bt_ratio > 0 else 0
+                            low_val = int(high_val - ur_approx)
+                        wave_len = high_val - low_val
 
-                    sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
-                    tp20 = int(r.get('tp20', bt_val * 1.2)); tp15 = int(r.get('tp15', bt_val * 1.15))
-                    tp10 = int(r.get('tp10', bt_val * 1.1)); tp5 = int(r.get('tp5', bt_val * 1.05))
+                        sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
+                        tp20 = int(r.get('tp20', bt_val * 1.2)); tp15 = int(r.get('tp15', bt_val * 1.15))
+                        tp10 = int(r.get('tp10', bt_val * 1.1)); tp5 = int(r.get('tp5', bt_val * 1.05))
 
-                    daily_pct = r.get('daily_pct', 0)
-                    if pd.isna(daily_pct): daily_pct = 0
-                    daily_sign = "+" if daily_pct >= 0 else ""
+                        daily_pct = r.get('daily_pct', 0)
+                        if pd.isna(daily_pct): daily_pct = 0
+                        daily_sign = "+" if daily_pct >= 0 else ""
 
-                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
-                    
-                    sc0.metric("直近高値", f"{high_val:,}円")
-                    sc0_1.metric("直近安値", f"{low_val:,}円")
-                    sc0_2.metric("上昇幅", f"{wave_len:,}円")
-                    sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
-                    
-                    html_buy = f"""
-                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
-                    </div>
-                    """
-                    sc2.markdown(html_buy, unsafe_allow_html=True)
-                    
-                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
-                        <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
+                        
+                        sc0.metric("直近高値", f"{high_val:,}円")
+                        sc0_1.metric("直近安値", f"{low_val:,}円")
+                        sc0_2.metric("上昇幅", f"{wave_len:,}円")
+                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                        
+                        html_buy = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
                         </div>
-                    </div>"""
-                    sc3.markdown(html_sell, unsafe_allow_html=True)
-                    
-                    reach_val = r.get('reach_pct', float('nan'))
-                    sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
-                    
-                    rule_val = r.get('rule_pct', float('nan'))
-                    sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
-                    
-                    passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
-                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
-                    
-                    df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
-                    draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
+                        """
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                        
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                            </div>
+                        </div>"""
+                        sc3.markdown(html_sell, unsafe_allow_html=True)
+                        
+                        reach_val = r.get('reach_pct', float('nan'))
+                        sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
+                        
+                        rule_val = r.get('rule_pct', float('nan'))
+                        sc5.metric("掟達成率", f"{rule_val:.0f}%" if not pd.isna(rule_val) else "🔫")
+                        
+                        passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
+                        
+                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                        draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
@@ -1005,12 +976,10 @@ with tab3:
                 n_prof = tdf['損益額(円)'].sum(); sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum(); sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                # サマリー表示
                 st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1rem;">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回"); m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
                 
-                # 👇 余計なTab1の残骸を削除し、純粋に「詳細履歴」だけを描画させる
                 st.markdown("### 📜 詳細交戦記録（トレード履歴）")
                 st.dataframe(tdf, use_container_width=True, hide_index=True)
