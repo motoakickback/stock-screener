@@ -1001,10 +1001,10 @@ with tab2:
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
-    col_1, col_2 = st.columns([1, 2])
+    col_1, col_2 = st.columns([2, 1])
 
     T3_FILE = f"saved_t3_codes_{user_id}.txt"
-    default_t3 = "6614, 3997, 4935"
+    default_t3 = "6614\n3997\n4935"
     if os.path.exists(T3_FILE):
         with open(T3_FILE, "r", encoding="utf-8") as f:
             default_t3 = f.read()
@@ -1014,25 +1014,8 @@ with tab3:
         run_bt = st.button("🔥 一括バックテスト")
         
     with col_2:
-        st.caption("⚙️ パラメーター")
-        
-        bt_mode = st.radio(
-            "戦術モード (波形認識)", 
-            ["⚖️ バランス (指定%落ちで指値買い)", "⚔️ 攻め重視 (三川・反発確認で成行買い)"], 
-            key="bt_mode_radio",
-            on_change=apply_market_preset,
-            help="戦術モードを切り替えた際も、左サイドバーで選択中の「対象市場プリセット」へパラメーターが自動復元されます。"
-        )
-        
-        cc_1, cc_2 = st.columns(2)
-        bt_push = cc_1.number_input("① 押し目(%)", value=float(st.session_state.bt_push), step=0.1, format="%.1f")
-        bt_buy_d = cc_1.number_input("② 買い期限 (日)", step=1, key="bt_buy_d")
-        bt_tp = cc_1.number_input("③ 利確 (+%)", step=1, key="bt_tp")
-        bt_lot = cc_1.number_input("⑦ 株数(基本100)", step=100, key="bt_lot")
-        
-        bt_sl_i = cc_2.number_input("④ 損切/ザラ場(-%)", step=1, key="bt_sl_i")
-        bt_sl_c = cc_2.number_input("⑤ 損切/終値(-%)", step=1, key="bt_sl_c")
-        bt_sell_d = cc_2.number_input("⑥ 売り期限 (日)", step=1, key="bt_sell_d")
+        st.caption("⚙️ パラメーター同期中")
+        st.info("左サイドバーの「🎯 買いルール」「🛡️ 売りルール」の設定値を用いて、過去2年間のシミュレーションを実行します。")
 
     if run_bt and bt_c_in:
         with open(T3_FILE, "w", encoding="utf-8") as f:
@@ -1044,7 +1027,7 @@ with tab3:
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 2)
+                raw = get_single_data(c + "0", 2) # 期間を2年に統一
                 if raw:
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
@@ -1055,43 +1038,51 @@ with tab3:
                             win_30 = df.iloc[i-30:i]
                             rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
                             
-                            if pd.isna(rh) or pd.isna(rl) or rl == 0: continue
+                            if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
                             
                             idxmax = win_14['AdjH'].idxmax()
                             h_d = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']])
-                            r14 = rh / rl if rl > 0 else 0
+                            r14 = rh / rl
                             
-                            if (1.3 <= r14 <= 2.0) and (h_d <= bt_buy_d):
+                            # サイドバーの買い期限（st.session_state.limit_d）を参照
+                            if (1.3 <= r14 <= 2.0) and (h_d <= st.session_state.limit_d):
                                 is_dt = check_double_top(win_30)
                                 is_hs = check_head_shoulders(win_30)
                                 if is_dt or is_hs:
                                     continue 
                                 
-                                if "攻め" in bt_mode:
+                                # サイドバーの戦術モード（tactics_mode）を参照
+                                if "攻め" in tactics_mode:
                                     is_db = check_double_bottom(win_30)
                                     if is_db:
                                         exec_p = td['AdjO']
                                         pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
                                 else:
-                                    targ = rh - ((rh - rl) * (bt_push / 100))
+                                    # サイドバーの押し目率（st.session_state.push_r）を参照
+                                    targ = rh - ((rh - rl) * (st.session_state.push_r / 100))
                                     if td['AdjL'] <= targ:
                                         exec_p = min(td['AdjO'], targ)
                                         pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
                         else:
                             bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
-                            sl_i = bp * (1 - (bt_sl_i / 100)); tp = bp * (1 + (bt_tp / 100)); sl_c = bp * (1 - (bt_sl_c / 100))
                             
-                            if td['AdjL'] <= sl_i: sp = min(td['AdjO'], sl_i); rsn = f"損切(ザ場-{bt_sl_i}%)"
-                            elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{bt_tp}%)"
-                            elif td['AdjC'] <= sl_c: sp = td['AdjC']; rsn = f"損切(終値-{bt_sl_c}%)"
-                            elif held >= bt_sell_d: sp = td['AdjC']; rsn = f"時間切れ({bt_sell_d}日)"
+                            # サイドバーの利確・損切ルールを参照
+                            sl_i = bp * (1 - (st.session_state.bt_sl_i / 100))
+                            tp = bp * (1 + (st.session_state.bt_tp / 100))
+                            sl_c = bp * (1 - (st.session_state.bt_sl_c / 100))
+                            
+                            if td['AdjL'] <= sl_i: sp = min(td['AdjO'], sl_i); rsn = f"損切(ザ場-{st.session_state.bt_sl_i}%)"
+                            elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{st.session_state.bt_tp}%)"
+                            elif td['AdjC'] <= sl_c: sp = td['AdjC']; rsn = f"損切(終値-{st.session_state.bt_sl_c}%)"
+                            elif held >= st.session_state.bt_sell_d: sp = td['AdjC']; rsn = f"時間切れ({st.session_state.bt_sell_d}日)"
                             
                             if rsn:
-                                sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2); p_amt = int((sp - bp) * bt_lot)
+                                sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2); p_amt = int((sp - bp) * st.session_state.bt_lot)
                                 all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held, '買値(円)': bp, '売値(円)': sp, '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn})
                                 pos = None
                 b_bar.progress((idx + 1) / len(t_codes)); time.sleep(0.5)
             b_bar.empty(); st.success("シミュレーション完了")
+            
             if not all_t: st.warning("シグナル点灯はありませんでした。")
             else:
                 tdf = pd.DataFrame(all_t); tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
