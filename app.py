@@ -424,7 +424,7 @@ def render_technical_radar(df, buy_price, tp_pct):
         macd_text = "📉 下落圧力継続中 (底掘り警戒)"
         macd_color = "#26a69a"
     else:
-        macd_text = "⚖️ モメンタム減衰"
+        macd_text = "📉 モメンタム減衰"
         macd_color = "#888888"
         
     # ボラティリティ（ATR）から利確日数を逆算
