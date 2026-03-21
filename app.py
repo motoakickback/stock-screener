@@ -366,6 +366,94 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
+# --- 【追加パッチ】計器フライト（テクニカル・レーダー） ---
+def calc_technicals(df):
+    df = df.copy()
+    if len(df) < 30:
+        df['RSI'] = 50; df['MACD_Hist'] = 0; df['ATR'] = 0
+        return df
+        
+    # RSI (14日)
+    delta = df['AdjC'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # MACD (12, 26, 9)
+    ema_fast = df['AdjC'].ewm(span=12, adjust=False).mean()
+    ema_slow = df['AdjC'].ewm(span=26, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    signal = macd.ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = macd - signal
+    
+    # ATR（14日間の平均真の値幅：ボラティリティ）
+    high_low = df['AdjH'] - df['AdjL']
+    high_prev_c = (df['AdjH'] - df['AdjC'].shift(1)).abs()
+    low_prev_c = (df['AdjL'] - df['AdjC'].shift(1)).abs()
+    tr = pd.concat([high_low, high_prev_c, low_prev_c], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(window=14).mean()
+    
+    return df
+
+def render_technical_radar(df, buy_price, tp_pct):
+    if df.empty or len(df) < 2: return ""
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    
+    rsi = latest.get('RSI', 50)
+    macd_hist = latest.get('MACD_Hist', 0)
+    macd_hist_prev = prev.get('MACD_Hist', 0)
+    atr = latest.get('ATR', 0)
+    
+    # RSI 判定
+    rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
+    rsi_text = "🔥 超・売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
+    if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ (高値掴み警戒)"
+    
+    # MACD 判定
+    if macd_hist > 0 and macd_hist_prev <= 0:
+        macd_text = "🔥 ゴールデンクロス直後"
+        macd_color = "#ef5350"
+    elif macd_hist > macd_hist_prev:
+        macd_text = "📈 上昇モメンタム拡大中"
+        macd_color = "#ef5350"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev:
+        macd_text = "📉 下落圧力継続中 (底掘り警戒)"
+        macd_color = "#26a69a"
+    else:
+        macd_text = "⚖️ モメンタム減衰"
+        macd_color = "#888888"
+        
+    # ボラティリティ（ATR）から利確日数を逆算
+    tp_yen = buy_price * (tp_pct / 100.0)
+    days = int(tp_yen / atr) if atr > 0 else 99
+    
+    html = f"""
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
+        <div style="font-size: 13px; color: #aaa; margin-bottom: 6px;">📡 計器フライト（テクニカル・レーダー）</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 1.5rem;">
+            <div>
+                <span style="font-size: 12px; color: #888;">RSI (14日):</span>
+                <strong style="color: {rsi_color}; font-size: 15px; margin-left: 4px;">{rsi:.1f}% ({rsi_text})</strong>
+            </div>
+            <div>
+                <span style="font-size: 12px; color: #888;">MACD:</span>
+                <strong style="color: {macd_color}; font-size: 15px; margin-left: 4px;">{macd_text}</strong>
+            </div>
+            <div>
+                <span style="font-size: 12px; color: #888;">ボラティリティ:</span>
+                <strong style="color: #bbb; font-size: 15px; margin-left: 4px;">1日平均 {atr:.1f}円 変動</strong>
+                <span style="font-size: 12px; color: #888; margin-left: 4px;">(利確+{tp_pct}%までの理論日数: 約 {days} 営業日)</span>
+            </div>
+        </div>
+    </div>
+    """
+    return html
+# -------------------------------------------------------------
+
 # ==========================================
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
