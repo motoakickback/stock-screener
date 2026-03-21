@@ -785,12 +785,12 @@ with tab2:
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:-1]}) {n}</h3>
-                            <div>{badge}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                        st.markdown(f"""
+                            <div style="margin-bottom: 0.8rem;">
+                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:-1]}) {n}</h3>
+                                <div>{badge}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
                         
                         if r.get('is_trend_broken'):
                             st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
