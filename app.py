@@ -371,46 +371,29 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # ==========================================
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
-if 'bt_mode_radio' not in st.session_state: st.session_state.bt_mode_radio = "⚖️ バランス (指定%落ちで指値買い)"
 if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
 if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
-if 'bt_push' not in st.session_state: st.session_state.bt_push = 50.0 
-if 'bt_buy_d' not in st.session_state: st.session_state.bt_buy_d = 4
-if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 15
+if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10
 if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
-if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 5
+if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 8
 if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
     preset = st.session_state.preset_target
     if "大型株" in preset:
-        if "バランス" in st.session_state.sidebar_tactics:
-            st.session_state.push_r = 25.0
-        else:
-            st.session_state.push_r = 45.0
-            
-        if "バランス" in st.session_state.bt_mode_radio:
-            st.session_state.bt_push = 25.0
-            st.session_state.bt_tp = 20
-        else:
-            st.session_state.bt_push = 45.0
-            st.session_state.bt_tp = 15
-        st.session_state.bt_sl_i = 15
+        st.session_state.push_r = 25.0 if "バランス" in st.session_state.sidebar_tactics else 45.0
+        st.session_state.bt_tp = 10
     elif "61.8%" in preset:
         st.session_state.push_r = 61.8
-        st.session_state.bt_push = 61.8
-        st.session_state.bt_tp = 15
-        st.session_state.bt_sl_i = 8
+        st.session_state.bt_tp = 10
     else:
         st.session_state.push_r = 50.0
-        st.session_state.bt_push = 50.0
-        st.session_state.bt_tp = 15
-        st.session_state.bt_sl_i = 8
+        st.session_state.bt_tp = 10
     
+    st.session_state.bt_sl_i = 8
+    st.session_state.bt_sl_c = 8
     st.session_state.limit_d = 4
-    st.session_state.bt_buy_d = 4
-    st.session_state.bt_sl_c = 5
     st.session_state.bt_sell_d = 10
 
 st.sidebar.header("🎯 対象市場 (一括換装)")
