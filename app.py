@@ -980,7 +980,7 @@ with tab2:
                         passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
 
-                        # --- 【追加パッチ】過去勝率のリアルタイム表示（アップグレード版） ---
+                        # --- 【完全防衛版】過去勝率のリアルタイム表示 ---
                         bt_stats = calc_historical_win_rate(
                             c[:4], st.session_state.push_r, st.session_state.limit_d,
                             st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
@@ -998,7 +998,6 @@ with tab2:
                             </div>
                             """, unsafe_allow_html=True)
                         else:
-                            # 0戦、またはデータ不足の場合はグレーアウトで「該当なし」を明示する
                             st.markdown(f"""
                             <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);">
                                 <span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span>
