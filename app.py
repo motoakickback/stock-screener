@@ -786,25 +786,20 @@ with tab1:
                     # -------------------------------------------------------------
                     
                     # ⚠️ APIには必ず「5桁(c + "0")」または元データ通りの「c」を渡す
-                    # Tab1の c は既に5桁(例: 72030)になっている可能性が高いため、安全策を取ります。
                     api_code = c if len(c) == 5 else c + "0"
                     
                     raw_s = get_single_data(api_code, 1)
                     if raw_s:
                         hist = clean_df(pd.DataFrame(raw_s))
+                        hist = calc_technicals(hist) # 計器計算
+                        st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
                     else:
                         hist = df[df['Code'] == c].sort_values('Date').tail(30)
-                        if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
-                        # -------------------------------------------------------------
-                        
-                        raw_s = get_single_data(c, 1)
-                        if raw_s:
-                            hist = clean_df(pd.DataFrame(raw_s))
+                        if not hist.empty: 
+                            hist = calc_technicals(hist) # 計器計算
+                            st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                             draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
-                        else:
-                            hist = df[df['Code'] == c].sort_values('Date').tail(30)
-                            if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
