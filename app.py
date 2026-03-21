@@ -1054,7 +1054,7 @@ with tab3:
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 1)
+                raw = get_single_data(c + "0", 2)
                 if raw:
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
