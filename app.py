@@ -785,6 +785,7 @@ with tab1:
                         """, unsafe_allow_html=True)
                     # -------------------------------------------------------------
                     
+                    # -------------------------------------------------------------
                     # ⚠️ APIには必ず「5桁(c + "0")」または元データ通りの「c」を渡す
                     api_code = c if len(c) == 5 else c + "0"
                     
@@ -800,6 +801,7 @@ with tab1:
                             hist = calc_technicals(hist) # 計器計算
                             st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                             draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    # -------------------------------------------------------------
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
