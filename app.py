@@ -680,6 +680,25 @@ with tab1:
                     
                     passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
+
+                    # --- 【追加パッチ】過去勝率のリアルタイム表示 ---
+                    bt_stats = calc_historical_win_rate(
+                        c[:4], st.session_state.push_r, st.session_state.limit_d,
+                        st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
+                        st.session_state.bt_sell_d, tactics_mode
+                    )
+                    if bt_stats and bt_stats['total'] > 0:
+                        wr = bt_stats['win_rate']; ev = bt_stats['exp_val']
+                        wr_color = "#ef5350" if wr >= 60 else "#FFD700" if wr >= 50 else "#888888"
+                        st.markdown(f"""
+                        <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
+                            <span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats['total']}戦):</span>
+                            <strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {wr:.1f}%</strong>
+                            <span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span>
+                            <strong style="color: {'#ef5350' if ev > 0 else '#26a69a'}; font-size: 16px; margin-left: 8px;">{ev:+.1f}円</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    # -------------------------------------------------------------
                     
                     raw_s = get_single_data(c, 1)
                     if raw_s:
