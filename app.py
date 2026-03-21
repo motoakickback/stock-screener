@@ -1079,7 +1079,10 @@ with tab2:
                             """, unsafe_allow_html=True)
                         # -------------------------------------------------------------
                         
+                        # --- テクニカルレーダーとチャート描画 ---
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                        df_chart = calc_technicals(df_chart) # 計器計算
+                        st.markdown(render_technical_radar(df_chart, bt_chart, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
 
 with tab3:
