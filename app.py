@@ -779,6 +779,11 @@ with tab2:
                     for _, r in res_df.iterrows():
                         st.divider()
                         
+                        # --- 【追加パッチ】行データ(r)からコードと銘柄名を安全に抽出 ---
+                        c = str(r.get('Code', ''))  # ※ 'Code' は実際のカラム名に書き換えてください
+                        n = str(r.get('Name', ''))  # ※ 'Name' は実際のカラム名に書き換えてください
+                        # -----------------------------------------------------------------
+                        
                         scale_val = str(r.get('Scale', ''))
                         if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                             badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
@@ -791,7 +796,7 @@ with tab2:
                                 <div>{badge}</div>
                             </div>
                         """, unsafe_allow_html=True)
-                        
+                                       
                         if r.get('is_trend_broken'):
                             st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
                         elif r.get('is_bt_broken'):
