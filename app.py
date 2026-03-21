@@ -1202,68 +1202,75 @@ with tab5:
             
             if not trades:
                 st.warning("CSVから買付と売却のペア（交戦記録）を検出できませんでした。")
-            elif st.button(f"🚀 {len(trades)}件の交戦記録に「鉄の掟」を適用して再計算"):
-                with st.spinner("J-Quantsから当時の高値・安値を照会し、弾道を解析中..."):
-                    results = []
-                    for t in trades:
-                        code = t['code']; bd = t['buy_date']; sd = t['sell_date']
-                        bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
-                        
-                        # サイドバーで設定した利確・損切ラインを参照
-                        tp_val = bp * (1 + (st.session_state.bt_tp / 100.0))
-                        sl_val = bp * (1 - (st.session_state.bt_sl_i / 100.0))
-                        
-                        raw_data = get_single_data(code + "0", 1)
-                        sim_sell_price = sp
-                        rsn = "到達せず（実際と同額で決済）"
-                        
-                        if raw_data:
-                            hist = clean_df(pd.DataFrame(raw_data))
-                            # 保有期間中のチャートデータのみに絞る
-                            period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
+            else:
+                st.markdown("#### ⚙️ If（もしも）の検証パラメーター")
+                col_p1, col_p2 = st.columns(2)
+                # デフォルトはサイドバーの値を入れるが、この画面内で自由に変更可能
+                sim_tp = col_p1.number_input("シミュレーション用 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0)
+                sim_sl = col_p2.number_input("シミュレーション用 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0)
+                
+                if st.button(f"🚀 {len(trades)}件の交戦記録を「利確+{sim_tp}% / 損切-{sim_sl}%」で再計算"):
+                    with st.spinner("J-Quantsから当時の高値・安値を照会し、弾道を解析中..."):
+                        results = []
+                        for t in trades:
+                            code = t['code']; bd = t['buy_date']; sd = t['sell_date']
+                            bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
                             
-                            for _, r in period_df.iterrows():
-                                if r['AdjH'] >= tp_val:
-                                    sim_sell_price = tp_val
-                                    rsn = f"🎯 利確 (+{st.session_state.bt_tp}%)"
-                                    break
-                                elif r['AdjL'] <= sl_val:
-                                    sim_sell_price = min(r['AdjO'], sl_val)
-                                    rsn = f"🛡️ 損切 (-{st.session_state.bt_sl_i}%)"
-                                    break
-                                    
-                        actual_profit = int((sp - bp) * qty)
-                        sim_profit = int((sim_sell_price - bp) * qty)
-                        
-                        results.append({
-                            '銘柄': t['name'], 'コード': code, 
-                            '買付日': bd.strftime('%m/%d'), '売却日': sd.strftime('%m/%d'),
-                            '買値': bp, '実際の売値': sp, '幻の売値': round(sim_sell_price, 1),
-                            '実際の損益': actual_profit, '幻の損益': sim_profit, 
-                            '改善額': sim_profit - actual_profit, '判定結果': rsn
-                        })
+                            # 検証用パラメーターを使用
+                            tp_val = bp * (1 + (sim_tp / 100.0))
+                            sl_val = bp * (1 - (sim_sl / 100.0))
                             
-                    if results:
-                        res_df = pd.DataFrame(results)
-                        total_actual = res_df['実際の損益'].sum()
-                        total_sim = res_df['幻の損益'].sum()
-                        diff = total_sim - total_actual
-                        
-                        st.markdown("### 💰 総合戦果の比較")
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("実際の合計損益", f"{total_actual:,} 円")
-                        col2.metric("鉄の掟 遵守時の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="normal")
-                        
-                        def color_profit(val):
-                            if isinstance(val, int):
-                                return 'color: #ef5350' if val < 0 else 'color: #26a69a' if val > 0 else ''
-                            return ''
+                            raw_data = get_single_data(code + "0", 1)
+                            sim_sell_price = sp
+                            rsn = "到達せず（実際と同額で決済）"
                             
-                        st.dataframe(res_df.style.applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), use_container_width=True)
-                        
-                        if diff > 0:
-                            st.success(f"🔥 【証明完了】もし主観を捨てて鉄の掟（+{st.session_state.bt_tp}%利確 / -{st.session_state.bt_sl_i}%損切）を完全遵守していれば、利益は {diff:,}円 増加していました。")
-                        else:
-                            st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルールよりも {abs(diff):,}円 優秀でした。")
+                            if raw_data:
+                                hist = clean_df(pd.DataFrame(raw_data))
+                                # 保有期間中のチャートデータのみに絞る
+                                period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
+                                
+                                for _, r in period_df.iterrows():
+                                    if r['AdjH'] >= tp_val:
+                                        sim_sell_price = tp_val
+                                        rsn = f"🎯 利確 (+{sim_tp}%)"
+                                        break
+                                    elif r['AdjL'] <= sl_val:
+                                        sim_sell_price = min(r['AdjO'], sl_val)
+                                        rsn = f"🛡️ 損切 (-{sim_sl}%)"
+                                        break
+                                        
+                            actual_profit = int((sp - bp) * qty)
+                            sim_profit = int((sim_sell_price - bp) * qty)
+                            
+                            results.append({
+                                '銘柄': t['name'], 'コード': code, 
+                                '買付日': bd.strftime('%m/%d'), '売却日': sd.strftime('%m/%d'),
+                                '買値': bp, '実際の売値': sp, '幻の売値': round(sim_sell_price, 1),
+                                '実際の損益': actual_profit, '幻の損益': sim_profit, 
+                                '改善額': sim_profit - actual_profit, '判定結果': rsn
+                            })
+                                
+                        if results:
+                            res_df = pd.DataFrame(results)
+                            total_actual = res_df['実際の損益'].sum()
+                            total_sim = res_df['幻の損益'].sum()
+                            diff = total_sim - total_actual
+                            
+                            st.markdown("### 💰 総合戦果の比較")
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("実際の合計損益", f"{total_actual:,} 円")
+                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="normal")
+                            
+                            def color_profit(val):
+                                if isinstance(val, int):
+                                    return 'color: #ef5350' if val < 0 else 'color: #26a69a' if val > 0 else ''
+                                return ''
+                                
+                            st.dataframe(res_df.style.applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), use_container_width=True)
+                            
+                            if diff > 0:
+                                st.success(f"🔥 【証明完了】もし主観を捨てて「利確+{sim_tp}% / 損切-{sim_sl}%」を完全遵守していれば、利益は {diff:,}円 増加していました。")
+                            else:
+                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルール(利確+{sim_tp}%)よりも {abs(diff):,}円 優秀でした。")
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
