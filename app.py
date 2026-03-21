@@ -450,9 +450,9 @@ bt_sl_c = st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c
 bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
 # ==========================================
-# メイン画面（4タブ構成）
+# メイン画面（5タブ構成）
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）", "⏳ 配備中（10日掟）"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）", "⏳ 配備中（10日掟）", "🗂️ 過去戦歴の解剖"])
 master_df = load_master()
 
 with tab1:
@@ -1149,3 +1149,121 @@ with tab4:
                     """, unsafe_allow_html=True)
                 except:
                     st.error(f"🚨 フォーマットエラー: {line} (カンマ区切り、YYYY-MM-DD形式で入力してください)")
+with tab5:
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🗂️ 過去戦歴の解剖（CSV検証）</h3>', unsafe_allow_html=True)
+    st.caption("SBI証券等の「約定履歴照会」CSVをアップロードし、「鉄の掟」を完全遵守していた場合の幻の戦果を算出します。")
+    
+    uploaded_file = st.file_uploader("約定履歴CSVをアップロード", type=['csv'])
+    if uploaded_file is not None:
+        try:
+            import io
+            bytes_data = uploaded_file.getvalue()
+            # SBI証券のCSVはShift-JISが多いためデコード処理
+            try:
+                content_str = bytes_data.decode('shift_jis')
+            except:
+                content_str = bytes_data.decode('utf-8', errors='replace')
+                
+            lines = content_str.splitlines()
+            header_idx = 0
+            for i, line in enumerate(lines):
+                if "約定日" in line and "銘柄コード" in line and "取引" in line:
+                    header_idx = i
+                    break
+                    
+            df_csv = pd.read_csv(io.StringIO(content_str), skiprows=header_idx)
+            df_csv['約定日'] = pd.to_datetime(df_csv['約定日'])
+            df_csv['銘柄コード'] = df_csv['銘柄コード'].astype(str).str.extract(r'(\d{4})')[0]
+            df_csv['約定単価'] = pd.to_numeric(df_csv['約定単価'], errors='coerce')
+            df_csv['約定数量'] = pd.to_numeric(df_csv['約定数量'], errors='coerce')
+
+            # 買付と売却を分離
+            buys = df_csv[df_csv['取引'].str.contains('買', na=False)].sort_values('約定日').copy()
+            sells = df_csv[df_csv['取引'].str.contains('売', na=False)].sort_values('約定日').copy()
+
+            # FIFO方式で買と売を紐づけ（交戦記録の抽出）
+            trades = []; buy_queues = {}
+            for idx, buy in buys.iterrows():
+                code = buy['銘柄コード']
+                if pd.isna(code): continue
+                if code not in buy_queues: buy_queues[code] = []
+                buy_queues[code].append({'date': buy['約定日'], 'price': buy['約定単価'], 'qty': buy['約定数量'], 'name': buy['銘柄']})
+
+            for idx, sell in sells.iterrows():
+                code = sell['銘柄コード']
+                if pd.isna(code): continue
+                if code in buy_queues and len(buy_queues[code]) > 0:
+                    buy = buy_queues[code].pop(0)
+                    trades.append({
+                        'code': code, 'name': sell['銘柄'],
+                        'buy_date': buy['date'], 'buy_price': buy['price'],
+                        'sell_date': sell['約定日'], 'sell_price': sell['約定単価'], 'qty': sell['約定数量']
+                    })
+            
+            if not trades:
+                st.warning("CSVから買付と売却のペア（交戦記録）を検出できませんでした。")
+            elif st.button(f"🚀 {len(trades)}件の交戦記録に「鉄の掟」を適用して再計算"):
+                with st.spinner("J-Quantsから当時の高値・安値を照会し、弾道を解析中..."):
+                    results = []
+                    for t in trades:
+                        code = t['code']; bd = t['buy_date']; sd = t['sell_date']
+                        bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
+                        
+                        # サイドバーで設定した利確・損切ラインを参照
+                        tp_val = bp * (1 + (st.session_state.bt_tp / 100.0))
+                        sl_val = bp * (1 - (st.session_state.bt_sl_i / 100.0))
+                        
+                        raw_data = get_single_data(code + "0", 1)
+                        sim_sell_price = sp
+                        rsn = "到達せず（実際と同額で決済）"
+                        
+                        if raw_data:
+                            hist = clean_df(pd.DataFrame(raw_data))
+                            # 保有期間中のチャートデータのみに絞る
+                            period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
+                            
+                            for _, r in period_df.iterrows():
+                                if r['AdjH'] >= tp_val:
+                                    sim_sell_price = tp_val
+                                    rsn = f"🎯 利確 (+{st.session_state.bt_tp}%)"
+                                    break
+                                elif r['AdjL'] <= sl_val:
+                                    sim_sell_price = min(r['AdjO'], sl_val)
+                                    rsn = f"🛡️ 損切 (-{st.session_state.bt_sl_i}%)"
+                                    break
+                                    
+                        actual_profit = int((sp - bp) * qty)
+                        sim_profit = int((sim_sell_price - bp) * qty)
+                        
+                        results.append({
+                            '銘柄': t['name'], 'コード': code, 
+                            '買付日': bd.strftime('%m/%d'), '売却日': sd.strftime('%m/%d'),
+                            '買値': bp, '実際の売値': sp, '幻の売値': round(sim_sell_price, 1),
+                            '実際の損益': actual_profit, '幻の損益': sim_profit, 
+                            '改善額': sim_profit - actual_profit, '判定結果': rsn
+                        })
+                            
+                    if results:
+                        res_df = pd.DataFrame(results)
+                        total_actual = res_df['実際の損益'].sum()
+                        total_sim = res_df['幻の損益'].sum()
+                        diff = total_sim - total_actual
+                        
+                        st.markdown("### 💰 総合戦果の比較")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("実際の合計損益", f"{total_actual:,} 円")
+                        col2.metric("鉄の掟 遵守時の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="normal")
+                        
+                        def color_profit(val):
+                            if isinstance(val, int):
+                                return 'color: #ef5350' if val < 0 else 'color: #26a69a' if val > 0 else ''
+                            return ''
+                            
+                        st.dataframe(res_df.style.applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), use_container_width=True)
+                        
+                        if diff > 0:
+                            st.success(f"🔥 【証明完了】もし主観を捨てて鉄の掟（+{st.session_state.bt_tp}%利確 / -{st.session_state.bt_sl_i}%損切）を完全遵守していれば、利益は {diff:,}円 増加していました。")
+                        else:
+                            st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルールよりも {abs(diff):,}円 優秀でした。")
+        except Exception as e:
+            st.error(f"🚨 CSVの解析に失敗しました: {e}")
