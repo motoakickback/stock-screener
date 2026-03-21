@@ -548,7 +548,7 @@ with tab1:
                     
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">({c[:-1]}) {n}</h3>
+                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:-1]}) {n}</h3>
                             <div>{badge}</div>
                         </div>
                     """, unsafe_allow_html=True)
