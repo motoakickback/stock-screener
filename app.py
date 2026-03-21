@@ -460,9 +460,9 @@ push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", ke
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
 
 # ==========================================
-# メイン画面（3タブ構成）
+# メイン画面（4タブ構成）
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）"])
+tab1, tab2, tab3, tab4 = st.tabs(["🚀 実戦（全軍）", "🔫 局地戦（個別）", "🔬 訓練（検証）", "⏳ 配備中（10日掟）"])
 master_df = load_master()
 
 with tab1:
@@ -1088,3 +1088,56 @@ with tab3:
                 
                 st.markdown("### 📜 詳細交戦記録（トレード履歴）")
                 st.dataframe(tdf, use_container_width=True, hide_index=True)
+
+with tab4:
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⏳ IFD-OCO 10日ルール監視</h3>', unsafe_allow_html=True)
+    st.caption("実戦配備中（保有中）の銘柄と約定日を入力し、タイムリミット（営業日）を自動追跡します。")
+    
+    HOLD_FILE = f"saved_hold_{user_id}.txt"
+    default_hold = "7203, 2026-03-10, 3500\n6614, 2026-03-15, 1200"
+    if os.path.exists(HOLD_FILE):
+        with open(HOLD_FILE, "r", encoding="utf-8") as f:
+            default_hold = f.read()
+            
+    hold_input = st.text_area("保有銘柄（銘柄コード, 約定日[YYYY-MM-DD], 買値）", value=default_hold, height=150)
+    
+    if st.button("🔄 戦況更新 (10日タイマー確認)"):
+        with open(HOLD_FILE, "w", encoding="utf-8") as f:
+            f.write(hold_input)
+            
+        lines = hold_input.strip().split('\n')
+        today = datetime.utcnow() + timedelta(hours=9)
+        
+        for line in lines:
+            if not line.strip(): continue
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) >= 2:
+                c = parts[0]; date_str = parts[1]
+                bp = parts[2] if len(parts) >= 3 else "---"
+                
+                try:
+                    buy_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    # Numpyの機能で「土日を除外した営業日」を正確にカウント
+                    days_elapsed = np.busday_count(buy_date.date(), today.date())
+                    
+                    c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c + "0") in master_df['Code'].values else "不明"
+                    
+                    if days_elapsed <= 7:
+                        status = "🟢 巡航中"
+                        bg_color = "rgba(38, 166, 154, 0.1)"; border_color = "#26a69a"
+                    elif days_elapsed <= 9:
+                        status = "⚠️ 撤退準備 (タイムリミット接近)"
+                        bg_color = "rgba(255, 215, 0, 0.1)"; border_color = "#FFD700"
+                    else:
+                        status = "💀 強制撤退日 (本日中にIFDを取消し、成行決済せよ)"
+                        bg_color = "rgba(239, 83, 80, 0.1)"; border_color = "#ef5350"
+                        
+                    st.markdown(f"""
+                    <div style="background-color: {bg_color}; border-left: 4px solid {border_color}; padding: 1rem; margin-bottom: 0.8rem; border-radius: 4px;">
+                        <div style="font-size: 14px; color: #aaa;">約定日: {date_str} (買値: {bp}円)</div>
+                        <div style="font-size: 20px; font-weight: bold; margin: 0.3rem 0;">({c}) {c_name}</div>
+                        <div style="font-size: 18px; font-weight: bold; color: {border_color};">{status} : 経過 {days_elapsed} 営業日</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except:
+                    st.error(f"🚨 フォーマットエラー: {line} (カンマ区切り、YYYY-MM-DD形式で入力してください)")
