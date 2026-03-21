@@ -10,6 +10,23 @@ import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
 
+# --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
+st.markdown("""
+    <style>
+    /* Metric値の省略記号(...)を強制解除 */
+    [data-testid="stMetricValue"] > div {
+        text-overflow: clip !important;
+        overflow: visible !important;
+        white-space: nowrap !important;
+    }
+    
+    /* カラムの狭さに合わせてフォントサイズを少し絞る（デフォルトは約1.8rem） */
+    [data-testid="stMetricValue"] {
+        font-size: 1.4rem !important; 
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 1. ページ設定 ---
 st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide")
 
