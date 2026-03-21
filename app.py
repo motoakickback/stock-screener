@@ -600,7 +600,7 @@ with tab1:
 
                 for _, r in res.iterrows():
                     st.divider()
-                    c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:-1]}"
+                    c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
                     
                     scale_val = str(r.get('Scale', ''))
                     if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
