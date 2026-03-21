@@ -1158,7 +1158,6 @@ with tab5:
         try:
             import io
             bytes_data = uploaded_file.getvalue()
-            # SBI証券のCSVはShift-JISが多いためデコード処理
             try:
                 content_str = bytes_data.decode('shift_jis')
             except:
@@ -1177,11 +1176,9 @@ with tab5:
             df_csv['約定単価'] = pd.to_numeric(df_csv['約定単価'], errors='coerce')
             df_csv['約定数量'] = pd.to_numeric(df_csv['約定数量'], errors='coerce')
 
-            # 買付と売却を分離
             buys = df_csv[df_csv['取引'].str.contains('買', na=False)].sort_values('約定日').copy()
             sells = df_csv[df_csv['取引'].str.contains('売', na=False)].sort_values('約定日').copy()
 
-            # FIFO方式で買と売を紐づけ（交戦記録の抽出）
             trades = []; buy_queues = {}
             for idx, buy in buys.iterrows():
                 code = buy['銘柄コード']
@@ -1205,7 +1202,6 @@ with tab5:
             else:
                 st.markdown("#### ⚙️ If（もしも）の検証パラメーター")
                 col_p1, col_p2 = st.columns(2)
-                # デフォルトはサイドバーの値を入れるが、この画面内で自由に変更可能
                 sim_tp = col_p1.number_input("シミュレーション用 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0)
                 sim_sl = col_p2.number_input("シミュレーション用 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0)
                 
@@ -1216,7 +1212,6 @@ with tab5:
                             code = t['code']; bd = t['buy_date']; sd = t['sell_date']
                             bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
                             
-                            # 検証用パラメーターを使用
                             tp_val = bp * (1 + (sim_tp / 100.0))
                             sl_val = bp * (1 - (sim_sl / 100.0))
                             
@@ -1226,7 +1221,6 @@ with tab5:
                             
                             if raw_data:
                                 hist = clean_df(pd.DataFrame(raw_data))
-                                # 保有期間中のチャートデータのみに絞る
                                 period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
                                 
                                 for _, r in period_df.iterrows():
@@ -1259,11 +1253,14 @@ with tab5:
                             st.markdown("### 💰 総合戦果の比較")
                             col1, col2, col3 = st.columns(3)
                             col1.metric("実際の合計損益", f"{total_actual:,} 円")
-                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="normal")
+                            
+                            # ⚠️ delta_color="inverse" で、プラスが赤、マイナスが緑になります
+                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="inverse")
                             
                             def color_profit(val):
                                 if isinstance(val, int):
-                                    return 'color: #ef5350' if val < 0 else 'color: #26a69a' if val > 0 else ''
+                                    # ⚠️ 日本株カラー設定: プラス(利益)＝赤、マイナス(損益)＝緑
+                                    return 'color: #ef5350' if val > 0 else 'color: #26a69a' if val < 0 else ''
                                 return ''
                                 
                             st.dataframe(res_df.style.applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), use_container_width=True)
