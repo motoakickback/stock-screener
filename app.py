@@ -83,6 +83,51 @@ def clean_df(df):
         df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
+    raw = get_single_data(c + "0", 2) # 過去2年分のデータで検証
+    if not raw: return None
+    df = clean_df(pd.DataFrame(raw))
+    if len(df) < 60: return None
+    
+    trades = []
+    pos = None
+    for i in range(30, len(df)):
+        td = df.iloc[i]
+        if pos is None:
+            win_14 = df.iloc[i-14:i]
+            win_30 = df.iloc[i-30:i]
+            rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+            if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
+            idxmax = win_14['AdjH'].idxmax()
+            h_d = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']])
+            r14 = rh / rl
+            
+            if (1.3 <= r14 <= 2.0) and (h_d <= buy_d):
+                if check_double_top(win_30) or check_head_shoulders(win_30): continue
+                
+                if "攻め" in mode:
+                    if check_double_bottom(win_30): pos = {'b_i': i, 'b_p': td['AdjO']}
+                else:
+                    targ = rh - ((rh - rl) * (push_r / 100))
+                    if td['AdjL'] <= targ: pos = {'b_i': i, 'b_p': min(td['AdjO'], targ)}
+        else:
+            bp = pos['b_p']; held = i - pos['b_i']; sp = 0
+            sl_val_i = bp * (1 - (sl_i / 100)); tp_val = bp * (1 + (tp / 100)); sl_val_c = bp * (1 - (sl_c / 100))
+            
+            if td['AdjL'] <= sl_val_i: sp = min(td['AdjO'], sl_val_i)
+            elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
+            elif td['AdjC'] <= sl_val_c: sp = td['AdjC']
+            elif held >= sell_d: sp = td['AdjC']
+            
+            if sp > 0:
+                trades.append(sp - bp)
+                pos = None
+                
+    if not trades: return None
+    wins = len([t for t in trades if t > 0])
+    return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
+    
 @st.cache_data(ttl=86400)
 def load_master():
     try:
