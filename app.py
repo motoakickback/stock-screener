@@ -681,7 +681,7 @@ with tab1:
                     passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
 
-                    # --- 【追加パッチ】過去勝率のリアルタイム表示（アップグレード版） ---
+                    # --- 【完全防衛版】過去勝率のリアルタイム表示 ---
                     bt_stats = calc_historical_win_rate(
                         c[:4], st.session_state.push_r, st.session_state.limit_d,
                         st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
@@ -699,7 +699,6 @@ with tab1:
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        # 0戦、またはデータ不足の場合はグレーアウトで「該当なし」を明示する
                         st.markdown(f"""
                         <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);">
                             <span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span>
@@ -708,34 +707,17 @@ with tab1:
                         """, unsafe_allow_html=True)
                     # -------------------------------------------------------------
                     
-                        passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
-                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
-
-                        # --- 【追加パッチ】過去勝率のリアルタイム表示（アップグレード版） ---
-                        bt_stats = calc_historical_win_rate(
-                            c[:4], st.session_state.push_r, st.session_state.limit_d,
-                            st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
-                            st.session_state.bt_sell_d, tactics_mode
-                        )
-                        if bt_stats and bt_stats['total'] > 0:
-                            wr = bt_stats['win_rate']; ev = bt_stats['exp_val']
-                            wr_color = "#ef5350" if wr >= 60 else "#FFD700" if wr >= 50 else "#888888"
-                            st.markdown(f"""
-                            <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
-                                <span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats['total']}戦):</span>
-                                <strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {wr:.1f}%</strong>
-                                <span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span>
-                                <strong style="color: {'#ef5350' if ev > 0 else '#26a69a'}; font-size: 16px; margin-left: 8px;">{ev:+.1f}円</strong>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            # 0戦、またはデータ不足の場合はグレーアウトで「該当なし」を明示する
-                            st.markdown(f"""
-                            <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);">
-                                <span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span>
-                                <span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（大暴落の履歴なし、またはデータ不足）</span>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    # ⚠️ APIには必ず「5桁(c + "0")」または元データ通りの「c」を渡す
+                    # Tab1の c は既に5桁(例: 72030)になっている可能性が高いため、安全策を取ります。
+                    api_code = c if len(c) == 5 else c + "0"
+                    
+                    raw_s = get_single_data(api_code, 1)
+                    if raw_s:
+                        hist = clean_df(pd.DataFrame(raw_s))
+                        draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    else:
+                        hist = df[df['Code'] == c].sort_values('Date').tail(30)
+                        if not hist.empty: draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
                         # -------------------------------------------------------------
                         
                         raw_s = get_single_data(c, 1)
