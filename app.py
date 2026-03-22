@@ -1019,6 +1019,44 @@ with tab2:
                                 score_list.append(not is_dt and not is_hs)
                                 
                                 rule_pct = (sum(score_list) / len(score_list)) * 100
+
+                                # --- 【コア改修】ソート前の事前トリアージ判定 ---
+                                df_chart = calc_technicals(df_s) # 先に計器を計算
+                                rsi_val = 50; macd_t = "不明"
+                                if len(df_chart) >= 2:
+                                    latest_c = df_chart.iloc[-1]
+                                    prev_c = df_chart.iloc[-2]
+                                    rsi_val = latest_c.get('RSI', 50)
+                                    macd_h = latest_c.get('MACD_Hist', 0)
+                                    macd_h_prev = prev_c.get('MACD_Hist', 0)
+
+                                    if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
+                                    elif macd_h > macd_h_prev: macd_t = "上昇拡大"
+                                    elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
+                                    else: macd_t = "減衰"
+
+                                triage_rank = "C（条件外・監視）👁️"
+                                triage_bg = "#616161"
+                                triage_score = 1 # ソート用内部スコア (1点)
+                                
+                                if macd_t == "下落継続" or rsi_val >= 70:
+                                    triage_rank = "圏外（手出し無用）🚫"
+                                    triage_bg = "#d32f2f"
+                                    triage_score = 0 # (0点)
+                                elif macd_t == "GC直後" and rsi_val <= 50:
+                                    triage_rank = "S（即時狙撃）🔥"
+                                    triage_bg = "#2e7d32"
+                                    triage_score = 4 # 最優先 (4点)
+                                elif macd_t == "減衰" and rsi_val <= 30:
+                                    triage_rank = "A（罠の設置）🪤"
+                                    triage_bg = "#0288d1"
+                                    triage_score = 3 # (3点)
+                                elif macd_t == "上昇拡大" and 50 <= rsi_val <= 65:
+                                    triage_rank = "B（順張り警戒）📈"
+                                    triage_bg = "#ed6c02"
+                                    triage_score = 2 # (2点)
+                                # ------------------------------------------------
+
                                 results.append({
                                     'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
                                     'lc': lc, 'bt': bt_single, 
@@ -1030,19 +1068,23 @@ with tab2:
                                     'pct_3days': pct_3days, 'is_bt_broken': is_bt_broken,
                                     'is_trend_broken': is_trend_broken, 
                                     'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
-                                    'sakata_signal': sakata_signal
+                                    'sakata_signal': sakata_signal,
+                                    'triage_score': triage_score, 'triage_rank': triage_rank, 'triage_bg': triage_bg # 追加
                                 })
-                                charts_data[c] = (df_s, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
+                                charts_data[c] = (df_chart, bt_single, tp5_s, tp10_s, tp15_s, tp20_s) # 計算済みのdfを保存
                 
                 if results:
                     res_df = pd.DataFrame(results)
+                    
+                    # --- 【コア改修】複合ソートの実行（スコア > 戦術 > 掟達成率 > 到達度） ---
                     if tactics_mode.startswith("⚔️"):
-                        res_df = res_df.sort_values(['is_db', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
+                        res_df = res_df.sort_values(['triage_score', 'is_db', 'rule_pct', 'reach_pct'], ascending=[False, False, False, False])
                     elif tactics_mode.startswith("🛡️"):
-                        res_df = res_df.sort_values(['is_defense', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
+                        res_df = res_df.sort_values(['triage_score', 'is_defense', 'rule_pct', 'reach_pct'], ascending=[False, False, False, False])
                     else:
-                        res_df = res_df.sort_values(['rule_pct', 'reach_pct'], ascending=[False, False])
-                        
+                        res_df = res_df.sort_values(['triage_score', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
+                    # ------------------------------------------------------------------
+
                     st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（モード: {tactics_mode.split()[0]}）")
                     for _, r in res_df.iterrows():
                         st.divider()
@@ -1050,48 +1092,14 @@ with tab2:
                         c = str(r.get('Code', ''))
                         n = str(r.get('Name', ''))
                         
-                        # --- 【追加パッチ：自動トリアージ判定】 ---
-                        # ※チャート描画用のデータから先にテクニカル指標を計算し、S/A/Bを判定します
-                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
-                        df_chart = calc_technicals(df_chart)
-
-                        rsi_val = 50; macd_t = "不明"
-                        if len(df_chart) >= 2:
-                            latest_c = df_chart.iloc[-1]
-                            prev_c = df_chart.iloc[-2]
-                            rsi_val = latest_c.get('RSI', 50)
-                            macd_h = latest_c.get('MACD_Hist', 0)
-                            macd_h_prev = prev_c.get('MACD_Hist', 0)
-
-                            if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
-                            elif macd_h > macd_h_prev: macd_t = "上昇拡大"
-                            elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
-                            else: macd_t = "減衰"
-
-                        triage_rank = "C（条件外・監視）👁️"
-                        triage_bg = "#616161" # グレー
-                        if macd_t == "下落継続" or rsi_val >= 70:
-                            triage_rank = "圏外（手出し無用）🚫"
-                            triage_bg = "#d32f2f" # 赤
-                        elif macd_t == "GC直後" and rsi_val <= 50:
-                            triage_rank = "S（即時狙撃）🔥"
-                            triage_bg = "#2e7d32" # 緑
-                        elif macd_t == "減衰" and rsi_val <= 30:
-                            triage_rank = "A（罠の設置）🪤"
-                            triage_bg = "#0288d1" # 青
-                        elif macd_t == "上昇拡大" and 50 <= rsi_val <= 65:
-                            triage_rank = "B（順張り警戒）📈"
-                            triage_bg = "#ed6c02" # オレンジ
-                        # -----------------------------------------------------------------
-                        
                         scale_val = str(r.get('Scale', ''))
                         if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                             badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        # 優先度バッジの生成
-                        triage_badge = f'<span style="background-color: {triage_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {triage_rank}</span>'
+                        # 判定済みのランクとカラーを取得
+                        triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
@@ -1206,7 +1214,7 @@ with tab2:
                             """, unsafe_allow_html=True)
                         
                         # --- テクニカルレーダーとチャート描画 ---
-                        # ※ 上部でcalc_technicals済みのためそのまま渡します
+                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
                         st.markdown(render_technical_radar(df_chart, bt_chart, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
                         # -------------------------------------------------------------
