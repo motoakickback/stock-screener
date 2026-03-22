@@ -1332,8 +1332,8 @@ with tab4:
                 except:
                     st.error(f"🚨 フォーマットエラー: {line} (カンマ区切り、YYYY-MM-DD形式で入力してください)")
 with tab5:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🗂️ 過去戦歴の解剖（CSV検証）</h3>', unsafe_allow_html=True)
-    st.caption("SBI証券等の「約定履歴照会」CSVをアップロードし、「鉄の掟」を完全遵守していた場合の幻の戦果を算出します。")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）</h3>', unsafe_allow_html=True)
+    st.caption("実際の売却日を完全に無視し、買付日から「指定した利確・損切・保有日数」のルールで完全放置した場合の幻の戦果を算出します。")
     
     uploaded_file = st.file_uploader("約定履歴CSVをアップロード", type=['csv'])
     if uploaded_file is not None:
@@ -1382,19 +1382,19 @@ with tab5:
             if not trades:
                 st.warning("CSVから買付と売却のペア（交戦記録）を検出できませんでした。")
             else:
-                st.markdown("#### ⚙️ If（もしも）の検証パラメーター")
-                col_p1, col_p2 = st.columns(2)
-                sim_tp = col_p1.number_input("シミュレーション用 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0)
-                sim_sl = col_p2.number_input("シミュレーション用 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0)
+                st.markdown("#### ⚙️ IFD-OCO 自動判定パラメーター")
+                col_p1, col_p2, col_p3 = st.columns(3)
+                sim_tp = col_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0)
+                sim_sl = col_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0)
+                sim_days = col_p3.number_input("⏳ 期限切れ手仕舞い (営業日)", value=10, step=1)
                 
-                if st.button(f"🚀 {len(trades)}件の交戦記録を「利確+{sim_tp}% / 損切-{sim_sl}%」で再計算"):
-                    with st.spinner("J-Quantsから当時の高値・安値を照会し、弾道を解析中..."):
+                if st.button(f"🚀 全{len(trades)}件の弾道を「完全放置ルール」で再計算"):
+                    with st.spinner("J-Quantsから当時のチャートを読み込み、未来の弾道を追跡中..."):
                         results = []
                         for t in trades:
                             code = t['code']; bd = t['buy_date']; sd = t['sell_date']
                             bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
                             
-                            # 計算は小数点のまま極限まで精度を保つ
                             tp_val = bp * (1 + (sim_tp / 100.0))
                             sl_val = bp * (1 - (sim_sl / 100.0))
                             
@@ -1402,19 +1402,19 @@ with tab5:
                             raw_data = get_single_data(api_code, 1)
                             
                             sim_sell_price = sp
-                            rsn = "到達せず（実際と同額で決済）"
-                            
+                            sim_sell_date = sd
+                            rsn = "データ不足"
                             rsi_val = 50; macd_t = "---"; days_val = 99
                             
                             if raw_data:
                                 hist = clean_df(pd.DataFrame(raw_data))
                                 hist = calc_technicals(hist) 
                                 
+                                # エントリー時点の計器データ
                                 buy_hist = hist[hist['Date'] <= bd]
                                 if len(buy_hist) >= 2:
                                     latest = buy_hist.iloc[-1]
                                     prev = buy_hist.iloc[-2]
-                                    
                                     rsi = latest.get('RSI', 50)
                                     macd_h = latest.get('MACD_Hist', 0)
                                     macd_h_prev = prev.get('MACD_Hist', 0)
@@ -1429,27 +1429,40 @@ with tab5:
                                     tp_yen = bp * (sim_tp / 100.0)
                                     days_val = int(tp_yen / atr) if atr > 0 else 99
                                 
-                                period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
+                                # ⚠️ 買付日から未来に向かって「sim_days」日分だけを抽出
+                                future_df = hist[hist['Date'] >= bd].sort_values('Date')
+                                period_df = future_df.head(int(sim_days) + 1) # 買付日(0日目)を含むため+1
                                 
-                                for _, r in period_df.iterrows():
-                                    if r['AdjH'] >= tp_val:
-                                        sim_sell_price = tp_val
-                                        rsn = f"🎯 利確 (+{sim_tp}%)"
-                                        break
-                                    elif r['AdjL'] <= sl_val:
-                                        sim_sell_price = min(r['AdjO'], sl_val)
-                                        rsn = f"🛡️ 損切 (-{sim_sl}%)"
-                                        break
+                                if not period_df.empty:
+                                    # 初期値は「期限切れ（最終日の終値）」に設定
+                                    last_row = period_df.iloc[-1]
+                                    sim_sell_price = last_row['AdjC']
+                                    sim_sell_date = last_row['Date']
+                                    rsn = f"⏳ 期限切れ手仕舞い ({len(period_df)-1}日目)"
+                                    
+                                    # 1日ずつ未来へ進み、IFD-OCOの網に引っかかるか判定
+                                    for i, r in period_df.iterrows():
+                                        if r['AdjH'] >= tp_val:
+                                            sim_sell_price = tp_val
+                                            sim_sell_date = r['Date']
+                                            rsn = f"🎯 利確 (+{sim_tp}%)"
+                                            break
+                                        elif r['AdjL'] <= sl_val:
+                                            # 窓開け下落も考慮し、始値と損切値の低い方を採用
+                                            sim_sell_price = min(r['AdjO'], sl_val)
+                                            sim_sell_date = r['Date']
+                                            rsn = f"🛡️ 損切 (-{sim_sl}%)"
+                                            break
                             
-                            # 内部データは小数のまま維持
                             actual_profit = (sp - bp) * qty
                             sim_profit = (sim_sell_price - bp) * qty
                             
                             results.append({
                                 '銘柄': t['name'], 'コード': code, 
                                 '買付日': bd.strftime('%m/%d'), 
-                                '買付時RSI': f"{rsi_val}%", 'MACD陣形': macd_t, '理論日数': f"{days_val}日",
-                                '売却日': sd.strftime('%m/%d'),
+                                'RSI/陣形': f"{rsi_val}% / {macd_t}",
+                                '実際の売却': sd.strftime('%m/%d'),
+                                '幻の決済日': sim_sell_date.strftime('%m/%d') if isinstance(sim_sell_date, pd.Timestamp) else "---",
                                 '買値': bp, '実際の売値': sp, '幻の売値': sim_sell_price,
                                 '実際の損益': actual_profit, '幻の損益': sim_profit, 
                                 '改善額': sim_profit - actual_profit, '判定結果': rsn
@@ -1463,23 +1476,17 @@ with tab5:
                             
                             st.markdown("### 💰 総合戦果の比較")
                             col1, col2, col3 = st.columns(3)
-                            # 上部のメトリックもすべてカンマ付き整数にフォーマット
                             col1.metric("実際の合計損益", f"{total_actual:,.0f} 円")
-                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,.0f} 円", f"{diff:,.0f} 円", delta_color="inverse")
+                            col2.metric(f"完全放置ルール の損益", f"{total_sim:,.0f} 円", f"{diff:,.0f} 円", delta_color="inverse")
                             
                             def color_profit(val):
                                 if isinstance(val, (int, float)):
                                     return 'color: #ef5350' if val > 0 else 'color: #26a69a' if val < 0 else ''
                                 return ''
                             
-                            # ⚠️ 表示形式（フォーマット）を「カンマ付き・小数点以下ゼロ」に指定
                             format_dict = {
-                                '買値': '{:,.0f}',
-                                '実際の売値': '{:,.0f}',
-                                '幻の売値': '{:,.0f}',
-                                '実際の損益': '{:,.0f}',
-                                '幻の損益': '{:,.0f}',
-                                '改善額': '{:,.0f}'
+                                '買値': '{:,.0f}', '実際の売値': '{:,.0f}', '幻の売値': '{:,.0f}',
+                                '実際の損益': '{:,.0f}', '幻の損益': '{:,.0f}', '改善額': '{:,.0f}'
                             }
                             
                             st.dataframe(
@@ -1488,8 +1495,8 @@ with tab5:
                             )
                             
                             if diff > 0:
-                                st.success(f"🔥 【証明完了】もし主観を捨てて「利確+{sim_tp}% / 損切-{sim_sl}%」を完全遵守していれば、利益は {diff:,.0f}円 増加していました。")
+                                st.success(f"🔥 【証明完了】人間の裁量（ノイズ）を完全に捨て、機械的IFD-OCOルールを徹底した方が、利益は {diff:,.0f}円 高くなります。")
                             else:
-                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルール(利確+{sim_tp}%)よりも {abs(diff):,.0f}円 優秀でした。")
+                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済（途中での手動利確・損切など）は、完全放置ルールよりも {abs(diff):,.0f}円 優秀でした。")
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
