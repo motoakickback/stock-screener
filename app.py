@@ -1047,9 +1047,41 @@ with tab2:
                     for _, r in res_df.iterrows():
                         st.divider()
                         
-                        # --- 【追加パッチ】行データ(r)からコードと銘柄名を安全に抽出 ---
-                        c = str(r.get('Code', ''))  # ※ 'Code' は実際のカラム名に書き換えてください
-                        n = str(r.get('Name', ''))  # ※ 'Name' は実際のカラム名に書き換えてください
+                        c = str(r.get('Code', ''))
+                        n = str(r.get('Name', ''))
+                        
+                        # --- 【追加パッチ：自動トリアージ判定】 ---
+                        # ※チャート描画用のデータから先にテクニカル指標を計算し、S/A/Bを判定します
+                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
+                        df_chart = calc_technicals(df_chart)
+
+                        rsi_val = 50; macd_t = "不明"
+                        if len(df_chart) >= 2:
+                            latest_c = df_chart.iloc[-1]
+                            prev_c = df_chart.iloc[-2]
+                            rsi_val = latest_c.get('RSI', 50)
+                            macd_h = latest_c.get('MACD_Hist', 0)
+                            macd_h_prev = prev_c.get('MACD_Hist', 0)
+
+                            if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
+                            elif macd_h > macd_h_prev: macd_t = "上昇拡大"
+                            elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
+                            else: macd_t = "減衰"
+
+                        triage_rank = "C（条件外・監視）👁️"
+                        triage_bg = "#616161" # グレー
+                        if macd_t == "下落継続" or rsi_val >= 70:
+                            triage_rank = "圏外（手出し無用）🚫"
+                            triage_bg = "#d32f2f" # 赤
+                        elif macd_t == "GC直後" and rsi_val <= 50:
+                            triage_rank = "S（即時狙撃）🔥"
+                            triage_bg = "#2e7d32" # 緑
+                        elif macd_t == "減衰" and rsi_val <= 30:
+                            triage_rank = "A（罠の設置）🪤"
+                            triage_bg = "#0288d1" # 青
+                        elif macd_t == "上昇拡大" and 50 <= rsi_val <= 65:
+                            triage_rank = "B（順張り警戒）📈"
+                            triage_bg = "#ed6c02" # オレンジ
                         # -----------------------------------------------------------------
                         
                         scale_val = str(r.get('Scale', ''))
@@ -1058,13 +1090,16 @@ with tab2:
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
+                        # 優先度バッジの生成
+                        triage_badge = f'<span style="background-color: {triage_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {triage_rank}</span>'
+
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
                                 <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:4]}) {n}</h3>
-                                <div>{badge}</div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
                             </div>
                         """, unsafe_allow_html=True)
-                                       
+                                        
                         if r.get('is_trend_broken'):
                             st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
                         elif r.get('is_bt_broken'):
@@ -1093,7 +1128,6 @@ with tab2:
                             else:
                                 st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
                                 
-                        # --- 【完全防衛型 UI描画ブロック】局地戦用 ---
                         lc_val = int(r.get('lc', 0))
                         bt_val = int(r.get('bt', 0))
                         high_val = int(r.get('h14', lc_val))
@@ -1147,7 +1181,6 @@ with tab2:
                         passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
 
-                        # --- 【完全防衛版】過去勝率のリアルタイム表示 ---
                         bt_stats = calc_historical_win_rate(
                             c[:4], st.session_state.push_r, st.session_state.limit_d,
                             st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
@@ -1171,12 +1204,9 @@ with tab2:
                                 <span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（大暴落の履歴なし、またはデータ不足）</span>
                             </div>
                             """, unsafe_allow_html=True)
-                        # -------------------------------------------------------------
                         
-                        # -------------------------------------------------------------
                         # --- テクニカルレーダーとチャート描画 ---
-                        df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
-                        df_chart = calc_technicals(df_chart) # 計器計算
+                        # ※ 上部でcalc_technicals済みのためそのまま渡します
                         st.markdown(render_technical_radar(df_chart, bt_chart, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
                         # -------------------------------------------------------------
