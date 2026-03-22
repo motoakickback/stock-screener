@@ -1394,15 +1394,41 @@ with tab5:
                             code = t['code']; bd = t['buy_date']; sd = t['sell_date']
                             bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
                             
+                            # 計算は小数点のまま極限まで精度を保つ
                             tp_val = bp * (1 + (sim_tp / 100.0))
                             sl_val = bp * (1 - (sim_sl / 100.0))
                             
-                            raw_data = get_single_data(code + "0", 1)
+                            api_code = code if len(code) == 5 else code + "0"
+                            raw_data = get_single_data(api_code, 1)
+                            
                             sim_sell_price = sp
                             rsn = "到達せず（実際と同額で決済）"
                             
+                            rsi_val = 50; macd_t = "---"; days_val = 99
+                            
                             if raw_data:
                                 hist = clean_df(pd.DataFrame(raw_data))
+                                hist = calc_technicals(hist) 
+                                
+                                buy_hist = hist[hist['Date'] <= bd]
+                                if len(buy_hist) >= 2:
+                                    latest = buy_hist.iloc[-1]
+                                    prev = buy_hist.iloc[-2]
+                                    
+                                    rsi = latest.get('RSI', 50)
+                                    macd_h = latest.get('MACD_Hist', 0)
+                                    macd_h_prev = prev.get('MACD_Hist', 0)
+                                    atr = latest.get('ATR', 0)
+                                    
+                                    if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
+                                    elif macd_h > macd_h_prev: macd_t = "上昇拡大"
+                                    elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
+                                    else: macd_t = "減衰"
+                                    
+                                    rsi_val = int(rsi)
+                                    tp_yen = bp * (sim_tp / 100.0)
+                                    days_val = int(tp_yen / atr) if atr > 0 else 99
+                                
                                 period_df = hist[(hist['Date'] >= bd) & (hist['Date'] <= sd)].sort_values('Date')
                                 
                                 for _, r in period_df.iterrows():
@@ -1414,14 +1440,17 @@ with tab5:
                                         sim_sell_price = min(r['AdjO'], sl_val)
                                         rsn = f"🛡️ 損切 (-{sim_sl}%)"
                                         break
-                                        
-                            actual_profit = int((sp - bp) * qty)
-                            sim_profit = int((sim_sell_price - bp) * qty)
+                            
+                            # 内部データは小数のまま維持
+                            actual_profit = (sp - bp) * qty
+                            sim_profit = (sim_sell_price - bp) * qty
                             
                             results.append({
                                 '銘柄': t['name'], 'コード': code, 
-                                '買付日': bd.strftime('%m/%d'), '売却日': sd.strftime('%m/%d'),
-                                '買値': bp, '実際の売値': sp, '幻の売値': round(sim_sell_price, 1),
+                                '買付日': bd.strftime('%m/%d'), 
+                                '買付時RSI': f"{rsi_val}%", 'MACD陣形': macd_t, '理論日数': f"{days_val}日",
+                                '売却日': sd.strftime('%m/%d'),
+                                '買値': bp, '実際の売値': sp, '幻の売値': sim_sell_price,
                                 '実際の損益': actual_profit, '幻の損益': sim_profit, 
                                 '改善額': sim_profit - actual_profit, '判定結果': rsn
                             })
@@ -1434,22 +1463,33 @@ with tab5:
                             
                             st.markdown("### 💰 総合戦果の比較")
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("実際の合計損益", f"{total_actual:,} 円")
-                            
-                            # ⚠️ delta_color="inverse" で、プラスが赤、マイナスが緑になります
-                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,} 円", f"{diff:,} 円", delta_color="inverse")
+                            # 上部のメトリックもすべてカンマ付き整数にフォーマット
+                            col1.metric("実際の合計損益", f"{total_actual:,.0f} 円")
+                            col2.metric(f"If (利確{sim_tp}%/損切{sim_sl}%) の損益", f"{total_sim:,.0f} 円", f"{diff:,.0f} 円", delta_color="inverse")
                             
                             def color_profit(val):
-                                if isinstance(val, int):
-                                    # ⚠️ 日本株カラー設定: プラス(利益)＝赤、マイナス(損益)＝緑
+                                if isinstance(val, (int, float)):
                                     return 'color: #ef5350' if val > 0 else 'color: #26a69a' if val < 0 else ''
                                 return ''
-                                
-                            st.dataframe(res_df.style.applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), use_container_width=True)
+                            
+                            # ⚠️ 表示形式（フォーマット）を「カンマ付き・小数点以下ゼロ」に指定
+                            format_dict = {
+                                '買値': '{:,.0f}',
+                                '実際の売値': '{:,.0f}',
+                                '幻の売値': '{:,.0f}',
+                                '実際の損益': '{:,.0f}',
+                                '幻の損益': '{:,.0f}',
+                                '改善額': '{:,.0f}'
+                            }
+                            
+                            st.dataframe(
+                                res_df.style.format(format_dict).applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), 
+                                use_container_width=True
+                            )
                             
                             if diff > 0:
-                                st.success(f"🔥 【証明完了】もし主観を捨てて「利確+{sim_tp}% / 損切-{sim_sl}%」を完全遵守していれば、利益は {diff:,}円 増加していました。")
+                                st.success(f"🔥 【証明完了】もし主観を捨てて「利確+{sim_tp}% / 損切-{sim_sl}%」を完全遵守していれば、利益は {diff:,.0f}円 増加していました。")
                             else:
-                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルール(利確+{sim_tp}%)よりも {abs(diff):,}円 優秀でした。")
+                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済は、機械的なルール(利確+{sim_tp}%)よりも {abs(diff):,.0f}円 優秀でした。")
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
