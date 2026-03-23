@@ -560,9 +560,12 @@ if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
-    preset = st.session_state.preset_target
+    # キャッシュクリア直後の「記憶喪失状態」でもエラーを出さないための安全装置（getメソッド）
+    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    
     if "大型株" in preset:
-        st.session_state.push_r = 25.0 if "バランス" in st.session_state.sidebar_tactics else 45.0
+        st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
         st.session_state.bt_tp = 10
     elif "61.8%" in preset:
         st.session_state.push_r = 61.8
