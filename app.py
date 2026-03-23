@@ -631,21 +631,20 @@ bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=
 
 import streamlit.components.v1 as components
 
-# --- 【システムUI拡張】トップへ帰還（コア・インジェクション版） ---
+# --- 【システムUI拡張】トップへ帰還（全コンテナ強制スクロール版） ---
 components.html(
     """
     <script>
     const parentDoc = window.parent.document;
     
-    // ボタンが二重に生成されるのを防ぐ
     if (!parentDoc.getElementById('sniper-return-btn')) {
         const btn = parentDoc.createElement('button');
         btn.id = 'sniper-return-btn';
         btn.innerHTML = '🚁 司令部（トップ）へ帰還';
         
-        // --- CSSスタイリング直接付与 ---
+        // --- スタイリング ---
         btn.style.position = 'fixed';
-        btn.style.bottom = '100px'; // Manage app回避の高度
+        btn.style.bottom = '100px'; 
         btn.style.right = '30px';
         btn.style.backgroundColor = '#1e1e1e';
         btn.style.color = '#00e676';
@@ -658,7 +657,6 @@ components.html(
         btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
         btn.style.transition = 'all 0.3s ease';
         
-        // ホバー（マウスオーバー）時の挙動
         btn.onmouseover = function() {
             btn.style.backgroundColor = '#00e676';
             btn.style.color = '#1e1e1e';
@@ -668,22 +666,23 @@ components.html(
             btn.style.color = '#00e676';
         };
         
-        // クリック時の強制スクロールロジック
+        // --- 絨毯爆撃型スクロールロジック ---
         btn.onclick = function() {
-            // Streamlit特有のスクロールコンテナを直接狙撃
-            const viewContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
-            const mainContainer = parentDoc.querySelector('.main');
+            // 1. 最上位のウィンドウをスクロール
+            window.parent.scrollTo({top: 0, behavior: 'smooth'});
             
-            if (viewContainer) {
-                viewContainer.scrollTo({top: 0, behavior: 'smooth'});
-            } else if (mainContainer) {
-                mainContainer.scrollTo({top: 0, behavior: 'smooth'});
-            } else {
-                parentDoc.body.scrollTo({top: 0, behavior: 'smooth'});
+            // 2. 画面内のすべての要素を取得し、スクロールバーを持っているか判定
+            const allElements = parentDoc.querySelectorAll('*');
+            for (let i = 0; i < allElements.length; i++) {
+                const el = allElements[i];
+                // 要素がスクロール可能（中身がはみ出している）場合
+                if (el.scrollHeight > el.clientHeight) {
+                    // 強制的に一番上へ巻き上げる
+                    el.scrollTo({top: 0, behavior: 'smooth'});
+                }
             }
         };
         
-        // 親のBodyに強制配置
         parentDoc.body.appendChild(btn);
     }
     </script>
@@ -692,6 +691,10 @@ components.html(
     width=0
 )
 # -------------------------------------------------------------
+
+# ==========================================
+# メイン画面（5タブ構成）
+# ==========================================
 
 # ==========================================
 # メイン画面（5タブ構成）
