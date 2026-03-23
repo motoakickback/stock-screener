@@ -1616,6 +1616,62 @@ with tab5:
                                 st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済（途中での手動利確・損切など）は、完全放置ルールよりも {abs(diff):,.0f}円 優秀でした。")
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
+
+# --- 🛸 Tab 6専用チャート（14日間の空中戦ズーム・スコープ） ---
+def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
+    df = df.copy()
+    df['MA5'] = df['AdjC'].rolling(window=5).mean()
+
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df['Date'], open=df['AdjO'], high=df['AdjH'],
+        low=df['AdjL'], close=df['AdjC'], name='株価',
+        increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
+    ))
+
+    # 5日線（命綱）のみを太く強調して描画
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(命綱)', line=dict(color='rgba(156, 39, 176, 0.9)', width=2.5)))      
+
+    # 架空の買値と上値シミュレーション
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='現在値', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='+5%', line=dict(color='rgba(239, 83, 80, 0.5)', width=1, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.7)', width=1.5, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
+    
+    last_date = df['Date'].max()
+    # ⚠️ ここで直近14営業日に強制ズームイン
+    start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min()
+    padding_days = timedelta(days=0.5)
+
+    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
+    if not visible_df.empty:
+        y_max = max(visible_df['AdjH'].max(), tp15)
+        y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
+        margin = (y_max - y_min) * 0.05
+        y_range = [y_min - margin, y_max + margin]
+    else:
+        y_range = None
+
+    layout_args = dict(
+        height=380, # 少し縦幅を縮めてコンパクトに
+        margin=dict(l=10, r=60, t=20, b=40), 
+        xaxis_rangeslider_visible=False, # 下の邪魔なスライダーを消去して完全フォーカス
+        xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
+        yaxis=dict(tickformat=",.0f"),
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified", 
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+    )
+    
+    if y_range:
+        layout_args['yaxis'].update(range=y_range, fixedrange=False)
+
+    fig.update_layout(**layout_args)
+    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+# -------------------------------------------------------------
+
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🛸 高高度観測モニター（ブレイクアウト・順張り探知）</h3>', unsafe_allow_html=True)
     st.warning("⚠️ 【発砲厳禁】このレーダーは「すでに空高く飛んでいるモメンタム銘柄」を追跡し、イナゴタワーの形成と墜落を安全圏から観察・学習するための研究用（R&D）レーダーです。実弾の装填は鉄の掟に対する反逆とみなします。")
@@ -1715,6 +1771,6 @@ with tab6:
                         sc4.metric("過熱度 (RSI)", f"{r['RSI']:.1f}%", "※参考値")
                         
                         st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
-                        draw_chart(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15), None)
+                        draw_chart_t6(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15))
                         
                         st.caption("【観測ポイント】紫色の線（5日線）に沿ってどこまで上昇を続けるか、またはいつ陰線を叩きつけて墜落するかを観察してください。")
