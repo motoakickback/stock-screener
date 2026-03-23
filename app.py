@@ -310,7 +310,7 @@ def check_sakata_patterns(df_sub):
 # ==========================================
 def calc_technicals(df):
     df = df.copy()
-    if len(df) < 30:
+    if len(df) < 30:   # ← ここが諸悪の根源
         df['RSI'] = 50; df['MACD_Hist'] = 0; df['ATR'] = 0
         return df
         
