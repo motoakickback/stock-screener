@@ -629,6 +629,38 @@ bt_sl_i = st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_s
 bt_sl_c = st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
+# --- 【システムUI拡張】トップへ帰還（フローティングボタン） ---
+st.markdown(
+    """
+    <style>
+    .return-to-top {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        background-color: #1e1e1e;
+        color: #00e676;
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: 1px solid #00e676;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 14px;
+        z-index: 99999;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        transition: all 0.3s ease;
+    }
+    .return-to-top:hover {
+        background-color: #00e676;
+        color: #1e1e1e;
+        border-color: #ffffff;
+    }
+    </style>
+    <a href="#" class="return-to-top">🚁 司令部（トップ）へ帰還</a>
+    """,
+    unsafe_allow_html=True
+)
+# -------------------------------------------------------------
+
 # ==========================================
 # メイン画面（5タブ構成）
 # ==========================================
