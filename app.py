@@ -1616,3 +1616,105 @@ with tab5:
                                 st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済（途中での手動利確・損切など）は、完全放置ルールよりも {abs(diff):,.0f}円 優秀でした。")
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
+with tab6:
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🛸 高高度観測モニター（ブレイクアウト・順張り探知）</h3>', unsafe_allow_html=True)
+    st.warning("⚠️ 【発砲厳禁】このレーダーは「すでに空高く飛んでいるモメンタム銘柄」を追跡し、イナゴタワーの形成と墜落を安全圏から観察・学習するための研究用（R&D）レーダーです。実弾の装填は鉄の掟に対する反逆とみなします。")
+    
+    run_scan_t6 = st.button("🚀 観測機を発進させる（ブレイクアウト全軍スキャン）")
+    
+    if run_scan_t6:
+        with st.spinner("成層圏の熱源（ブレイクアウト・高値更新銘柄）を探索中...（約10〜20秒）"):
+            raw = get_hist_data_cached()
+            if not raw:
+                st.error("データの取得に失敗しました。")
+            else:
+                d_raw = pd.DataFrame(raw)
+                df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df_30 = df.groupby('Code').tail(30)
+                
+                # 事前フィルター（処理高速化のため、価格帯とデータ数で足切り）
+                counts = df_30.groupby('Code').size()
+                valid_counts = counts[counts >= 15].index
+                df_30 = df_30[df_30['Code'].isin(valid_counts)]
+                
+                latest_prices = df_30.groupby('Code')['AdjC'].last()
+                valid_price_codes = latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index
+                df_30 = df_30[df_30['Code'].isin(valid_price_codes)]
+                
+                results_t6 = []
+                
+                # 各銘柄の計器計算と条件判定
+                grouped = df_30.groupby('Code')
+                for code, group in grouped:
+                    g_tech = calc_technicals(group.copy())
+                    g_tech['MA5'] = g_tech['AdjC'].rolling(window=5).mean()
+                    
+                    latest = g_tech.iloc[-1]
+                    prev = g_tech.iloc[-2]
+                    
+                    lc = latest['AdjC']
+                    ma5 = latest['MA5']
+                    rsi = latest.get('RSI', 50)
+                    macd_h = latest.get('MACD_Hist', 0)
+                    macd_h_prev = prev.get('MACD_Hist', 0)
+                    
+                    h14 = group.tail(14)['AdjH'].max()
+                    
+                    # --- 🛸 空中戦（ブレイクアウト）探知ロジック ---
+                    # 1. 価格が5日線の上にある（サーフィン状態）
+                    # 2. 直近14日高値を今日まさにブレイク（または1%以内に肉薄）している
+                    # 3. RSIが60〜85（過熱しているが、まだ天井ではない）
+                    # 4. MACDヒストグラムがプラス圏で、昨日より伸びている（エンジン全開）
+                    
+                    if (lc > ma5) and (lc >= h14 * 0.99) and (60 <= rsi <= 85) and (macd_h > 0) and (macd_h > macd_h_prev):
+                        c_name = "不明"
+                        c_scale = ""
+                        c_sector = "不明"
+                        if not master_df.empty:
+                            m_row = master_df[master_df['Code'] == code]
+                            if not m_row.empty:
+                                c_name = m_row.iloc[0]['CompanyName']
+                                c_scale = m_row.iloc[0].get('Scale', '')
+                                c_sector = m_row.iloc[0].get('Sector', '不明')
+                                
+                        # ETFや投信などのノイズを除外
+                        if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))):
+                            continue
+                        
+                        results_t6.append({
+                            'Code': code, 'Name': c_name, 'Scale': c_scale,
+                            'lc': lc, 'MA5': ma5, 'h14': h14, 'RSI': rsi,
+                            'df_chart': g_tech
+                        })
+                
+                if not results_t6:
+                    st.info("現在、成層圏（ブレイクアウト条件合致）を飛行中の機体は観測されませんでした。")
+                else:
+                    st.success(f"🛸 観測完了: {len(results_t6)} 機の熱源（ブレイクアウト）を捕捉しました。")
+                    
+                    # RSIが高い（熱源が強い）順にソートして表示
+                    res_df_t6 = pd.DataFrame(results_t6).sort_values('RSI', ascending=False)
+                    
+                    for _, r in res_df_t6.iterrows():
+                        st.divider()
+                        c = str(r['Code'])
+                        n = str(r['Name'])
+                        
+                        st.markdown(f"""
+                            <div style="margin-bottom: 0.8rem;">
+                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; color: #e0e0e0;">({c[:4]}) {n}</h3>
+                                <span style="background-color: #616161; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🛸 観測対象（順張りブレイクアウト）</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        sc1.metric("最新終値", f"{int(r['lc']):,}円")
+                        sc2.metric("5日移動平均線", f"{int(r['MA5']):,}円", "支持線(ここを割ると墜落)")
+                        sc3.metric("直近14日高値", f"{int(r['h14']):,}円", "ブレイクライン")
+                        sc4.metric("過熱度 (RSI)", f"{r['RSI']:.1f}%", "🔥 加速中")
+                        
+                        # 計器とチャートの描画（買値目標は現在の価格とし、上値のシミュレーションラインを描画）
+                        st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
+                        draw_chart(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15), None)
+                        
+                        st.caption("【観測ポイント】紫色の線（5日線）に沿ってどこまで上昇を続けるか、またはいつ陰線を叩きつけて墜落するかを観察してください。")
