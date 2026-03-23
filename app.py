@@ -461,7 +461,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
 # --- 【追加パッチ】計器フライト（テクニカル・レーダー） ---
 def calc_technicals(df):
     df = df.copy()
-    if len(df) < 30:   # ← ここが諸悪の根源
+    if len(df) < 16:   # ← 「16」に変更（これで28日や29日のデータでも計器がフル稼働します）
         df['RSI'] = 50; df['MACD_Hist'] = 0; df['ATR'] = 0
         return df
         
