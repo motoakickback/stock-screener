@@ -703,12 +703,13 @@ components.html(
 # メイン画面（5タブ構成）
 # ==========================================
 # --- 戦術迎撃システム（Tactical Sniper System）UI定義 ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 広域索敵レーダー", 
     "🎯 精密スコープ照準", 
     "⚙️ 戦術シミュレータ", 
     "🪤 展開中の罠・潜伏カウント", 
-    "📁 事後任務報告 (AAR)"
+    "📁 事後任務報告 (AAR)",
+    "🛸 高高度観測 (NO SHOOT)"
 ])
 master_df = load_master()
 
