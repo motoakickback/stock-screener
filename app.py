@@ -1643,36 +1643,31 @@ with tab6:
                 
                 results_t6 = []
                 
-                # 各銘柄の計器計算と条件判定
+                # --- 🛸 観測レーダー（純粋プライスアクション版） ---
+                results_t6 = []
                 grouped = df_30.groupby('Code')
+                
                 for code, group in grouped:
-                    g_tech = calc_technicals(group.copy())
-                    g_tech['MA5'] = g_tech['AdjC'].rolling(window=5).mean()
+                    # 計器関数を通さず、生のデータで移動平均線を計算（エラー回避）
+                    df_calc = group.copy()
+                    df_calc['MA5'] = df_calc['AdjC'].rolling(window=5).mean()
                     
-                    latest = g_tech.iloc[-1]
-                    prev = g_tech.iloc[-2]
+                    latest = df_calc.iloc[-1]
+                    prev = df_calc.iloc[-2]
                     
                     lc = latest['AdjC']
                     ma5 = latest['MA5']
-                    rsi = latest.get('RSI', 50)
-                    macd_h = latest.get('MACD_Hist', 0)
-                    macd_h_prev = prev.get('MACD_Hist', 0)
                     
-                    h14 = group.tail(14)['AdjH'].max()
-                    
-                    # --- 🛸 空中戦（ブレイクアウト）探知ロジック【リミッター解除版】 ---
+                    h14 = df_calc.tail(14)['AdjH'].max()
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                     
+                    # 🚀 純粋なプライスアクション・ブレイクアウト判定
                     # 1. 5日線の上にある (lc > ma5)
-                    # 2. 直近14日高値の「5%以内」にいる (0.95に緩和：上ヒゲ許容)
-                    # 3. RSIが「60以上」（上限撤廃：ストップ高の異常値も許容）
-                    # 4. MACDヒストグラムが昨日より上向いている（勢い拡大）
-                    # 5. 本日「+3%以上」の明確な急騰をしている（ダラダラ横ばいを除外）
+                    # 2. 直近14日高値の「5%以内」にいる (0.95)
+                    # 3. 本日「+3%以上」の急騰をしている（daily_pct >= 0.03）
                     
-                    if (lc > ma5) and (lc >= h14 * 0.95) and (rsi >= 60) and (macd_h > macd_h_prev) and (daily_pct >= 0.03):
-                        c_name = "不明"
-                        c_scale = ""
-                        c_sector = "不明"
+                    if (lc > ma5) and (lc >= h14 * 0.95) and (daily_pct >= 0.03):
+                        c_name = "不明"; c_scale = ""; c_sector = "不明"
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
                             if not m_row.empty:
@@ -1683,10 +1678,14 @@ with tab6:
                         # ETFや投信などのノイズを除外
                         if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))):
                             continue
+                            
+                        # 描画用に計器を計算（RSIなどは参考値として表示）
+                        g_tech = calc_technicals(group.copy())
+                        rsi = g_tech.iloc[-1].get('RSI', 50)
                         
                         results_t6.append({
                             'Code': code, 'Name': c_name, 'Scale': c_scale,
-                            'lc': lc, 'MA5': ma5, 'h14': h14, 'RSI': rsi,
+                            'lc': lc, 'MA5': ma5, 'h14': h14, 'RSI': rsi, 'daily_pct': daily_pct,
                             'df_chart': g_tech
                         })
                 
@@ -1695,28 +1694,26 @@ with tab6:
                 else:
                     st.success(f"🛸 観測完了: {len(results_t6)} 機の熱源（ブレイクアウト）を捕捉しました。")
                     
-                    # RSIが高い（熱源が強い）順にソートして表示
-                    res_df_t6 = pd.DataFrame(results_t6).sort_values('RSI', ascending=False)
+                    # 本日の「上昇率（勢い）」が高い順にソートして表示
+                    res_df_t6 = pd.DataFrame(results_t6).sort_values('daily_pct', ascending=False)
                     
                     for _, r in res_df_t6.iterrows():
                         st.divider()
-                        c = str(r['Code'])
-                        n = str(r['Name'])
+                        c = str(r['Code']); n = str(r['Name'])
                         
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
                                 <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; color: #e0e0e0;">({c[:4]}) {n}</h3>
-                                <span style="background-color: #616161; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🛸 観測対象（順張りブレイクアウト）</span>
+                                <span style="background-color: #616161; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🛸 観測対象（本日 +{r['daily_pct']*100:.1f}% 飛翔）</span>
                             </div>
                         """, unsafe_allow_html=True)
                         
                         sc1, sc2, sc3, sc4 = st.columns(4)
-                        sc1.metric("最新終値", f"{int(r['lc']):,}円")
-                        sc2.metric("5日移動平均線", f"{int(r['MA5']):,}円", "支持線(ここを割ると墜落)")
+                        sc1.metric("最新終値", f"{int(r['lc']):,}円", f"+{r['daily_pct']*100:.1f}%")
+                        sc2.metric("5日移動平均線", f"{int(r['MA5']):,}円", "支持線(割ると墜落)")
                         sc3.metric("直近14日高値", f"{int(r['h14']):,}円", "ブレイクライン")
-                        sc4.metric("過熱度 (RSI)", f"{r['RSI']:.1f}%", "🔥 加速中")
+                        sc4.metric("過熱度 (RSI)", f"{r['RSI']:.1f}%", "※参考値")
                         
-                        # 計器とチャートの描画（買値目標は現在の価格とし、上値のシミュレーションラインを描画）
                         st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
                         draw_chart(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15), None)
                         
