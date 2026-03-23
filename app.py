@@ -629,39 +629,67 @@ bt_sl_i = st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_s
 bt_sl_c = st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
-# --- 【システムUI拡張】トップへ帰還（JavaScript強制スクロール版） ---
-st.markdown(
+import streamlit.components.v1 as components
+
+# --- 【システムUI拡張】トップへ帰還（コア・インジェクション版） ---
+components.html(
     """
-    <style>
-    .return-to-top {
-        position: fixed;
-        bottom: 100px;
-        right: 30px;
-        background-color: #1e1e1e;
-        color: #00e676;
-        padding: 12px 20px;
-        border-radius: 8px;
-        border: 1px solid #00e676;
-        font-weight: bold;
-        font-size: 14px;
-        z-index: 2147483647;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
-        transition: all 0.3s ease;
-        cursor: pointer;
-        user-select: none;
-    }
-    .return-to-top:hover {
-        background-color: #00e676;
-        color: #1e1e1e;
-        border-color: #ffffff;
-    }
-    </style>
+    <script>
+    const parentDoc = window.parent.document;
     
-    <div class="return-to-top" onclick="window.parent.scrollTo({top: 0, behavior: 'smooth'}); window.parent.document.querySelector('.main').scrollTo({top: 0, behavior: 'smooth'});">
-        🚁 司令部（トップ）へ帰還
-    </div>
+    // ボタンが二重に生成されるのを防ぐ
+    if (!parentDoc.getElementById('sniper-return-btn')) {
+        const btn = parentDoc.createElement('button');
+        btn.id = 'sniper-return-btn';
+        btn.innerHTML = '🚁 司令部（トップ）へ帰還';
+        
+        // --- CSSスタイリング直接付与 ---
+        btn.style.position = 'fixed';
+        btn.style.bottom = '100px'; // Manage app回避の高度
+        btn.style.right = '30px';
+        btn.style.backgroundColor = '#1e1e1e';
+        btn.style.color = '#00e676';
+        btn.style.border = '1px solid #00e676';
+        btn.style.padding = '12px 20px';
+        btn.style.borderRadius = '8px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.style.zIndex = '2147483647';
+        btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+        btn.style.transition = 'all 0.3s ease';
+        
+        // ホバー（マウスオーバー）時の挙動
+        btn.onmouseover = function() {
+            btn.style.backgroundColor = '#00e676';
+            btn.style.color = '#1e1e1e';
+        };
+        btn.onmouseout = function() {
+            btn.style.backgroundColor = '#1e1e1e';
+            btn.style.color = '#00e676';
+        };
+        
+        // クリック時の強制スクロールロジック
+        btn.onclick = function() {
+            // Streamlit特有のスクロールコンテナを直接狙撃
+            const viewContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
+            const mainContainer = parentDoc.querySelector('.main');
+            
+            if (viewContainer) {
+                viewContainer.scrollTo({top: 0, behavior: 'smooth'});
+            } else if (mainContainer) {
+                mainContainer.scrollTo({top: 0, behavior: 'smooth'});
+            } else {
+                parentDoc.body.scrollTo({top: 0, behavior: 'smooth'});
+            }
+        };
+        
+        // 親のBodyに強制配置
+        parentDoc.body.appendChild(btn);
+    }
+    </script>
     """,
-    unsafe_allow_html=True
+    height=0,
+    width=0
 )
 # -------------------------------------------------------------
 
