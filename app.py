@@ -629,26 +629,26 @@ bt_sl_i = st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_s
 bt_sl_c = st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
-# --- 【システムUI拡張】トップへ帰還（フローティングボタン）高度調整版 ---
+# --- 【システムUI拡張】トップへ帰還（JavaScript強制スクロール版） ---
 st.markdown(
     """
     <style>
     .return-to-top {
         position: fixed;
-        bottom: 100px;  /* ← 30pxから100pxに大幅引き上げ（オーバーレイ回避） */
+        bottom: 100px;
         right: 30px;
         background-color: #1e1e1e;
         color: #00e676;
         padding: 12px 20px;
         border-radius: 8px;
         border: 1px solid #00e676;
-        text-decoration: none;
         font-weight: bold;
         font-size: 14px;
-        z-index: 2147483647; /* ← レイヤーを絶対的最前面へ強制引き上げ */
+        z-index: 2147483647;
         box-shadow: 0 4px 6px rgba(0,0,0,0.5);
         transition: all 0.3s ease;
-        display: inline-block;
+        cursor: pointer;
+        user-select: none;
     }
     .return-to-top:hover {
         background-color: #00e676;
@@ -656,7 +656,10 @@ st.markdown(
         border-color: #ffffff;
     }
     </style>
-    <a href="#" class="return-to-top">🚁 司令部（トップ）へ帰還</a>
+    
+    <div class="return-to-top" onclick="window.parent.scrollTo({top: 0, behavior: 'smooth'}); window.parent.document.querySelector('.main').scrollTo({top: 0, behavior: 'smooth'});">
+        🚁 司令部（トップ）へ帰還
+    </div>
     """,
     unsafe_allow_html=True
 )
