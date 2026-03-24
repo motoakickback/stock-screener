@@ -198,6 +198,31 @@ def get_hist_data_cached():
     return rows
 
 # ==========================================
+# 💣 新規モジュール：ファンダメンタルズ地雷・早期警戒システム
+# ==========================================
+def check_event_mines(code):
+    """
+    銘柄コードから直近の危険イベント（決算発表、権利落ち）を検知し、アラートメッセージのリストを返す。
+    ※本番環境ではCSVカレンダーやAPIからのデータ参照に差し替えて運用します。
+    """
+    alerts = []
+    c = str(code)[:4]
+    
+    # 【シミュレーション用データ】本日の作戦会議で特定した銘柄群
+    test_dividend_mines = ["5986", "5162", "4625", "6378", "8604"] # 3月末配当
+    test_earnings_mines = ["7066"] # 仮の直近決算銘柄としてピアズを設定
+    
+    # 1. 配当権利落ちの地雷検知
+    if c in test_dividend_mines:
+        alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近しています（強制ギャップダウンのリスクあり）")
+        
+    # 2. 決算発表の地雷検知
+    if c in test_earnings_mines:
+        alerts.append("🔥 【地雷警戒】直近14日以内に決算発表が予定されています（大口の乱高下リスクあり）")
+        
+    return alerts
+
+# ==========================================
 # 🚀 2週間（14日間）専用の波形判定モジュール
 # ==========================================
 def check_double_top(df_sub):
@@ -310,11 +335,10 @@ def check_sakata_patterns(df_sub):
 # ==========================================
 def calc_technicals(df):
     df = df.copy()
-    if len(df) < 16:   # ← 「16」に変更（これで28日や29日のデータでも計器がフル稼働します）
+    if len(df) < 16:
         df['RSI'] = 50; df['MACD_Hist'] = 0; df['ATR'] = 0
         return df
         
-    # RSI (14日)
     delta = df['AdjC'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -323,14 +347,12 @@ def calc_technicals(df):
     rs = avg_gain / avg_loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # MACD (12, 26, 9)
     ema_fast = df['AdjC'].ewm(span=12, adjust=False).mean()
     ema_slow = df['AdjC'].ewm(span=26, adjust=False).mean()
     macd = ema_fast - ema_slow
     signal = macd.ewm(span=9, adjust=False).mean()
     df['MACD_Hist'] = macd - signal
     
-    # ATR（14日間の平均真の値幅：ボラティリティ）
     high_low = df['AdjH'] - df['AdjL']
     high_prev_c = (df['AdjH'] - df['AdjC'].shift(1)).abs()
     low_prev_c = (df['AdjL'] - df['AdjC'].shift(1)).abs()
@@ -349,12 +371,10 @@ def render_technical_radar(df, buy_price, tp_pct):
     macd_hist_prev = prev.get('MACD_Hist', 0)
     atr = latest.get('ATR', 0)
     
-    # RSI 判定
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
     rsi_text = "🔥 超・売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
     if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ (高値掴み警戒)"
     
-    # MACD 判定
     if macd_hist > 0 and macd_hist_prev <= 0:
         macd_text = "🔥 ゴールデンクロス直後"
         macd_color = "#ef5350"
@@ -368,12 +388,9 @@ def render_technical_radar(df, buy_price, tp_pct):
         macd_text = "⚖️ モメンタム減衰"
         macd_color = "#888888"
         
-    # ボラティリティ（ATR）から利確日数を逆算
-    # ⚠️ 内部計算は小数のまま高精度に行う
     tp_yen = buy_price * (tp_pct / 100.0)
     days = int(tp_yen / atr) if atr > 0 else 99
     
-    # ⚠️ UI表示時のみフォーマットで整数化（:.0f）。設定値(tp_pct)は小数第1位(:.1f)を残す
     html = f"""
     <div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
         <div style="font-size: 13px; color: #aaa; margin-bottom: 6px;">📡 計器フライト（テクニカル・レーダー）</div>
@@ -395,7 +412,6 @@ def render_technical_radar(df, buy_price, tp_pct):
     </div>
     """
     return html
-# ==========================================
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     df = df.copy()
@@ -458,94 +474,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 【追加パッチ】計器フライト（テクニカル・レーダー） ---
-def calc_technicals(df):
-    df = df.copy()
-    if len(df) < 16:   # ← 「16」に変更（これで28日や29日のデータでも計器がフル稼働します）
-        df['RSI'] = 50; df['MACD_Hist'] = 0; df['ATR'] = 0
-        return df
-        
-    # RSI (14日)
-    delta = df['AdjC'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # MACD (12, 26, 9)
-    ema_fast = df['AdjC'].ewm(span=12, adjust=False).mean()
-    ema_slow = df['AdjC'].ewm(span=26, adjust=False).mean()
-    macd = ema_fast - ema_slow
-    signal = macd.ewm(span=9, adjust=False).mean()
-    df['MACD_Hist'] = macd - signal
-    
-    # ATR（14日間の平均真の値幅：ボラティリティ）
-    high_low = df['AdjH'] - df['AdjL']
-    high_prev_c = (df['AdjH'] - df['AdjC'].shift(1)).abs()
-    low_prev_c = (df['AdjL'] - df['AdjC'].shift(1)).abs()
-    tr = pd.concat([high_low, high_prev_c, low_prev_c], axis=1).max(axis=1)
-    df['ATR'] = tr.rolling(window=14).mean()
-    
-    return df
-
-def render_technical_radar(df, buy_price, tp_pct):
-    if df.empty or len(df) < 2: return ""
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-    
-    rsi = latest.get('RSI', 50)
-    macd_hist = latest.get('MACD_Hist', 0)
-    macd_hist_prev = prev.get('MACD_Hist', 0)
-    atr = latest.get('ATR', 0)
-    
-    # RSI 判定
-    rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
-    rsi_text = "🔥 超・売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
-    if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ (高値掴み警戒)"
-    
-    # MACD 判定
-    if macd_hist > 0 and macd_hist_prev <= 0:
-        macd_text = "🔥 ゴールデンクロス直後"
-        macd_color = "#ef5350"
-    elif macd_hist > macd_hist_prev:
-        macd_text = "📈 上昇モメンタム拡大中"
-        macd_color = "#ef5350"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev:
-        macd_text = "📉 下落圧力継続中 (底掘り警戒)"
-        macd_color = "#26a69a"
-    else:
-        macd_text = "📉 モメンタム減衰"
-        macd_color = "#888888"
-        
-    # ボラティリティ（ATR）から利確日数を逆算
-    tp_yen = buy_price * (tp_pct / 100.0)
-    days = int(tp_yen / atr) if atr > 0 else 99
-    
-    html = f"""
-    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
-        <div style="font-size: 13px; color: #aaa; margin-bottom: 6px;">📡 計器フライト（テクニカル・レーダー）</div>
-        <div style="display: flex; flex-wrap: wrap; gap: 1.5rem;">
-            <div>
-                <span style="font-size: 12px; color: #888;">RSI (14日):</span>
-                <strong style="color: {rsi_color}; font-size: 15px; margin-left: 4px;">{rsi:.1f}% ({rsi_text})</strong>
-            </div>
-            <div>
-                <span style="font-size: 12px; color: #888;">MACD:</span>
-                <strong style="color: {macd_color}; font-size: 15px; margin-left: 4px;">{macd_text}</strong>
-            </div>
-            <div>
-                <span style="font-size: 12px; color: #888;">ボラティリティ:</span>
-                <strong style="color: #bbb; font-size: 15px; margin-left: 4px;">1日平均 {atr:.1f}円 変動</strong>
-                <span style="font-size: 12px; color: #888; margin-left: 4px;">(利確+{tp_pct}%までの理論日数: 約 {days} 営業日)</span>
-            </div>
-        </div>
-    </div>
-    """
-    return html
-# -------------------------------------------------------------
-
 # ==========================================
 # 4. UI構築（デュアル・プリセット機構搭載）
 # ==========================================
@@ -560,7 +488,6 @@ if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
 if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
-    # キャッシュクリア直後の「記憶喪失状態」でもエラーを出さないための安全装置（getメソッド）
     preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     
@@ -611,20 +538,20 @@ f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, ste
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=True)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 
-f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True, help="マクロ連動型や不動産投信を弾きます")
-f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True, help="テクニカルが効かない赤字バイオ株を弾きます")
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True)
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True)
 
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
 f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
 
 current_sl = st.session_state.bt_sl_i
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True, help=f"単日で【-{current_sl}.0%】以上、または直近3日間で【-{int(current_sl * 1.5)}.0%】以上の連続暴落をしている銘柄を弾きます")
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True)
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r")
 limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
-bt_lot = st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot", help="バックテスト用の購入株数")
+bt_lot = st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot")
 
 st.sidebar.header("🛡️ 売りルール（鉄の掟）")
 bt_tp = st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp")
@@ -634,18 +561,14 @@ bt_sell_d = st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=
 
 import streamlit.components.v1 as components
 
-# --- 【システムUI拡張】トップへ帰還（全コンテナ強制スクロール版） ---
 components.html(
     """
     <script>
     const parentDoc = window.parent.document;
-    
     if (!parentDoc.getElementById('sniper-return-btn')) {
         const btn = parentDoc.createElement('button');
         btn.id = 'sniper-return-btn';
         btn.innerHTML = '🚁 司令部（トップ）へ帰還';
-        
-        // --- スタイリング ---
         btn.style.position = 'fixed';
         btn.style.bottom = '100px'; 
         btn.style.right = '30px';
@@ -669,23 +592,16 @@ components.html(
             btn.style.color = '#00e676';
         };
         
-        // --- 絨毯爆撃型スクロールロジック ---
         btn.onclick = function() {
-            // 1. 最上位のウィンドウをスクロール
             window.parent.scrollTo({top: 0, behavior: 'smooth'});
-            
-            // 2. 画面内のすべての要素を取得し、スクロールバーを持っているか判定
             const allElements = parentDoc.querySelectorAll('*');
             for (let i = 0; i < allElements.length; i++) {
                 const el = allElements[i];
-                // 要素がスクロール可能（中身がはみ出している）場合
                 if (el.scrollHeight > el.clientHeight) {
-                    // 強制的に一番上へ巻き上げる
                     el.scrollTo({top: 0, behavior: 'smooth'});
                 }
             }
         };
-        
         parentDoc.body.appendChild(btn);
     }
     </script>
@@ -693,16 +609,10 @@ components.html(
     height=0,
     width=0
 )
-# -------------------------------------------------------------
 
 # ==========================================
 # メイン画面（5タブ構成）
 # ==========================================
-
-# ==========================================
-# メイン画面（5タブ構成）
-# ==========================================
-# --- 戦術迎撃システム（Tactical Sniper System）UI定義 ---
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 広域索敵レーダー", 
     "🎯 精密スコープ照準", 
@@ -863,6 +773,11 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
+                    # 💣 【新規実装】ファンダメンタルズ地雷・早期警戒システム
+                    event_alerts = check_event_mines(c)
+                    for alert in event_alerts:
+                        st.warning(alert)
+                    
                     if r.get('is_bt_broken', False):
                         st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線（黄金比等）へ自動シフトし、損切値を再設定しました。")
                     
@@ -875,7 +790,6 @@ with tab1:
                         else:
                             st.success(f"🔥 【反転攻勢・激熱】{r['sakata_signal']}")
                             
-                    # --- 【完全防衛型 UI描画ブロック】全軍スキャン用 ---
                     lc_val = int(r.get('lc', 0))
                     bt_val = int(r.get('bt', 0))
                     high_val = int(r.get('h14', lc_val))
@@ -929,7 +843,6 @@ with tab1:
                     passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/{r['total']} 条件" if 'passed' in r else ""
                     st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
 
-                    # --- 【完全防衛版】過去勝率のリアルタイム表示 ---
                     bt_stats = calc_historical_win_rate(
                         c[:4], st.session_state.push_r, st.session_state.limit_d,
                         st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c,
@@ -953,25 +866,21 @@ with tab1:
                             <span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（大暴落の履歴なし、またはデータ不足）</span>
                         </div>
                         """, unsafe_allow_html=True)
-                    # -------------------------------------------------------------
                     
-                    # -------------------------------------------------------------
-                    # ⚠️ APIには必ず「5桁(c + "0")」または元データ通りの「c」を渡す
                     api_code = c if len(c) == 5 else c + "0"
                     
                     raw_s = get_single_data(api_code, 1)
                     if raw_s:
                         hist = clean_df(pd.DataFrame(raw_s))
-                        hist = calc_technicals(hist) # 計器計算
+                        hist = calc_technicals(hist)
                         st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
                     else:
                         hist = df[df['Code'] == c].sort_values('Date').tail(30)
                         if not hist.empty: 
-                            hist = calc_technicals(hist) # 計器計算
+                            hist = calc_technicals(hist)
                             st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                             draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
-                    # -------------------------------------------------------------
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
@@ -979,7 +888,7 @@ with tab2:
     col_s1, col_s2 = st.columns([1, 2])
 
     T2_FILE = f"saved_t2_codes_{user_id}.txt"
-    default_t2 = "7203\n2764"
+    default_t2 = "5986\n5162\n4427\n5136\n4625\n6378\n7066"
     if os.path.exists(T2_FILE):
         with open(T2_FILE, "r", encoding="utf-8") as f:
             default_t2 = f.read()
@@ -1098,8 +1007,7 @@ with tab2:
                                 
                                 rule_pct = (sum(score_list) / len(score_list)) * 100
 
-                                # --- 【コア改修】ソート前の事前トリアージ判定 ---
-                                df_chart = calc_technicals(df_s) # 先に計器を計算
+                                df_chart = calc_technicals(df_s)
                                 rsi_val = 50; macd_t = "不明"
                                 if len(df_chart) >= 2:
                                     latest_c = df_chart.iloc[-1]
@@ -1115,25 +1023,24 @@ with tab2:
 
                                 triage_rank = "C（条件外・監視）👁️"
                                 triage_bg = "#616161"
-                                triage_score = 1 # ソート用内部スコア (1点)
+                                triage_score = 1
                                 
                                 if macd_t == "下落継続" or rsi_val >= 70:
                                     triage_rank = "圏外（手出し無用）🚫"
                                     triage_bg = "#d32f2f"
-                                    triage_score = 0 # (0点)
+                                    triage_score = 0
                                 elif macd_t == "GC直後" and rsi_val <= 50:
                                     triage_rank = "S（即時狙撃）🔥"
                                     triage_bg = "#2e7d32"
-                                    triage_score = 4 # 最優先 (4点)
+                                    triage_score = 4
                                 elif macd_t == "減衰" and rsi_val <= 30:
                                     triage_rank = "A（罠の設置）🪤"
                                     triage_bg = "#0288d1"
-                                    triage_score = 3 # (3点)
+                                    triage_score = 3
                                 elif macd_t == "上昇拡大" and 50 <= rsi_val <= 65:
                                     triage_rank = "B（順張り警戒）📈"
                                     triage_bg = "#ed6c02"
-                                    triage_score = 2 # (2点)
-                                # ------------------------------------------------
+                                    triage_score = 2
 
                                 results.append({
                                     'Code': c, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale, 
@@ -1147,21 +1054,19 @@ with tab2:
                                     'is_trend_broken': is_trend_broken, 
                                     'flag_knife': flag_knife, 'flag_etf': flag_etf, 'flag_bio': flag_bio, 'flag_ipo': flag_ipo,
                                     'sakata_signal': sakata_signal,
-                                    'triage_score': triage_score, 'triage_rank': triage_rank, 'triage_bg': triage_bg # 追加
+                                    'triage_score': triage_score, 'triage_rank': triage_rank, 'triage_bg': triage_bg
                                 })
-                                charts_data[c] = (df_chart, bt_single, tp5_s, tp10_s, tp15_s, tp20_s) # 計算済みのdfを保存
+                                charts_data[c] = (df_chart, bt_single, tp5_s, tp10_s, tp15_s, tp20_s)
                 
                 if results:
                     res_df = pd.DataFrame(results)
                     
-                    # --- 【コア改修】複合ソートの実行（スコア > 戦術 > 掟達成率 > 到達度） ---
                     if tactics_mode.startswith("⚔️"):
                         res_df = res_df.sort_values(['triage_score', 'is_db', 'rule_pct', 'reach_pct'], ascending=[False, False, False, False])
                     elif tactics_mode.startswith("🛡️"):
                         res_df = res_df.sort_values(['triage_score', 'is_defense', 'rule_pct', 'reach_pct'], ascending=[False, False, False, False])
                     else:
                         res_df = res_df.sort_values(['triage_score', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
-                    # ------------------------------------------------------------------
 
                     st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（モード: {tactics_mode.split()[0]}）")
                     for _, r in res_df.iterrows():
@@ -1176,7 +1081,6 @@ with tab2:
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        # 判定済みのランクとカラーを取得
                         triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                         st.markdown(f"""
@@ -1185,6 +1089,11 @@ with tab2:
                                 <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
                             </div>
                         """, unsafe_allow_html=True)
+                                        
+                        # 💣 【新規実装】ファンダメンタルズ地雷・早期警戒システム
+                        event_alerts = check_event_mines(c)
+                        for alert in event_alerts:
+                            st.warning(alert)
                                         
                         if r.get('is_trend_broken'):
                             st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
@@ -1291,11 +1200,9 @@ with tab2:
                             </div>
                             """, unsafe_allow_html=True)
                         
-                        # --- テクニカルレーダーとチャート描画 ---
                         df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c = charts_data[r['Code']]
                         st.markdown(render_technical_radar(df_chart, bt_chart, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(df_chart, bt_chart, tp5_c, tp10_c, tp15_c, tp20_c)
-                        # -------------------------------------------------------------
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 鉄の掟：一括バックテスト</h3>', unsafe_allow_html=True)
@@ -1325,7 +1232,7 @@ with tab3:
         else:
             all_t = []; b_bar = st.progress(0, "仮想売買中...")
             for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 2) # 期間を2年に統一
+                raw = get_single_data(c + "0", 2)
                 if raw:
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
@@ -1342,21 +1249,18 @@ with tab3:
                             h_d = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']])
                             r14 = rh / rl
                             
-                            # サイドバーの買い期限（st.session_state.limit_d）を参照
                             if (1.3 <= r14 <= 2.0) and (h_d <= st.session_state.limit_d):
                                 is_dt = check_double_top(win_30)
                                 is_hs = check_head_shoulders(win_30)
                                 if is_dt or is_hs:
                                     continue 
                                 
-                                # サイドバーの戦術モード（tactics_mode）を参照
                                 if "攻め" in tactics_mode:
                                     is_db = check_double_bottom(win_30)
                                     if is_db:
                                         exec_p = td['AdjO']
                                         pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'h': rh}
                                 else:
-                                    # サイドバーの押し目率（st.session_state.push_r）を参照
                                     targ = rh - ((rh - rl) * (st.session_state.push_r / 100))
                                     if td['AdjL'] <= targ:
                                         exec_p = min(td['AdjO'], targ)
@@ -1364,7 +1268,6 @@ with tab3:
                         else:
                             bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
                             
-                            # サイドバーの利確・損切ルールを参照
                             sl_i = bp * (1 - (st.session_state.bt_sl_i / 100))
                             tp = bp * (1 + (st.session_state.bt_tp / 100))
                             sl_c = bp * (1 - (st.session_state.bt_sl_c / 100))
@@ -1423,7 +1326,6 @@ with tab4:
                 
                 try:
                     buy_date = datetime.strptime(date_str, "%Y-%m-%d")
-                    # Numpyの機能で「土日を除外した営業日」を正確にカウント
                     days_elapsed = np.busday_count(buy_date.date(), today.date())
                     
                     c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c + "0") in master_df['Code'].values else "不明"
@@ -1447,6 +1349,7 @@ with tab4:
                     """, unsafe_allow_html=True)
                 except:
                     st.error(f"🚨 フォーマットエラー: {line} (カンマ区切り、YYYY-MM-DD形式で入力してください)")
+                    
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）</h3>', unsafe_allow_html=True)
     st.caption("実際の売却日を完全に無視し、買付日から「指定した利確・損切・保有日数」のルールで完全放置した場合の幻の戦果を算出します。")
@@ -1526,7 +1429,6 @@ with tab5:
                                 hist = clean_df(pd.DataFrame(raw_data))
                                 hist = calc_technicals(hist) 
                                 
-                                # エントリー時点の計器データ
                                 buy_hist = hist[hist['Date'] <= bd]
                                 if len(buy_hist) >= 2:
                                     latest = buy_hist.iloc[-1]
@@ -1545,18 +1447,15 @@ with tab5:
                                     tp_yen = bp * (sim_tp / 100.0)
                                     days_val = int(tp_yen / atr) if atr > 0 else 99
                                 
-                                # ⚠️ 買付日から未来に向かって「sim_days」日分だけを抽出
                                 future_df = hist[hist['Date'] >= bd].sort_values('Date')
-                                period_df = future_df.head(int(sim_days) + 1) # 買付日(0日目)を含むため+1
+                                period_df = future_df.head(int(sim_days) + 1)
                                 
                                 if not period_df.empty:
-                                    # 初期値は「期限切れ（最終日の終値）」に設定
                                     last_row = period_df.iloc[-1]
                                     sim_sell_price = last_row['AdjC']
                                     sim_sell_date = last_row['Date']
                                     rsn = f"⏳ 期限切れ手仕舞い ({len(period_df)-1}日目)"
                                     
-                                    # 1日ずつ未来へ進み、IFD-OCOの網に引っかかるか判定
                                     for i, r in period_df.iterrows():
                                         if r['AdjH'] >= tp_val:
                                             sim_sell_price = tp_val
@@ -1564,7 +1463,6 @@ with tab5:
                                             rsn = f"🎯 利確 (+{sim_tp}%)"
                                             break
                                         elif r['AdjL'] <= sl_val:
-                                            # 窓開け下落も考慮し、始値と損切値の低い方を採用
                                             sim_sell_price = min(r['AdjO'], sl_val)
                                             sim_sell_date = r['Date']
                                             rsn = f"🛡️ 損切 (-{sim_sl}%)"
@@ -1617,7 +1515,7 @@ with tab5:
         except Exception as e:
             st.error(f"🚨 CSVの解析に失敗しました: {e}")
 
-# --- 🛸 Tab 6専用チャート（14日間の空中戦ズーム・スコープ） ---
+# --- 🛸 Tab 6専用チャート ---
 def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
     df = df.copy()
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
@@ -1629,17 +1527,14 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
 
-    # 5日線（命綱）のみを太く強調して描画
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(命綱)', line=dict(color='rgba(156, 39, 176, 0.9)', width=2.5)))      
 
-    # 架空の買値と上値シミュレーション
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='現在値', line=dict(color='#FFD700', width=2, dash='dash')))
     fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='+5%', line=dict(color='rgba(239, 83, 80, 0.5)', width=1, dash='dot')))
     fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.7)', width=1.5, dash='dot')))
     fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
-    # ⚠️ ここで直近14営業日に強制ズームイン
     start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min()
     padding_days = timedelta(days=0.5)
 
@@ -1653,9 +1548,9 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
         y_range = None
 
     layout_args = dict(
-        height=380, # 少し縦幅を縮めてコンパクトに
+        height=380, 
         margin=dict(l=10, r=60, t=20, b=40), 
-        xaxis_rangeslider_visible=False, # 下の邪魔なスライダーを消去して完全フォーカス
+        xaxis_rangeslider_visible=False, 
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
         yaxis=dict(tickformat=",.0f"),
         paper_bgcolor='rgba(0,0,0,0)', 
@@ -1670,7 +1565,6 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
     fig.update_layout(**layout_args)
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
-# -------------------------------------------------------------
 
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🛸 高高度観測モニター（ブレイクアウト・順張り探知）</h3>', unsafe_allow_html=True)
@@ -1688,7 +1582,6 @@ with tab6:
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
                 
-                # 事前フィルター（処理高速化のため、価格帯とデータ数で足切り）
                 counts = df_30.groupby('Code').size()
                 valid_counts = counts[counts >= 15].index
                 df_30 = df_30[df_30['Code'].isin(valid_counts)]
@@ -1698,13 +1591,9 @@ with tab6:
                 df_30 = df_30[df_30['Code'].isin(valid_price_codes)]
                 
                 results_t6 = []
-                
-                # --- 🛸 観測レーダー（純粋プライスアクション版） ---
-                results_t6 = []
                 grouped = df_30.groupby('Code')
                 
                 for code, group in grouped:
-                    # 計器関数を通さず、生のデータで移動平均線を計算（エラー回避）
                     df_calc = group.copy()
                     df_calc['MA5'] = df_calc['AdjC'].rolling(window=5).mean()
                     
@@ -1717,11 +1606,6 @@ with tab6:
                     h14 = df_calc.tail(14)['AdjH'].max()
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                     
-                    # 🚀 純粋なプライスアクション・ブレイクアウト判定
-                    # 1. 5日線の上にある (lc > ma5)
-                    # 2. 直近14日高値の「5%以内」にいる (0.95)
-                    # 3. 本日「+3%以上」の急騰をしている（daily_pct >= 0.03）
-                    
                     if (lc > ma5) and (lc >= h14 * 0.95) and (daily_pct >= 0.03):
                         c_name = "不明"; c_scale = ""; c_sector = "不明"
                         if not master_df.empty:
@@ -1731,11 +1615,9 @@ with tab6:
                                 c_scale = m_row.iloc[0].get('Scale', '')
                                 c_sector = m_row.iloc[0].get('Sector', '不明')
                                 
-                        # ETFや投信などのノイズを除外
                         if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))):
                             continue
                             
-                        # 描画用に計器を計算（RSIなどは参考値として表示）
                         g_tech = calc_technicals(group.copy())
                         rsi = g_tech.iloc[-1].get('RSI', 50)
                         
@@ -1750,7 +1632,6 @@ with tab6:
                 else:
                     st.success(f"🛸 観測完了: {len(results_t6)} 機の熱源（ブレイクアウト）を捕捉しました。")
                     
-                    # 本日の「上昇率（勢い）」が高い順にソートして表示
                     res_df_t6 = pd.DataFrame(results_t6).sort_values('daily_pct', ascending=False)
                     
                     for _, r in res_df_t6.iterrows():
