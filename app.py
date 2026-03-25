@@ -918,6 +918,27 @@ with tab4:
                         l14_val = int(hist.tail(14)['AdjL'].min())
                         if l14_val <= 0 or pd.isna(h14_val): continue
                         
+                        # 🎯 掟達成率用のデータ取得
+                        hist_30 = hist.tail(30)
+                        hist_14 = hist.tail(14)
+                        hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
+
+                        l30_val = hist_30['AdjL'].min()
+                        omax_val = hist_past['AdjH'].max() if not hist_past.empty else np.nan
+                        omin_val = hist_past['AdjL'].min() if not hist_past.empty else np.nan
+
+                        r30 = lc_val / l30_val if l30_val > 0 else 0
+                        r14 = h14_val / l14_val if l14_val > 0 else 0
+                        ldrop = ((lc_val / omax_val) - 1) * 100 if pd.notna(omax_val) and omax_val > 0 else 0
+                        lrise = lc_val / omin_val if pd.notna(omin_val) and omin_val > 0 else 0
+                        
+                        idx_max = hist_14['AdjH'].idxmax()
+                        d_high = len(hist_14[hist_14['Date'] > hist_14.loc[idx_max, 'Date']]) if pd.notna(idx_max) else 0
+
+                        is_dt = check_double_top(hist_30)
+                        is_hs = check_head_shoulders(hist_30)
+                        
+                        # 目標値
                         wave_len = h14_val - l14_val
                         bt_primary = h14_val - (wave_len * (st.session_state.push_r / 100.0))
                         shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
@@ -929,20 +950,32 @@ with tab4:
                         denom = h14_val - bt_val
                         reach_pct = ((h14_val - lc_val) / denom * 100) if denom > 0 else 0
                         
+                        # 掟達成率の計算
+                        score_list = [
+                            (f1_min <= lc_val <= f1_max),
+                            (r30 <= f2_m30),
+                            (ldrop >= f3_drop),
+                            (lrise <= f4_mlong) or (lrise == 0),
+                            (f9_min14 <= r14 <= f9_max14),
+                            (d_high <= st.session_state.limit_d),
+                            (bt_val * 0.85 <= lc_val <= bt_val * 1.35),
+                            (not is_dt and not is_hs)
+                        ]
+                        rule_pct = (sum(score_list) / len(score_list)) * 100
+                        
                         latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
                         rsi_val = latest_c.get('RSI', 50)
                         macd_h = latest_c.get('MACD_Hist', 0); macd_h_prev = prev_c.get('MACD_Hist', 0)
                         
-                        # 🔥 トリアージスコアの計算と格納
-                        rank, bg, score, _ = get_triage_info(macd_h, macd_h_prev, rsi_val)
+                        # 🔥 トリアージスコアの計算
+                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_val)
                         
                         results_t4.append({
                             'code': c, 'lc_val': lc_val, 'h14_val': h14_val, 'l14_val': l14_val, 'wave_len': wave_len,
-                            'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'reach_pct': reach_pct, 'hist': hist,
-                            'triage_score': score, 'rank': rank, 'bg': bg, 'prev_c': prev_c
+                            'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'reach_pct': reach_pct, 'rule_pct': rule_pct,
+                            'hist': hist, 'triage_score': score, 'rank': rank, 'bg': bg, 'macd_t': macd_t, 'prev_c': prev_c
                         })
                 
-                # 🚨 【改修】判定結果（S/A/B/Cスコア）を最優先でソート
                 results_t4.sort(key=lambda x: (x['triage_score'], x['reach_pct']), reverse=True)
                 
                 for r in results_t4:
@@ -973,6 +1006,10 @@ with tab4:
                         </div>
                     """, unsafe_allow_html=True)
                     
+                    # 🔥 GC大爆発アラート
+                    if r['macd_t'] == "GC直後":
+                        st.markdown("<div style='background: linear-gradient(45deg, #b71c1c, #ff5722); color: white; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 900; font-size: 1.1rem; margin-bottom: 0.8rem; border-left: 6px solid #ffeb3b; box-shadow: 0 4px 6px rgba(255,0,0,0.3);'>🔥🔥🔥 【激熱】MACD ゴールデンクロス（GC）発動中！強烈な上昇モメンタムを検知しました！ 🔥🔥🔥</div>", unsafe_allow_html=True)
+                    
                     for alert in check_event_mines(c): st.warning(alert)
                     if r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】買値目標を第二防衛線（黄金比等）へ自動シフトしました。")
                     
@@ -985,7 +1022,7 @@ with tab4:
                     daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7])
+                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
                     sc0.metric("直近高値", f"{r['h14_val']:,}円")
                     sc0_1.metric("直近安値", f"{r['l14_val']:,}円")
                     sc0_2.metric("上昇幅", f"{r['wave_len']:,}円")
@@ -1002,6 +1039,7 @@ with tab4:
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
                     sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                     
                     st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                     draw_chart(hist, bt_val, tp15=tp15)
