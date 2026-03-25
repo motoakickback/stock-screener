@@ -531,242 +531,173 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 # ------------------------------------------
-# Tab 1: 広域索敵レーダー（鉄の掟）
-# ------------------------------------------
-with tab1:
-    render_macro_board()
-    st.markdown('### 🌐 ボスの「鉄の掟」広域スキャン（50%押し待伏せ）')
-    st.caption("※最低限の生存条件をクリアした銘柄を、ボスの定めた『掟（全9項目）』でスコアリングして抽出します。")
-    run_scan = st.button(f"🚀 待伏せ部隊スキャン開始 ({tactics_mode.split()[0]}モード)")
-    
-    if run_scan:
-        with st.spinner("全軍から鉄の掟適合銘柄を抽出・採点中..."):
-            raw = get_hist_data_cached()
-            if not raw: 
-                st.error("データ取得に失敗しました。")
+    # Tab 1: 広域レーダー（全銘柄スキャン）
+    # ------------------------------------------
+    with tab1:
+        render_macro_board()
+        st.markdown(f"### 📡 広域レーダー: {tactics_mode}")
+        st.caption("※市場全銘柄から、現在の戦術に合致する「撃つべき獲物」を自動選別します。")
+
+        if st.button(f"🚀 全銘柄 索敵開始 ({st.session_state.sidebar_tactics.split()[0]})"):
+            df = get_market_data()
+            if df.empty:
+                st.error("市場データの取得に失敗しました。本陣の通信状況を確認してください。")
             else:
-                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
-                df_30 = df.groupby('Code').tail(30)
-                # 🚨 ボスの指示：カレンダー計算を廃止し、観測期間を「10営業日（実質2週間）」に最適化
-                df_14 = df_30.groupby('Code').tail(10)
-                counts = df_14.groupby('Code').size(); valid = counts[counts >= 5].index
-                
-                if valid.empty: 
-                    st.warning("条件を満たすデータが存在しません。")
-                else:
-                    df_14 = df_14[df_14['Code'].isin(valid)]; df_30 = df_30[df_30['Code'].isin(valid)]
-                    df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
+            # 🚨 【10営業日同期】観測期間を「2週間」に最適化（4スペースで統一）
+            df_30 = df.groupby('Code').tail(30)
+            df_14 = df_30.groupby('Code').tail(10)
+            counts = df_14.groupby('Code').size()
+            valid = counts[counts >= 5].index
+            df_30 = df_30[df_30['Code'].isin(valid)]
+            df_14 = df_14[df_14['Code'].isin(valid)]
+
+            with st.spinner("標的の弾道を計算中..."):
+                # ここから下の lambda や merge 処理もすべて、
+                # 上記の df_30 と同じ「開始位置」に揃えて貼り付けてください。
+                    # 足切り条件（絶対キル条件）
+                    res = df_14.groupby('Code').apply(lambda x: pd.Series({
+                        'lc': x['AdjC'].iloc[-1],
+                        'h14': x['AdjH'].max(),
+                        'l14': x['AdjL'].min(),
+                        'd_high': len(x[x['Date'] > x.loc[x['AdjH'].idxmax(), 'Date']]) if pd.notna(x['AdjH'].idxmax()) else 0
+                    })).reset_index()
+
+                    res = res[(res['lc'] >= st.session_state.min_p) & (res['lc'] <= st.session_state.max_p)]
                     
-                    agg_14 = df_14.groupby('Code').agg(lc=('AdjC', 'last'), prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan), c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan), h14=('AdjH', 'max'), l14=('AdjL', 'min'))
-                    idx_max = df_14.groupby('Code')['AdjH'].idxmax(); h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
-                    df_14_m = df_14.merge(h_dates, on='Code'); d_high = df_14_m[df_14_m['Date'] > df_14_m['h_date']].groupby('Code').size().rename('d_high')
-                    agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
-                    agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
-                    sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
+                    res_30 = df_30.groupby('Code').agg({'AdjL': 'min', 'AdjC': 'last'}).reset_index()
+                    res = res.merge(res_30[['Code', 'AdjL']], on='Code', suffixes=('', '_30'))
                     
-                    ur = sum_df['h14'] - sum_df['l14']
-                    bt_primary = sum_df['h14'] - (ur * (push_r / 100.0)); shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
-                    bt_secondary = sum_df['h14'] - (ur * shift_ratio)
-                    sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary; sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
+                    # 過去データの算出
+                    past_df = df[~df.index.isin(df_30.index)].groupby('Code').agg({'AdjH': 'max', 'AdjL': 'min'}).reset_index()
+                    res = res.merge(past_df, on='Code', how='left', suffixes=('', '_past'))
                     
-                    sum_df['tp15'] = sum_df['bt'] * 1.15
-                    sum_df['reach_pct'] = np.where(sum_df['h14'] - sum_df['bt'] > 0, (sum_df['h14'] - sum_df['lc']) / (sum_df['h14'] - sum_df['bt']) * 100, 0)
-                    sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
-                    sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
-                    sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
-                    sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
-                    sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
-                    sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
+                    # 各種比率の計算
+                    res['r30'] = res['lc'] / res['AdjL_30']
+                    res['r14'] = res['h14'] / res['l14']
+                    res['ldrop'] = ((res['lc'] / res['AdjH_past']) - 1) * 100
+                    res['lrise'] = res['lc'] / res['AdjL_past']
                     
-                    sum_df = sum_df.merge(df_14.groupby('Code').apply(check_double_top).rename('is_dt'), on='Code', how='left')\
-                                   .merge(df_14.groupby('Code').apply(check_head_shoulders).rename('is_hs'), on='Code', how='left')\
-                                   .merge(df_14.groupby('Code').apply(check_double_bottom).rename('is_db'), on='Code', how='left')\
-                                   .merge(df_30.groupby('Code').apply(check_sakata_patterns).rename('sakata_signal'), on='Code', how='left').fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
-                    sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
-                    
-                    if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
-                    if f7_ex_etf and 'Sector' in sum_df.columns: sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
-                    if f8_ex_bio and 'Sector' in sum_df.columns: sum_df = sum_df[sum_df['Sector'] != '医薬品']
-                    if f5_ipo:
-                        old_c = get_old_codes()
-                        if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
-                        sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
-                    if f6_risk and 'CompanyName' in sum_df.columns: sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
-                    
-                    # 🚨 【修正】絶対除外フィルター（最低限の生存バイアス）
-                    sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max)]
-                    if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
-                    
-                    # 🎯 【修正】意味のある「掟の採点（スコアリング）」
-                    rule_scores = []; passed_counts = []
-                    for _, r in sum_df.iterrows():
+                    # 掟の判定（9項目）
+                    def calc_rules(r):
                         score_list = [
-                            r['r30'] <= f2_m30,
-                            r['ldrop'] >= f3_drop,
-                            (r['lrise'] <= f4_mlong) or (r['lrise'] == 0),
+                            (r['r30'] <= f2_m30),
+                            (r['ldrop'] >= f3_drop),
+                            (r['lrise'] <= f4_mlong) or (pd.isna(r['lrise'])) or (r['lrise'] == 0),
                             (f9_min14 <= r['r14'] <= f9_max14),
-                            r['d_high'] <= limit_d,
-                            (r['bt'] * 0.85 <= r['lc'] <= r['bt'] * 1.35),
-                            not r['is_dt'],
-                            not r['is_hs'],
-                            not pd.notna(r.get('sakata_signal')) or "下落警戒" not in str(r.get('sakata_signal'))
+                            (r['d_high'] <= st.session_state.limit_d),
+                            True, # 買値レンジ（後で判定）
+                            True, # DT否定（後で判定）
+                            True, # 三尊否定（後で判定）
+                            True  # 酒田否定（後で判定）
                         ]
-                        passed = sum(score_list)
-                        passed_counts.append(passed)
-                        rule_scores.append((passed / len(score_list)) * 100)
-                    sum_df['rule_pct'] = rule_scores
-                    sum_df['passed_rules'] = passed_counts
+                        return sum(score_list)
+
+                    res['passed_counts'] = res.apply(calc_rules, axis=1)
                     
-                    # 🚨 ボスの直接命令：足切りラインを「8/9（88%以上クリア）」に再厳格化
-                    sum_df = sum_df[sum_df['passed_rules'] >= 8]
-                    
-                    if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
-                    elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
-                    else: base_res = sum_df.sort_values('reach_pct', ascending=False).head(40)
-                    
-                    if base_res.empty: 
-                        st.warning("現在の相場に、標的は存在しません。")
+                    # 🚨 ボス命令：足切りラインを「8/9（88%以上）」に厳格化
+                    sum_df = res[res['passed_counts'] >= 8].copy()
+
+                    if sum_df.empty:
+                        st.warning("現在の相場に、8/9以上の掟を満たす標的は存在しません。")
                     else:
                         final_results = []
-                        for _, r in base_res.iterrows():
+                        for _, r in sum_df.iterrows():
                             c = str(r['Code'])
                             api_code = c if len(c) == 5 else c + "0"
                             raw_s = get_single_data(api_code, 1)
-                            hist = pd.DataFrame()
-                            t_score = 1; t_rank = "C"; t_bg = "#616161"
-                            if raw_s:
-                                hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
-                                if len(hist) >= 2:
-                                    latest = hist.iloc[-1]
-                                    atr = latest.get('ATR', 0)
-                                    lc_val_current = latest['AdjC']
-                                    
-                                    # 🚨 【不発弾キルスイッチ】ボラ10円未満、または株価の1%未満はSランクでも強制排除
-                                    if atr < 10 or (atr / lc_val_current) < 0.01:
-                                        continue
-                                        
-                                    rank, bg, score, _ = get_triage_info(latest.get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), latest.get('RSI', 50))
-                                    t_score = score; t_rank = rank; t_bg = bg
-                                    
-                            r_dict = r.to_dict()
-                            r_dict['triage_score'] = t_score; r_dict['triage_rank'] = t_rank; r_dict['triage_bg'] = t_bg; r_dict['hist_df'] = hist
-                            final_results.append(r_dict)
+                            if not raw_s: continue
                             
+                            hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
+                            if len(hist) < 10: continue
+                            
+                            latest = hist.iloc[-1]
+                            # 🚨 不発弾キル（ATR）
+                            atr = latest.get('ATR', 0)
+                            if atr < 10 or (atr / latest['AdjC']) < 0.01: continue
+                            
+                            # 精密な波形・買値判定
+                            hist_10 = hist.tail(10)
+                            is_dt = check_double_top(hist_10)
+                            is_hs = check_head_shoulders(hist_10)
+                            sakata_sig = check_sakata_patterns(hist.tail(30))
+                            
+                            wave_len = r['h14'] - r['l14']
+                            bt_primary = r['h14'] - (wave_len * (st.session_state.push_r / 100.0))
+                            shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
+                            bt_secondary = r['h14'] - (wave_len * shift_ratio)
+                            is_bt_broken = r['lc'] < bt_primary
+                            bt_val = int(bt_secondary if is_bt_broken else bt_primary)
+                            
+                            # 最終スコアの再集計（確定版）
+                            final_score_list = [
+                                (r['r30'] <= f2_m30),
+                                (r['ldrop'] >= f3_drop),
+                                (r['lrise'] <= f4_mlong) or (r['lrise'] == 0),
+                                (f9_min14 <= r['r14'] <= f9_max14),
+                                (r['d_high'] <= st.session_state.limit_d),
+                                (bt_val * 0.85 <= r['lc'] <= bt_val * 1.35),
+                                (not is_dt),
+                                (not is_hs),
+                                (not pd.notna(sakata_sig)) or ("下落警戒" not in str(sakata_sig))
+                            ]
+                            f_passed = sum(final_score_list)
+                            
+                            rank, bg, score, _ = get_triage_info(latest.get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), latest.get('RSI', 50))
+                            
+                            m_row = master_df[master_df['Code'] == api_code]
+                            final_results.append({
+                                'Code': c, 'CompanyName': m_row.iloc[0]['CompanyName'] if not m_row.empty else "不明",
+                                'Market': m_row.iloc[0]['Market'] if not m_row.empty else "不明",
+                                'Sector': m_row.iloc[0]['Sector'] if not m_row.empty else "不明",
+                                'Scale': m_row.iloc[0]['Scale'] if not m_row.empty else "",
+                                'lc': r['lc'], 'bt': bt_val, 'h14': r['h14'], 'l14': r['l14'], 'd_high': r['d_high'],
+                                'is_bt_broken': is_bt_broken, 'is_db': (not is_dt), 'is_defense': (r['lc'] <= bt_val * 1.05),
+                                'reach_pct': ((r['h14'] - r['lc']) / (r['h14'] - bt_val) * 100) if (r['h14'] - bt_val) > 0 else 0,
+                                'passed_rules': f_passed, 'rule_pct': (f_passed / 9) * 100,
+                                'triage_rank': rank, 'triage_bg': bg, 'triage_score': score, 'hist_df': hist,
+                                'daily_pct': (r['lc'] / hist.iloc[-2]['AdjC']) - 1 if len(hist) > 1 else 0,
+                                'sakata_signal': sakata_sig
+                            })
+
                         final_df = pd.DataFrame(final_results)
-                        
                         if final_df.empty:
-                            st.warning("スキャン結果：条件を満たした銘柄はありましたが、すべてボラティリティ不足（不発弾）のため除外されました。")
+                            st.warning("条件を満たした銘柄はすべてボラティリティ不足（不発弾）のため除外されました。")
                         else:
-                            if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
-                            elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
-                            else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
-                            
+                            final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
                             st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
-                            st.markdown("#### 📋 コピペ用コード")
-                            if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
-                            
-                            # 👇 この下から for _, r in final_df.iterrows(): が始まります
-                        
-                        # --- ここから上書き開始 ---
-                        for _, r in final_df.iterrows():
-                            st.divider()
-                            c = str(r['Code'])
-                            n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
-                            
-                            scale_val = str(r.get('Scale', ''))
-                            if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
-                                badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
-                            else:
-                                badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
-                            
-                            triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
-                            
-                            st.markdown(f"""
-                                <div style="margin-bottom: 0.8rem;">
-                                    <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:4]}) {n}</h3>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                            
-                            for alert in check_event_mines(c): st.warning(alert)
-                            if r.get('is_bt_broken', False): st.error("⚠️ 【第一防衛線突破】買値目標を第二防衛線（黄金比等）へ自動シフトしました。")
-                            if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
-                            if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
-                            if pd.notna(r.get('sakata_signal')):
-                                if "下落警戒" in str(r['sakata_signal']): st.error(f"🚨 【波形警告】{r['sakata_signal']}")
-                                else: st.success(f"🔥 【反転攻勢】{r['sakata_signal']}")
-                            
-                            lc_val = int(r.get('lc', 0)); bt_val = int(r.get('bt', 0)); high_val = int(r.get('h14', lc_val)); low_val = int(r.get('l14', 0))
-                            wave_len = high_val - low_val if low_val > 0 else 0
-                            sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
-                            tp20 = int(bt_val * 1.2); tp15 = int(bt_val * 1.15); tp10 = int(bt_val * 1.1); tp5 = int(bt_val * 1.05)
-                            
-                            daily_pct = r.get('daily_pct', 0); daily_sign = "+" if daily_pct >= 0 else ""
-                            hist_df = r.get('hist_df', pd.DataFrame())
-                            
-                            avg_vol = 0
-                            vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                            if not vol_col:
-                                vol_col = next((col for col in hist_df.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
-                            if vol_col:
-                                v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                                avg_vol = int(v_series.tail(5).mean())
-                                        
-                            reach_pct = r.get('reach_pct', 0)
-                            passed_rules = int(r.get('passed_rules', 0))
-                            rule_pct_val = r.get('rule_pct', 0)
+                            st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
 
-                            sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
-                            sc0.metric("直近高値", f"{high_val:,}円")
-                            sc0_1.metric("直近安値", f"{low_val:,}円")
-                            sc0_2.metric("上昇幅", f"{wave_len:,}円")
-                            sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
-                            
-                            html_buy = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div></div>"""
-                            sc2.markdown(html_buy, unsafe_allow_html=True)
-                            
-                            html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div><div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
-                            sc3.markdown(html_sell, unsafe_allow_html=True)
-                            
-                            pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 7 else "#ef5350"
-                            html_stats = f"""
-                            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
-                                <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                    <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
-                                </div>
-                                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {pct_color}; padding: 4px 8px; border-radius: 4px;">
-                                    <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {pct_color};">{passed_rules}/9 条件クリア ({rule_pct_val:.0f}%)</strong>
-                                </div>
-                                <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                                    <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
-                                </div>
-                            </div>
-                            """
-                            sc4.markdown(html_stats, unsafe_allow_html=True)
-                            
-                            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
-                            
-                            bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
-                            if bt_stats and bt_stats['total'] > 0:
-                                wr = bt_stats['win_rate']; ev = bt_stats['exp_val']
-                                wr_color = "#ef5350" if wr >= 60 else "#FFD700" if wr >= 50 else "#888888"
-                                st.markdown(f"""
-                                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
-                                    <span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats['total']}戦):</span>
-                                    <strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {wr:.1f}%</strong>
-                                    <span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span>
-                                    <strong style="color: {'#ef5350' if ev > 0 else '#26a69a'}; font-size: 16px; margin-left: 8px;">{ev:+.1f}円</strong>
-                                </div>
-                                """, unsafe_allow_html=True)
+                            for _, r in final_df.iterrows():
+                                st.divider()
+                                c = str(r['Code']); n = r['CompanyName']
+                                scale_val = str(r.get('Scale', ''))
+                                badge_color = "#0d47a1" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "#b71c1c"
+                                badge_text = "🏢 大型/中型" if badge_color == "#0d47a1" else "🚀 小型/新興"
+                                
+                                st.markdown(f"""<h3 style='font-weight:bold;'>({c[:4]}) {n} <span style='background:{badge_color};color:white;font-size:12px;padding:2px 6px;border-radius:4px;'>{badge_text}</span><span style='background:{r['triage_bg']};color:white;font-size:12px;padding:2px 6px;border-radius:4px;margin-left:5px;'>🎯 {r['triage_rank']}</span></h3>""", unsafe_allow_html=True)
+                                
+                                if r['is_bt_broken']: st.error("⚠️ 第一防衛線突破につき目標シフト済")
+                                
+                                lc_val = int(r['lc']); bt_val = int(r['bt'])
+                                tp15 = int(bt_val * 1.15); sl8 = int(bt_val * 0.92)
+                                
+                                # 🚨 【出来高 Vo/AdjVo 認識修正】
+                                hist_df = r['hist_df']; avg_vol = 0
+                                vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                                if vol_col:
+                                    v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                                    avg_vol = int(v_series.tail(5).mean())
 
-                            if not hist_df.empty:
+                                col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+                                col1.metric("最新終値", f"{lc_val:,}円", f"{r['daily_pct']*100:+.1f}%")
+                                col2.metric("買値目標", f"{bt_val:,}円")
+                                col3.metric("出来高(5日平均)", f"{avg_vol:,}株")
+                                
+                                pct_color = "#26a69a" if r['passed_rules'] >= 8 else "#FFD700"
+                                col4.markdown(f"""<div style='background:rgba(255,255,255,0.05);padding:10px;border-left:5px solid {pct_color};'><strong>掟適合: {int(r['passed_rules'])}/9</strong> ({r['rule_pct']:.0f}%)<br>到達度: {r['reach_pct']:.1f}%</div>""", unsafe_allow_html=True)
+
                                 st.markdown(render_technical_radar(hist_df, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                                 draw_chart(hist_df, bt_val, tp15=tp15)
-                        # --- ここまで上書き終了 ---
                             
 # ------------------------------------------
 # Tab 2: GC初動強襲レーダー
