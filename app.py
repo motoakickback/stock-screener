@@ -597,51 +597,6 @@ with tab1:
                 if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
                 
                 rule_scores = []
-                for _, r in sum_df.iterrows():
-                    score_list = [
-                        (f1_min <= r['lc'] <= f1_max), r['r30'] <= f2_m30, r['ldrop'] >= f3_drop, (r['lrise'] <= f4_mlong) or (r['lrise'] == 0),
-                        (f9_min14 <= r['r14'] <= f9_max14), r['d_high'] <= limit_d, (r['bt'] * 0.85 <= r['lc'] <= r['bt'] * 1.35),
-                        not r['is_dt'] and not r['is_hs']
-                    ]
-                    rule_scores.append((sum(score_list) / len(score_list)) * 100)
-                sum_df['rule_pct'] = rule_scores
-                
-                # 1. まず「到達度」などでベースとなる候補を抽出
-                if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
-                elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
-                else: base_res = sum_df.sort_values('reach_pct', ascending=False).head(40)
-                
-                if base_res.empty: st.warning("現在の相場に、標的は存在しません。")
-                else:
-                    # 2. 候補に対して「正確な1年分データ」でS/A/B/Cを判定し、それを変数に格納する
-                    final_results = []
-                    for _, r in base_res.iterrows():
-                        c = str(r['Code'])
-                        api_code = c if len(c) == 5 else c + "0"
-                        raw_s = get_single_data(api_code, 1)
-                        hist = pd.DataFrame()
-                        t_score = 1; t_rank = "C"; t_bg = "#616161"
-                        if raw_s:
-                            hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
-                            if len(hist) >= 2:
-                                rank, bg, score, _ = get_triage_info(hist.iloc[-1].get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), hist.iloc[-1].get('RSI', 50))
-                                t_score = score; t_rank = rank; t_bg = bg
-                                
-                        r_dict = r.to_dict()
-                        r_dict['triage_score'] = t_score; r_dict['triage_rank'] = t_rank; r_dict['triage_bg'] = t_bg; r_dict['hist_df'] = hist
-                        final_results.append(r_dict)
-                        
-                    final_df = pd.DataFrame(final_results)
-                    
-                    # 3. 🚨 取得した【正確なトリアージスコア】を絶対優先にして最終ソートを実行
-                    if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
-                    elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
-                    else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
-                    
-                    st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
-                    st.markdown("#### 📋 コピペ用コード")
-                    if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
-
                     for _, r in final_df.iterrows():
                         st.divider()
                         c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
@@ -713,7 +668,7 @@ with tab1:
                         </div>
                         """
                         sc4.markdown(html_stats, unsafe_allow_html=True)
-                        sc5.metric("掟達成率", f"{r.get('rule_pct', 0):.0f}%")
+                        
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
                         
                         bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
