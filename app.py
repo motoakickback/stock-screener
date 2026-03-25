@@ -1138,10 +1138,11 @@ with tab4:
                         daily_sign = "+" if daily_pct >= 0 else ""
 
                         # 🚨 【出来高 Vo/AdjVo 狙い撃ち修正】
-                        avg_vol = 0
+                            avg_vol = 0
                             vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                             if not vol_col:
                                 vol_col = next((col for col in hist_df.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
+                            
                             if vol_col:
                                 v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                                 avg_vol = int(v_series.tail(5).mean())
@@ -1200,6 +1201,7 @@ with tab4:
                             if not hist_df.empty:
                                 st.markdown(render_technical_radar(hist_df, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                                 draw_chart(hist_df, bt_val, tp15=tp15)
+                            # --- ここまで一気に上書き終了 ---
                         
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
