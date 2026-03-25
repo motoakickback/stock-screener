@@ -702,7 +702,16 @@ with tab1:
                             daily_pct = r.get('daily_pct', 0); daily_sign = "+" if daily_pct >= 0 else ""
 
                             hist_df = r.get('hist_df', pd.DataFrame())
-                            avg_vol = int(hist_df['Volume'].tail(5).mean()) if not hist_df.empty and 'Volume' in hist_df.columns else 0
+                            
+                            # 🚨 【修正】出来高の文字列・エラーを強制的に数値化して平均を取得
+                            avg_vol = 0
+                            if not hist_df.empty:
+                                for col in hist_df.columns:
+                                    if re.search(r'vol|出来高', col, re.IGNORECASE):
+                                        vol_data = pd.to_numeric(hist_df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                                        avg_vol = int(vol_data.tail(5).mean())
+                                        break
+                                        
                             reach_pct = r.get('reach_pct', 0)
                             passed_rules = int(r.get('passed_rules', 0))
                             rule_pct_val = r.get('rule_pct', 0)
