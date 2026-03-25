@@ -347,6 +347,54 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
     fig.update_layout(height=380, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     if y_range: fig.update_layout(yaxis=dict(range=y_range, fixedrange=False))
     st.plotly_chart(fig, use_container_width=True)
+    
+# --- 🚨 復元パッチ：欠落していた2つのスナイパー機能 ---
+@st.cache_data(ttl=86400, show_spinner=False)
+def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
+    raw = get_single_data(c + "0", 2)
+    if not raw: return None
+    df = clean_df(pd.DataFrame(raw))
+    if len(df) < 60: return None
+    trades = []; pos = None
+    for i in range(30, len(df)):
+        td = df.iloc[i]
+        if pos is None:
+            win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]
+            rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+            if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
+            h_d = len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']])
+            if (1.3 <= rh/rl <= 2.0) and (h_d <= buy_d):
+                if check_double_top(win_30) or check_head_shoulders(win_30): continue
+                if "攻め" in mode:
+                    if check_double_bottom(win_30): pos = {'b_i': i, 'b_p': td['AdjO']}
+                else:
+                    targ = rh - ((rh - rl) * (push_r / 100))
+                    if td['AdjL'] <= targ: pos = {'b_i': i, 'b_p': min(td['AdjO'], targ)}
+        else:
+            bp = pos['b_p']; held = i - pos['b_i']; sp = 0
+            if td['AdjL'] <= bp * (1 - (sl_i / 100)): sp = min(td['AdjO'], bp * (1 - (sl_i / 100)))
+            elif td['AdjH'] >= bp * (1 + (tp / 100)): sp = max(td['AdjO'], bp * (1 + (tp / 100)))
+            elif td['AdjC'] <= bp * (1 - (sl_c / 100)): sp = td['AdjC']
+            elif held >= sell_d: sp = td['AdjC']
+            if sp > 0:
+                trades.append(sp - bp); pos = None
+    if not trades: return None
+    wins = len([t for t in trades if t > 0])
+    return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
+
+def get_triage_info(macd_hist, macd_hist_prev, rsi):
+    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
+    else: macd_t = "減衰"
+
+    rank = "C（条件外・監視）👁️"; bg = "#616161"; score = 1
+    if macd_t == "下落継続" or rsi >= 70: rank = "圏外（手出し無用）🚫"; bg = "#d32f2f"; score = 0
+    elif macd_t == "GC直後" and rsi <= 50: rank = "S（即時狙撃）🔥"; bg = "#2e7d32"; score = 4
+    elif macd_t == "減衰" and rsi <= 30: rank = "A（罠の設置）🪤"; bg = "#0288d1"; score = 3
+    elif macd_t == "上昇拡大" and 50 <= rsi <= 65: rank = "B（順張り警戒）📈"; bg = "#ed6c02"; score = 2
+    return rank, bg, score, macd_t
+# -------------------------------------------------------------
 
 # --- 4. サイドバー UI ---
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
