@@ -1139,23 +1139,17 @@ with tab4:
 
                         # 🚨 【出来高 Vo/AdjVo 狙い撃ち修正】
                         avg_vol = 0
-                        # 優先順位: 調整後出来高(AdjVo) > 生出来高(Vo) > その他 volを含む列
-                        vol_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                        if not vol_col:
-                            vol_col = next((col for col in hist.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
-                        
-                        if vol_col:
-                            # 文字列やコンマを排除して数値化
-                            v_series = pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                            avg_vol = int(v_series.tail(5).mean())
+                            vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                            if not vol_col:
+                                vol_col = next((col for col in hist_df.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
+                            if vol_col:
+                                v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                                avg_vol = int(v_series.tail(5).mean())
+                                        
+                            reach_pct = r.get('reach_pct', 0)
+                            passed_rules = int(r.get('passed_rules', 0))
+                            rule_pct_val = r.get('rule_pct', 0)
 
-                        reach_pct = r['reach_pct']
-                        passed_rules = r['passed_rules']
-                        rule_pct_val = r['rule_pct']
-
-                        # この下にある sc0, sc0_1, ... = st.columns(...) へ続く
-
-                        # --- ここから上書き（インデント厳密固定版） ---
                             sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                             sc0.metric("直近高値", f"{high_val:,}円")
                             sc0_1.metric("直近安値", f"{low_val:,}円")
@@ -1206,7 +1200,6 @@ with tab4:
                             if not hist_df.empty:
                                 st.markdown(render_technical_radar(hist_df, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                                 draw_chart(hist_df, bt_val, tp15=tp15)
-                            # --- 上書き終了 ---
                         
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
