@@ -637,7 +637,15 @@ with tab1:
                             if raw_s:
                                 hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
                                 if len(hist) >= 2:
-                                    rank, bg, score, _ = get_triage_info(hist.iloc[-1].get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), hist.iloc[-1].get('RSI', 50))
+                                    latest = hist.iloc[-1]
+                                    atr = latest.get('ATR', 0)
+                                    lc_val_current = latest['AdjC']
+                                    
+                                    # 🚨 【不発弾キルスイッチ】ボラ10円未満、または株価の1%未満はSランクでも強制排除
+                                    if atr < 10 or (atr / lc_val_current) < 0.01:
+                                        continue
+                                        
+                                    rank, bg, score, _ = get_triage_info(latest.get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), latest.get('RSI', 50))
                                     t_score = score; t_rank = rank; t_bg = bg
                                     
                             r_dict = r.to_dict()
@@ -646,6 +654,21 @@ with tab1:
                             
                         final_df = pd.DataFrame(final_results)
                         
+                        # 🚨 追加：全員キルされて空っぽになった時の防壁
+                        if final_df.empty:
+                            st.warning("スキャン結果：条件を満たした銘柄はありましたが、すべてボラティリティ不足（不発弾）のため除外されました。")
+                        else:
+                            # 生き残りがいる場合のみ、並び替えと描画を実行
+                            if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
+                            elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
+                            else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
+                            
+                            st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
+                            st.markdown("#### 📋 コピペ用コード")
+                            if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
+                            
+                            # (以降は for _, r in final_df.iterrows(): の描画処理が続く)
+                                                
                         if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
                         elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
                         else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
