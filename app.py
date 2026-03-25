@@ -591,58 +591,123 @@ with tab1:
 with tab2:
     render_macro_board()
     st.markdown('### ⚡ GC（ゴールデンクロス）初動強襲レーダー')
+    st.warning("⚠️ 鉄の掟（50%押し）のフィルターを解除し、純粋なトレンド初動（MACD GC）を検知する遊撃部隊用レーダーです。")
+    
     if st.button("⚡ GC遊撃部隊を発進させる"):
         with st.spinner("全軍からMACDゴールデンクロス直後の銘柄を抽出中..."):
             raw = get_hist_data_cached()
-            if not raw: st.error("データ取得失敗")
+            if not raw: 
+                st.error("データ取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
-                valid_counts = df_30.groupby('Code').size(); df_30 = df_30[df_30['Code'].isin(valid_counts[valid_counts >= 26].index)]
-                latest_prices = df_30.groupby('Code')['AdjC'].last(); df_30 = df_30[df_30['Code'].isin(latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index)]
+                
+                # 生存フィルター1：価格帯とデータ数
+                valid_counts = df_30.groupby('Code').size()
+                df_30 = df_30[df_30['Code'].isin(valid_counts[valid_counts >= 26].index)]
+                latest_prices = df_30.groupby('Code')['AdjC'].last()
+                df_30 = df_30[df_30['Code'].isin(latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index)]
                 
                 results_gc = []
                 for code, group in df_30.groupby('Code'):
                     df_calc = calc_technicals(group)
+                    
+                    # 生存フィルター2：流動性（直近5日の平均出来高 > 5万株）
                     avg_vol = df_calc.tail(5).get('Volume', pd.Series([0])).mean()
                     if avg_vol < 50000: continue
-                    latest = df_calc.iloc[-1]; prev = df_calc.iloc[-2]
                     
-                    if (latest['MACD'] > latest['MACD_Signal']) and (prev['MACD'] <= prev['MACD_Signal']) and (latest['AdjC'] >= latest['MA25']) and (latest.get('RSI', 50) < 70):
-                        c_name = master_df[master_df['Code'] == code]['CompanyName'].iloc[0] if not master_df.empty and code in master_df['Code'].values else "不明"
-                        if f7_ex_etf and bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE)): continue
-                        results_gc.append({'Code': code, 'Name': c_name, 'lc': latest['AdjC'], 'MA25': latest['MA25'], 'RSI': latest.get('RSI', 50), 'Vol': avg_vol, 'df_chart': df_calc, 'trigger': latest['AdjH'] * 1.01})
+                    latest = df_calc.iloc[-1]; prev = df_calc.iloc[-2]
+                    lc = latest['AdjC']; ma25 = latest['MA25']
+                    macd = latest['MACD']; signal = latest['MACD_Signal']
+                    macd_prev = prev['MACD']; signal_prev = prev['MACD_Signal']
+                    rsi = latest.get('RSI', 50)
+                    
+                    # 🔥 GC判定（昨日までMACD <= Signal、今日MACD > Signal）
+                    is_gc = (macd > signal) and (macd_prev <= signal_prev)
+                    # 🛡️ トレンドフィルター（25日線の上にある、かつRSIが過熱していない）
+                    is_uptrend = (lc >= ma25) and (rsi < 70)
+                    
+                    if is_gc and is_uptrend:
+                        c_name = "不明"; c_sector = "不明"; c_market = "不明"; c_scale = ""
+                        if not master_df.empty:
+                            m_row = master_df[master_df['Code'] == code]
+                            if not m_row.empty:
+                                c_name = m_row.iloc[0]['CompanyName']
+                                c_sector = m_row.iloc[0].get('Sector', '不明')
+                                c_market = m_row.iloc[0].get('Market', '不明')
+                                c_scale = m_row.iloc[0].get('Scale', '')
+                        
+                        # ETF等の除外
+                        if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))): 
+                            continue
+                            
+                        results_gc.append({
+                            'Code': code, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale,
+                            'lc': lc, 'MA25': ma25, 'RSI': rsi, 
+                            'MACD_Hist': latest.get('MACD_Hist', 0), 'MACD_Hist_prev': prev.get('MACD_Hist', 0),
+                            'Vol': avg_vol, 'df_chart': df_calc, 'trigger': latest['AdjH'] * 1.01
+                        })
                 
-                if not results_gc: st.info("GC初動銘柄はありませんでした。")
+                if not results_gc:
+                    st.info("本日の市場に、条件を満たすGC初動銘柄はありませんでした。")
                 else:
-                    st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄捕捉。")
-                    res_df_gc = pd.DataFrame(results_gc).sort_values('Vol', ascending=False)
-                    st.markdown("#### 📋 コピペ用コード (GC部隊)")
-                    if 'Code' in res_df_gc.columns: st.code(",".join([str(c)[:4] for c in res_df_gc['Code']]), language="text")
+                    st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄のGC初動を捕捉。")
+                    res_df_gc = pd.DataFrame(results_gc).sort_values('Vol', ascending=False) # 出来高順
+                    
+                    # 📋 復元：コピペ用コード枠
+                    st.markdown("#### 📋 コピペ用コード (GC遊撃部隊)")
+                    if 'Code' in res_df_gc.columns:
+                        copy_codes_gc = ",".join([str(c)[:4] for c in res_df_gc['Code']])
+                        st.code(copy_codes_gc, language="text")
 
                     for _, r in res_df_gc.iterrows():
                         st.divider()
                         c = str(r['Code']); n = str(r['Name'])
-                        st.markdown(f"### ({c[:4]}) {n} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
+                        
+                        # 🏢 復元：規模バッジ
+                        scale_val = str(r.get('Scale', ''))
+                        if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
+                            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>'
+                        else:
+                            badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
+                        
+                        # 🎯 復元：S/A/B/C トリアージ判定
+                        rank, bg, score, _ = get_triage_info(r['MACD_Hist'], r['MACD_Hist_prev'], r['RSI'])
+                        triage_badge = f'<span style="background-color: {bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {rank}</span>'
+                        
+                        st.markdown(f"""
+                            <div style="margin-bottom: 0.8rem;">
+                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; word-wrap: break-word;">({c[:4]}) {n} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:14px;vertical-align:middle;'>⚡ GC初動</span></h3>
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 💣 地雷警戒アラート
                         for alert in check_event_mines(c): st.warning(alert)
                         
-                        # --- 🎯 復元：強襲専用の目標値表示 ---
+                        # 🏢 復元：業種・市場データ
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 📊 平均出来高: {int(r.get('Vol', 0)):,}株")
+                        
+                        # --- 🎯 復元：目標値の完全表示（強襲専用） ---
                         lc_val = int(r['lc']); trigger_val = int(r['trigger']); ma25_val = int(r['MA25'])
                         tp10 = int(trigger_val * 1.10); tp8 = int(trigger_val * 1.08); sl4 = int(trigger_val * 0.96)
                         
                         sc1, sc2, sc3, sc4 = st.columns([1, 1.2, 1.5, 0.8])
                         sc1.metric("最新終値", f"{lc_val:,}円")
+                        
                         html_trigger = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 追撃トリガー (逆指値)</div><div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{trigger_val:,}円</div></div>"""
                         sc2.markdown(html_trigger, unsafe_allow_html=True)
+                        
                         html_sell_gc = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 短期利確 ＆ 🛡️ 撤退ライン</div><div style="font-size: 16px;">
                             <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span><br>
                             <span style="display: inline-block; width: 2.5em; color: #ef5350;">8%</span> <span style="color: #ef5350;">{tp8:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-4%</span> <span style="color: #26a69a;">{sl4:,}円</span></div></div>"""
                         sc3.markdown(html_sell_gc, unsafe_allow_html=True)
-                        sc4.metric("防衛線(25日)", f"{ma25_val:,}円")
-                        # ----------------------------------------
                         
+                        sc4.metric("防衛線(25日)", f"{ma25_val:,}円")
+                        
+                        # --- チャートと計器 ---
                         st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
-                        draw_chart(r['df_chart'], r['trigger'], tp10=tp10)
+                        draw_chart(r['df_chart'], trigger_val, tp10=tp10)
 
 # ------------------------------------------
 # Tab 3: 高高度モニター（イナゴタワー追跡）
