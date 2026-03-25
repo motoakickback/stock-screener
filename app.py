@@ -1003,7 +1003,6 @@ with tab4:
                         l14_val = int(hist.tail(14)['AdjL'].min())
                         if l14_val <= 0 or pd.isna(h14_val): continue
                         
-                        # 🎯 掟達成率用のデータ取得
                         hist_30 = hist.tail(30)
                         hist_14 = hist.tail(14)
                         hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
@@ -1023,7 +1022,6 @@ with tab4:
                         is_dt = check_double_top(hist_30)
                         is_hs = check_head_shoulders(hist_30)
                         
-                        # 目標値
                         wave_len = h14_val - l14_val
                         bt_primary = h14_val - (wave_len * (st.session_state.push_r / 100.0))
                         shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
@@ -1035,7 +1033,8 @@ with tab4:
                         denom = h14_val - bt_val
                         reach_pct = ((h14_val - lc_val) / denom * 100) if denom > 0 else 0
                         
-                        # 掟達成率の計算
+                        # 🎯 【修正】意味のある「掟の採点（スコアリング）」
+                        sakata_sig = check_sakata_patterns(hist_30)
                         score_list = [
                             (f1_min <= lc_val <= f1_max),
                             (r30 <= f2_m30),
@@ -1044,20 +1043,22 @@ with tab4:
                             (f9_min14 <= r14 <= f9_max14),
                             (d_high <= st.session_state.limit_d),
                             (bt_val * 0.85 <= lc_val <= bt_val * 1.35),
-                            (not is_dt and not is_hs)
+                            (not is_dt and not is_hs),
+                            (not pd.notna(sakata_sig)) or ("下落警戒" not in str(sakata_sig))
                         ]
-                        rule_pct = (sum(score_list) / len(score_list)) * 100
+                        passed_rules = sum(score_list)
+                        rule_pct = (passed_rules / len(score_list)) * 100
                         
                         latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
                         rsi_val = latest_c.get('RSI', 50)
                         macd_h = latest_c.get('MACD_Hist', 0); macd_h_prev = prev_c.get('MACD_Hist', 0)
                         
-                        # 🔥 トリアージスコアの計算
                         rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_val)
                         
                         results_t4.append({
                             'code': c, 'lc_val': lc_val, 'h14_val': h14_val, 'l14_val': l14_val, 'wave_len': wave_len,
-                            'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'reach_pct': reach_pct, 'rule_pct': rule_pct,
+                            'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'reach_pct': reach_pct, 
+                            'rule_pct': rule_pct, 'passed_rules': passed_rules,
                             'hist': hist, 'triage_score': score, 'rank': rank, 'bg': bg, 'macd_t': macd_t, 'prev_c': prev_c
                         })
                 
@@ -1091,7 +1092,6 @@ with tab4:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 🔥 GC大爆発アラート
                     if r['macd_t'] == "GC直後":
                         st.markdown("<div style='background: linear-gradient(45deg, #b71c1c, #ff5722); color: white; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 900; font-size: 1.1rem; margin-bottom: 0.8rem; border-left: 6px solid #ffeb3b; box-shadow: 0 4px 6px rgba(255,0,0,0.3);'>🔥🔥🔥 【激熱】MACD ゴールデンクロス（GC）発動中！強烈な上昇モメンタムを検知しました！ 🔥🔥🔥</div>", unsafe_allow_html=True)
                     
@@ -1107,12 +1107,10 @@ with tab4:
                     daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    # --- 追加：出来高と掟適合数の計算 ---
-                    hist_df = r['hist']
-                    avg_vol = int(hist_df['Volume'].tail(5).mean()) if not hist_df.empty and 'Volume' in hist_df.columns else 0
+                    avg_vol = int(hist['Volume'].tail(5).mean()) if not hist.empty and 'Volume' in hist.columns else 0
                     reach_pct = r['reach_pct']
-                    passed_rules = int((r['rule_pct'] / 100.0) * 13)
-                    if passed_rules > 13: passed_rules = 13
+                    passed_rules = r['passed_rules']
+                    rule_pct_val = r['rule_pct']
 
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     sc0.metric("直近高値", f"{r['h14_val']:,}円")
@@ -1130,13 +1128,15 @@ with tab4:
                         <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
+                    # 🔥 意味のあるスコア表示
+                    pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 6 else "#ef5350"
                     html_stats = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                         <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                             <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
                         </div>
-                        <div style="background: rgba(239, 83, 80, 0.1); border-left: 3px solid #ef5350; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: #fff;">{passed_rules}/13 条件クリア</strong>
+                        <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {pct_color}; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {pct_color};">{passed_rules}/9 条件クリア ({rule_pct_val:.0f}%)</strong>
                         </div>
                         <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
                             <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
