@@ -1046,17 +1046,17 @@ with tab4:
                         denom = h14_val - bt_val
                         reach_pct = ((h14_val - lc_val) / denom * 100) if denom > 0 else 0
                         
-                        # 🎯 【修正】意味のある「掟の採点（スコアリング）」
+                        # 🎯 【修正】Tab1と完全に一致する「真の掟採点（スコアリング）」
                         sakata_sig = check_sakata_patterns(hist_30)
                         score_list = [
-                            (f1_min <= lc_val <= f1_max),
                             (r30 <= f2_m30),
                             (ldrop >= f3_drop),
                             (lrise <= f4_mlong) or (lrise == 0),
                             (f9_min14 <= r14 <= f9_max14),
                             (d_high <= st.session_state.limit_d),
                             (bt_val * 0.85 <= lc_val <= bt_val * 1.35),
-                            (not is_dt and not is_hs),
+                            (not is_dt),
+                            (not is_hs),
                             (not pd.notna(sakata_sig)) or ("下落警戒" not in str(sakata_sig))
                         ]
                         passed_rules = sum(score_list)
