@@ -703,14 +703,17 @@ with tab1:
 
                             hist_df = r.get('hist_df', pd.DataFrame())
                             
-                            # 🚨 【修正】出来高の文字列・エラーを強制的に数値化して平均を取得
+                            # 🚨 【出来高 Vo/AdjVo 認識修正】
                             avg_vol = 0
-                            if not hist_df.empty:
-                                for col in hist_df.columns:
-                                    if re.search(r'vol|出来高', col, re.IGNORECASE):
-                                        vol_data = pd.to_numeric(hist_df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                                        avg_vol = int(vol_data.tail(5).mean())
-                                        break
+                            # 優先順位: AdjVo > Vo > その他 volを含む列
+                            vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                            if not vol_col:
+                                vol_col = next((col for col in hist_df.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
+                            
+                            if vol_col:
+                                # 文字列やコンマを排除して数値化
+                                v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                                avg_vol = int(v_series.tail(5).mean())
                                         
                             reach_pct = r.get('reach_pct', 0)
                             passed_rules = int(r.get('passed_rules', 0))
