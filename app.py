@@ -335,52 +335,69 @@ def render_technical_radar(df, buy_price, tp_pct):
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 # --- 標準チャート（Tab 1, 2, 4用） ---
-def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
-    df = df.copy(); df['MA5'] = df['AdjC'].rolling(window=5).mean(); df['MA25'] = df['AdjC'].rolling(window=25).mean(); df['MA75'] = df['AdjC'].rolling(window=75).mean()
+def draw_chart(df, targ_p, **kwargs):
+    df = df.copy()
+    df['MA5'] = df['AdjC'].rolling(window=5).mean()
+    df['MA25'] = df['AdjC'].rolling(window=25).mean()
+    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 🛡️ 75日線を復元
+    
+    tp10 = targ_p * 1.10 # 🎯 10%ラインのみを内部強制計算
+    
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5))) # 75日線（オレンジ）を追加
+    
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値/トリガー', line=dict(color='#FFD700', width=2, dash='dash')))
-    if tp10: fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
-    if tp15: fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot'))) # ノイズを消去し10%のみ描画
+    
     start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     
     fig.update_layout(
-        height=450, # スライダー表示用に高さを少し拡張
-        margin=dict(l=0, r=10, t=40, b=0), # スマホ右側の「指一本分の空白」を極限まで削る
+        height=450,
+        margin=dict(l=0, r=10, t=40, b=0),
         xaxis=dict(
-            rangeslider=dict(visible=True, thickness=0.1), # 縮尺・位置コントロールバーの完全復元
+            rangeslider=dict(visible=True, thickness=0.1),
             range=[start_date, df['Date'].max() + timedelta(days=2)],
             type="date"
         ),
-        yaxis=dict(fixedrange=False, side="right", automargin=True), # 右側ラベルの幅を自動調整（無駄な余白を消す）
+        yaxis=dict(fixedrange=False, side="right", automargin=True),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0), # 凡例を上部に避難
-        dragmode="pan" # スマホでスワイプした時に「範囲選択」ではなく「画面移動」になるように設定
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        dragmode="pan"
     )
-    # configで邪魔なメニューを消し、スマホ特有のピンチズーム操作を開放
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
 # --- 高高度モニター（Tab 3用）ズームチャート ---
-def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
-    df = df.copy(); df['MA5'] = df['AdjC'].rolling(window=5).mean()
+def draw_chart_t6(df, targ_p, **kwargs):
+    df = df.copy()
+    df['MA5'] = df['AdjC'].rolling(window=5).mean()
+    df['MA25'] = df['AdjC'].rolling(window=25).mean() # 高高度でも25日線を表示
+    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 高高度でも75日線を表示
+    
+    tp10 = targ_p * 1.10 # 🎯 10%ラインのみを内部強制計算
+    
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(命綱)', line=dict(color='rgba(156, 39, 176, 0.9)', width=2.5)))      
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))
+    
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='現在値', line=dict(color='#FFD700', width=2, dash='dash')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='+5%', line=dict(color='rgba(239, 83, 80, 0.5)', width=1, dash='dot')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.7)', width=1.5, dash='dot')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.9)', width=1.5, dash='dot'))) # 10%のみ描画
     
     last_date = df['Date'].max()
     start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min()
     
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
-        y_max = max(visible_df['AdjH'].max(), tp15); y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
-        y_margin = (y_max - y_min) * 0.05; y_range = [y_min - y_margin, y_max + y_margin]
-    else: y_range = None
+        y_max = max(visible_df['AdjH'].max(), tp10)
+        y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
+        y_margin = (y_max - y_min) * 0.05
+        y_range = [y_min - y_margin, y_max + y_margin]
+    else: 
+        y_range = None
 
     fig.update_layout(
         height=450,
