@@ -491,7 +491,7 @@ with tab1:
                 bt_primary = sum_df['h14'] - (ur * (push_r / 100.0)); shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
                 bt_secondary = sum_df['h14'] - (ur * shift_ratio)
                 sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary; sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
-                sum_df = sum_df[sum_df['lc'] >= ((sum_df['h14'] - ur * 0.618) * 0.98)] # 黄金比防衛線
+                sum_df = sum_df[sum_df['lc'] >= ((sum_df['h14'] - ur * 0.618) * 0.98)]
                 sum_df['tp15'] = sum_df['bt'] * 1.15
                 sum_df['reach_pct'] = np.where(sum_df['h14'] - sum_df['bt'] > 0, (sum_df['h14'] - sum_df['lc']) / (sum_df['h14'] - sum_df['bt']) * 100, 0)
                 sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
@@ -522,6 +522,18 @@ with tab1:
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
                 
+                # --- 🎯 優先度（トリアージスコア）の事前計算 ---
+                triage_scores = []
+                for code in sum_df['Code']:
+                    group = df_30[df_30['Code'] == code]
+                    tech = calc_technicals(group)
+                    if len(tech) >= 2:
+                        _, _, score, _ = get_triage_info(tech.iloc[-1].get('MACD_Hist',0), tech.iloc[-2].get('MACD_Hist',0), tech.iloc[-1].get('RSI',50))
+                        triage_scores.append(score)
+                    else:
+                        triage_scores.append(1)
+                sum_df['triage_score'] = triage_scores
+                
                 # --- 掟達成率 (rule_pct) の計算 ---
                 rule_scores = []
                 for _, r in sum_df.iterrows():
@@ -533,16 +545,14 @@ with tab1:
                     rule_scores.append((sum(score_list) / len(score_list)) * 100)
                 sum_df['rule_pct'] = rule_scores
                 
-                # ソート処理
-                if tactics_mode.startswith("⚔️"): res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
-                elif tactics_mode.startswith("🛡️"): res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(30)
-                else: res = sum_df.sort_values('reach_pct', ascending=False).head(30)
+                # 🚨 【改修】判定結果（S/A/B/C）を最優先でソート
+                if tactics_mode.startswith("⚔️"): res = sum_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False]).head(30)
+                elif tactics_mode.startswith("🛡️"): res = sum_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False]).head(30)
+                else: res = sum_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False]).head(30)
                 
                 if res.empty: st.warning("現在の相場に、標的は存在しません。")
                 else:
                     st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
-                    
-                    # 📋 復元：コピペ用コード枠
                     st.markdown("#### 📋 コピペ用コード")
                     if 'Code' in res.columns: st.code(",".join([str(c)[:4] for c in res['Code']]), language="text")
 
@@ -550,14 +560,12 @@ with tab1:
                         st.divider()
                         c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
                         
-                        # 🏢 復元：規模バッジ
                         scale_val = str(r.get('Scale', ''))
                         if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
                             badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型 (推奨: 25%押し)</span>'
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        # 🎯 復元：S/A/B/C トリアージ判定（テクニカル計算）
                         api_code = c if len(c) == 5 else c + "0"
                         raw_s = get_single_data(api_code, 1)
                         hist = pd.DataFrame()
@@ -577,7 +585,6 @@ with tab1:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # 💣 地雷警戒アラート
                         for alert in check_event_mines(c): st.warning(alert)
                         if r.get('is_bt_broken', False): st.error("⚠️ 【第一防衛線突破】買値目標を第二防衛線（黄金比等）へ自動シフトしました。")
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
@@ -586,7 +593,6 @@ with tab1:
                             if "下落警戒" in str(r['sakata_signal']): st.error(f"🚨 【波形警告】{r['sakata_signal']}")
                             else: st.success(f"🔥 【反転攻勢】{r['sakata_signal']}")
                         
-                        # --- 🎯 復元：目標値の完全表示 ---
                         lc_val = int(r.get('lc', 0)); bt_val = int(r.get('bt', 0)); high_val = int(r.get('h14', lc_val)); low_val = int(r.get('l14', 0))
                         wave_len = high_val - low_val if low_val > 0 else 0
                         sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
@@ -607,14 +613,10 @@ with tab1:
                             <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        # 📊 復元：到達度と掟達成率
                         sc4.metric("到達度", f"{r.get('reach_pct', 0):.1f}%")
                         sc5.metric("掟達成率", f"{r.get('rule_pct', 0):.0f}%")
-                        
-                        # 🏢 復元：業種・市場データ
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
                         
-                        # 📈 復元：過去の勝率・期待値バックテストデータ
                         bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
                         if bt_stats and bt_stats['total'] > 0:
                             wr = bt_stats['win_rate']; ev = bt_stats['exp_val']
@@ -628,7 +630,6 @@ with tab1:
                             </div>
                             """, unsafe_allow_html=True)
 
-                        # --- チャートと計器 ---
                         if not hist.empty:
                             st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                             draw_chart(hist, r['bt'], tp15=r['tp15'])
