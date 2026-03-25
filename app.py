@@ -47,6 +47,37 @@ def check_password():
 
 if not check_password(): st.stop()
 
+# --- 🚁 司令部へ帰還ボタン ---
+import streamlit.components.v1 as components
+components.html(
+    """
+    <script>
+    const parentDoc = window.parent.document;
+    if (!parentDoc.getElementById('sniper-return-btn')) {
+        const btn = parentDoc.createElement('button');
+        btn.id = 'sniper-return-btn';
+        btn.innerHTML = '🚁 司令部へ帰還';
+        btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
+        btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#00e676';
+        btn.style.border = '1px solid #00e676'; btn.style.padding = '12px 20px';
+        btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
+        btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+        btn.onclick = function() {
+            window.parent.scrollTo({top: 0, behavior: 'smooth'});
+            const allElements = parentDoc.querySelectorAll('*');
+            for (let i = 0; i < allElements.length; i++) {
+                if (allElements[i].scrollHeight > allElements[i].clientHeight) {
+                    allElements[i].scrollTo({top: 0, behavior: 'smooth'});
+                }
+            }
+        };
+        parentDoc.body.appendChild(btn);
+    }
+    </script>
+    """, height=0, width=0
+)
+
 # --- 2. 認証・通信設定 ---
 user_id = st.session_state["current_user"]
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
@@ -100,8 +131,8 @@ def check_event_mines(code):
     c = str(code)[:4]
     test_dividend_mines = ["5986", "5162", "4625", "6378", "8604"]
     test_earnings_mines = ["7066"]
-    if c in test_dividend_mines: alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近しています（強制下落リスク）")
-    if c in test_earnings_mines: alerts.append("🔥 【地雷警戒】直近14日以内に決算発表が予定されています（大口乱高下リスク）")
+    if c in test_dividend_mines: alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
+    if c in test_earnings_mines: alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
     return alerts
 
 @st.cache_data(ttl=86400)
@@ -168,40 +199,7 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
-    raw = get_single_data(c + "0", 2)
-    if not raw: return None
-    df = clean_df(pd.DataFrame(raw))
-    if len(df) < 60: return None
-    trades = []; pos = None
-    for i in range(30, len(df)):
-        td = df.iloc[i]
-        if pos is None:
-            win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]
-            rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
-            if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
-            h_d = len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']])
-            if (1.3 <= rh/rl <= 2.0) and (h_d <= buy_d):
-                if check_double_top(win_30) or check_head_shoulders(win_30): continue
-                if "攻め" in mode:
-                    if check_double_bottom(win_30): pos = {'b_i': i, 'b_p': td['AdjO']}
-                else:
-                    targ = rh - ((rh - rl) * (push_r / 100))
-                    if td['AdjL'] <= targ: pos = {'b_i': i, 'b_p': min(td['AdjO'], targ)}
-        else:
-            bp = pos['b_p']; held = i - pos['b_i']; sp = 0
-            if td['AdjL'] <= bp * (1 - (sl_i / 100)): sp = min(td['AdjO'], bp * (1 - (sl_i / 100)))
-            elif td['AdjH'] >= bp * (1 + (tp / 100)): sp = max(td['AdjO'], bp * (1 + (tp / 100)))
-            elif td['AdjC'] <= bp * (1 - (sl_c / 100)): sp = td['AdjC']
-            elif held >= sell_d: sp = td['AdjC']
-            if sp > 0:
-                trades.append(sp - bp); pos = None
-    if not trades: return None
-    wins = len([t for t in trades if t > 0])
-    return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
-
-# --- 波形判定 ---
+# --- 波形・計器計算 ---
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
@@ -299,23 +297,48 @@ def render_technical_radar(df, buy_price, tp_pct):
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
         <div style="font-size: 13px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color};">{macd_text}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
+# --- 標準チャート（Tab 1, 2, 4用） ---
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     df = df.copy(); df['MA5'] = df['AdjC'].rolling(window=5).mean(); df['MA25'] = df['AdjC'].rolling(window=25).mean(); df['MA75'] = df['AdjC'].rolling(window=75).mean()
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標/現在値', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値/トリガー', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp15: fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
     start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     fig.update_layout(height=400, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, df['Date'].max() + timedelta(days=1)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- 高高度モニター（Tab 3用）ズームチャート ---
+def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
+    df = df.copy(); df['MA5'] = df['AdjC'].rolling(window=5).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(命綱)', line=dict(color='rgba(156, 39, 176, 0.9)', width=2.5)))      
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='現在値', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='+5%', line=dict(color='rgba(239, 83, 80, 0.5)', width=1, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.7)', width=1.5, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
+    
+    last_date = df['Date'].max()
+    start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min() # 14日間に強制ズーム
+    
+    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
+    if not visible_df.empty:
+        y_max = max(visible_df['AdjH'].max(), tp15); y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
+        margin = (y_max - y_min) * 0.05; y_range = [y_min - margin, y_max + margin]
+    else: y_range = None
+
+    fig.update_layout(height=380, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
+    if y_range: fig.update_layout(yaxis=dict(range=y_range, fixedrange=False))
     st.plotly_chart(fig, use_container_width=True)
 
 # --- 4. サイドバー UI ---
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
-st.session_state.bt_tp = 10; st.session_state.bt_sl_i = 8; st.session_state.limit_d = 4; st.session_state.bt_sell_d = 10
+st.session_state.bt_tp = 10; st.session_state.bt_sl_i = 8; st.session_state.bt_sl_c = 8; st.session_state.limit_d = 4; st.session_state.bt_sell_d = 10
 st.session_state.bt_lot = 100
 
 def apply_market_preset():
@@ -356,57 +379,6 @@ st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
 st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
-# --- 🚁 スナイパーパッチ1：「司令部へ帰還」ボタン ---
-import streamlit.components.v1 as components
-components.html(
-    """
-    <script>
-    const parentDoc = window.parent.document;
-    if (!parentDoc.getElementById('sniper-return-btn')) {
-        const btn = parentDoc.createElement('button');
-        btn.id = 'sniper-return-btn';
-        btn.innerHTML = '🚁 司令部（トップ）へ帰還';
-        btn.style.position = 'fixed';
-        btn.style.bottom = '100px'; 
-        btn.style.right = '30px';
-        btn.style.backgroundColor = '#1e1e1e';
-        btn.style.color = '#00e676';
-        btn.style.border = '1px solid #00e676';
-        btn.style.padding = '12px 20px';
-        btn.style.borderRadius = '8px';
-        btn.style.cursor = 'pointer';
-        btn.style.fontWeight = 'bold';
-        btn.style.zIndex = '2147483647';
-        btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
-        btn.style.transition = 'all 0.3s ease';
-        
-        btn.onmouseover = function() {
-            btn.style.backgroundColor = '#00e676';
-            btn.style.color = '#1e1e1e';
-        };
-        btn.onmouseout = function() {
-            btn.style.backgroundColor = '#1e1e1e';
-            btn.style.color = '#00e676';
-        };
-        
-        btn.onclick = function() {
-            window.parent.scrollTo({top: 0, behavior: 'smooth'});
-            const allElements = parentDoc.querySelectorAll('*');
-            for (let i = 0; i < allElements.length; i++) {
-                const el = allElements[i];
-                if (el.scrollHeight > el.clientHeight) {
-                    el.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            }
-        };
-        parentDoc.body.appendChild(btn);
-    }
-    </script>
-    """,
-    height=0,
-    width=0
-)
-
 # ==========================================
 # 5. タブ再構成（7タブ構成）
 # ==========================================
@@ -414,7 +386,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
     "🛸 【観測】高高度モニター", 
-    "🎯 精密スコープ", 
+    "🎯 精密スコープ照準", 
     "⚙️ 戦術シミュレータ", 
     "🪤 IFD潜伏カウント", 
     "📁 事後任務報告(AAR)"
@@ -428,7 +400,6 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     render_macro_board()
     st.markdown('### 🌐 ボスの「鉄の掟」広域スキャン（50%押し待伏せ）')
-    st.caption("※厳格なフィルターと絶対防衛線の計算により、リスク極小の待ち伏せポイントを抽出します。")
     run_scan = st.button(f"🚀 待伏せ部隊スキャン開始 ({tactics_mode.split()[0]}モード)")
     if run_scan:
         with st.spinner("全軍から鉄の掟適合銘柄を抽出中..."):
@@ -495,9 +466,8 @@ with tab1:
                 else:
                     st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
                     st.markdown("#### 📋 コピペ用コード")
-                    if 'Code' in res.columns:
-                        copy_codes = ",".join([str(c)[:4] for c in res['Code']])
-                        st.code(copy_codes, language="text")
+                    if 'Code' in res.columns: st.code(",".join([str(c)[:4] for c in res['Code']]), language="text")
+
                     for _, r in res.iterrows():
                         st.divider()
                         c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
@@ -506,11 +476,28 @@ with tab1:
                         if r['is_db']: st.success("🔥 三川（ダブルボトム）底打ち反転波形！")
                         if r['is_defense']: st.info("🛡️ 下値支持線(サポート)に極接近。")
                         
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("最新終値", f"{int(r['lc']):,}円")
-                        col2.metric("🎯 買値目標", f"{int(r['bt']):,}円")
-                        col3.metric("到達度", f"{r['reach_pct']:.1f}%")
-                        col4.metric("直近高値", f"{int(r['h14']):,}円")
+                        # --- 🎯 復元：目標値の完全表示 ---
+                        lc_val = int(r.get('lc', 0)); bt_val = int(r.get('bt', 0)); high_val = int(r.get('h14', lc_val)); low_val = int(r.get('l14', 0))
+                        wave_len = high_val - low_val if low_val > 0 else 0
+                        sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
+                        tp20 = int(bt_val * 1.2); tp15 = int(bt_val * 1.15); tp10 = int(bt_val * 1.1); tp5 = int(bt_val * 1.05)
+                        daily_pct = r.get('daily_pct', 0); daily_sign = "+" if daily_pct >= 0 else ""
+
+                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7])
+                        sc0.metric("直近高値", f"{high_val:,}円"); sc0_1.metric("直近安値", f"{low_val:,}円"); sc0_2.metric("上昇幅", f"{wave_len:,}円")
+                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                        
+                        html_buy = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div></div>"""
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                        
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div><div style="font-size: 16px;">
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
+                        sc3.markdown(html_sell, unsafe_allow_html=True)
+                        sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                        # ----------------------------------------
                         
                         api_code = c if len(c) == 5 else c + "0"
                         raw_s = get_single_data(api_code, 1)
@@ -525,7 +512,6 @@ with tab1:
 with tab2:
     render_macro_board()
     st.markdown('### ⚡ GC（ゴールデンクロス）初動強襲レーダー')
-    st.warning("⚠️ 鉄の掟（50%押し）のフィルターを解除し、純粋なトレンド初動（MACD GC）を検知する遊撃部隊用レーダーです。")
     if st.button("⚡ GC遊撃部隊を発進させる"):
         with st.spinner("全軍からMACDゴールデンクロス直後の銘柄を抽出中..."):
             raw = get_hist_data_cached()
@@ -551,28 +537,39 @@ with tab2:
                 if not results_gc: st.info("GC初動銘柄はありませんでした。")
                 else:
                     st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄捕捉。")
+                    res_df_gc = pd.DataFrame(results_gc).sort_values('Vol', ascending=False)
                     st.markdown("#### 📋 コピペ用コード (GC部隊)")
-                    if 'Code' in res_df_gc.columns:
-                        copy_codes_gc = ",".join([str(c)[:4] for c in res_df_gc['Code']])
-                        st.code(copy_codes_gc, language="text")
-                    for r in sorted(results_gc, key=lambda x: x['Vol'], reverse=True):
+                    if 'Code' in res_df_gc.columns: st.code(",".join([str(c)[:4] for c in res_df_gc['Code']]), language="text")
+
+                    for _, r in res_df_gc.iterrows():
                         st.divider()
-                        st.markdown(f"### ({r['Code'][:4]}) {r['Name']} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
-                        for alert in check_event_mines(r['Code']): st.warning(alert)
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("最新終値", f"{int(r['lc']):,}円")
-                        col2.metric("🎯 追撃トリガー (高値+1%)", f"{int(r['trigger']):,}円")
-                        col3.metric("防衛線 (25日線)", f"{int(r['MA25']):,}円")
-                        col4.metric("平均出来高", f"{int(r['Vol']):,} 株")
+                        c = str(r['Code']); n = str(r['Name'])
+                        st.markdown(f"### ({c[:4]}) {n} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
+                        for alert in check_event_mines(c): st.warning(alert)
+                        
+                        # --- 🎯 復元：強襲専用の目標値表示 ---
+                        lc_val = int(r['lc']); trigger_val = int(r['trigger']); ma25_val = int(r['MA25'])
+                        tp10 = int(trigger_val * 1.10); tp8 = int(trigger_val * 1.08); sl4 = int(trigger_val * 0.96)
+                        
+                        sc1, sc2, sc3, sc4 = st.columns([1, 1.2, 1.5, 0.8])
+                        sc1.metric("最新終値", f"{lc_val:,}円")
+                        html_trigger = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 追撃トリガー (逆指値)</div><div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{trigger_val:,}円</div></div>"""
+                        sc2.markdown(html_trigger, unsafe_allow_html=True)
+                        html_sell_gc = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 短期利確 ＆ 🛡️ 撤退ライン</div><div style="font-size: 16px;">
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">8%</span> <span style="color: #ef5350;">{tp8:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-4%</span> <span style="color: #26a69a;">{sl4:,}円</span></div></div>"""
+                        sc3.markdown(html_sell_gc, unsafe_allow_html=True)
+                        sc4.metric("防衛線(25日)", f"{ma25_val:,}円")
+                        # ----------------------------------------
+                        
                         st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
-                        draw_chart(r['df_chart'], r['lc'])
+                        draw_chart(r['df_chart'], r['trigger'], tp10=tp10)
 
 # ------------------------------------------
 # Tab 3: 高高度モニター（イナゴタワー追跡）
 # ------------------------------------------
 with tab3:
     st.markdown('### 🛸 高高度観測モニター（ブレイクアウト・順張り探知）')
-    st.warning("⚠️ 【発砲厳禁】すでに空高く飛んでいるモメンタム銘柄を追跡し、墜落を安全圏から観察するためのレーダーです。")
     if st.button("🚀 観測機を発進させる"):
         with st.spinner("成層圏の熱源を探索中..."):
             raw = get_hist_data_cached()
@@ -598,10 +595,12 @@ with tab3:
                         col1.metric("最新終値", f"{int(r['lc']):,}円")
                         col2.metric("5日線 (割ると墜落)", f"{int(r['MA5']):,}円")
                         col3.metric("直近高値", f"{int(r['h14']):,}円")
-                        draw_chart(r['df_chart'], r['lc'])
+                        
+                        # --- 🎯 復元：高高度専用ズームチャート ---
+                        draw_chart_t6(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15))
 
 # ------------------------------------------
-# Tab 4: 精密スコープ（個別局地戦）
+# Tab 4: 精密スコープ照準（個別局地戦）
 # ------------------------------------------
 with tab4:
     render_macro_board()
@@ -617,33 +616,45 @@ with tab4:
                     if raw_s:
                         hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
                         if not hist.empty:
-                            lc = hist.iloc[-1]['AdjC']; h14 = hist.tail(14)['AdjH'].max(); l14 = hist.tail(14)['AdjL'].min()
-                            bt = h14 - ((h14 - l14) * (st.session_state.push_r / 100.0))
+                            lc_val = int(hist.iloc[-1]['AdjC']); h14_val = int(hist.tail(14)['AdjH'].max()); l14_val = int(hist.tail(14)['AdjL'].min())
+                            bt_val = int(h14_val - ((h14_val - l14_val) * (st.session_state.push_r / 100.0)))
                             st.divider()
                             c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c+"0") in master_df['Code'].values else f"銘柄 {c}"
                             st.markdown(f"### ({c}) {c_name}", unsafe_allow_html=True)
                             for alert in check_event_mines(c): st.warning(alert)
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("最新終値", f"{int(lc):,}円")
-                            col2.metric("🎯 買値目標", f"{int(bt):,}円")
-                            col3.metric("直近高値", f"{int(h14):,}円")
-                            st.markdown(render_technical_radar(hist, bt, st.session_state.bt_tp), unsafe_allow_html=True)
-                            draw_chart(hist, bt, tp15=bt*1.15)
+                            
+                            # --- 🎯 復元：目標値の完全表示（Tab4） ---
+                            wave_len = h14_val - l14_val
+                            sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
+                            tp20 = int(bt_val * 1.2); tp15 = int(bt_val * 1.15); tp10 = int(bt_val * 1.1); tp5 = int(bt_val * 1.05)
+
+                            sc0, sc0_1, sc0_2, sc1, sc2, sc3 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8])
+                            sc0.metric("直近高値", f"{h14_val:,}円"); sc0_1.metric("直近安値", f"{l14_val:,}円"); sc0_2.metric("上昇幅", f"{wave_len:,}円")
+                            sc1.metric("最新終値", f"{lc_val:,}円")
+                            
+                            html_buy = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div></div>"""
+                            sc2.markdown(html_buy, unsafe_allow_html=True)
+                            
+                            html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div><div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
+                            sc3.markdown(html_sell, unsafe_allow_html=True)
+                            
+                            st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                            draw_chart(hist, bt_val, tp15=tp15)
 
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
 # ------------------------------------------
 with tab5:
     st.markdown('### ⚙️ 戦術シミュレータ（2年間のバックテスト）')
-    
     bt_mode = st.radio("🔍 検証する戦術を選択してください", ["🌐 【待伏】鉄の掟（50%押し）", "⚡ 【強襲】GCブレイクアウト（高値+1%トリガー）"], horizontal=True)
-    
     col_1, col_2 = st.columns([2, 1])
-    with col_1: 
-        bt_c_in = st.text_area("検証コード（複数可）", value="6614\n4427", height=100)
+    with col_1: bt_c_in = st.text_area("検証コード（複数可）", value="6614\n4427", height=100)
     with col_2:
-        if "待伏" in bt_mode:
-            st.info("※左サイドバーの「🎯 買いルール」「🛡️ 売りルール」の設定値を用いてシミュレーションを実行します。")
+        if "待伏" in bt_mode: st.info("※左サイドバーの「🎯 買いルール」「🛡️ 売りルール」の設定値を用いてシミュレーションを実行します。")
         else:
             st.info("※強襲モード専用設定\n・利確: +8%\n・損切: -4%\n・期限: 5営業日\n・トリガー: GC点灯日の高値+1%")
             bt_tp_gc = 8.0; bt_sl_gc = 4.0; bt_limit_gc = 5
@@ -658,13 +669,11 @@ with tab5:
                 if raw:
                     df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                     pos = None
-                    
                     if "待伏" in bt_mode:
                         for i in range(30, len(df)):
                             td = df.iloc[i]
                             if pos is None:
-                                win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]
-                                rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+                                win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]; rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
                                 if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
                                 if (1.3 <= rh/rl <= 2.0) and (len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']]) <= st.session_state.limit_d):
                                     if check_double_top(win_30) or check_head_shoulders(win_30): continue
@@ -681,18 +690,16 @@ with tab5:
                                     all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有': held, '買値': bp, '売値': round(sp,1), '損益額': int((sp - bp) * st.session_state.bt_lot), '理由': rsn})
                                     pos = None
                     else:
-                        # 🔥 強襲GCバックテスト ロジック
                         df_tech = calc_technicals(df)
                         for i in range(30, len(df_tech)):
                             td = df_tech.iloc[i]
                             if pos is None:
                                 latest = df_tech.iloc[i-1]; prev = df_tech.iloc[i-2]
                                 if (latest['MACD'] > latest['MACD_Signal']) and (prev['MACD'] <= prev['MACD_Signal']) and (latest['AdjC'] >= latest['MA25']) and (latest.get('RSI', 50) < 70):
-                                    pos = {'wait_i': i, 'trigger': latest['AdjH'] * 1.01} # 1%バッファ
+                                    pos = {'wait_i': i, 'trigger': latest['AdjH'] * 1.01}
                             elif 'wait_i' in pos:
-                                if i - pos['wait_i'] > 3: pos = None # 3日でトリガー引かれなければキャンセル
-                                elif td['AdjH'] >= pos['trigger']:
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': max(td['AdjO'], pos['trigger'])}
+                                if i - pos['wait_i'] > 3: pos = None
+                                elif td['AdjH'] >= pos['trigger']: pos = {'b_i': i, 'b_d': td['Date'], 'b_p': max(td['AdjO'], pos['trigger'])}
                             elif 'b_i' in pos:
                                 bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
                                 sl = bp * (1 - (bt_sl_gc / 100)); tp = bp * (1 + (bt_tp_gc / 100))
@@ -705,7 +712,6 @@ with tab5:
 
                 b_bar.progress((idx + 1) / len(t_codes))
             b_bar.empty()
-            
             if not all_t: st.warning("条件に合致するトレードはありませんでした。")
             else:
                 tdf = pd.DataFrame(all_t); tot = len(tdf); wins = len(tdf[tdf['損益額'] > 0])
@@ -744,4 +750,4 @@ with tab6:
 # ------------------------------------------
 with tab7:
     st.markdown('### 🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）')
-    st.info("※本番環境でCSVアップロードとシミュレーションを処理するロジック（Tab5相当）がここに稼働します。")
+    st.info("※現在開発中のため、Tab 5（バックテスト）をご利用ください。") # AAR用CSV処理は文字数限界のため仮置き
