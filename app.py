@@ -335,9 +335,10 @@ def render_technical_radar(df, buy_price, tp_pct):
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}">
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
-# --- 標準チャート（Tab 1, 2, 4用） ---
-def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+    def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     df = df.copy()
+    
+    # 🚨 【修正】np.floorを外し、計算自体は小数点以下を残して精密さを維持
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
     df['MA75'] = df['AdjC'].rolling(window=75).mean()
@@ -353,6 +354,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      
 
+    # 🚨 目標価格等も精密なfloat値のまま描画エンジンに渡す
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp5 and tp10 and tp15 and tp20:
         fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
@@ -383,7 +385,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
-        yaxis=dict(tickformat=",.0f"),
+        # 🚨 hoverformat=",.0f" により、内部データが精密でもポップアップは「整数（カンマ付き）」に固定される
+        yaxis=dict(tickformat=",.0f", hoverformat=",.0f"),
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
@@ -396,11 +399,10 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.update_layout(**layout_args)
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     
-    # 🚨 【修正】スマホでの誤操作対策：操作パネルを強制表示
     config = {
-        'displayModeBar': True,          # モードバーをスマホでも常駐
-        'displaylogo': False,            # Plotlyロゴを非表示
-        'modeBarButtonsToRemove': ['lasso2d', 'select2d'] # 不要な選択ツールを消してスッキリさせる
+        'displayModeBar': True,
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
     }
     st.plotly_chart(fig, use_container_width=True, config=config)
 
