@@ -1017,7 +1017,7 @@ with tab4:
                         if l14_val <= 0 or pd.isna(h14_val): continue
                         
                         hist_30 = hist.tail(30)
-                        hist_14 = hist.tail(14)
+                        hist_14 = hist.tail(10)
                         hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
 
                         l30_val = hist_30['AdjL'].min()
