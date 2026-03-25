@@ -852,7 +852,7 @@ with tab1:
                         draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 精密スコープ照準（局地戦スキャン）</h3>', unsafe_allow_html=True)
     st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
     col_s1, col_s2 = st.columns([1, 2])
 
@@ -884,7 +884,6 @@ with tab2:
                         
                         if not df_s.empty:
                             # 🚨 【10営業日同期】
-                            max_date_s = df_s['Date'].max()
                             df_14 = df_s.tail(10)
                             df_30 = df_s.tail(30)
                             
@@ -934,11 +933,15 @@ with tab2:
                                 
                                 sakata_signal = check_sakata_patterns(df_30)
                                 
+                                # 🚨 企業情報（マスターデータ）の取得を復旧
                                 c_name = f"銘柄 {c}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                                 if not master_df.empty:
                                     m_row = master_df[master_df['Code'] == c + "0"]
                                     if not m_row.empty:
-                                        c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0]['Sector']; c_scale = m_row.iloc[0].get('Scale', '')
+                                        c_name = m_row.iloc[0]['CompanyName']
+                                        c_market = m_row.iloc[0]['Market']
+                                        c_sector = m_row.iloc[0]['Sector']
+                                        c_scale = m_row.iloc[0].get('Scale', '')
                                 
                                 flag_knife = False
                                 if f10_ex_knife:
@@ -971,13 +974,17 @@ with tab2:
                                 ]
                                 rule_pct = (sum(score_list) / 9) * 100
                                 
-                                # 🚨 【出来高完全復旧】
+                                # 出来高完全復旧
                                 avg_vol = 0
                                 vol_col = next((col for col in df_s.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                                 if vol_col:
                                     avg_vol = int(pd.to_numeric(df_s[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean())
 
-                                df_chart = calc_technicals(df_s)
+                                # グラフ用の描画データをTab1と同じ期間で切り出し
+                                cutoff_chart = df_s['Date'].max() - timedelta(days=60)
+                                hist_chart = df_s[df_s['Date'] >= cutoff_chart].tail(30)
+                                df_chart = calc_technicals(hist_chart)
+
                                 rsi_val = 50; macd_t = "不明"
                                 if len(df_chart) >= 2:
                                     latest_c = df_chart.iloc[-1]
@@ -1039,6 +1046,7 @@ with tab2:
                         res_df = res_df.sort_values(['triage_score', 'rule_pct', 'reach_pct'], ascending=[False, False, False])
 
                     st.success(f"🎯 {len(res_df)} 銘柄の局地戦スキャン完了（モード: {tactics_mode.split()[0]}）")
+                    
                     for _, r in res_df.iterrows():
                         st.divider()
                         
@@ -1100,7 +1108,7 @@ with tab2:
                         daily_pct = r.get('daily_pct', 0)
                         daily_sign = "+" if daily_pct >= 0 else ""
 
-                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
+                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                         
                         sc0.metric("直近高値", f"{high_val:,}円")
                         sc0_1.metric("直近安値", f"{low_val:,}円")
@@ -1126,14 +1134,29 @@ with tab2:
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        reach_val = r.get('reach_pct', float('nan'))
-                        sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
-                        
+                        reach_val = r.get('reach_pct', 0)
                         vol_val = r.get('avg_vol', 0)
-                        sc5.metric("出来高(5日)", f"{vol_val:,}株")
+                        passed_r = r.get('passed', 0)
+                        rule_pct_r = r.get('rule_pct', 0)
                         
-                        passed_info = f" ｜ 🛡️ 掟クリア: {r['passed']}/9 条件" if 'passed' in r else ""
-                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日{passed_info}")
+                        p_col = "#26a69a" if passed_r >= 8 else "#ef5350"
+                        
+                        html_stats = f"""
+                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                            <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_val:.1f}%</strong>
+                            </div>
+                            <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {p_col}; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {p_col};">{passed_r}/9 条件クリア ({rule_pct_r:.0f}%)</strong>
+                            </div>
+                            <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
+                            </div>
+                        </div>
+                        """
+                        sc4.markdown(html_stats, unsafe_allow_html=True)
+                        
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
 
                         bt_stats = calc_historical_win_rate(
                             c[:4], st.session_state.push_r, st.session_state.limit_d,
