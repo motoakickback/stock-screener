@@ -336,11 +336,11 @@ def render_technical_radar(df, buy_price, tp_pct):
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 # --- 標準チャート（Tab 1, 2, 4用） ---
-def draw_chart(df, targ_p, **kwargs):
+def draw_chart(df, targ_p, *args, **kwargs):
     df = df.copy()
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
-    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 🛡️ 75日線を復元
+    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 🛡️ 75日線
     
     tp10 = targ_p * 1.10 # 🎯 10%ラインのみを内部強制計算
     
@@ -348,7 +348,7 @@ def draw_chart(df, targ_p, **kwargs):
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5))) # 75日線（オレンジ）を追加
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))
     
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値/トリガー', line=dict(color='#FFD700', width=2, dash='dash')))
     fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot'))) # ノイズを消去し10%のみ描画
@@ -371,11 +371,11 @@ def draw_chart(df, targ_p, **kwargs):
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
 # --- 高高度モニター（Tab 3用）ズームチャート ---
-def draw_chart_t6(df, targ_p, **kwargs):
+def draw_chart_t6(df, targ_p, *args, **kwargs):
     df = df.copy()
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
-    df['MA25'] = df['AdjC'].rolling(window=25).mean() # 高高度でも25日線を表示
-    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 高高度でも75日線を表示
+    df['MA25'] = df['AdjC'].rolling(window=25).mean()
+    df['MA75'] = df['AdjC'].rolling(window=75).mean()
     
     tp10 = targ_p * 1.10 # 🎯 10%ラインのみを内部強制計算
     
