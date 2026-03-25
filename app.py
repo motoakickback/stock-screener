@@ -1137,17 +1137,12 @@ with tab4:
                         daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                         daily_sign = "+" if daily_pct >= 0 else ""
 
-                        # 🚨 【出来高 Vo/AdjVo 狙い撃ち修正】
+                        # 🚨 【修正】列名 'AdjVo' または 'Vo' を狙い撃ちして出来高を復元
                         avg_vol = 0
-                        # 優先順位: 調整後出来高(AdjVo) > 生出来高(Vo) > その他 volを含む列
                         vol_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                        if not vol_col:
-                            vol_col = next((col for col in hist.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
-                        
                         if vol_col:
-                            # 文字列やコンマを排除して数値化
-                            v_series = pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                            avg_vol = int(v_series.tail(5).mean())
+                            vol_data = pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                            avg_vol = int(vol_data.tail(5).mean())
 
                         reach_pct = r['reach_pct']
                         passed_rules = r['passed_rules']
