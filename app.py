@@ -617,8 +617,8 @@ with tab1:
                     sum_df['rule_pct'] = rule_scores
                     sum_df['passed_rules'] = passed_counts
                     
-                    # 掟達成率が「66%以上（9項目のうち6項目以上クリア）」の銘柄だけを抽出
-                    sum_df = sum_df[sum_df['rule_pct'] >= 65.0]
+                    # 🚨 ボスの直接命令：足切りラインを「7/9（77%以上クリア）」に再設定
+                    sum_df = sum_df[sum_df['passed_rules'] >= 7]
                     
                     if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
                     elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
