@@ -282,6 +282,19 @@ def calc_technicals(df):
     df['ATR'] = tr.rolling(window=14).mean()
     return df
 
+def get_triage_info(macd_hist, macd_hist_prev, rsi):
+    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
+    else: macd_t = "減衰"
+
+    rank = "C（条件外・監視）👁️"; bg = "#616161"; score = 1
+    if macd_t == "下落継続" or rsi >= 70: rank = "圏外（手出し無用）🚫"; bg = "#d32f2f"; score = 0
+    elif macd_t == "GC直後" and rsi <= 50: rank = "S（即時狙撃）🔥"; bg = "#2e7d32"; score = 4
+    elif macd_t == "減衰" and rsi <= 30: rank = "A（罠の設置）🪤"; bg = "#0288d1"; score = 3
+    elif macd_t == "上昇拡大" and 50 <= rsi <= 65: rank = "B（順張り警戒）📈"; bg = "#ed6c02"; score = 2
+    return rank, bg, score, macd_t
+
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
     latest = df.iloc[-1]; prev = df.iloc[-2]
@@ -289,13 +302,13 @@ def render_technical_radar(df, buy_price, tp_pct):
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
     rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
     if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ"
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_text = "🔥 GC直後"; macd_color = "#ef5350"
-    elif macd_hist > macd_hist_prev: macd_text = "📈 上昇拡大中"; macd_color = "#ef5350"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_text = "📉 下落継続中"; macd_color = "#26a69a"
-    else: macd_text = "⚖️ モメンタム減衰"; macd_color = "#888888"
+    
+    _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
+    macd_color = "#ef5350" if macd_t in ["GC直後", "上昇拡大"] else "#26a69a" if macd_t == "下落継続" else "#888888"
+    
     days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
-        <div style="font-size: 13px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color};">{macd_text}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
+        <div style="font-size: 13px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color};">{macd_t}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 # --- 標準チャート（Tab 1, 2, 4用） ---
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
@@ -305,6 +318,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値/トリガー', line=dict(color='#FFD700', width=2, dash='dash')))
+    if tp10: fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
     if tp15: fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
     start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     fig.update_layout(height=400, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, df['Date'].max() + timedelta(days=1)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
