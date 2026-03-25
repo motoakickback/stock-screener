@@ -335,7 +335,7 @@ def render_technical_radar(df, buy_price, tp_pct):
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}">
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
-    def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     df = df.copy()
     
     # 🚨 【修正】np.floorを外し、計算自体は小数点以下を残して精密さを維持
