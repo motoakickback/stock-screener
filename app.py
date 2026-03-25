@@ -345,8 +345,22 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     if tp10: fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
     if tp15: fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
     start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    fig.update_layout(height=400, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, df['Date'].max() + timedelta(days=1)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
-    st.plotly_chart(fig, use_container_width=True)
+    
+    fig.update_layout(
+        height=450, # スライダー表示用に高さを少し拡張
+        margin=dict(l=0, r=10, t=40, b=0), # スマホ右側の「指一本分の空白」を極限まで削る
+        xaxis=dict(
+            rangeslider=dict(visible=True, thickness=0.1), # 縮尺・位置コントロールバーの完全復元
+            range=[start_date, df['Date'].max() + timedelta(days=2)],
+            type="date"
+        ),
+        yaxis=dict(fixedrange=False, side="right", automargin=True), # 右側ラベルの幅を自動調整（無駄な余白を消す）
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0), # 凡例を上部に避難
+        dragmode="pan" # スマホでスワイプした時に「範囲選択」ではなく「画面移動」になるように設定
+    )
+    # configで邪魔なメニューを消し、スマホ特有のピンチズーム操作を開放
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
 # --- 高高度モニター（Tab 3用）ズームチャート ---
 def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
@@ -360,17 +374,29 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
     fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
-    start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min() # 14日間に強制ズーム
+    start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min()
     
     visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
     if not visible_df.empty:
         y_max = max(visible_df['AdjH'].max(), tp15); y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
-        margin = (y_max - y_min) * 0.05; y_range = [y_min - margin, y_max + margin]
+        y_margin = (y_max - y_min) * 0.05; y_range = [y_min - y_margin, y_max + y_margin]
     else: y_range = None
 
-    fig.update_layout(height=380, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
-    if y_range: fig.update_layout(yaxis=dict(range=y_range, fixedrange=False))
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        height=450,
+        margin=dict(l=0, r=10, t=40, b=0),
+        xaxis=dict(
+            rangeslider=dict(visible=True, thickness=0.1),
+            range=[start_date, last_date + timedelta(days=2)],
+            type="date"
+        ),
+        yaxis=dict(fixedrange=False, side="right", automargin=True),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        dragmode="pan"
+    )
+    if y_range: fig.update_layout(yaxis=dict(range=y_range))
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
     
 # --- 🚨 復元パッチ：欠落していた2つのスナイパー機能 ---
 @st.cache_data(ttl=86400, show_spinner=False)
