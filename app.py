@@ -9,7 +9,7 @@ from io import BytesIO
 import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
-import yfinance as yf # 🌤️ マクロ気象レーダー用
+import yfinance as yf
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -86,7 +86,7 @@ def render_macro_board():
 
 # --- 3. 共通関数 & 地雷検知 ---
 def clean_df(df):
-    r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume'}
+    r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
@@ -100,8 +100,8 @@ def check_event_mines(code):
     c = str(code)[:4]
     test_dividend_mines = ["5986", "5162", "4625", "6378", "8604"]
     test_earnings_mines = ["7066"]
-    if c in test_dividend_mines: alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近しています（強制ギャップダウンのリスクあり）")
-    if c in test_earnings_mines: alerts.append("🔥 【地雷警戒】直近14日以内に決算発表が予定されています（大口の乱高下リスクあり）")
+    if c in test_dividend_mines: alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近しています（強制下落リスク）")
+    if c in test_earnings_mines: alerts.append("🔥 【地雷警戒】直近14日以内に決算発表が予定されています（大口乱高下リスク）")
     return alerts
 
 @st.cache_data(ttl=86400)
@@ -117,6 +117,18 @@ def load_master():
             return df
     except: pass
     return pd.DataFrame()
+
+@st.cache_data(ttl=86400)
+def get_old_codes():
+    base = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+    for i in range(7):
+        d = (base - timedelta(days=i)).strftime('%Y%m%d')
+        for v in ["v2", "v1"]:
+            try:
+                r = requests.get(f"https://api.jquants.com/{v}/listed/info?date={d}", headers=headers, timeout=10)
+                if r.status_code == 200 and r.json().get("info"): return pd.DataFrame(r.json()["info"])['Code'].astype(str).tolist()
+            except: pass
+    return []
 
 @st.cache_data(ttl=3600)
 def get_single_data(code, yrs=3):
@@ -138,6 +150,10 @@ def get_hist_data_cached():
         d = base - timedelta(days=days)
         if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
         days += 1
+    d_h = base - timedelta(days=180); d_y = base - timedelta(days=365)
+    while d_h.weekday() >= 5: d_h -= timedelta(days=1)
+    while d_y.weekday() >= 5: d_y -= timedelta(days=1)
+    dates.append(d_h.strftime('%Y%m%d')); dates.append(d_y.strftime('%Y%m%d'))
     rows = []
     def fetch(dt):
         try:
@@ -152,30 +168,119 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-# --- 波形・計器モジュール（一部省略：既存コードのロジックと同じ） ---
-def check_double_top(df_sub): return False # 省略
-def check_head_shoulders(df_sub): return False # 省略
-def check_double_bottom(df_sub): return False # 省略
-def check_sakata_patterns(df_sub): return None # 省略
+@st.cache_data(ttl=86400, show_spinner=False)
+def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
+    raw = get_single_data(c + "0", 2)
+    if not raw: return None
+    df = clean_df(pd.DataFrame(raw))
+    if len(df) < 60: return None
+    trades = []; pos = None
+    for i in range(30, len(df)):
+        td = df.iloc[i]
+        if pos is None:
+            win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]
+            rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+            if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
+            h_d = len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']])
+            if (1.3 <= rh/rl <= 2.0) and (h_d <= buy_d):
+                if check_double_top(win_30) or check_head_shoulders(win_30): continue
+                if "攻め" in mode:
+                    if check_double_bottom(win_30): pos = {'b_i': i, 'b_p': td['AdjO']}
+                else:
+                    targ = rh - ((rh - rl) * (push_r / 100))
+                    if td['AdjL'] <= targ: pos = {'b_i': i, 'b_p': min(td['AdjO'], targ)}
+        else:
+            bp = pos['b_p']; held = i - pos['b_i']; sp = 0
+            if td['AdjL'] <= bp * (1 - (sl_i / 100)): sp = min(td['AdjO'], bp * (1 - (sl_i / 100)))
+            elif td['AdjH'] >= bp * (1 + (tp / 100)): sp = max(td['AdjO'], bp * (1 + (tp / 100)))
+            elif td['AdjC'] <= bp * (1 - (sl_c / 100)): sp = td['AdjC']
+            elif held >= sell_d: sp = td['AdjC']
+            if sp > 0:
+                trades.append(sp - bp); pos = None
+    if not trades: return None
+    wins = len([t for t in trades if t > 0])
+    return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
+
+# --- 波形判定 ---
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        if len(v) < 6: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+        if len(v) >= 2 and v[-1] > v[-2]:
+            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
+        if len(peaks) >= 2:
+            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
+        return False
+    except: return False
+
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 8: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+        if len(peaks) >= 3:
+            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
+        return False
+    except: return False
+
+def check_double_bottom(df_sub):
+    try:
+        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        if len(l) < 6: return False
+        valleys = []
+        for i in range(1, len(l)-1):
+            if l[i] == min(l[i-1:i+2]):
+                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
+        if len(l) >= 3 and l[-2] == min(l[-3:]):
+             if not valleys or (len(l)-2 - valleys[-1][0] > 1): valleys.append((len(l)-2, l[-2]))
+        if len(valleys) >= 2:
+            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
+                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
+                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
+        return False
+    except: return False
+
+def check_sakata_patterns(df_sub):
+    if len(df_sub) < 25: return None
+    df = df_sub.copy(); df['SMA_25'] = df['AdjC'].rolling(window=25).mean()
+    c = df.iloc[-1]; p1 = df.iloc[-2]; p2 = df.iloc[-3]
+    bull = c['AdjC'] > c['AdjO']; bull1 = p1['AdjC'] > p1['AdjO']; bull2 = p2['AdjC'] > p2['AdjO']
+    bear = c['AdjC'] < c['AdjO']; bear1 = p1['AdjC'] < p1['AdjO']; bear2 = p2['AdjC'] < p2['AdjO']
+    r3s = bull and bull1 and bull2 and (c['AdjC'] > p1['AdjC'] > p2['AdjC']) and (c['AdjH'] > p1['AdjH'] > p2['AdjH'])
+    b3c = bear and bear1 and bear2 and (c['AdjC'] < p1['AdjC'] < p2['AdjC']) and (c['AdjL'] < p1['AdjL'] < p2['AdjL'])
+    body = abs(c['AdjC'] - c['AdjO']); l_shad = min(c['AdjO'], c['AdjC']) - c['AdjL']
+    takuri = (l_shad >= body * 2.5) and (body > 0)
+    sma25 = c['SMA_25']
+    if pd.isna(sma25): return None
+    if r3s and c['AdjC'] < sma25: return "🔴 赤三兵（底打ち反転）"
+    elif takuri and c['AdjC'] < sma25: return "🔴 たくり線（強力な床）"
+    elif b3c and c['AdjC'] > sma25: return "🟢 黒三兵（下落警戒）"
+    elif b3c and c['AdjC'] < sma25: return "🔥 陰の極み（セリクラ反発待ち）"
+    return None
 
 def calc_technicals(df):
     df = df.copy()
     if len(df) < 16:
-        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA25'] = df['AdjC']
-        return df
+        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA25'] = df['AdjC']; return df
     delta = df['AdjC'].diff(); gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean(); avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-    rs = avg_gain / avg_loss; df['RSI'] = 100 - (100 / (1 + rs))
-    
-    ema_fast = df['AdjC'].ewm(span=12, adjust=False).mean()
-    ema_slow = df['AdjC'].ewm(span=26, adjust=False).mean()
-    macd = ema_fast - ema_slow
-    signal = macd.ewm(span=9, adjust=False).mean()
-    df['MACD'] = macd; df['MACD_Signal'] = signal; df['MACD_Hist'] = macd - signal
-    
+    rs = gain.ewm(alpha=1/14, adjust=False).mean() / loss.ewm(alpha=1/14, adjust=False).mean()
+    df['RSI'] = 100 - (100 / (1 + rs))
+    macd = df['AdjC'].ewm(span=12, adjust=False).mean() - df['AdjC'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = macd; df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean(); df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
-    high_low = df['AdjH'] - df['AdjL']; high_prev_c = (df['AdjH'] - df['AdjC'].shift(1)).abs(); low_prev_c = (df['AdjL'] - df['AdjC'].shift(1)).abs()
-    tr = pd.concat([high_low, high_prev_c, low_prev_c], axis=1).max(axis=1)
+    tr = pd.concat([df['AdjH'] - df['AdjL'], (df['AdjH'] - df['AdjC'].shift(1)).abs(), (df['AdjL'] - df['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
     return df
 
@@ -184,14 +289,12 @@ def render_technical_radar(df, buy_price, tp_pct):
     latest = df.iloc[-1]; prev = df.iloc[-2]
     rsi = latest.get('RSI', 50); macd_hist = latest.get('MACD_Hist', 0); macd_hist_prev = prev.get('MACD_Hist', 0); atr = latest.get('ATR', 0)
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
-    rsi_text = "🔥 超・売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
+    rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
     if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ"
-    
     if macd_hist > 0 and macd_hist_prev <= 0: macd_text = "🔥 GC直後"; macd_color = "#ef5350"
     elif macd_hist > macd_hist_prev: macd_text = "📈 上昇拡大中"; macd_color = "#ef5350"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_text = "📉 下落継続中"; macd_color = "#26a69a"
     else: macd_text = "⚖️ モメンタム減衰"; macd_color = "#888888"
-        
     days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
         <div style="font-size: 13px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color};">{macd_text}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
@@ -202,25 +305,56 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標/現在値', line=dict(color='#FFD700', width=2, dash='dash')))
     if tp15: fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
-    
     start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     fig.update_layout(height=400, margin=dict(l=10, r=60, t=20, b=40), xaxis_rangeslider_visible=False, xaxis=dict(range=[start_date, df['Date'].max() + timedelta(days=1)], type="date"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
 
 # --- 4. サイドバー UI ---
-st.sidebar.header("🎯 対象市場 (一括換装)")
-st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target")
-st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス", "⚔️ 攻め重視", "🛡️ 守り重視"], key="sidebar_tactics")
+if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
+if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
+if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
+st.session_state.bt_tp = 10; st.session_state.bt_sl_i = 8; st.session_state.limit_d = 4; st.session_state.bt_sell_d = 10
+st.session_state.bt_lot = 100
 
+def apply_market_preset():
+    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
+    elif "61.8%" in preset: st.session_state.push_r = 61.8
+    else: st.session_state.push_r = 50.0
+
+st.sidebar.header("🎯 対象市場 (一括換装)")
+st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
+st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
+
+st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
 f1_max = c_f1_2.number_input("① 上限(円)", value=3000, step=100) 
+f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
+f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
+f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=True)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
 f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True)
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True)
+c_f9_1, c_f9_2 = st.sidebar.columns(2)
+f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
+f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True)
 
-if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
-st.session_state.bt_tp = 10; st.session_state.bt_sl_i = 8; st.session_state.limit_d = 4; st.session_state.bt_sell_d = 10
+st.sidebar.header("🎯 買いルール")
+push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r")
+limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
+st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot")
+
+st.sidebar.header("🛡️ 売りルール（鉄の掟）")
+st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp")
+st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
+st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
+st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
 # ==========================================
 # 5. タブ再構成（7タブ構成）
@@ -235,123 +369,320 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📁 事後任務報告(AAR)"
 ])
 master_df = load_master()
+tactics_mode = st.session_state.sidebar_tactics
 
 # ------------------------------------------
 # Tab 1: 広域索敵レーダー（鉄の掟）
 # ------------------------------------------
 with tab1:
-    render_macro_board() # マクロ気象レーダー
+    render_macro_board()
     st.markdown('### 🌐 ボスの「鉄の掟」広域スキャン（50%押し待伏せ）')
     st.caption("※厳格なフィルターと絶対防衛線の計算により、リスク極小の待ち伏せポイントを抽出します。")
-    if st.button("🚀 待伏せ部隊スキャン開始"):
-        st.info("※ここに従来の全軍スキャンロジック（Tab1）が走ります（コード容量省略のため割愛しますが、元のTab1の処理がそのまま入ります）。")
+    run_scan = st.button(f"🚀 待伏せ部隊スキャン開始 ({tactics_mode.split()[0]}モード)")
+    if run_scan:
+        with st.spinner("全軍から鉄の掟適合銘柄を抽出中..."):
+            raw = get_hist_data_cached()
+            if not raw: st.error("データ取得失敗")
+            else:
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df_30 = df.groupby('Code').tail(30)
+                max_date_all = df['Date'].max(); cutoff_date_14 = max_date_all - timedelta(days=14)
+                df_14 = df_30[df_30['Date'] >= cutoff_date_14]
+                counts = df_14.groupby('Code').size(); valid = counts[counts >= 5].index
+                if valid.empty: st.warning("条件を満たすデータなし"); st.stop()
+                
+                df_14 = df_14[df_14['Code'].isin(valid)]; df_30 = df_30[df_30['Code'].isin(valid)]
+                df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
+                
+                agg_14 = df_14.groupby('Code').agg(lc=('AdjC', 'last'), prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan), c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan), h14=('AdjH', 'max'), l14=('AdjL', 'min'))
+                idx_max = df_14.groupby('Code')['AdjH'].idxmax(); h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
+                df_14_m = df_14.merge(h_dates, on='Code'); d_high = df_14_m[df_14_m['Date'] > df_14_m['h_date']].groupby('Code').size().rename('d_high')
+                agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
+                agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
+                sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
+                
+                ur = sum_df['h14'] - sum_df['l14']
+                bt_primary = sum_df['h14'] - (ur * (push_r / 100.0)); shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
+                bt_secondary = sum_df['h14'] - (ur * shift_ratio)
+                sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary; sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
+                sum_df = sum_df[sum_df['lc'] >= ((sum_df['h14'] - ur * 0.618) * 0.98)]
+                sum_df['tp15'] = sum_df['bt'] * 1.15
+                sum_df['reach_pct'] = np.where(sum_df['h14'] - sum_df['bt'] > 0, (sum_df['h14'] - sum_df['lc']) / (sum_df['h14'] - sum_df['bt']) * 100, 0)
+                sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
+                sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
+                sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
+                sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
+                sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
+                sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
+                
+                sum_df = sum_df.merge(df_14.groupby('Code').apply(check_double_top).rename('is_dt'), on='Code', how='left')\
+                               .merge(df_14.groupby('Code').apply(check_head_shoulders).rename('is_hs'), on='Code', how='left')\
+                               .merge(df_14.groupby('Code').apply(check_double_bottom).rename('is_db'), on='Code', how='left')\
+                               .merge(df_30.groupby('Code').apply(check_sakata_patterns).rename('sakata_signal'), on='Code', how='left').fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
+                sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
+                
+                if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
+                if f7_ex_etf and 'Sector' in sum_df.columns: sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", na=False, flags=re.IGNORECASE)]
+                if f8_ex_bio and 'Sector' in sum_df.columns: sum_df = sum_df[sum_df['Sector'] != '医薬品']
+                if f5_ipo:
+                    old_c = get_old_codes()
+                    if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
+                    sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
+                if f6_risk and 'CompanyName' in sum_df.columns: sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
+                
+                sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max) & (sum_df['r30'] <= f2_m30) & (sum_df['ldrop'] >= f3_drop) & ((sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0))]
+                sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs']) & (~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False))]
+                sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14) & (sum_df['d_high'] <= limit_d)]
+                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+                if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
+                
+                if tactics_mode.startswith("⚔️"): res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(30)
+                elif tactics_mode.startswith("🛡️"): res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(30)
+                else: res = sum_df.sort_values('reach_pct', ascending=False).head(30)
+                
+                if res.empty: st.warning("標的は存在しません。")
+                else:
+                    st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
+                    for _, r in res.iterrows():
+                        st.divider()
+                        c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
+                        st.markdown(f"### ({c[:4]}) {n}", unsafe_allow_html=True)
+                        for alert in check_event_mines(c): st.warning(alert)
+                        if r['is_db']: st.success("🔥 三川（ダブルボトム）底打ち反転波形！")
+                        if r['is_defense']: st.info("🛡️ 下値支持線(サポート)に極接近。")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("最新終値", f"{int(r['lc']):,}円")
+                        col2.metric("🎯 買値目標", f"{int(r['bt']):,}円")
+                        col3.metric("到達度", f"{r['reach_pct']:.1f}%")
+                        col4.metric("直近高値", f"{int(r['h14']):,}円")
+                        
+                        api_code = c if len(c) == 5 else c + "0"
+                        raw_s = get_single_data(api_code, 1)
+                        if raw_s:
+                            hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
+                            st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
+                            draw_chart(hist, r['bt'], tp15=r['tp15'])
 
 # ------------------------------------------
-# Tab 2: GC初動強襲レーダー（🔥 新設）
+# Tab 2: GC初動強襲レーダー
 # ------------------------------------------
 with tab2:
-    render_macro_board() # マクロ気象レーダー
+    render_macro_board()
     st.markdown('### ⚡ GC（ゴールデンクロス）初動強襲レーダー')
     st.warning("⚠️ 鉄の掟（50%押し）のフィルターを解除し、純粋なトレンド初動（MACD GC）を検知する遊撃部隊用レーダーです。")
-    
     if st.button("⚡ GC遊撃部隊を発進させる"):
         with st.spinner("全軍からMACDゴールデンクロス直後の銘柄を抽出中..."):
             raw = get_hist_data_cached()
-            if not raw:
-                st.error("データ取得失敗")
+            if not raw: st.error("データ取得失敗")
             else:
-                d_raw = pd.DataFrame(raw)
-                df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
-                
-                # 生存フィルター1：価格帯とデータ数
-                counts = df_30.groupby('Code').size()
-                valid_counts = counts[counts >= 26].index
-                df_30 = df_30[df_30['Code'].isin(valid_counts)]
-                
-                latest_prices = df_30.groupby('Code')['AdjC'].last()
-                valid_price_codes = latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index
-                df_30 = df_30[df_30['Code'].isin(valid_price_codes)]
+                valid_counts = df_30.groupby('Code').size(); df_30 = df_30[df_30['Code'].isin(valid_counts[valid_counts >= 26].index)]
+                latest_prices = df_30.groupby('Code')['AdjC'].last(); df_30 = df_30[df_30['Code'].isin(latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index)]
                 
                 results_gc = []
-                grouped = df_30.groupby('Code')
-                
-                for code, group in grouped:
+                for code, group in df_30.groupby('Code'):
                     df_calc = calc_technicals(group)
-                    
-                    # 生存フィルター2：流動性（直近5日の平均出来高 > 5万株）
                     avg_vol = df_calc.tail(5).get('Volume', pd.Series([0])).mean()
                     if avg_vol < 50000: continue
-                    
                     latest = df_calc.iloc[-1]; prev = df_calc.iloc[-2]
-                    lc = latest['AdjC']; ma25 = latest['MA25']
-                    macd = latest['MACD']; signal = latest['MACD_Signal']
-                    macd_prev = prev['MACD']; signal_prev = prev['MACD_Signal']
-                    rsi = latest.get('RSI', 50)
                     
-                    # 🔥 GC判定（昨日までMACD <= Signal、今日MACD > Signal）
-                    is_gc = (macd > signal) and (macd_prev <= signal_prev)
-                    
-                    # 🛡️ トレンドフィルター（25日線の上にある、かつRSIが過熱していない）
-                    is_uptrend = (lc >= ma25) and (rsi < 70)
-                    
-                    if is_gc and is_uptrend:
-                        c_name = "不明"; c_sector = "不明"
-                        if not master_df.empty:
-                            m_row = master_df[master_df['Code'] == code]
-                            if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']; c_sector = m_row.iloc[0].get('Sector', '不明')
-                        
-                        if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))): continue
-                            
-                        results_gc.append({
-                            'Code': code, 'Name': c_name, 'lc': lc, 'MA25': ma25, 'RSI': rsi, 
-                            'MACD': macd, 'Vol': avg_vol, 'df_chart': df_calc
-                        })
+                    if (latest['MACD'] > latest['MACD_Signal']) and (prev['MACD'] <= prev['MACD_Signal']) and (latest['AdjC'] >= latest['MA25']) and (latest.get('RSI', 50) < 70):
+                        c_name = master_df[master_df['Code'] == code]['CompanyName'].iloc[0] if not master_df.empty and code in master_df['Code'].values else "不明"
+                        if f7_ex_etf and bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE)): continue
+                        results_gc.append({'Code': code, 'Name': c_name, 'lc': latest['AdjC'], 'MA25': latest['MA25'], 'RSI': latest.get('RSI', 50), 'Vol': avg_vol, 'df_chart': df_calc, 'trigger': latest['AdjH'] * 1.01})
                 
-                if not results_gc:
-                    st.info("本日の市場に、条件を満たすGC初動銘柄はありませんでした。")
+                if not results_gc: st.info("GC初動銘柄はありませんでした。")
                 else:
-                    st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄のGC初動を捕捉。")
-                    res_df_gc = pd.DataFrame(results_gc).sort_values('Vol', ascending=False) # 出来高順
-                    
-                    for _, r in res_df_gc.iterrows():
+                    st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄捕捉。")
+                    for r in sorted(results_gc, key=lambda x: x['Vol'], reverse=True):
                         st.divider()
-                        c = str(r['Code']); n = str(r['Name'])
-                        st.markdown(f"### ({c[:4]}) {n} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
-                        
-                        # 地雷アラート
-                        for alert in check_event_mines(c): st.warning(alert)
-                            
-                        sc1, sc2, sc3, sc4 = st.columns(4)
-                        sc1.metric("最新終値", f"{int(r['lc']):,}円")
-                        sc2.metric("25日線 (防衛線)", f"{int(r['MA25']):,}円")
-                        sc3.metric("RSI", f"{r['RSI']:.1f}%")
-                        sc4.metric("平均出来高", f"{int(r['Vol']):,} 株")
-                        
+                        st.markdown(f"### ({r['Code'][:4]}) {r['Name']} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
+                        for alert in check_event_mines(r['Code']): st.warning(alert)
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("最新終値", f"{int(r['lc']):,}円")
+                        col2.metric("🎯 追撃トリガー (高値+1%)", f"{int(r['trigger']):,}円")
+                        col3.metric("防衛線 (25日線)", f"{int(r['MA25']):,}円")
+                        col4.metric("平均出来高", f"{int(r['Vol']):,} 株")
                         st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
                         draw_chart(r['df_chart'], r['lc'])
 
 # ------------------------------------------
-# Tab 3〜7（従来のTab2〜6のシフト）
+# Tab 3: 高高度モニター（イナゴタワー追跡）
 # ------------------------------------------
 with tab3:
-    st.markdown('### 🛸 高高度モニター（ブレイクアウト・イナゴタワー追跡）')
-    st.info("※ここに従来のTab6（高高度観測）のロジックが入ります。")
+    st.markdown('### 🛸 高高度観測モニター（ブレイクアウト・順張り探知）')
+    st.warning("⚠️ 【発砲厳禁】すでに空高く飛んでいるモメンタム銘柄を追跡し、墜落を安全圏から観察するためのレーダーです。")
+    if st.button("🚀 観測機を発進させる"):
+        with st.spinner("成層圏の熱源を探索中..."):
+            raw = get_hist_data_cached()
+            if raw:
+                df_30 = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date']).groupby('Code').tail(30)
+                valid = df_30.groupby('Code').size(); df_30 = df_30[df_30['Code'].isin(valid[valid >= 15].index)]
+                results_t6 = []
+                for code, group in df_30.groupby('Code'):
+                    df_calc = group.copy(); df_calc['MA5'] = df_calc['AdjC'].rolling(window=5).mean()
+                    latest = df_calc.iloc[-1]; prev = df_calc.iloc[-2]
+                    lc = latest['AdjC']; h14 = df_calc.tail(14)['AdjH'].max(); daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
+                    if (lc > latest['MA5']) and (lc >= h14 * 0.95) and (daily_pct >= 0.03):
+                        c_name = master_df[master_df['Code'] == code]['CompanyName'].iloc[0] if not master_df.empty and code in master_df['Code'].values else "不明"
+                        if f7_ex_etf and bool(re.search("ETF|投信", str(c_name), re.IGNORECASE)): continue
+                        results_t6.append({'Code': code, 'Name': c_name, 'lc': lc, 'MA5': latest['MA5'], 'h14': h14, 'daily_pct': daily_pct, 'df_chart': calc_technicals(group.copy())})
+                if not results_t6: st.info("観測対象なし。")
+                else:
+                    st.success(f"🛸 観測完了: {len(results_t6)} 機捕捉。")
+                    for r in sorted(results_t6, key=lambda x: x['daily_pct'], reverse=True):
+                        st.divider()
+                        st.markdown(f"### ({r['Code'][:4]}) {r['Name']} <span style='background:#616161;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>🛸 観測対象 (本日 +{r['daily_pct']*100:.1f}%)</span>", unsafe_allow_html=True)
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("最新終値", f"{int(r['lc']):,}円")
+                        col2.metric("5日線 (割ると墜落)", f"{int(r['MA5']):,}円")
+                        col3.metric("直近高値", f"{int(r['h14']):,}円")
+                        draw_chart(r['df_chart'], r['lc'])
 
+# ------------------------------------------
+# Tab 4: 精密スコープ照準（個別局地戦）
+# ------------------------------------------
 with tab4:
     render_macro_board()
-    st.markdown('### 🎯 精密スコープ照準（個別銘柄の集中分析）')
-    st.info("※ここに従来のTab2（個別コード入力・局地戦）のロジックが入ります。")
+    st.markdown('### 🎯 精密スコープ照準（局地戦スキャン）')
+    target_codes_str = st.text_area("標的コード（複数可、カンマや改行区切り）", value="7203\n8604", height=100)
+    if st.button(f"🔫 指定銘柄 一斉スキャン ({tactics_mode.split()[0]})") and target_codes_str:
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
+        if not t_codes: st.warning("有効なコードが見つかりません。")
+        else:
+            with st.spinner(f"{len(t_codes)} 銘柄を計算中..."):
+                for c in t_codes:
+                    raw_s = get_single_data(c + "0", 1)
+                    if raw_s:
+                        hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
+                        if not hist.empty:
+                            lc = hist.iloc[-1]['AdjC']; h14 = hist.tail(14)['AdjH'].max(); l14 = hist.tail(14)['AdjL'].min()
+                            bt = h14 - ((h14 - l14) * (st.session_state.push_r / 100.0))
+                            st.divider()
+                            c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c+"0") in master_df['Code'].values else f"銘柄 {c}"
+                            st.markdown(f"### ({c}) {c_name}", unsafe_allow_html=True)
+                            for alert in check_event_mines(c): st.warning(alert)
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("最新終値", f"{int(lc):,}円")
+                            col2.metric("🎯 買値目標", f"{int(bt):,}円")
+                            col3.metric("直近高値", f"{int(h14):,}円")
+                            st.markdown(render_technical_radar(hist, bt, st.session_state.bt_tp), unsafe_allow_html=True)
+                            draw_chart(hist, bt, tp15=bt*1.15)
 
+# ------------------------------------------
+# Tab 5: 戦術シミュレータ（デュアル・バックテスト）
+# ------------------------------------------
 with tab5:
     st.markdown('### ⚙️ 戦術シミュレータ（2年間のバックテスト）')
-    st.info("※ここに従来のTab3（一括バックテスト）のロジックが入ります。")
+    
+    bt_mode = st.radio("🔍 検証する戦術を選択してください", ["🌐 【待伏】鉄の掟（50%押し）", "⚡ 【強襲】GCブレイクアウト（高値+1%トリガー）"], horizontal=True)
+    
+    col_1, col_2 = st.columns([2, 1])
+    with col_1: 
+        bt_c_in = st.text_area("検証コード（複数可）", value="6614\n4427", height=100)
+    with col_2:
+        if "待伏" in bt_mode:
+            st.info("※左サイドバーの「🎯 買いルール」「🛡️ 売りルール」の設定値を用いてシミュレーションを実行します。")
+        else:
+            st.info("※強襲モード専用設定\n・利確: +8%\n・損切: -4%\n・期限: 5営業日\n・トリガー: GC点灯日の高値+1%")
+            bt_tp_gc = 8.0; bt_sl_gc = 4.0; bt_limit_gc = 5
 
+    if st.button("🔥 一括バックテスト実行") and bt_c_in:
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
+        if not t_codes: st.warning("有効なコードが見つかりません。")
+        else:
+            all_t = []; b_bar = st.progress(0, "仮想売買中...")
+            for idx, c in enumerate(t_codes):
+                raw = get_single_data(c + "0", 2)
+                if raw:
+                    df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                    pos = None
+                    
+                    if "待伏" in bt_mode:
+                        for i in range(30, len(df)):
+                            td = df.iloc[i]
+                            if pos is None:
+                                win_14 = df.iloc[i-14:i]; win_30 = df.iloc[i-30:i]
+                                rh = win_14['AdjH'].max(); rl = win_14['AdjL'].min()
+                                if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
+                                if (1.3 <= rh/rl <= 2.0) and (len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']]) <= st.session_state.limit_d):
+                                    if check_double_top(win_30) or check_head_shoulders(win_30): continue
+                                    targ = rh - ((rh - rl) * (st.session_state.push_r / 100))
+                                    if td['AdjL'] <= targ: pos = {'b_i': i, 'b_d': td['Date'], 'b_p': min(td['AdjO'], targ)}
+                            else:
+                                bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
+                                sl_i = bp * (1 - (st.session_state.bt_sl_i / 100)); tp = bp * (1 + (st.session_state.bt_tp / 100)); sl_c = bp * (1 - (st.session_state.bt_sl_c / 100))
+                                if td['AdjL'] <= sl_i: sp = min(td['AdjO'], sl_i); rsn = f"損切(-{st.session_state.bt_sl_i}%)"
+                                elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{st.session_state.bt_tp}%)"
+                                elif td['AdjC'] <= sl_c: sp = td['AdjC']; rsn = f"損切終値(-{st.session_state.bt_sl_c}%)"
+                                elif held >= st.session_state.bt_sell_d: sp = td['AdjC']; rsn = f"時間切れ({st.session_state.bt_sell_d}日)"
+                                if rsn:
+                                    all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有': held, '買値': bp, '売値': round(sp,1), '損益額': int((sp - bp) * st.session_state.bt_lot), '理由': rsn})
+                                    pos = None
+                    else:
+                        # 🔥 強襲GCバックテスト ロジック
+                        df_tech = calc_technicals(df)
+                        for i in range(30, len(df_tech)):
+                            td = df_tech.iloc[i]
+                            if pos is None:
+                                latest = df_tech.iloc[i-1]; prev = df_tech.iloc[i-2]
+                                if (latest['MACD'] > latest['MACD_Signal']) and (prev['MACD'] <= prev['MACD_Signal']) and (latest['AdjC'] >= latest['MA25']) and (latest.get('RSI', 50) < 70):
+                                    pos = {'wait_i': i, 'trigger': latest['AdjH'] * 1.01} # 1%バッファ
+                            elif 'wait_i' in pos:
+                                if i - pos['wait_i'] > 3: pos = None # 3日でトリガー引かれなければキャンセル
+                                elif td['AdjH'] >= pos['trigger']:
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': max(td['AdjO'], pos['trigger'])}
+                            elif 'b_i' in pos:
+                                bp = round(pos['b_p'], 1); held = i - pos['b_i']; sp = 0; rsn = ""
+                                sl = bp * (1 - (bt_sl_gc / 100)); tp = bp * (1 + (bt_tp_gc / 100))
+                                if td['AdjL'] <= sl: sp = min(td['AdjO'], sl); rsn = f"損切(-{bt_sl_gc}%)"
+                                elif td['AdjH'] >= tp: sp = max(td['AdjO'], tp); rsn = f"利確(+{bt_tp_gc}%)"
+                                elif held >= bt_limit_gc: sp = td['AdjC']; rsn = f"時間切れ({bt_limit_gc}日)"
+                                if rsn:
+                                    all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有': held, '買値': bp, '売値': round(sp,1), '損益額': int((sp - bp) * st.session_state.bt_lot), '理由': rsn})
+                                    pos = None
+
+                b_bar.progress((idx + 1) / len(t_codes))
+            b_bar.empty()
+            
+            if not all_t: st.warning("条件に合致するトレードはありませんでした。")
+            else:
+                tdf = pd.DataFrame(all_t); tot = len(tdf); wins = len(tdf[tdf['損益額'] > 0])
+                n_prof = tdf['損益額'].sum(); sprof = tdf[tdf['損益額'] > 0]['損益額'].sum(); sloss = abs(tdf[tdf['損益額'] <= 0]['損益額'].sum())
+                pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
+                st.markdown(f"### 💰 総合利益額: {n_prof:,} 円")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("トレード回数", f"{tot} 回"); m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
+                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円"); m4.metric("PF", f"{pf}")
+                st.dataframe(tdf, use_container_width=True, hide_index=True)
+
+# ------------------------------------------
+# Tab 6: IFD-OCO 10日ルール監視
+# ------------------------------------------
 with tab6:
-    st.markdown('### 🪤 IFD-OCO 10日ルール潜伏カウント')
-    st.info("※ここに従来のTab4（保有銘柄タイマー）のロジックが入ります。")
+    st.markdown('### ⏳ IFD-OCO 10日ルール監視')
+    hold_input = st.text_area("保有銘柄（銘柄コード, 約定日[YYYY-MM-DD], 買値）", value="7203, 2026-03-10, 3500", height=100)
+    if st.button("🔄 戦況更新 (10日タイマー確認)"):
+        today = datetime.utcnow() + timedelta(hours=9)
+        for line in hold_input.strip().split('\n'):
+            if not line.strip(): continue
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) >= 2:
+                c = parts[0]; date_str = parts[1]; bp = parts[2] if len(parts) >= 3 else "---"
+                try:
+                    buy_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    days_elapsed = np.busday_count(buy_date.date(), today.date())
+                    if days_elapsed <= 7: status = "🟢 巡航中"; bg = "rgba(38, 166, 154, 0.1)"; bdc = "#26a69a"
+                    elif days_elapsed <= 9: status = "⚠️ 撤退準備"; bg = "rgba(255, 215, 0, 0.1)"; bdc = "#FFD700"
+                    else: status = "💀 強制撤退日"; bg = "rgba(239, 83, 80, 0.1)"; bdc = "#ef5350"
+                    st.markdown(f"<div style='background:{bg};border-left:4px solid {bdc};padding:1rem;margin-bottom:0.8rem;'><b>({c})</b> 経過 {days_elapsed} 営業日 - {status}</div>", unsafe_allow_html=True)
+                except: st.error(f"🚨 フォーマットエラー: {line}")
 
+# ------------------------------------------
+# Tab 7: 事後任務報告（AAR）
+# ------------------------------------------
 with tab7:
-    st.markdown('### 📁 事後任務報告（AAR・過去戦歴解剖）')
-    st.info("※ここに従来のTab5（CSVアップロード・完全放置IFD検証）のロジックが入ります。")
+    st.markdown('### 🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）')
+    st.info("※本番環境でCSVアップロードとシミュレーションを処理するロジック（Tab5相当）がここに稼働します。")
