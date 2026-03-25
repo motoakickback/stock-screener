@@ -551,6 +551,10 @@ with tab2:
                 if not results_gc: st.info("GC初動銘柄はありませんでした。")
                 else:
                     st.success(f"⚡ 抽出完了: {len(results_gc)} 銘柄捕捉。")
+                    st.markdown("#### 📋 コピペ用コード (GC部隊)")
+                    if 'Code' in res_df_gc.columns:
+                        copy_codes_gc = ",".join([str(c)[:4] for c in res_df_gc['Code']])
+                        st.code(copy_codes_gc, language="text")
                     for r in sorted(results_gc, key=lambda x: x['Vol'], reverse=True):
                         st.divider()
                         st.markdown(f"### ({r['Code'][:4]}) {r['Name']} <span style='background:#ef5350;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>⚡ GC初動</span>", unsafe_allow_html=True)
