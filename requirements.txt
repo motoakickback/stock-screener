@@ -4,3 +4,4 @@ requests
 plotly
 xlrd
 yfinance
+jpholiday
