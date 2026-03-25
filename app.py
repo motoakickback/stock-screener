@@ -1073,6 +1073,12 @@ with tab4:
                         rule_pct = (passed_rules / len(score_list)) * 100
                         
                         latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
+                        atr = latest_c.get('ATR', 0)
+                        
+                        # 🚨 【不発弾キルスイッチ】ボラ10円未満、または株価の1%未満は強制排除
+                        if atr < 10 or (atr / latest_c['AdjC']) < 0.01:
+                            continue
+                            
                         rsi_val = latest_c.get('RSI', 50)
                         macd_h = latest_c.get('MACD_Hist', 0); macd_h_prev = prev_c.get('MACD_Hist', 0)
                         
