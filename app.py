@@ -1032,8 +1032,9 @@ with tab4:
                         idx_max = hist_14['AdjH'].idxmax()
                         d_high = len(hist_14[hist_14['Date'] > hist_14.loc[idx_max, 'Date']]) if pd.notna(idx_max) else 0
 
-                        is_dt = check_double_top(hist_30)
-                        is_hs = check_head_shoulders(hist_30)
+                        # 🚨 【完全同期】Tab 1と同じ「直近14日」の波形で危険判定を行う
+                        is_dt = check_double_top(hist_14)
+                        is_hs = check_head_shoulders(hist_14)
                         
                         wave_len = h14_val - l14_val
                         bt_primary = h14_val - (wave_len * (st.session_state.push_r / 100.0))
