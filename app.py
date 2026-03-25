@@ -1087,7 +1087,6 @@ with tab4:
                     </div>
                     """
                     sc4.markdown(html_stats, unsafe_allow_html=True)
-                    sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                     
                     st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                     draw_chart(hist, bt_val, tp15=tp15)
