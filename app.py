@@ -1022,9 +1022,8 @@ with tab4:
                         
                         lc_val = int(hist.iloc[-1]['AdjC'])
                         
-                        # 🚨 期間の完全同期（10営業日＝カレンダー2週間）
                         hist_30 = hist.tail(30)
-                        hist_14 = hist.tail(10)
+                        hist_14 = hist.tail(10) # 10営業日
                         hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
 
                         h14_val = int(hist_14['AdjH'].max())
@@ -1043,7 +1042,6 @@ with tab4:
                         idx_max = hist_14['AdjH'].idxmax()
                         d_high = len(hist_14[hist_14['Date'] > hist_14.loc[idx_max, 'Date']]) if pd.notna(idx_max) else 0
 
-                        # 🚨 波形判定も10日営業日に完全同期
                         is_dt = check_double_top(hist_14)
                         is_hs = check_head_shoulders(hist_14)
                         sakata_sig = check_sakata_patterns(hist_30)
@@ -1059,25 +1057,24 @@ with tab4:
                         denom = h14_val - bt_val
                         reach_pct = ((h14_val - lc_val) / denom * 100) if denom > 0 else 0
                         
-                        # 🚨 採点ロジックの完全同期（Tab 1と一言一句同じ条件）
-                        score_list = [
-                            (r30 <= f2_m30),
-                            (ldrop >= f3_drop),
-                            (lrise <= f4_mlong) or (lrise == 0),
-                            (f9_min14 <= r14 <= f9_max14),
-                            (d_high <= st.session_state.limit_d),
-                            (bt_val * 0.85 <= lc_val <= bt_val * 1.35),
-                            (not is_dt),
-                            (not is_hs),
-                            (not pd.notna(sakata_sig)) or ("下落警戒" not in str(sakata_sig))
-                        ]
-                        passed_rules = sum(score_list)
-                        rule_pct = (passed_rules / len(score_list)) * 100
+                        # 🚨 丸裸の採点ロジック（なぜ減点されたかを記録）
+                        score_details = {
+                            "① 30日安値乖離": r30 <= f2_m30,
+                            "② 高値からの下落率": ldrop >= f3_drop,
+                            "③ 大底からの上昇率": (lrise <= f4_mlong) or (lrise == 0),
+                            "④ 14日高安比率": f9_min14 <= r14 <= f9_max14,
+                            "⑤ 高値経過日数": d_high <= st.session_state.limit_d,
+                            "⑥ 買値の許容レンジ": bt_val * 0.85 <= lc_val <= bt_val * 1.35,
+                            "⑦ ダブルトップ否定": not is_dt,
+                            "⑧ 三尊（ヘッド＆ショルダー）否定": not is_hs,
+                            "⑨ 酒田五法（下落警戒）否定": (not pd.notna(sakata_sig)) or ("下落警戒" not in str(sakata_sig))
+                        }
+                        passed_rules = sum(score_details.values())
+                        rule_pct = (passed_rules / 9) * 100
                         
                         latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
                         atr = latest_c.get('ATR', 0)
                         
-                        # 🚨 不発弾キルスイッチ
                         if atr < 10 or (atr / latest_c['AdjC']) < 0.01: continue
                             
                         rsi_val = latest_c.get('RSI', 50)
@@ -1088,14 +1085,14 @@ with tab4:
                         results_t4.append({
                             'code': c, 'lc_val': lc_val, 'h14_val': h14_val, 'l14_val': l14_val, 'wave_len': wave_len,
                             'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'reach_pct': reach_pct, 
-                            'rule_pct': rule_pct, 'passed_rules': passed_rules,
+                            'rule_pct': rule_pct, 'passed_rules': passed_rules, 'score_details': score_details,
                             'hist': hist, 'triage_score': score, 'rank': rank, 'bg': bg, 'macd_t': macd_t, 'prev_c': prev_c
                         })
                 
                 results_t4.sort(key=lambda x: (x['triage_score'], x['reach_pct']), reverse=True)
                 
                 if not results_t4:
-                    st.warning("スキャン結果：対象銘柄はすべて不発弾（ボラ不足）か、有効なデータがありません。")
+                    st.warning("スキャン結果：対象銘柄はすべて不発弾（ボラ不足）か、条件を一切満たしていません。")
                 else:
                     for r in results_t4:
                         c = r['code']; hist = r['hist']
@@ -1140,7 +1137,6 @@ with tab4:
                         daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                         daily_sign = "+" if daily_pct >= 0 else ""
 
-                        # 🚨 出来高の計算完全同期（文字列・エラー強制変換）
                         avg_vol = 0
                         for col in hist.columns:
                             if re.search(r'vol|出来高', col, re.IGNORECASE):
@@ -1183,6 +1179,17 @@ with tab4:
                         </div>
                         """
                         sc4.markdown(html_stats, unsafe_allow_html=True)
+                        
+                        # 🚨 【重要】システム丸裸レポート
+                        with st.expander(f"🛠️ システム内部解剖（なぜ {passed_rules}/9 点なのか？ / 出来高0の理由は？）"):
+                            st.markdown("**📦 APIから取得した生データの列名一覧**")
+                            st.markdown("※ここに `Volume` や `出来高` という列が存在しなければ、システムは永遠に0しか出せません。")
+                            st.code(str(list(hist.columns)))
+                            
+                            st.markdown("**📊 9項目の採点結果（Tab 1で減点された項目を見比べてください）**")
+                            for k, v in r['score_details'].items():
+                                icon = "🟢" if v else "❌"
+                                st.write(f"{icon} {k}")
                         
                         st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(hist, bt_val, tp15=tp15)
