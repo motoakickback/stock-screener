@@ -1133,10 +1133,12 @@ with tab4:
                     daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    avg_vol = int(hist['Volume'].tail(5).mean()) if not hist.empty and 'Volume' in hist.columns else 0
-                    reach_pct = r['reach_pct']
-                    passed_rules = r['passed_rules']
-                    rule_pct_val = r['rule_pct']
+                    avg_vol = 0
+                    for col in hist.columns:
+                        if re.search(r'vol|出来高', col, re.IGNORECASE):
+                            vol_data = pd.to_numeric(hist[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                            avg_vol = int(vol_data.tail(5).mean())
+                            break
 
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     sc0.metric("直近高値", f"{r['h14_val']:,}円")
