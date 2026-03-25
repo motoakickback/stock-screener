@@ -288,12 +288,18 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi):
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
 
-    rank = "C（条件外・監視）👁️"; bg = "#616161"; score = 1
-    if macd_t == "下落継続" or rsi >= 70: rank = "圏外（手出し無用）🚫"; bg = "#d32f2f"; score = 0
-    elif macd_t == "GC直後" and rsi <= 50: rank = "S（即時狙撃）🔥"; bg = "#2e7d32"; score = 4
-    elif macd_t == "減衰" and rsi <= 30: rank = "A（罠の設置）🪤"; bg = "#0288d1"; score = 3
-    elif macd_t == "上昇拡大" and 50 <= rsi <= 65: rank = "B（順張り警戒）📈"; bg = "#ed6c02"; score = 2
-    return rank, bg, score, macd_t
+    if macd_t == "下落継続" or rsi >= 75: 
+        return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
+    elif macd_t == "GC直後":
+        if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, macd_t
+        else: return "A（強襲追撃）⚡", "#ed6c02", 4, macd_t
+    elif macd_t == "減衰" and rsi <= 35: 
+        return "A（罠の設置）🪤", "#ed6c02", 4, macd_t
+    elif macd_t == "上昇拡大":
+        if rsi <= 60: return "B（順張り警戒）📈", "#0288d1", 3, macd_t
+        else: return "C（過熱警戒）👁️", "#616161", 2, macd_t
+    else:
+        return "C（条件外・監視）👁️", "#616161", 1, macd_t
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
