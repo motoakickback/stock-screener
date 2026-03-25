@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
 import yfinance as yf
+import jpholiday
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
