@@ -654,11 +654,9 @@ with tab1:
                             
                         final_df = pd.DataFrame(final_results)
                         
-                        # 🚨 追加：全員キルされて空っぽになった時の防壁
                         if final_df.empty:
                             st.warning("スキャン結果：条件を満たした銘柄はありましたが、すべてボラティリティ不足（不発弾）のため除外されました。")
                         else:
-                            # 生き残りがいる場合のみ、並び替えと描画を実行
                             if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
                             elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
                             else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
@@ -667,16 +665,8 @@ with tab1:
                             st.markdown("#### 📋 コピペ用コード")
                             if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
                             
-                            # (以降は for _, r in final_df.iterrows(): の描画処理が続く)
-                                                
-                        if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
-                        elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
-                        else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
+                            # 👇 この下から for _, r in final_df.iterrows(): が始まります
                         
-                        st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
-                        st.markdown("#### 📋 コピペ用コード")
-                        if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
-
                         for _, r in final_df.iterrows():
                             st.divider()
                             c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
