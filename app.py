@@ -1155,7 +1155,8 @@ with tab4:
 
                         # この下にある sc0, sc0_1, ... = st.columns(...) へ続く
 
-                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
+                        # --- ここから上書き（インデント厳密固定版） ---
+                            sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                             sc0.metric("直近高値", f"{high_val:,}円")
                             sc0_1.metric("直近安値", f"{low_val:,}円")
                             sc0_2.metric("上昇幅", f"{wave_len:,}円")
@@ -1171,7 +1172,6 @@ with tab4:
                                 <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                             sc3.markdown(html_sell, unsafe_allow_html=True)
                             
-                            # 🚨 【修正】表示用変数 passed_rules を確実に画面へ反映
                             pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 7 else "#ef5350"
                             html_stats = f"""
                             <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
@@ -1187,20 +1187,26 @@ with tab4:
                             </div>
                             """
                             sc4.markdown(html_stats, unsafe_allow_html=True)
-                        
-                        # 🚨 【重要】システム丸裸レポート
-                        with st.expander(f"🛠️ システム内部解剖（なぜ {passed_rules}/9 点なのか？ / 出来高0の理由は？）"):
-                            st.markdown("**📦 APIから取得した生データの列名一覧**")
-                            st.markdown("※ここに `Volume` や `出来高` という列が存在しなければ、システムは永遠に0しか出せません。")
-                            st.code(str(list(hist.columns)))
                             
-                            st.markdown("**📊 9項目の採点結果（Tab 1で減点された項目を見比べてください）**")
-                            for k, v in r['score_details'].items():
-                                icon = "🟢" if v else "❌"
-                                st.write(f"{icon} {k}")
-                        
-                        st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                        draw_chart(hist, bt_val, tp15=tp15)
+                            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
+                            
+                            bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
+                            if bt_stats and bt_stats['total'] > 0:
+                                wr = bt_stats['win_rate']; ev = bt_stats['exp_val']
+                                wr_color = "#ef5350" if wr >= 60 else "#FFD700" if wr >= 50 else "#888888"
+                                st.markdown(f"""
+                                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
+                                    <span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats['total']}戦):</span>
+                                    <strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {wr:.1f}%</strong>
+                                    <span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span>
+                                    <strong style="color: {'#ef5350' if ev > 0 else '#26a69a'}; font-size: 16px; margin-left: 8px;">{ev:+.1f}円</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                            if not hist_df.empty:
+                                st.markdown(render_technical_radar(hist_df, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                                draw_chart(hist_df, bt_val, tp15=tp15)
+                            # --- 上書き終了 ---
                         
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
