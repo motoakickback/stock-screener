@@ -528,19 +528,6 @@ with tab1:
                 sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
                 if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
                 
-                # --- 🎯 優先度（トリアージスコア）の事前計算 ---
-                triage_scores = []
-                for code in sum_df['Code']:
-                    group = df_30[df_30['Code'] == code]
-                    tech = calc_technicals(group)
-                    if len(tech) >= 2:
-                        _, _, score, _ = get_triage_info(tech.iloc[-1].get('MACD_Hist',0), tech.iloc[-2].get('MACD_Hist',0), tech.iloc[-1].get('RSI',50))
-                        triage_scores.append(score)
-                    else:
-                        triage_scores.append(1)
-                sum_df['triage_score'] = triage_scores
-                
-                # --- 掟達成率 (rule_pct) の計算 ---
                 rule_scores = []
                 for _, r in sum_df.iterrows():
                     score_list = [
@@ -551,18 +538,43 @@ with tab1:
                     rule_scores.append((sum(score_list) / len(score_list)) * 100)
                 sum_df['rule_pct'] = rule_scores
                 
-                # 🚨 【改修】判定結果（S/A/B/C）を最優先でソート
-                if tactics_mode.startswith("⚔️"): res = sum_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False]).head(30)
-                elif tactics_mode.startswith("🛡️"): res = sum_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False]).head(30)
-                else: res = sum_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False]).head(30)
+                # 1. まず「到達度」などでベースとなる候補を抽出
+                if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
+                elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
+                else: base_res = sum_df.sort_values('reach_pct', ascending=False).head(40)
                 
-                if res.empty: st.warning("現在の相場に、標的は存在しません。")
+                if base_res.empty: st.warning("現在の相場に、標的は存在しません。")
                 else:
-                    st.success(f"🎯 スキャン完了: {len(res)} 銘柄クリア")
+                    # 2. 候補に対して「正確な1年分データ」でS/A/B/Cを判定し、それを変数に格納する
+                    final_results = []
+                    for _, r in base_res.iterrows():
+                        c = str(r['Code'])
+                        api_code = c if len(c) == 5 else c + "0"
+                        raw_s = get_single_data(api_code, 1)
+                        hist = pd.DataFrame()
+                        t_score = 1; t_rank = "C"; t_bg = "#616161"
+                        if raw_s:
+                            hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
+                            if len(hist) >= 2:
+                                rank, bg, score, _ = get_triage_info(hist.iloc[-1].get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), hist.iloc[-1].get('RSI', 50))
+                                t_score = score; t_rank = rank; t_bg = bg
+                                
+                        r_dict = r.to_dict()
+                        r_dict['triage_score'] = t_score; r_dict['triage_rank'] = t_rank; r_dict['triage_bg'] = t_bg; r_dict['hist_df'] = hist
+                        final_results.append(r_dict)
+                        
+                    final_df = pd.DataFrame(final_results)
+                    
+                    # 3. 🚨 取得した【正確なトリアージスコア】を絶対優先にして最終ソートを実行
+                    if tactics_mode.startswith("⚔️"): final_df = final_df.sort_values(['triage_score', 'is_db', 'reach_pct'], ascending=[False, False, False])
+                    elif tactics_mode.startswith("🛡️"): final_df = final_df.sort_values(['triage_score', 'is_defense', 'reach_pct'], ascending=[False, False, False])
+                    else: final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
+                    
+                    st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
                     st.markdown("#### 📋 コピペ用コード")
-                    if 'Code' in res.columns: st.code(",".join([str(c)[:4] for c in res['Code']]), language="text")
+                    if 'Code' in final_df.columns: st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
 
-                    for _, r in res.iterrows():
+                    for _, r in final_df.iterrows():
                         st.divider()
                         c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
                         
@@ -572,17 +584,7 @@ with tab1:
                         else:
                             badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興 (推奨: 50%押し)</span>'
                         
-                        api_code = c if len(c) == 5 else c + "0"
-                        raw_s = get_single_data(api_code, 1)
-                        hist = pd.DataFrame()
-                        triage_badge = ""
-                        if raw_s:
-                            hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
-                            if len(hist) >= 2:
-                                latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
-                                rsi_val = latest_c.get('RSI', 50); macd_h = latest_c.get('MACD_Hist', 0); macd_h_prev = prev_c.get('MACD_Hist', 0)
-                                rank, bg, score, _ = get_triage_info(macd_h, macd_h_prev, rsi_val)
-                                triage_badge = f'<span style="background-color: {bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {rank}</span>'
+                        triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
                         
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
@@ -636,6 +638,7 @@ with tab1:
                             </div>
                             """, unsafe_allow_html=True)
 
+                        hist = r.get('hist_df', pd.DataFrame())
                         if not hist.empty:
                             st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                             draw_chart(hist, r['bt'], tp15=r['tp15'])
