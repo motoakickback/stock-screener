@@ -1095,7 +1095,14 @@ with tab4:
                     daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
+                    # --- 追加：出来高と掟適合数の計算 ---
+                    hist_df = r['hist']
+                    avg_vol = int(hist_df['Volume'].tail(5).mean()) if not hist_df.empty and 'Volume' in hist_df.columns else 0
+                    reach_pct = r['reach_pct']
+                    passed_rules = int((r['rule_pct'] / 100.0) * 13)
+                    if passed_rules > 13: passed_rules = 13
+
+                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     sc0.metric("直近高値", f"{r['h14_val']:,}円")
                     sc0_1.metric("直近安値", f"{r['l14_val']:,}円")
                     sc0_2.metric("上昇幅", f"{r['wave_len']:,}円")
@@ -1111,7 +1118,20 @@ with tab4:
                         <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
-                    sc4.metric("到達度", f"{r['reach_pct']:.1f}%")
+                    html_stats = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                        <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
+                        </div>
+                        <div style="background: rgba(239, 83, 80, 0.1); border-left: 3px solid #ef5350; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: #fff;">{passed_rules}/13 条件クリア</strong>
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
+                        </div>
+                    </div>
+                    """
+                    sc4.markdown(html_stats, unsafe_allow_html=True)
                     sc5.metric("掟達成率", f"{r['rule_pct']:.0f}%")
                     
                     st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
