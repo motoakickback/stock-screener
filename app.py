@@ -1006,10 +1006,6 @@ with tab4:
     target_codes_str = st.text_area("標的コード（複数可、カンマや改行区切り）", value="7203\n8604", height=100)
     
     if st.button(f"🔫 指定銘柄 一斉スキャン ({st.session_state.sidebar_tactics.split()[0]})") and target_codes_str:
-        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
-        if not t_codes: 
-            st.warning("有効なコードが見つかりません。")
-        else:
             with st.spinner(f"{len(t_codes)} 銘柄の弾道を計算中..."):
                 results_t4 = []
                 for c in t_codes:
@@ -1021,13 +1017,15 @@ with tab4:
                         if len(hist) < 14: continue
                         
                         lc_val = int(hist.iloc[-1]['AdjC'])
-                        h14_val = int(hist.tail(14)['AdjH'].max())
-                        l14_val = int(hist.tail(14)['AdjL'].min())
-                        if l14_val <= 0 or pd.isna(h14_val): continue
                         
+                        # 🚨 期間の完全同期（10営業日）
                         hist_30 = hist.tail(30)
                         hist_14 = hist.tail(10)
                         hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
+
+                        h14_val = int(hist_14['AdjH'].max())
+                        l14_val = int(hist_14['AdjL'].min())
+                        if l14_val <= 0 or pd.isna(h14_val): continue
 
                         l30_val = hist_30['AdjL'].min()
                         omax_val = hist_past['AdjH'].max() if not hist_past.empty else np.nan
@@ -1041,9 +1039,10 @@ with tab4:
                         idx_max = hist_14['AdjH'].idxmax()
                         d_high = len(hist_14[hist_14['Date'] > hist_14.loc[idx_max, 'Date']]) if pd.notna(idx_max) else 0
 
-                        # 🚨 【完全同期】Tab 1と同じ「直近14日」の波形で危険判定を行う
+                        # 🚨 波形判定も10日営業日に同期
                         is_dt = check_double_top(hist_14)
                         is_hs = check_head_shoulders(hist_14)
+                        sakata_sig = check_sakata_patterns(hist_30)
                         
                         wave_len = h14_val - l14_val
                         bt_primary = h14_val - (wave_len * (st.session_state.push_r / 100.0))
@@ -1056,8 +1055,7 @@ with tab4:
                         denom = h14_val - bt_val
                         reach_pct = ((h14_val - lc_val) / denom * 100) if denom > 0 else 0
                         
-                        # 🎯 【修正】Tab1と完全に一致する「真の掟採点（スコアリング）」
-                        sakata_sig = check_sakata_patterns(hist_30)
+                        # 🚨 採点ロジックの完全同期（Tab 1と一言一句同じ条件）
                         score_list = [
                             (r30 <= f2_m30),
                             (ldrop >= f3_drop),
@@ -1075,9 +1073,8 @@ with tab4:
                         latest_c = hist.iloc[-1]; prev_c = hist.iloc[-2]
                         atr = latest_c.get('ATR', 0)
                         
-                        # 🚨 【不発弾キルスイッチ】ボラ10円未満、または株価の1%未満は強制排除
-                        if atr < 10 or (atr / latest_c['AdjC']) < 0.01:
-                            continue
+                        # 🚨 不発弾キルスイッチ
+                        if atr < 10 or (atr / latest_c['AdjC']) < 0.01: continue
                             
                         rsi_val = latest_c.get('RSI', 50)
                         macd_h = latest_c.get('MACD_Hist', 0); macd_h_prev = prev_c.get('MACD_Hist', 0)
