@@ -547,8 +547,8 @@ with tab1:
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df_30 = df.groupby('Code').tail(30)
-                max_date_all = df['Date'].max(); cutoff_date_14 = max_date_all - timedelta(days=14)
-                df_14 = df_30[df_30['Date'] >= cutoff_date_14]
+                # 🚨 ボスの指示：カレンダー計算を廃止し、観測期間を「10営業日（実質2週間）」に最適化
+                df_14 = df_30.groupby('Code').tail(10)
                 counts = df_14.groupby('Code').size(); valid = counts[counts >= 5].index
                 
                 if valid.empty: 
