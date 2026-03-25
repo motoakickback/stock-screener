@@ -308,13 +308,31 @@ def render_technical_radar(df, buy_price, tp_pct):
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
     rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
     if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ"
-    
+
     _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
-    macd_color = "#ef5350" if macd_t in ["GC直後", "上昇拡大"] else "#26a69a" if macd_t == "下落継続" else "#888888"
-    
+
+    # 🚨 GC発動時を超絶目立たせる改修
+    if macd_t == "GC直後":
+        macd_display = "🔥🔥🔥 激熱 GC発動中 🔥🔥🔥"
+        macd_color = "#ff5722"
+        bg_glow = "box-shadow: 0 0 15px rgba(255, 87, 34, 0.6); border: 2px solid #ff5722;"
+    elif macd_t == "上昇拡大":
+        macd_display = "📈 上昇拡大"
+        macd_color = "#ef5350"
+        bg_glow = "border-left: 4px solid #FFD700;"
+    elif macd_t == "下落継続":
+        macd_display = "📉 下落継続"
+        macd_color = "#26a69a"
+        bg_glow = "border-left: 4px solid #FFD700;"
+    else:
+        macd_display = "⚖️ 減衰"
+        macd_color = "#888888"
+        bg_glow = "border-left: 4px solid #FFD700;"
+
     days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
-    return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; border-left: 4px solid #FFD700;">
-        <div style="font-size: 13px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color};">{macd_t}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
+
+    return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}">
+        <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 # --- 標準チャート（Tab 1, 2, 4用） ---
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
