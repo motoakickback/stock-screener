@@ -852,8 +852,8 @@ with tab1:
                         draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 精密スコープ照準（局地戦スキャン）</h3>', unsafe_allow_html=True)
-    st.caption("※指定された銘柄すべての押し目ラインを計算し、戦術モードに応じてソートします。")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚔️ 強襲：局地戦（指定銘柄・一斉スキャン）</h3>', unsafe_allow_html=True)
+    st.caption("※指定された標的コードに強襲をかけ、戦術モードに応じて迎撃の優先順位をソートします。")
     col_s1, col_s2 = st.columns([1, 2])
 
     T2_FILE = f"saved_t2_codes_{user_id}.txt"
