@@ -1137,16 +1137,23 @@ with tab4:
                         daily_pct = (lc_val / r['prev_c']['AdjC']) - 1 if r['prev_c']['AdjC'] > 0 else 0
                         daily_sign = "+" if daily_pct >= 0 else ""
 
+                        # 🚨 【出来高 Vo/AdjVo 狙い撃ち修正】
                         avg_vol = 0
-                        for col in hist.columns:
-                            if re.search(r'vol|出来高', col, re.IGNORECASE):
-                                vol_data = pd.to_numeric(hist[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                                avg_vol = int(vol_data.tail(5).mean())
-                                break
-                                
+                        # 優先順位: 調整後出来高(AdjVo) > 生出来高(Vo) > その他 volを含む列
+                        vol_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                        if not vol_col:
+                            vol_col = next((col for col in hist.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
+                        
+                        if vol_col:
+                            # 文字列やコンマを排除して数値化
+                            v_series = pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                            avg_vol = int(v_series.tail(5).mean())
+
                         reach_pct = r['reach_pct']
                         passed_rules = r['passed_rules']
                         rule_pct_val = r['rule_pct']
+
+                        # この下にある sc0, sc0_1, ... = st.columns(...) へ続く
 
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                         sc0.metric("直近高値", f"{r['h14_val']:,}円")
