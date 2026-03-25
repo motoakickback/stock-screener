@@ -356,6 +356,57 @@ st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
 st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
+# --- 🚁 スナイパーパッチ1：「司令部へ帰還」ボタン ---
+import streamlit.components.v1 as components
+components.html(
+    """
+    <script>
+    const parentDoc = window.parent.document;
+    if (!parentDoc.getElementById('sniper-return-btn')) {
+        const btn = parentDoc.createElement('button');
+        btn.id = 'sniper-return-btn';
+        btn.innerHTML = '🚁 司令部（トップ）へ帰還';
+        btn.style.position = 'fixed';
+        btn.style.bottom = '100px'; 
+        btn.style.right = '30px';
+        btn.style.backgroundColor = '#1e1e1e';
+        btn.style.color = '#00e676';
+        btn.style.border = '1px solid #00e676';
+        btn.style.padding = '12px 20px';
+        btn.style.borderRadius = '8px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.style.zIndex = '2147483647';
+        btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+        btn.style.transition = 'all 0.3s ease';
+        
+        btn.onmouseover = function() {
+            btn.style.backgroundColor = '#00e676';
+            btn.style.color = '#1e1e1e';
+        };
+        btn.onmouseout = function() {
+            btn.style.backgroundColor = '#1e1e1e';
+            btn.style.color = '#00e676';
+        };
+        
+        btn.onclick = function() {
+            window.parent.scrollTo({top: 0, behavior: 'smooth'});
+            const allElements = parentDoc.querySelectorAll('*');
+            for (let i = 0; i < allElements.length; i++) {
+                const el = allElements[i];
+                if (el.scrollHeight > el.clientHeight) {
+                    el.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            }
+        };
+        parentDoc.body.appendChild(btn);
+    }
+    </script>
+    """,
+    height=0,
+    width=0
+)
+
 # ==========================================
 # 5. タブ再構成（7タブ構成）
 # ==========================================
@@ -363,7 +414,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
     "🛸 【観測】高高度モニター", 
-    "🎯 精密スコープ照準", 
+    "🎯 精密スコープ", 
     "⚙️ 戦術シミュレータ", 
     "🪤 IFD潜伏カウント", 
     "📁 事後任務報告(AAR)"
@@ -542,7 +593,7 @@ with tab3:
                         draw_chart(r['df_chart'], r['lc'])
 
 # ------------------------------------------
-# Tab 4: 精密スコープ照準（個別局地戦）
+# Tab 4: 精密スコープ（個別局地戦）
 # ------------------------------------------
 with tab4:
     render_macro_board()
