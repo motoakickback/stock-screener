@@ -722,7 +722,6 @@ with tab1:
                     if pd.isna(daily_pct): daily_pct = 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    # 🚨 UIを7カラムに再統合。一番右側に大きな領域を確保
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     
                     sc0.metric("直近高値", f"{high_val:,}円")
@@ -749,7 +748,6 @@ with tab1:
                     </div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
-                    # 🚨 到達度・掟適合・出来高 を縦に積み上げた美しいUIボードを復旧
                     reach_val = r.get('reach_pct', 0)
                     vol_val = r.get('avg_vol', 0)
                     html_stats = f"""
@@ -793,15 +791,19 @@ with tab1:
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 🚨 【ローソク足の右寄り修正】グラフに描画する期間を「直近60日以内」に絞るフィルター
-                    hist_full = df[df['Code'] == c].sort_values('Date')
-                    if not hist_full.empty:
-                        cutoff_chart = hist_full['Date'].max() - timedelta(days=60)
-                        hist = hist_full[hist_full['Date'] >= cutoff_chart].tail(30)
+                    # 🚨 【MA・グラフ完全復旧】描画用に選ばれし銘柄のみ「1年分の詳細データ」をAPIから取得（元のボスの神設計）
+                    api_code = c if len(c) == 5 else c + "0"
+                    raw_s = get_single_data(api_code, 1)
+                    
+                    if raw_s:
+                        hist_chart = clean_df(pd.DataFrame(raw_s))
+                    else:
+                        hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
                         
-                        hist = calc_technicals(hist)
-                        st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
-                        draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    if not hist_chart.empty:
+                        hist_chart = calc_technicals(hist_chart)
+                        st.markdown(render_technical_radar(hist_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
+                        draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 局地戦（複数・個別スキャン）</h3>', unsafe_allow_html=True)
