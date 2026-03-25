@@ -669,40 +669,21 @@ with tab1:
                             if "下落警戒" in str(r['sakata_signal']): st.error(f"🚨 【波形警告】{r['sakata_signal']}")
                             else: st.success(f"🔥 【反転攻勢】{r['sakata_signal']}")
                         
-                        lc_val = int(r.get('lc', 0)) if 'lc' in r else int(r['lc_val'])
-                        bt_val = int(r.get('bt', 0)) if 'bt' in r else int(r['bt_val'])
-                        high_val = int(r.get('h14', lc_val)) if 'h14' in r else int(r['h14_val'])
-                        low_val = int(r.get('l14', 0)) if 'l14' in r else int(r['l14_val'])
-                        
+                        lc_val = int(r.get('lc', 0)); bt_val = int(r.get('bt', 0)); high_val = int(r.get('h14', lc_val)); low_val = int(r.get('l14', 0))
                         wave_len = high_val - low_val if low_val > 0 else 0
                         sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
                         tp20 = int(bt_val * 1.2); tp15 = int(bt_val * 1.15); tp10 = int(bt_val * 1.1); tp5 = int(bt_val * 1.05)
                         
-                        # 📈 出来高と価格変動の取得
-                        if 'hist' in r:
-                            hist_df = r['hist']
-                            avg_vol = int(hist_df['Volume'].tail(5).mean()) if 'Volume' in hist_df.columns else 0
-                            prev_c_val = r['prev_c']['AdjC']
-                        else:
-                            avg_vol = int(r.get('hist_df', pd.DataFrame())['Volume'].tail(5).mean()) if not r.get('hist_df', pd.DataFrame()).empty and 'Volume' in r.get('hist_df', pd.DataFrame()).columns else 0
-                            prev_c_val = r.get('prev_c', lc_val)
+                        daily_pct = r.get('daily_pct', 0); daily_sign = "+" if daily_pct >= 0 else ""
 
-                        daily_pct = (lc_val / prev_c_val) - 1 if prev_c_val > 0 else 0
-                        daily_sign = "+" if daily_pct >= 0 else ""
-
-                        # 🎯 掟達成率の厳密な分数計算（全13ルール）
+                        # --- 追加：出来高と掟適合数の計算 ---
+                        hist_df = r.get('hist_df', pd.DataFrame())
+                        avg_vol = int(hist_df['Volume'].tail(5).mean()) if not hist_df.empty and 'Volume' in hist_df.columns else 0
                         reach_pct = r.get('reach_pct', 0)
-                        passed_rules = int((r.get('rule_pct', 0) / 100.0) * 13) if 'rule_pct' in r else 11 # 概算補正
+                        passed_rules = int((r.get('rule_pct', 0) / 100.0) * 13)
                         if passed_rules > 13: passed_rules = 13
-                        
-                        # ⚖️ リスクリワード比（RR）の計算（TP10% / SL5% の場合）
-                        risk = bt_val - sl5
-                        reward = tp10 - bt_val
-                        rr_ratio = reward / risk if risk > 0 else 0
 
-                        # 📊 UI描画レイアウト（7列構成に拡張）
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
-                        
                         sc0.metric("直近高値", f"{high_val:,}円")
                         sc0_1.metric("直近安値", f"{low_val:,}円")
                         sc0_2.metric("上昇幅", f"{wave_len:,}円")
@@ -718,7 +699,6 @@ with tab1:
                             <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        # 🔥 復元＆新規追加レイアウト
                         html_stats = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                             <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
