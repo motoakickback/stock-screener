@@ -714,34 +714,112 @@ with tab2:
 # ------------------------------------------
 with tab3:
     st.markdown('### 🛸 高高度観測モニター（ブレイクアウト・順張り探知）')
-    if st.button("🚀 観測機を発進させる"):
-        with st.spinner("成層圏の熱源を探索中..."):
+    st.warning("⚠️ 【発砲厳禁】すでに空高く飛んでいるモメンタム銘柄を追跡し、墜落を安全圏から観察・学習するための研究用レーダーです。実弾装填は推奨しません。")
+    
+    if st.button("🚀 観測機を発進させる（ブレイクアウト全軍スキャン）"):
+        with st.spinner("成層圏の熱源（ブレイクアウト・高値更新銘柄）を探索中..."):
             raw = get_hist_data_cached()
-            if raw:
-                df_30 = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date']).groupby('Code').tail(30)
-                valid = df_30.groupby('Code').size(); df_30 = df_30[df_30['Code'].isin(valid[valid >= 15].index)]
+            if not raw: 
+                st.error("データの取得に失敗しました。")
+            else:
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df_30 = df.groupby('Code').tail(30)
+                
+                # 生存フィルター（処理の高速化）
+                valid = df_30.groupby('Code').size()
+                df_30 = df_30[df_30['Code'].isin(valid[valid >= 15].index)]
+                
+                latest_prices = df_30.groupby('Code')['AdjC'].last()
+                valid_price_codes = latest_prices[(latest_prices >= f1_min) & (latest_prices <= f1_max)].index
+                df_30 = df_30[df_30['Code'].isin(valid_price_codes)]
+                
                 results_t6 = []
                 for code, group in df_30.groupby('Code'):
-                    df_calc = group.copy(); df_calc['MA5'] = df_calc['AdjC'].rolling(window=5).mean()
-                    latest = df_calc.iloc[-1]; prev = df_calc.iloc[-2]
-                    lc = latest['AdjC']; h14 = df_calc.tail(14)['AdjH'].max(); daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
-                    if (lc > latest['MA5']) and (lc >= h14 * 0.95) and (daily_pct >= 0.03):
-                        c_name = master_df[master_df['Code'] == code]['CompanyName'].iloc[0] if not master_df.empty and code in master_df['Code'].values else "不明"
-                        if f7_ex_etf and bool(re.search("ETF|投信", str(c_name), re.IGNORECASE)): continue
-                        results_t6.append({'Code': code, 'Name': c_name, 'lc': lc, 'MA5': latest['MA5'], 'h14': h14, 'daily_pct': daily_pct, 'df_chart': calc_technicals(group.copy())})
-                if not results_t6: st.info("観測対象なし。")
+                    df_calc = group.copy()
+                    df_calc['MA5'] = df_calc['AdjC'].rolling(window=5).mean()
+                    latest = df_calc.iloc[-1]
+                    prev = df_calc.iloc[-2]
+                    
+                    lc = latest['AdjC']
+                    ma5 = latest['MA5']
+                    h14 = df_calc.tail(14)['AdjH'].max()
+                    daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
+                    
+                    # 🚀 純粋なプライスアクション・ブレイクアウト判定
+                    if (lc > ma5) and (lc >= h14 * 0.95) and (daily_pct >= 0.03):
+                        c_name = "不明"; c_market = "不明"; c_sector = "不明"; c_scale = ""
+                        if not master_df.empty:
+                            m_row = master_df[master_df['Code'] == code]
+                            if not m_row.empty:
+                                c_name = m_row.iloc[0]['CompanyName']
+                                c_market = m_row.iloc[0].get('Market', '不明')
+                                c_sector = m_row.iloc[0].get('Sector', '不明')
+                                c_scale = m_row.iloc[0].get('Scale', '')
+                                
+                        # ETF等の除外
+                        if f7_ex_etf and (c_sector == '-' or bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE))): 
+                            continue
+                            
+                        g_tech = calc_technicals(group.copy())
+                        rsi = g_tech.iloc[-1].get('RSI', 50)
+                        
+                        results_t6.append({
+                            'Code': code, 'Name': c_name, 'Market': c_market, 'Sector': c_sector, 'Scale': c_scale,
+                            'lc': lc, 'MA5': ma5, 'h14': h14, 'RSI': rsi, 'daily_pct': daily_pct,
+                            'df_chart': g_tech
+                        })
+                        
+                if not results_t6: 
+                    st.info("現在、成層圏（ブレイクアウト条件合致）を飛行中の機体は観測されませんでした。")
                 else:
-                    st.success(f"🛸 観測完了: {len(results_t6)} 機捕捉。")
-                    for r in sorted(results_t6, key=lambda x: x['daily_pct'], reverse=True):
+                    st.success(f"🛸 観測完了: {len(results_t6)} 機の熱源（ブレイクアウト）を捕捉しました。")
+                    res_df_t6 = pd.DataFrame(results_t6).sort_values('daily_pct', ascending=False)
+                    
+                    # 📋 復元：コピペ用コード枠
+                    st.markdown("#### 📋 コピペ用コード (高高度観測部隊)")
+                    if 'Code' in res_df_t6.columns:
+                        copy_codes_t6 = ",".join([str(c)[:4] for c in res_df_t6['Code']])
+                        st.code(copy_codes_t6, language="text")
+
+                    for _, r in res_df_t6.iterrows():
                         st.divider()
-                        st.markdown(f"### ({r['Code'][:4]}) {r['Name']} <span style='background:#616161;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;'>🛸 観測対象 (本日 +{r['daily_pct']*100:.1f}%)</span>", unsafe_allow_html=True)
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("最新終値", f"{int(r['lc']):,}円")
-                        col2.metric("5日線 (割ると墜落)", f"{int(r['MA5']):,}円")
-                        col3.metric("直近高値", f"{int(r['h14']):,}円")
+                        c = str(r['Code']); n = str(r['Name'])
+                        
+                        # 🏢 復元：規模バッジ
+                        scale_val = str(r.get('Scale', ''))
+                        if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
+                            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>'
+                        else:
+                            badge = '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
+                            
+                        st.markdown(f"""
+                            <div style="margin-bottom: 0.8rem;">
+                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0; color: #e0e0e0;">({c[:4]}) {n}</h3>
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                                    {badge}
+                                    <span style="background-color: #616161; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">🛸 観測対象 (本日 +{r['daily_pct']*100:.1f}% 飛翔)</span>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 💣 地雷警戒アラート
+                        for alert in check_event_mines(c): st.warning(alert)
+                        
+                        # 🏢 復元：業種・市場データ
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("最新終値", f"{int(r['lc']):,}円", f"+{r['daily_pct']*100:.1f}%")
+                        col2.metric("5日移動平均線", f"{int(r['MA5']):,}円", "支持線(割ると墜落)")
+                        col3.metric("直近14日高値", f"{int(r['h14']):,}円", "ブレイクライン")
+                        col4.metric("過熱度 (RSI)", f"{r['RSI']:.1f}%", "※参考値")
+                        
+                        st.markdown(render_technical_radar(r['df_chart'], r['lc'], 10), unsafe_allow_html=True)
                         
                         # --- 🎯 復元：高高度専用ズームチャート ---
                         draw_chart_t6(r['df_chart'], r['lc'], int(r['lc']*1.05), int(r['lc']*1.10), int(r['lc']*1.15))
+                        
+                        st.caption("【観測ポイント】紫色の線（5日線）に沿ってどこまで上昇を続けるか、またはいつ陰線を叩きつけて墜落するかを観察してください。")
 
 # ------------------------------------------
 # Tab 4: 精密スコープ照準（個別局地戦）
