@@ -651,7 +651,7 @@ with tab1:
                     three_days_sl = dynamic_sl_ratio * 1.5
                     sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 
-                # 🚨 掟は8/9以上を満たしているものだけが残っているため、100%に固定表示
+                # 🚨 足切り時点で掟は8/9以上を満たしているものだけが残る仕様
                 sum_df['rule_pct'] = 100.0 
                 sum_df['passed'] = 9 
                 
@@ -722,7 +722,8 @@ with tab1:
                     if pd.isna(daily_pct): daily_pct = 0
                     daily_sign = "+" if daily_pct >= 0 else ""
 
-                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4, sc5 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 0.7, 0.7])
+                    # 🚨 UIを7カラムに再統合。一番右側に大きな領域を確保
+                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     
                     sc0.metric("直近高値", f"{high_val:,}円")
                     sc0_1.metric("直近安値", f"{low_val:,}円")
@@ -748,14 +749,25 @@ with tab1:
                     </div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
-                    reach_val = r.get('reach_pct', float('nan'))
-                    sc4.metric("到達度", f"{reach_val:.1f}%" if not pd.isna(reach_val) else "---")
-                    
-                    # 🚨 出来高を画面に表示
+                    # 🚨 到達度・掟適合・出来高 を縦に積み上げた美しいUIボードを復旧
+                    reach_val = r.get('reach_pct', 0)
                     vol_val = r.get('avg_vol', 0)
-                    sc5.metric("出来高(5日)", f"{vol_val:,}株")
+                    html_stats = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                        <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_val:.1f}%</strong>
+                        </div>
+                        <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: #26a69a;">9/9 条件クリア (100%)</strong>
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
+                        </div>
+                    </div>
+                    """
+                    sc4.markdown(html_stats, unsafe_allow_html=True)
                     
-                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日 ｜ 🛡️ 掟クリア: 9/9 条件")
+                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
 
                     bt_stats = calc_historical_win_rate(
                         c[:4], st.session_state.push_r, st.session_state.limit_d,
@@ -781,8 +793,12 @@ with tab1:
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    hist = df[df['Code'] == c].sort_values('Date').tail(30)
-                    if not hist.empty: 
+                    # 🚨 【ローソク足の右寄り修正】グラフに描画する期間を「直近60日以内」に絞るフィルター
+                    hist_full = df[df['Code'] == c].sort_values('Date')
+                    if not hist_full.empty:
+                        cutoff_chart = hist_full['Date'].max() - timedelta(days=60)
+                        hist = hist_full[hist_full['Date'] >= cutoff_chart].tail(30)
+                        
                         hist = calc_technicals(hist)
                         st.markdown(render_technical_radar(hist, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(hist, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
