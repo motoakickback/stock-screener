@@ -536,11 +536,11 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     render_macro_board()
     st.markdown('### 🌐 ボスの「鉄の掟」広域スキャン（50%押し待伏せ）')
-    st.caption("※厳格なフィルターと絶対防衛線の計算により、リスク極小の待ち伏せポイントを抽出します。")
+    st.caption("※最低限の生存条件をクリアした銘柄を、ボスの定めた『掟（全9項目）』でスコアリングして抽出します。")
     run_scan = st.button(f"🚀 待伏せ部隊スキャン開始 ({tactics_mode.split()[0]}モード)")
     
     if run_scan:
-        with st.spinner("全軍から鉄の掟適合銘柄を抽出中..."):
+        with st.spinner("全軍から鉄の掟適合銘柄を抽出・採点中..."):
             raw = get_hist_data_cached()
             if not raw: 
                 st.error("データ取得に失敗しました。")
@@ -568,7 +568,7 @@ with tab1:
                     bt_primary = sum_df['h14'] - (ur * (push_r / 100.0)); shift_ratio = 0.618 if push_r >= 40 else (push_r / 100.0 + 0.15)
                     bt_secondary = sum_df['h14'] - (ur * shift_ratio)
                     sum_df['is_bt_broken'] = sum_df['lc'] < bt_primary; sum_df['bt'] = np.where(sum_df['is_bt_broken'], bt_secondary, bt_primary)
-                    sum_df = sum_df[sum_df['lc'] >= ((sum_df['h14'] - ur * 0.618) * 0.98)]
+                    
                     sum_df['tp15'] = sum_df['bt'] * 1.15
                     sum_df['reach_pct'] = np.where(sum_df['h14'] - sum_df['bt'] > 0, (sum_df['h14'] - sum_df['lc']) / (sum_df['h14'] - sum_df['bt']) * 100, 0)
                     sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
@@ -593,21 +593,32 @@ with tab1:
                         sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
                     if f6_risk and 'CompanyName' in sum_df.columns: sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
                     
-                    sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max) & (sum_df['r30'] <= f2_m30) & (sum_df['ldrop'] >= f3_drop) & ((sum_df['lrise'] <= f4_mlong) | (sum_df['lrise'] == 0))]
-                    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs']) & (~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False))]
-                    sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14) & (sum_df['d_high'] <= limit_d)]
-                    sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+                    # 🚨 【修正】絶対除外フィルター（最低限の生存バイアス）
+                    sum_df = sum_df[(sum_df['lc'] >= f1_min) & (sum_df['lc'] <= f1_max)]
                     if f10_ex_knife: sum_df = sum_df[(sum_df['daily_pct'] >= -(st.session_state.bt_sl_i / 100.0)) & (sum_df['pct_3days'] >= -(st.session_state.bt_sl_i / 100.0) * 1.5)]
                     
-                    rule_scores = []
+                    # 🎯 【修正】意味のある「掟の採点（スコアリング）」
+                    rule_scores = []; passed_counts = []
                     for _, r in sum_df.iterrows():
                         score_list = [
-                            (f1_min <= r['lc'] <= f1_max), r['r30'] <= f2_m30, r['ldrop'] >= f3_drop, (r['lrise'] <= f4_mlong) or (r['lrise'] == 0),
-                            (f9_min14 <= r['r14'] <= f9_max14), r['d_high'] <= limit_d, (r['bt'] * 0.85 <= r['lc'] <= r['bt'] * 1.35),
-                            not r['is_dt'] and not r['is_hs']
+                            r['r30'] <= f2_m30,
+                            r['ldrop'] >= f3_drop,
+                            (r['lrise'] <= f4_mlong) or (r['lrise'] == 0),
+                            (f9_min14 <= r['r14'] <= f9_max14),
+                            r['d_high'] <= limit_d,
+                            (r['bt'] * 0.85 <= r['lc'] <= r['bt'] * 1.35),
+                            not r['is_dt'],
+                            not r['is_hs'],
+                            not pd.notna(r.get('sakata_signal')) or "下落警戒" not in str(r.get('sakata_signal'))
                         ]
-                        rule_scores.append((sum(score_list) / len(score_list)) * 100)
+                        passed = sum(score_list)
+                        passed_counts.append(passed)
+                        rule_scores.append((passed / len(score_list)) * 100)
                     sum_df['rule_pct'] = rule_scores
+                    sum_df['passed_rules'] = passed_counts
+                    
+                    # 掟達成率が「66%以上（9項目のうち6項目以上クリア）」の銘柄だけを抽出
+                    sum_df = sum_df[sum_df['rule_pct'] >= 65.0]
                     
                     if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
                     elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
@@ -680,8 +691,8 @@ with tab1:
                             hist_df = r.get('hist_df', pd.DataFrame())
                             avg_vol = int(hist_df['Volume'].tail(5).mean()) if not hist_df.empty and 'Volume' in hist_df.columns else 0
                             reach_pct = r.get('reach_pct', 0)
-                            passed_rules = int((r.get('rule_pct', 0) / 100.0) * 13)
-                            if passed_rules > 13: passed_rules = 13
+                            passed_rules = int(r.get('passed_rules', 0))
+                            rule_pct_val = r.get('rule_pct', 0)
 
                             sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                             sc0.metric("直近高値", f"{high_val:,}円")
@@ -699,13 +710,15 @@ with tab1:
                                 <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                             sc3.markdown(html_sell, unsafe_allow_html=True)
                             
+                            # 🔥 意味のあるスコア表示
+                            pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 6 else "#ef5350"
                             html_stats = f"""
                             <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                                 <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                                     <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
                                 </div>
-                                <div style="background: rgba(239, 83, 80, 0.1); border-left: 3px solid #ef5350; padding: 4px 8px; border-radius: 4px;">
-                                    <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: #fff;">{passed_rules}/13 条件クリア</strong>
+                                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {pct_color}; padding: 4px 8px; border-radius: 4px;">
+                                    <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {pct_color};">{passed_rules}/9 条件クリア ({rule_pct_val:.0f}%)</strong>
                                 </div>
                                 <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
                                     <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
