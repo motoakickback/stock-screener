@@ -336,39 +336,73 @@ def render_technical_radar(df, buy_price, tp_pct):
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 # --- 標準チャート（Tab 1, 2, 4用） ---
-def draw_chart(df, targ_p, *args, **kwargs):
+def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     df = df.copy()
     df['MA5'] = df['AdjC'].rolling(window=5).mean()
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
-    df['MA75'] = df['AdjC'].rolling(window=75).mean() # 🛡️ 75日線
-    
-    tp10 = targ_p * 1.10 # 🎯 10%ラインのみを内部強制計算
-    
+    df['MA75'] = df['AdjC'].rolling(window=75).mean()
+
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#ef5350', decreasing_line_color='#26a69a'))
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))
+    fig.add_trace(go.Candlestick(
+        x=df['Date'], open=df['AdjO'], high=df['AdjH'],
+        low=df['AdjL'], close=df['AdjC'], name='株価',
+        increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
+    ))
+
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      
+
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
+    if tp5 and tp10 and tp15 and tp20:
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
+        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値/トリガー', line=dict(color='#FFD700', width=2, dash='dash')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot'))) # ノイズを消去し10%のみ描画
-    
-    start_date = df['Date'].max() - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    
-    fig.update_layout(
-        height=450,
-        margin=dict(l=0, r=10, t=40, b=0),
-        xaxis=dict(
-            rangeslider=dict(visible=True, thickness=0.1),
-            range=[start_date, df['Date'].max() + timedelta(days=2)],
-            type="date"
-        ),
-        yaxis=dict(fixedrange=False, side="right", automargin=True),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        dragmode="pan"
+    last_date = df['Date'].max()
+    start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+    padding_days = timedelta(days=0.5)
+
+    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
+    if not visible_df.empty:
+        y_max_vals = [visible_df['AdjH'].max(), targ_p, visible_df['MA5'].max(), visible_df['MA25'].max(), visible_df['MA75'].max()]
+        y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85, visible_df['MA5'].min(), visible_df['MA25'].min(), visible_df['MA75'].min()] 
+        if tp20: y_max_vals.append(tp20)
+        
+        y_max = max([v for v in y_max_vals if not pd.isna(v)])
+        y_min = min([v for v in y_min_vals if not pd.isna(v)])
+        
+        margin = (y_max - y_min) * 0.05
+        y_range = [y_min - margin, y_max + margin]
+    else:
+        y_range = None
+
+    layout_args = dict(
+        height=450, 
+        margin=dict(l=10, r=60, t=20, b=40), 
+        xaxis_rangeslider_visible=True,
+        xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
+        yaxis=dict(tickformat=",.0f"),
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified", 
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
+    
+    if y_range:
+        layout_args['yaxis'].update(range=y_range, fixedrange=False)
+
+    fig.update_layout(**layout_args)
+    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
+    
+    # 🚨 【修正】スマホでの誤操作対策：操作パネルを強制表示
+    config = {
+        'displayModeBar': True,          # モードバーをスマホでも常駐
+        'displaylogo': False,            # Plotlyロゴを非表示
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d'] # 不要な選択ツールを消してスッキリさせる
+    }
+    st.plotly_chart(fig, use_container_width=True, config=config)
 
 # --- 高高度モニター（Tab 3用）ズームチャート ---
 def draw_chart_t6(df, targ_p, *args, **kwargs):
