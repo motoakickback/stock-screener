@@ -533,86 +533,130 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     render_macro_board()
     st.markdown(f"### 📡 広域レーダー: {tactics_mode}")
+    st.caption("※市場全銘柄から、現在の戦術に合致する「撃つべき獲物」を自動選別します。")
+
     if st.button(f"🚀 全銘柄 索敵開始 ({st.session_state.sidebar_tactics.split()[0]})"):
         df = get_market_data()
-        if not df.empty:
-            # 🚨 10営業日（2週間）に観測期間を固定
+        if df.empty:
+            st.error("市場データの取得に失敗しました。本陣の通信状況を確認してください。")
+        else:
+            # 🚨 期間同期：カレンダーではなく「10営業日（ローソク足10本）」に完全固定
             df_30 = df.groupby('Code').tail(30)
             df_14 = df_30.groupby('Code').tail(10)
-            valid = df_14.groupby('Code').size()[df_14.groupby('Code').size() >= 5].index
-            df_14 = df_14[df_14['Code'].isin(valid)]
-            
-            with st.spinner("弾道計算中..."):
-                # 基礎データ算出
+            valid_codes = df_14.groupby('Code').size()[df_14.groupby('Code').size() >= 5].index
+            df_30 = df_30[df_30['Code'].isin(valid_codes)]
+            df_14 = df_14[df_14['Code'].isin(valid_codes)]
+
+            with st.spinner("全市場の弾道を計算中..."):
+                final_results = []
+                # 基礎集計
                 res = df_14.groupby('Code').apply(lambda x: pd.Series({
                     'lc': x['AdjC'].iloc[-1],
                     'h14': x['AdjH'].max(),
                     'l14': x['AdjL'].min(),
                     'd_high': len(x[x['Date'] > x.loc[x['AdjH'].idxmax(), 'Date']]) if pd.notna(x['AdjH'].idxmax()) else 0
                 })).reset_index()
-                
+
                 res = res[(res['lc'] >= st.session_state.min_p) & (res['lc'] <= st.session_state.max_p)]
                 res_30 = df_30.groupby('Code').agg({'AdjL': 'min'}).reset_index()
-                res = res.merge(res_30, on='Code')
-                
+                res = res.merge(res_30, on='Code', suffixes=('', '_30'))
                 past_df = df[~df.index.isin(df_30.index)].groupby('Code').agg({'AdjH': 'max', 'AdjL': 'min'}).reset_index()
                 res = res.merge(past_df, on='Code', how='left', suffixes=('', '_past'))
-                
-                # スコア判定ロジック
-                final_results = []
+
+                # 個別解析ループ
                 for _, r in res.iterrows():
                     c = str(r['Code']); api_c = c if len(c) == 5 else c + "0"
+                    
+                    # 比率計算
+                    r30 = r['lc'] / r['AdjL'] if r['AdjL'] > 0 else 0
+                    r14 = r['h14'] / r['l14'] if r['l14'] > 0 else 0
+                    ldrop = ((r['lc'] / r['AdjH_past']) - 1) * 100 if pd.notna(r['AdjH_past']) and r['AdjH_past'] > 0 else 0
+                    lrise = r['lc'] / r['AdjL_past'] if pd.notna(r['AdjL_past']) and r['AdjL_past'] > 0 else 0
+
+                    # 基礎足切り（重い計算の前に除外）
+                    if not ((r30 <= f2_m30) and (f9_min14 <= r14 <= f9_max14) and (r['d_high'] <= st.session_state.limit_d)):
+                        continue
+
                     raw_s = get_single_data(api_c, 1)
                     if not raw_s: continue
                     hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
                     if len(hist) < 10: continue
-                    
-                    latest = hist.iloc[-1]; hist_10 = hist.tail(10)
-                    # 掟の各項目
-                    r30 = r['lc'] / r['AdjL']; r14 = r['h14'] / r['l14']
-                    ldrop = ((r['lc'] / r['AdjH_past']) - 1) * 100 if pd.notna(r['AdjH_past']) else 0
-                    lrise = r['lc'] / r['AdjL_past'] if pd.notna(r['AdjL_past']) else 0
-                    
+
+                    latest = hist.iloc[-1]; prev_c = hist.iloc[-2] if len(hist) > 1 else latest
+                    atr = latest.get('ATR', 0)
+                    if atr < 10 or (atr / latest['AdjC']) < 0.01: continue # 不発弾キル
+
+                    hist_10 = hist.tail(10)
                     is_dt = check_double_top(hist_10); is_hs = check_head_shoulders(hist_10)
-                    sakata = check_sakata_patterns(hist.tail(30))
-                    
-                    wave = r['h14'] - r['l14']
-                    bt_p = r['h14'] - (wave * (st.session_state.push_r / 100.0))
-                    bt_val = int(bt_p)
-                    
-                    # 🚨 9項目スコア（完全同期版）
+                    sakata_sig = check_sakata_patterns(hist.tail(30))
+
+                    wave_len = r['h14'] - r['l14']
+                    bt_p = r['h14'] - (wave_len * (st.session_state.push_r / 100.0))
+                    shift = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
+                    bt_val = int(r['h14'] - (wave_len * shift) if r['lc'] < bt_p else bt_p)
+
+                    # 🚨 9項目スコア完全同期判定
                     score_list = [
-                        (r30 <= f2_m30), (ldrop >= f3_drop), (lrise <= f4_mlong or lrise == 0),
-                        (f9_min14 <= r14 <= f9_max14), (r['d_high'] <= st.session_state.limit_d),
-                        (bt_val * 0.85 <= r['lc'] <= bt_val * 1.35), (not is_dt), (not is_hs),
-                        (not pd.notna(sakata) or "下落警戒" not in str(sakata))
+                        (r30 <= f2_m30),
+                        (ldrop >= f3_drop),
+                        (lrise <= f4_mlong or lrise == 0),
+                        (f9_min14 <= r14 <= f9_max14),
+                        (r['d_high'] <= st.session_state.limit_d),
+                        (bt_val * 0.85 <= r['lc'] <= bt_val * 1.35),
+                        (not is_dt),
+                        (not is_hs),
+                        (not pd.notna(sakata_sig) or "下落警戒" not in str(sakata_sig))
                     ]
-                    f_score = sum(score_list)
+                    f_passed = sum(score_list)
+                    if f_passed < 8: continue # 🚨 ボス指示：8/9以上のみ表示
+
+                    # 🚨 出来高 Vo/AdjVo 完全復旧ロジック
+                    avg_vol = 0
+                    vol_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                    if vol_col:
+                        avg_vol = int(pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean())
+
+                    rank, bg, score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev_c.get('MACD_Hist', 0), latest.get('RSI', 50))
+                    m_row = master_df[master_df['Code'] == api_c]
                     
-                    if f_score >= 8: # 8/9以上のみ
-                        v_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                        avg_v = int(pd.to_numeric(hist[v_col].tail(5), errors='coerce').fillna(0).mean()) if v_col else 0
-                        
-                        final_results.append({
-                            'Code': c, 'lc': r['lc'], 'bt': bt_val, 'passed': f_score, 
-                            'avg_v': avg_v, 'hist': hist, 'reach': ((r['h14']-r['lc'])/(r['h14']-bt_val)*100) if (r['h14']-bt_val)>0 else 0,
-                            'daily': (r['lc']/hist.iloc[-2]['AdjC']-1) if len(hist)>1 else 0
-                        })
-                
-                if final_results:
-                    final_df = pd.DataFrame(final_results).sort_values('reach', ascending=False)
-                    st.success(f"🎯 索敵完了: {len(final_df)} 銘柄検知")
-                    for row in final_results:
-                        st.divider()
-                        st.markdown(f"### ({row['Code'][:4]}) 掟適合: {row['passed']}/9")
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("終値", f"{int(row['lc']):,}", f"{row['daily']*100:+.1f}%")
-                        c2.metric("買値目標", f"{row['bt']:,}")
-                        c3.metric("出来高(5日)", f"{row['avg_v']:,}")
-                        c4.metric("到達度", f"{row['reach']:.1f}%")
-                        draw_chart(row['hist'], row['bt'], tp15=int(row['bt']*1.15))
+                    final_results.append({
+                        'Code': c, 'CompanyName': m_row.iloc[0]['CompanyName'] if not m_row.empty else f"銘柄 {c}",
+                        'lc': r['lc'], 'bt': bt_val, 'h14': r['h14'], 'l14': r['l14'], 'wave': wave_len,
+                        'is_bt_broken': (r['lc'] < bt_p), 'reach_pct': ((r['h14'] - r['lc']) / (r['h14'] - bt_val) * 100) if (r['h14'] - bt_val) > 0 else 0,
+                        'passed_rules': f_passed, 'rule_pct': (f_passed / 9) * 100,
+                        'triage_rank': rank, 'triage_bg': bg, 'triage_score': score, 'macd_t': macd_t,
+                        'hist_df': hist, 'avg_vol': avg_vol, 'daily_pct': (r['lc'] / prev_c['AdjC']) - 1 if prev_c['AdjC'] > 0 else 0
+                    })
+
+                # 描画フェーズ
+                final_df = pd.DataFrame(final_results)
+                if final_df.empty:
+                    st.warning("現在の市場に、8/9以上の掟を満たす標的は存在しません。")
                 else:
-                    st.warning("条件を満たす標的は存在しません。")
+                    final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
+                    st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄が照準に入りました。")
+                    st.code(",".join([str(c)[:4] for c in final_df['Code']]), language="text")
+
+                    for _, row in final_df.iterrows():
+                        st.divider()
+                        c_str = str(row['Code'])
+                        st.markdown(f"### ({c_str[:4]}) {row['CompanyName']} <span style='background:{row['triage_bg']};color:white;font-size:12px;padding:2px 6px;border-radius:4px;margin-left:5px;'>🎯 優先度: {row['triage_rank']}</span>", unsafe_allow_html=True)
+                        
+                        if row['macd_t'] == "GC直後":
+                            st.markdown("<div style='background: linear-gradient(45deg, #b71c1c, #ff5722); color: white; padding: 0.5rem; border-radius: 4px; font-weight: bold; margin-bottom: 0.5rem;'>🔥🔥 MACD ゴールデンクロス発動中 🔥🔥</div>", unsafe_allow_html=True)
+                        if row['is_bt_broken']: 
+                            st.error("⚠️ 【第一防衛線突破】目標値を第二防衛線へシフト済")
+
+                        c1, c2, c3, c4 = st.columns([1, 1, 1, 1.5])
+                        c1.metric("最新終値", f"{int(row['lc']):,}円", f"{row['daily_pct']*100:+.1f}%")
+                        c2.metric("買値目標", f"{int(row['bt']):,}円")
+                        c3.metric("出来高(5日平均)", f"{row['avg_vol']:,}株")
+                        
+                        p_col = "#26a69a" if row['passed_rules'] >= 8 else "#FFD700"
+                        c4.markdown(f"<div style='border-left:5px solid {p_col};padding-left:10px;'><strong>掟適合: {int(row['passed_rules'])}/9</strong> ({row['rule_pct']:.0f}%)<br>到達度: {row['reach_pct']:.1f}%</div>", unsafe_allow_html=True)
+                        
+                        st.markdown(render_technical_radar(row['hist_df'], row['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
+                        draw_chart(row['hist_df'], row['bt'], tp15=int(row['bt'] * 1.15))
 
 with tab2:
     st.info("戦術レーダー（待機中）")
@@ -621,30 +665,75 @@ with tab3:
     st.info("高高度モニター（待機中）")
 
 with tab4:
-    st.markdown('### 🎯 精密スコープ照準')
-    t_codes_str = st.text_area("標的コード（改行区切り）", value="7203", height=100)
-    if st.button("🔫 精密スキャン開始") and t_codes_str:
-        t_codes = re.findall(r'\d{4}', t_codes_str)
-        for c in t_codes:
-            raw_s = get_single_data(c + "0", 1)
-            if raw_s:
+    st.markdown('### 🎯 精密スコープ照準（局地戦スキャン）')
+    st.caption("※広域レーダーで捉えた銘柄を再入力し、寸分違わぬ精密解析を実行します。")
+    t_codes_str = st.text_area("標的コード（複数可、改行区切り）", value="7203", height=100)
+    
+    if st.button("🔫 指定銘柄 一斉スキャン") and t_codes_str:
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'\d{4}', t_codes_str)]))
+        with st.spinner(f"{len(t_codes)} 銘柄の弾道を再計算中..."):
+            for c in t_codes:
+                raw_s = get_single_data(c + "0", 1)
+                if not raw_s: continue
                 hist = calc_technicals(clean_df(pd.DataFrame(raw_s)))
-                if len(hist) >= 10:
-                    latest = hist.iloc[-1]; lc_val = int(latest['AdjC'])
-                    hist_10 = hist.tail(10); h14 = hist_10['AdjH'].max(); l14 = hist_10['AdjL'].min()
-                    # 🚨 10営業日同期の目標値
-                    bt_val = int(h14 - (h14 - l14) * (st.session_state.push_r / 100.0))
-                    # 🚨 出来高 Vo/AdjVo 同期
-                    v_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                    avg_v = int(pd.to_numeric(hist[v_col].tail(5), errors='coerce').fillna(0).mean()) if v_col else 0
-                    
-                    st.divider()
-                    st.markdown(f"### ({c}) 精密解析")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("最新終値", f"{lc_val:,}")
-                    c2.metric("買値目標", f"{bt_val:,}")
-                    c3.metric("出来高(5日)", f"{avg_v:,}")
-                    draw_chart(hist, bt_val, tp15=int(bt_val * 1.15))
+                if len(hist) < 10: continue
+                
+                latest = hist.iloc[-1]; prev_c = hist.iloc[-2] if len(hist) > 1 else latest
+                lc_val = int(latest['AdjC'])
+                
+                # 🚨 10営業日同期
+                hist_10 = hist.tail(10); hist_30 = hist.tail(30)
+                h14 = int(hist_10['AdjH'].max()); l14 = int(hist_10['AdjL'].min())
+                l30 = hist_30['AdjL'].min()
+                if l14 <= 0 or l30 <= 0: continue
+                
+                wave_len = h14 - l14
+                bt_p = h14 - (wave_len * (st.session_state.push_r / 100.0))
+                shift = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
+                bt_val = int(h14 - (wave_len * shift) if lc_val < bt_p else bt_p)
+                
+                # 🚨 9項目判定（Tab 1と完全に同じ論理式）
+                hist_past = hist.iloc[:-30] if len(hist) > 30 else pd.DataFrame()
+                omax = hist_past['AdjH'].max() if not hist_past.empty else np.nan
+                omin = hist_past['AdjL'].min() if not hist_past.empty else np.nan
+                r30 = lc_val / l30; r14 = h14 / l14
+                ldrop = ((lc_val / omax) - 1) * 100 if pd.notna(omax) and omax > 0 else 0
+                lrise = lc_val / omin if pd.notna(omin) and omin > 0 else 0
+                
+                idx_max = hist_10['AdjH'].idxmax()
+                d_high = len(hist_10[hist_10['Date'] > hist_10.loc[idx_max, 'Date']]) if pd.notna(idx_max) else 0
+                is_dt = check_double_top(hist_10); is_hs = check_head_shoulders(hist_10)
+                sakata = check_sakata_patterns(hist_30)
+                
+                score_list = [
+                    (r30 <= f2_m30), (ldrop >= f3_drop), (lrise <= f4_mlong or lrise == 0),
+                    (f9_min14 <= r14 <= f9_max14), (d_high <= st.session_state.limit_d),
+                    (bt_val * 0.85 <= lc_val <= bt_val * 1.35), (not is_dt), (not is_hs),
+                    (not pd.notna(sakata) or "下落警戒" not in str(sakata))
+                ]
+                f_passed = sum(score_list)
+                
+                # 🚨 出来高同期
+                avg_vol = 0
+                vol_col = next((col for col in hist.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                if vol_col:
+                    avg_vol = int(pd.to_numeric(hist[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean())
+                
+                reach_pct = ((h14 - lc_val) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
+                daily_pct = (lc_val / prev_c['AdjC']) - 1 if prev_c['AdjC'] > 0 else 0
+                
+                st.divider()
+                st.markdown(f"### ({c}) 精密解析結果")
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 1.5])
+                c1.metric("最新終値", f"{lc_val:,}円", f"{daily_pct*100:+.1f}%")
+                c2.metric("買値目標", f"{bt_val:,}円")
+                c3.metric("出来高(5日平均)", f"{avg_vol:,}株")
+                
+                p_col = "#26a69a" if f_passed >= 8 else "#ef5350"
+                c4.markdown(f"<div style='border-left:5px solid {p_col};padding-left:10px;'><strong>掟適合: {f_passed}/9</strong> ({f_passed/9*100:.0f}%)<br>到達度: {reach_pct:.1f}%</div>", unsafe_allow_html=True)
+                
+                st.markdown(render_technical_radar(hist, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                draw_chart(hist, bt_val, tp15=int(bt_val * 1.15))
                         
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
