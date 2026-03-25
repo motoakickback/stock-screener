@@ -1229,7 +1229,7 @@ with tab5:
                 st.dataframe(tdf, use_container_width=True, hide_index=True)
 
 # ------------------------------------------
-# Tab 6: IFD-OCO 10日ルール監視
+# Tab 6: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
 # ------------------------------------------
 with tab6:
     st.markdown('### ⏳ IFD-OCO 10日ルール監視')
@@ -1249,6 +1249,7 @@ with tab6:
             
         lines = hold_input.strip().split('\n')
         today = datetime.utcnow() + timedelta(hours=9)
+        today_date = today.date()
         
         for line in lines:
             if not line.strip(): continue
@@ -1258,8 +1259,17 @@ with tab6:
                 bp = parts[2] if len(parts) >= 3 else "---"
                 
                 try:
-                    buy_date = datetime.strptime(date_str, "%Y-%m-%d")
-                    days_elapsed = np.busday_count(buy_date.date(), today.date())
+                    buy_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    
+                    # 🛡️ JPX完全カレンダー（土日・祝日・年末年始の除外）
+                    days_elapsed = 0
+                    curr_date = buy_date
+                    while curr_date < today_date:
+                        # 土日(5,6)以外 ＆ 日本の祝日以外 ＆ 年末年始(12/31〜1/3)以外なら「営業日」としてカウント
+                        if curr_date.weekday() < 5 and not jpholiday.is_holiday(curr_date):
+                            if not ((curr_date.month == 1 and curr_date.day in [1, 2, 3]) or (curr_date.month == 12 and curr_date.day == 31)):
+                                days_elapsed += 1
+                        curr_date += timedelta(days=1)
                     
                     c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c + "0") in master_df['Code'].values else "不明"
                     
@@ -1280,9 +1290,9 @@ with tab6:
                         <div style="font-size: 18px; font-weight: bold; color: {border_color};">{status} : 経過 {days_elapsed} 営業日</div>
                     </div>
                     """, unsafe_allow_html=True)
-                except:
-                    st.error(f"🚨 フォーマットエラー: {line} (カンマ区切り、YYYY-MM-DD形式で入力してください)")
-
+                except Exception as e:
+                    st.error(f"🚨 フォーマットエラー: {line} (YYYY-MM-DD形式で入力してください) - {e}")
+                    
 # ------------------------------------------
 # Tab 7: 事後任務報告（AAR）
 # ------------------------------------------
