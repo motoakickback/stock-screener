@@ -617,8 +617,8 @@ with tab1:
                     sum_df['rule_pct'] = rule_scores
                     sum_df['passed_rules'] = passed_counts
                     
-                    # 🚨 ボスの直接命令：足切りラインを「7/9（77%以上クリア）」に再設定
-                    sum_df = sum_df[sum_df['passed_rules'] >= 7]
+                    # 🚨 ボスの直接命令：足切りラインを「8/9（88%以上クリア）」に再厳格化
+                    sum_df = sum_df[sum_df['passed_rules'] >= 8]
                     
                     if tactics_mode.startswith("⚔️"): base_res = sum_df.sort_values(['is_db', 'reach_pct'], ascending=[False, False]).head(40)
                     elif tactics_mode.startswith("🛡️"): base_res = sum_df.sort_values(['is_defense', 'reach_pct'], ascending=[False, False]).head(40)
