@@ -1159,36 +1159,37 @@ with tab4:
                         # この下にある sc0, sc0_1, ... = st.columns(...) へ続く
 
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
-                        sc0.metric("直近高値", f"{r['h14_val']:,}円")
-                        sc0_1.metric("直近安値", f"{r['l14_val']:,}円")
-                        sc0_2.metric("上昇幅", f"{r['wave_len']:,}円")
-                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
-                        
-                        html_buy = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div></div>"""
-                        sc2.markdown(html_buy, unsafe_allow_html=True)
-                        
-                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div><div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
-                        sc3.markdown(html_sell, unsafe_allow_html=True)
-                        
-                        pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 6 else "#ef5350"
-                        html_stats = f"""
-                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
-                            <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
+                            sc0.metric("直近高値", f"{high_val:,}円")
+                            sc0_1.metric("直近安値", f"{low_val:,}円")
+                            sc0_2.metric("上昇幅", f"{wave_len:,}円")
+                            sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                            
+                            html_buy = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div></div>"""
+                            sc2.markdown(html_buy, unsafe_allow_html=True)
+                            
+                            html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div><div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
+                            sc3.markdown(html_sell, unsafe_allow_html=True)
+                            
+                            # 🚨 【修正】表示用変数 passed_rules を確実に画面へ反映
+                            pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 7 else "#ef5350"
+                            html_stats = f"""
+                            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                                <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                                    <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_pct:.1f}%</strong>
+                                </div>
+                                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {pct_color}; padding: 4px 8px; border-radius: 4px;">
+                                    <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {pct_color};">{passed_rules}/9 条件クリア ({rule_pct_val:.0f}%)</strong>
+                                </div>
+                                <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                                    <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
+                                </div>
                             </div>
-                            <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {pct_color}; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">掟適合:</span> <strong style="font-size: 15px; color: {pct_color};">{passed_rules}/9 条件クリア ({rule_pct_val:.0f}%)</strong>
-                            </div>
-                            <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">出来高:</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
-                            </div>
-                        </div>
-                        """
-                        sc4.markdown(html_stats, unsafe_allow_html=True)
+                            """
+                            sc4.markdown(html_stats, unsafe_allow_html=True)
                         
                         # 🚨 【重要】システム丸裸レポート
                         with st.expander(f"🛠️ システム内部解剖（なぜ {passed_rules}/9 点なのか？ / 出来高0の理由は？）"):
