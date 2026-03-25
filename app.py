@@ -667,9 +667,11 @@ with tab1:
                             
                             # 👇 この下から for _, r in final_df.iterrows(): が始まります
                         
+                        # --- ここから上書き開始 ---
                         for _, r in final_df.iterrows():
                             st.divider()
-                            c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
+                            c = str(r['Code'])
+                            n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
                             
                             scale_val = str(r.get('Scale', ''))
                             if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]):
@@ -700,18 +702,13 @@ with tab1:
                             tp20 = int(bt_val * 1.2); tp15 = int(bt_val * 1.15); tp10 = int(bt_val * 1.1); tp5 = int(bt_val * 1.05)
                             
                             daily_pct = r.get('daily_pct', 0); daily_sign = "+" if daily_pct >= 0 else ""
-
                             hist_df = r.get('hist_df', pd.DataFrame())
                             
-                            # 🚨 【出来高 Vo/AdjVo 認識修正】
                             avg_vol = 0
-                            # 優先順位: AdjVo > Vo > その他 volを含む列
                             vol_col = next((col for col in hist_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                             if not vol_col:
                                 vol_col = next((col for col in hist_df.columns if re.search(r'vol|出来高', col, re.IGNORECASE)), None)
-                            
                             if vol_col:
-                                # 文字列やコンマを排除して数値化
                                 v_series = pd.to_numeric(hist_df[vol_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                                 avg_vol = int(v_series.tail(5).mean())
                                         
@@ -735,8 +732,7 @@ with tab1:
                                 <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span></div></div>"""
                             sc3.markdown(html_sell, unsafe_allow_html=True)
                             
-                            # 🔥 意味のあるスコア表示
-                            pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 6 else "#ef5350"
+                            pct_color = "#26a69a" if passed_rules >= 8 else "#FFD700" if passed_rules >= 7 else "#ef5350"
                             html_stats = f"""
                             <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                                 <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
@@ -770,6 +766,7 @@ with tab1:
                             if not hist_df.empty:
                                 st.markdown(render_technical_radar(hist_df, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                                 draw_chart(hist_df, bt_val, tp15=tp15)
+                        # --- ここまで上書き終了 ---
                             
 # ------------------------------------------
 # Tab 2: GC初動強襲レーダー
