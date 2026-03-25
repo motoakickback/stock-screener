@@ -669,7 +669,7 @@ with tab1:
                             if "下落警戒" in str(r['sakata_signal']): st.error(f"🚨 【波形警告】{r['sakata_signal']}")
                             else: st.success(f"🔥 【反転攻勢】{r['sakata_signal']}")
                         
-lc_val = int(r.get('lc', 0)) if 'lc' in r else int(r['lc_val'])
+                        lc_val = int(r.get('lc', 0)) if 'lc' in r else int(r['lc_val'])
                         bt_val = int(r.get('bt', 0)) if 'bt' in r else int(r['bt_val'])
                         high_val = int(r.get('h14', lc_val)) if 'h14' in r else int(r['h14_val'])
                         low_val = int(r.get('l14', 0)) if 'l14' in r else int(r['l14_val'])
