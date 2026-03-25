@@ -549,6 +549,7 @@ with tab1:
             df_14 = df_14[df_14['Code'].isin(valid)]
 
             with st.spinner("標的の弾道を計算中..."):
+                # 基礎足切り計算
                 res = df_14.groupby('Code').apply(lambda x: pd.Series({
                     'lc': x['AdjC'].iloc[-1],
                     'h14': x['AdjH'].max(),
@@ -599,7 +600,7 @@ with tab1:
                         
                         final_score_list = [(r['r30'] <= f2_m30), (r['ldrop'] >= f3_drop), (r['lrise'] <= f4_mlong or r['lrise'] == 0), (f9_min14 <= r['r14'] <= f9_max14), (r['d_high'] <= st.session_state.limit_d), (bt_val * 0.85 <= r['lc'] <= bt_val * 1.35), (not is_dt), (not is_hs), (not pd.notna(sakata_sig) or "下落警戒" not in str(sakata_sig))]
                         f_passed = sum(final_score_list)
-                        if f_passed < 8: continue
+                        if f_passed < 8: continue # 🚨 8/9以上を厳守
                         
                         rank, bg, score, _ = get_triage_info(latest.get('MACD_Hist', 0), hist.iloc[-2].get('MACD_Hist', 0), latest.get('RSI', 50))
                         m_row = master_df[master_df['Code'] == api_code]
@@ -613,7 +614,7 @@ with tab1:
 
                     final_df = pd.DataFrame(final_results)
                     if final_df.empty:
-                        st.warning("8/9以上の標的は、不発弾キルにより除外されました。")
+                        st.warning("8/9以上の掟を満たす銘柄は見つかりませんでした。")
                     else:
                         final_df = final_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False])
                         st.success(f"🎯 スキャン完了: {len(final_df)} 銘柄クリア")
@@ -623,16 +624,15 @@ with tab1:
                             st.divider()
                             code_str = str(row['Code']); h_df = row['hist_df']
                             st.markdown(f"### ({code_str[:4]}) {row['CompanyName']} <span style='background:{row['triage_bg']};color:white;font-size:12px;padding:2px 6px;border-radius:4px;'>🎯 {row['triage_rank']}</span>", unsafe_allow_html=True)
-                            if row['is_bt_broken']: st.error("⚠️ 第一防衛線突破につき目標シフト済")
                             
-                            # 🚨 【出来高 Vo/AdjVo 認識修正】
+                            # 🚨 【出来高復旧】Vo/AdjVoを自動認識
                             v_val = 0; v_col = next((col for col in h_df.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                             if v_col:
                                 v_s = pd.to_numeric(h_df[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                                 v_val = int(v_s.tail(5).mean())
 
                             c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-                            c1.metric("最新終値", f"{int(row['lc']):,}")
+                            c1.metric("最新終値", f"{int(row['lc']):,}", f"{row['daily_pct']*100:+.1f}%")
                             c2.metric("買値目標", f"{int(row['bt']):,}")
                             c3.metric("出来高(5平均)", f"{v_val:,}")
                             p_col = "#26a69a" if row['passed_rules'] >= 8 else "#FFD700"
