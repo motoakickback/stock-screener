@@ -467,8 +467,14 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi):
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
 if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
-st.session_state.bt_tp = 10; st.session_state.bt_sl_i = 8; st.session_state.bt_sl_c = 8; st.session_state.limit_d = 4; st.session_state.bt_sell_d = 10
-st.session_state.bt_lot = 100
+
+# 🚨 【修正】ここから下の行に「if not in」の防壁を追加し、強制リセットを無効化しました
+if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10
+if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
+if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 8
+if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
+if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
+if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
 
 def apply_market_preset():
     preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
