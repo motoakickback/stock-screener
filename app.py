@@ -1003,8 +1003,190 @@ with tab2:
                             draw_chart(hist_chart, bt_val, tp10=tp10)
 
 with tab3:
-    st.info("高高度モニター（待機中）")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📉 統合バックテストエンジン（過去2年）</h3>', unsafe_allow_html=True)
+    st.caption("Tab1（押し目）またはTab2（強襲）の最新ロジックを選択し、過去2年間の相場における優位性を検証します。")
+    
+    col_b1, col_b2 = st.columns([1, 2])
 
+    T3_FILE = f"saved_t3_codes_{user_id}.txt"
+    default_t3 = "6614\n3997\n4935\n7203"
+    if os.path.exists(T3_FILE):
+        with open(T3_FILE, "r", encoding="utf-8") as f:
+            default_t3 = f.read()
+
+    with col_b1: 
+        bt_c_in = st.text_area("銘柄コード（複数可、改行区切り）", value=default_t3, height=150)
+        test_mode = st.radio("🎯 検証モードを選択", ["🌐 Tab 1: 鉄の掟 (押し目狙撃)", "⚔️ Tab 2: 強襲 (GC初動・順張り)"])
+        run_bt = st.button("🔥 一括バックテスト実行", use_container_width=True)
+        
+    with col_b2:
+        st.markdown("#### ⚙️ シミュレーション微調整 (共通パラメーター)")
+        st.caption("※デフォルトはサイドバーの最新設定に同期しています。ここで数値を変更してテストを繰り返せます。")
+        
+        # 🚨 利確・損切・買い期限・売り期限の4つを全て微調整可能に配置
+        c_p1, c_p2 = st.columns(2)
+        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp")
+        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i")
+        
+        c_p3, c_p4 = st.columns(2)
+        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d", help="高値(Tab1)やGC(Tab2)から何日後までシグナルを有効とするか")
+        sim_sell_d = c_p4.number_input("⏳ 売り期限/強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d", help="買付後、何営業日で強制的に手仕舞いするか")
+        
+        st.divider()
+        if "Tab 1" in test_mode:
+            st.markdown("##### 🌐 Tab 1 固有パラメーター")
+            c_t1_1, c_t1_2 = st.columns(2)
+            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0)
+            sim_pass_req = c_t1_2.number_input("掟クリア要求数 (最大9)", value=8, step=1, max_value=9, min_value=1)
+        else:
+            st.markdown("##### ⚔️ Tab 2 固有パラメーター")
+            c_t2_1, c_t2_2 = st.columns(2)
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感足切り)", value=35, step=5)
+            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, help="ATRから算出される利確までの日数がこれ以上かかる鈍足銘柄を除外")
+
+    if run_bt and bt_c_in:
+        with open(T3_FILE, "w", encoding="utf-8") as f:
+            f.write(bt_c_in)
+            
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
+        
+        if not t_codes: st.warning("有効なコードが見つかりません。")
+        else:
+            all_t = []; b_bar = st.progress(0, "過去2年分の相場を再構築・仮想売買中...")
+            
+            for idx, c in enumerate(t_codes):
+                raw = get_single_data(c + "0", 2)
+                if not raw: continue
+                
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                if len(df) < 40: continue
+                
+                df = calc_technicals(df)
+                pos = None
+                
+                for i in range(35, len(df)):
+                    td = df.iloc[i]
+                    prev = df.iloc[i-1]
+                    
+                    if pos is None:
+                        win_14 = df.iloc[i-15:i-1]
+                        win_30 = df.iloc[i-31:i-1]
+                        
+                        lc_prev = prev['AdjC']
+                        h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
+                        if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
+                        
+                        atr_prev = prev.get('ATR', 0)
+                        if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue 
+                        
+                        if "Tab 1" in test_mode:
+                            r14 = h14 / l14
+                            idxmax = win_14['AdjH'].idxmax()
+                            d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                            
+                            is_dt = check_double_top(win_30)
+                            is_hs = check_head_shoulders(win_30)
+                            
+                            bt_val = int(h14 - ((h14 - l14) * (sim_push_r / 100.0)))
+                            
+                            score = 0
+                            if 1.3 <= r14 <= 2.0: score += 1
+                            # 🚨 微調整した買い期限（sim_limit_d）を適用
+                            if d_high <= sim_limit_d: score += 1 
+                            if not is_dt: score += 1
+                            if not is_hs: score += 1
+                            if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
+                            score += 4 
+                            
+                            if score >= sim_pass_req:
+                                if td['AdjL'] <= bt_val:
+                                    exec_p = min(td['AdjO'], bt_val)
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
+                                    
+                        else:
+                            rsi_prev = prev.get('RSI', 50)
+                            tp_yen = lc_prev * (sim_tp / 100.0)
+                            exp_days = int(tp_yen / atr_prev) if atr_prev > 0 else 99
+                            
+                            # 🚨 買い期限（sim_limit_d）以内にGCが発生したかを遡って判定
+                            gc_triggered = False
+                            for d_ago in range(1, int(sim_limit_d) + 1):
+                                idx_eval = i - d_ago
+                                if idx_eval >= 1:
+                                    mh1 = df.iloc[idx_eval].get('MACD_Hist', 0)
+                                    mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
+                                    if mh1 > 0 and mh2 <= 0:
+                                        gc_triggered = True
+                                        break
+                            
+                            if gc_triggered and rsi_prev <= sim_rsi_lim and exp_days < sim_time_risk:
+                                bt_val = lc_prev * 1.01
+                                if td['AdjH'] >= bt_val:
+                                    exec_p = max(td['AdjO'], bt_val)
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
+
+                    else:
+                        bp = pos['b_p']; held = i - pos['b_i']; sp = 0; rsn = ""
+                        
+                        # 🚨 微調整した利確（sim_tp）と損切（sim_sl_i）を適用
+                        sl_val = bp * (1 - (sim_sl_i / 100.0))
+                        tp_val = bp * (1 + (sim_tp / 100.0))
+                        
+                        if td['AdjL'] <= sl_val: 
+                            sp = min(td['AdjO'], sl_val); rsn = f"🛡️ 損切 (-{sim_sl_i}%)"
+                        elif td['AdjH'] >= tp_val: 
+                            sp = max(td['AdjO'], tp_val); rsn = f"🎯 利確 (+{sim_tp}%)"
+                        # 🚨 微調整した売り期限（sim_sell_d）を適用
+                        elif held >= sim_sell_d: 
+                            sp = td['AdjC']; rsn = f"⏳ 時間切れ ({sim_sell_d}日)"
+                        
+                        if sp > 0:
+                            sp = round(sp, 1)
+                            p_pct = round(((sp / bp) - 1) * 100, 2)
+                            p_amt = int((sp - bp) * st.session_state.bt_lot)
+                            all_t.append({
+                                '銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), 
+                                '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn
+                            })
+                            pos = None
+                            
+                b_bar.progress((idx + 1) / len(t_codes)); time.sleep(0.1)
+                
+            b_bar.empty()
+            
+            if not all_t: 
+                st.warning("指定された期間・条件でシグナル点灯（約定）はありませんでした。")
+            else:
+                tdf = pd.DataFrame(all_t)
+                tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
+                n_prof = tdf['損益額(円)'].sum()
+                sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum()
+                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
+                pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
+                
+                st.success("🎯 バックテスト完了")
+                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("トレード回数", f"{tot} 回")
+                m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
+                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
+                m4.metric("プロフィットファクター(PF)", f"{pf}")
+                
+                st.markdown("### 📜 詳細交戦記録（トレード履歴）")
+                
+                def color_pnl(val):
+                    if isinstance(val, (int, float)):
+                        color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
+                        return f'color: {color}'
+                    return ''
+                
+                # Pandasのバージョン互換性を考慮し、applymapを使用
+                st.dataframe(
+                    tdf.style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}'}),
+                    use_container_width=True, hide_index=True
+                )
+                
 with tab4:
     st.markdown('### 🎯 精密スコープ照準（局地戦スキャン）')
     t_codes_str = st.text_area("標的コード（複数可、改行区切り）", value="7203", height=100)
