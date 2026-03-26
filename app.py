@@ -284,7 +284,8 @@ def get_triage_info(macd_h, macd_h_prev, rsi_val):
         triage_rank = "圏外（手出し無用）🚫"
         triage_bg = "#d32f2f"
         triage_score = 0
-    elif macd_t == "GC直後" and rsi_val <= 50:
+    # 🚨 ルール拡張：「GC直後」だけでなく、勢いのついた「上昇拡大」でRSIが低い場合もSランクとして狙撃対象とする
+    elif (macd_t == "GC直後" or macd_t == "上昇拡大") and rsi_val <= 50:
         triage_rank = "S（即時狙撃）🔥"
         triage_bg = "#2e7d32"
         triage_score = 4
@@ -292,7 +293,7 @@ def get_triage_info(macd_h, macd_h_prev, rsi_val):
         triage_rank = "A（罠の設置）🪤"
         triage_bg = "#0288d1"
         triage_score = 3
-    elif macd_t == "上昇拡大" and 50 <= rsi_val <= 65:
+    elif macd_t == "上昇拡大" and 50 < rsi_val <= 65:
         triage_rank = "B（順張り警戒）📈"
         triage_bg = "#ed6c02"
         triage_score = 2
