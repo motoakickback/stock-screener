@@ -1446,8 +1446,14 @@ with tab4:
                         return f'color: {color}'
                     return ''
                 
+                # 🚨 損益(%)に '{:.2f}' を追加し、小数点第二位まで強制表示
                 st.dataframe(
-                    tdf.drop(columns=['累積損益(円)']).style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}'}),
+                    tdf.drop(columns=['累積損益(円)']).style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({
+                        '買値(円)': '{:,}', 
+                        '売値(円)': '{:,}', 
+                        '損益額(円)': '{:,}',
+                        '損益(%)': '{:.2f}'
+                    }),
                     use_container_width=True, hide_index=True
                 )
 
