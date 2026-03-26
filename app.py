@@ -427,11 +427,11 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     
     df = df.copy()
     
-    # 欠損値（取引休止日等）による線の途切れを防ぐため、前日の終値で補間（ffill）して計算
-    temp_close = df['AdjC'].ffill()
-    df['MA5'] = temp_close.rolling(window=5).mean()
-    df['MA25'] = temp_close.rolling(window=25).mean()
-    df['MA75'] = temp_close.rolling(window=75).mean() # MA75を追加
+    def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+    import plotly.graph_objects as go
+    from datetime import timedelta
+    
+    df = df.copy()
 
     # 1. まず「キャンバス（fig）」を作成する
     fig = go.Figure()
