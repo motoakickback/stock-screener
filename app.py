@@ -842,7 +842,8 @@ with tab2:
     st.caption("※全市場から「MACDがゴールデンクロス（0ライン突破）した直後」の銘柄を抽出し、RSIが低い順に狙撃候補として表示します。")
     
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=55, step=5, help="数値が低いほど、大底からの反転初動を狙えます。")
+    # 🚨 RSIデフォルト値を35に設定
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=35, step=5, help="数値が低いほど、大底からの反転初動を狙えます。")
     vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000, help="流動性のない過疎銘柄を排除します。")
     
     if st.button(f"🚀 全軍GC初動スキャン開始"):
@@ -865,6 +866,15 @@ with tab2:
                     g_tech = calc_technicals(group.copy())
                     latest = g_tech.iloc[-1]; prev = g_tech.iloc[-2]
                     
+                    lc = latest['AdjC']
+                    atr = latest.get('ATR', 0)
+                    
+                    # 🚨 ハイブリッド不発弾キル
+                    if atr < 10 or (atr / lc) < 0.01: continue
+                    tp_yen = lc * (st.session_state.bt_tp / 100.0)
+                    exp_days = int(tp_yen / atr) if atr > 0 else 99
+                    if exp_days >= 5: continue
+                    
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
@@ -876,11 +886,9 @@ with tab2:
                                 c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
                         
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
-                        lc = latest['AdjC']
                         bt_val = int(h14 - ((h14 - l14) * (st.session_state.push_r / 100.0))) if h14 and l14 else int(lc)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
-                        # 🚨 判定エンジンの呼び出し
                         rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi)
                         
                         results.append({
@@ -905,7 +913,6 @@ with tab2:
                         c = str(r['Code']); n = r['Name']
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         
-                        # 🚨 バッジの描画
                         triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                         st.markdown(f"""
@@ -918,17 +925,46 @@ with tab2:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        sc1, sc2, sc3, sc4 = st.columns(4)
-                        sc1.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
-                        sc2.metric("RSI (過熱感)", f"{r['RSI']:.1f}%")
-                        sc3.metric("買値目安(押し目)", f"{r['bt']:,}円" if r['bt'] > 0 else "---")
-                        sc4.metric("出来高(5日平均)", f"{r['avg_vol']:,}株")
+                        # 🚨 買値・売値目標（8%、10%）の計算とUI拡充
+                        lc_val = int(r['lc'])
+                        bt_val = int(r['bt'])
+                        tp10 = int(bt_val * 1.10)
+                        tp8  = int(bt_val * 1.08)
+                        sl5  = int(bt_val * 0.95)
+                        sl8  = int(bt_val * 0.92)
                         
-                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
+                        sc1, sc2, sc3, sc4 = st.columns([1, 1.2, 1.5, 1])
+                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                        
+                        html_buy = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (押し目)</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
+                        </div>
+                        """
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                        
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">8%</span> <span style="color: #ef5350;">{tp8:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                            </div>
+                        </div>"""
+                        sc3.markdown(html_sell, unsafe_allow_html=True)
+                        
+                        sc4.metric("RSI (過熱感)", f"{r['RSI']:.1f}%")
+                        
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 出来高(5日平均): {r['avg_vol']:,}株")
                         
                         df_chart = r['df_chart']
-                        st.markdown(render_technical_radar(df_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
-                        draw_chart(df_chart, r['bt'], int(r['bt']*1.05), int(r['bt']*1.10), int(r['bt']*1.15), int(r['bt']*1.20))
+                        cutoff_chart = df_chart['Date'].max() - timedelta(days=60)
+                        df_chart_filtered = df_chart[df_chart['Date'] >= cutoff_chart]
+                        
+                        st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                        
+                        # 🚨 グラフには10%の売値ラインのみを引数として渡す
+                        draw_chart(df_chart_filtered, bt_val, tp10=tp10)
 
 with tab3:
     st.info("高高度モニター（待機中）")
