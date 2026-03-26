@@ -912,6 +912,22 @@ with tab2:
                         c = str(r['Code']); n = r['Name']
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         
+                        # 🚨 処理順序変更：UIを描画する前に、1年分の詳細データを取得して正確なRSIを算出
+                        api_code = c if len(c) == 5 else c + "0"
+                        raw_s = get_single_data(api_code, 1)
+                        
+                        if raw_s:
+                            hist_chart = clean_df(pd.DataFrame(raw_s))
+                        else:
+                            hist_chart = r['df_chart'] # 通信失敗時の予備
+                            
+                        accurate_rsi = r['RSI'] # デフォルトは簡易スキャン時の値
+                        if not hist_chart.empty:
+                            hist_chart = calc_technicals(hist_chart)
+                            # 1年分のデータから算出した正確なRSIを抽出
+                            accurate_rsi = hist_chart.iloc[-1].get('RSI', r['RSI'])
+                        
+                        # --- ここからUI描画 ---
                         triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                         st.markdown(f"""
@@ -938,7 +954,6 @@ with tab2:
                         sl8  = int(bt_val * 0.92)
                         sl15 = int(bt_val * 0.85)
                         
-                        # 🚨 Tab 1 と完全に一致する 7カラム構成に復元
                         sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                         
                         sc0.metric("直近高値", f"{high_val:,}円")
@@ -966,13 +981,12 @@ with tab2:
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
                         vol_val = r.get('avg_vol', 0)
-                        rsi_v = r.get('RSI', 50)
                         
-                        # 🚨 右端のステータスボードを復旧（到達度の代わりにRSIとGC判定を表示）
+                        # 🚨 accurate_rsi（再計算された正確なRSI）をパネルに適用
                         html_stats = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                             <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{rsi_v:.1f}%</strong>
+                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{accurate_rsi:.1f}%</strong>
                             </div>
                             <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                                 <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
@@ -986,19 +1000,8 @@ with tab2:
                         
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
                         
-                        # 🚨 グラフ描画用に、1年分の詳細データを個別に取得（MA25/75の完全復活）
-                        api_code = c if len(c) == 5 else c + "0"
-                        raw_s = get_single_data(api_code, 1)
-                        
-                        if raw_s:
-                            hist_chart = clean_df(pd.DataFrame(raw_s))
-                        else:
-                            hist_chart = r['df_chart'] # 通信失敗時の予備
-                            
                         if not hist_chart.empty:
-                            hist_chart = calc_technicals(hist_chart)
                             st.markdown(render_technical_radar(hist_chart, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                            # 10%の売値ラインのみを渡して描画
                             draw_chart(hist_chart, bt_val, tp10=tp10)
 
 with tab3:
