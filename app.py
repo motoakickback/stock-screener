@@ -130,29 +130,34 @@ def clean_df(df):
 def check_event_mines(code, event_data=None):
     alerts = []
     c = str(code)[:4]
-    
+
+    # --- 1. 絶対防衛線（フェイルセーフ） ---
+    # J-Quantsのデータ欠落に備え、確実に発火させる銘柄群
+    critical_mines = ["6240", "5986", "5162", "4625", "6378", "8604"]
+    if c in critical_mines:
+        alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
+
     if not event_data:
         return alerts
 
-    # J-Quants API (v2/fins/dividend) からの配当情報判定
-    div_info = event_data.get("dividend", [])
-    for item in div_info:
-        # 基準日（RecordDate）が今月末（3/31）付近かチェック
-        # 簡易判定：2026-03-31が含まれていれば警告
-        if item.get("RecordDate") == "2026-03-31":
-            alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
+    # --- 2. APIデータ（配当）からの動的判定 ---
+    for item in event_data.get("dividend", []):
+        if "2026-03-31" in str(item.get("RecordDate", "")):
+            if c not in critical_mines: # 重複表示の防止
+                alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（API自動検知）")
             break
 
-    # J-Quants API (v2/equities/earnings-calendar) からの決算判定
-    earn_info = event_data.get("earnings", [])
-    for item in earn_info:
-        # 発表日が直近（本日3/26〜4/2程度）なら警告
-        if item.get("Date"):
-            # 発表予定日が3月下旬〜4月頭なら発火
-            if "2026-03-" in item["Date"] or "2026-04-0" in item["Date"]:
-                alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
-                break
-                
+    # --- 3. APIデータ（決算）の厳格判定 ---
+    for item in event_data.get("earnings", []):
+        # APIが他銘柄を混入させてくるため、自身のコードと一致するか厳重にチェック
+        if str(item.get("Code", ""))[:4] != c:
+            continue
+            
+        date_str = str(item.get("Date", item.get("DisclosedDate", "")))
+        if "2026-03-" in date_str or "2026-04-0" in date_str:
+            alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
+            break
+
     return alerts
 
 @st.cache_data(ttl=86400)
@@ -1209,7 +1214,7 @@ with tab3:
                     alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
                     
                     # 2. 【デバッグ用強制出力】システムが持っている生データを画面に晒す
-                    st.info(f"【参謀通信】J-Quantsからの受信データ: {raw_s.get('events')}")
+                    # st.info(f"【参謀通信】J-Quantsからの受信データ: {raw_s.get('events')}")
                     
                     # 3. アラートの描画（これがないと画面に出ません）
                     for alert in alerts: st.warning(alert)
