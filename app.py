@@ -384,11 +384,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      
 
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    if tp5 and tp10 and tp15 and tp20:
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
-        fig.add_trace(go.Scatter(x=df['Date'], y=[tp20]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
+    
+    # 🚨 渡された売値ラインのみを独立して描画するよう改良
+    if tp5 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp5)]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
+    if tp10 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp10)]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1.5, dash='dot')))
+    if tp15 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp15)]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
+    if tp20 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp20)]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
@@ -398,7 +399,9 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     if not visible_df.empty:
         y_max_vals = [visible_df['AdjH'].max(), targ_p, visible_df['MA5'].max(), visible_df['MA25'].max(), visible_df['MA75'].max()]
         y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85, visible_df['MA5'].min(), visible_df['MA25'].min(), visible_df['MA75'].min()] 
-        if tp20: y_max_vals.append(tp20)
+        
+        for tp in [tp5, tp10, tp15, tp20]:
+            if tp is not None: y_max_vals.append(tp)
         
         y_max = max([v for v in y_max_vals if not pd.isna(v)])
         y_min = min([v for v in y_min_vals if not pd.isna(v)])
@@ -413,7 +416,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         margin=dict(l=10, r=60, t=20, b=40), 
         xaxis_rangeslider_visible=True,
         xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
-        # 🚨 【修正】side="right" を追加し、Y軸を右側に完全固定
         yaxis=dict(tickformat=",.0f", hoverformat=",.0f", side="right"),
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
@@ -427,13 +429,9 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.update_layout(**layout_args)
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     
-    config = {
-        'displayModeBar': True,
-        'displaylogo': False,
-        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
-    }
+    config = {'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
     st.plotly_chart(fig, use_container_width=True, config=config)
-
+    
 # --- 🛸 Tab 6専用チャート（こちらも併せて右側配置に修正） ---
 def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
     df = df.copy()
