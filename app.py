@@ -1255,136 +1255,188 @@ with tab4:
 # ------------------------------------------
 # Tab 5: 戦術シミュレータ（デュアル・バックテスト）
 # ------------------------------------------
-with tab5:
-    st.markdown('### ⚙️ 戦術シミュレータ（2年間のバックテスト）')
+with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5など）に合わせてください
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
-    bt_mode = st.radio("🔍 検証する戦術を選択してください", ["🌐 【待伏】鉄の掟（50%押し）", "⚡ 【強襲】GCブレイクアウト（高値+1%トリガー）"], horizontal=True)
-    
-    col_1, col_2 = st.columns([2, 1])
-    with col_1: 
-        bt_c_in = st.text_area("検証コード（複数可、カンマや改行区切り）", value="6614\n4427", height=100)
-    with col_2:
-        if "待伏" in bt_mode:
-            st.info("※左サイドバーの「🎯 買いルール」「🛡️ 売りルール」の設定値を用いてシミュレーションを実行します。")
-        else:
-            st.info("※強襲モード専用設定（裏側で固定）\n・利確: +8%\n・損切: -4%\n・期限: 5営業日\n・トリガー: GC点灯日の高値+1%")
-            bt_tp_gc = 8.0; bt_sl_gc = 4.0; bt_limit_gc = 5
+    col_b1, col_b2 = st.columns([1, 2])
 
-    if st.button(f"🔥 一括バックテスト実行 ({bt_mode.split('】')[0]}】モード)") and bt_c_in:
+    T3_FILE = f"saved_t3_codes_{user_id}.txt"
+    default_t3 = "6614\n4427"
+    if os.path.exists(T3_FILE):
+        with open(T3_FILE, "r", encoding="utf-8") as f:
+            default_t3 = f.read()
+
+    with col_b1: 
+        st.markdown("🔍 **検証する戦術を選択してください**")
+        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed")
+        st.markdown("検証コード (複数可、カンマや改行区切り)")
+        bt_c_in = st.text_area("銘柄コード", value=default_t3, height=100, label_visibility="collapsed")
+        run_bt = st.button("🔥 一括バックテスト実行", use_container_width=True)
+        
+    with col_b2:
+        st.markdown("#### ⚙️ シミュレーション微調整")
+        st.caption("※サイドバーの設定とは独立して、ここで数値を自由に変更してテストできます。")
+        
+        c_p1, c_p2 = st.columns(2)
+        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp")
+        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i")
+        
+        c_p3, c_p4 = st.columns(2)
+        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d")
+        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d")
+        
+        st.divider()
+        if "待伏" in test_mode:
+            st.markdown("##### 🌐 【待伏】固有パラメーター")
+            c_t1_1, c_t1_2 = st.columns(2)
+            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0)
+            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1)
+        else:
+            st.markdown("##### ⚡ 【強襲】固有パラメーター")
+            c_t2_1, c_t2_2 = st.columns(2)
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5)
+            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1)
+
+    if run_bt and bt_c_in:
+        with open(T3_FILE, "w", encoding="utf-8") as f:
+            f.write(bt_c_in)
+            
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
-        if not t_codes: 
-            st.warning("有効なコードが見つかりません。")
+        
+        if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
-            all_t = []; b_bar = st.progress(0, "仮想売買中...")
+            all_t = []; b_bar = st.progress(0, "過去2年分の相場を仮想売買中...")
+            
             for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 2) # 過去2年
-                if raw:
-                    df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
-                    pos = None
+                raw = get_single_data(c + "0", 2)
+                if not raw: continue
+                
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                if len(df) < 40: continue
+                
+                df = calc_technicals(df)
+                pos = None
+                
+                for i in range(35, len(df)):
+                    td = df.iloc[i]
+                    prev = df.iloc[i-1]
                     
-                    if "待伏" in bt_mode:
-                        # 🌐 待伏モードのバックテストロジック
-                        for i in range(30, len(df)):
-                            td = df.iloc[i]
-                            if pos is None:
-                                win_14 = df.iloc[i-14:i]
-                                win_30 = df.iloc[i-30:i]
-                                rh = win_14['AdjH'].max()
-                                rl = win_14['AdjL'].min()
-                                if pd.isna(rh) or pd.isna(rl) or rl <= 0: continue
-                                
-                                h_d = len(win_14[win_14['Date'] > win_14.loc[win_14['AdjH'].idxmax(), 'Date']])
-                                if (1.3 <= rh/rl <= 2.0) and (h_d <= st.session_state.limit_d):
-                                    if check_double_top(win_30) or check_head_shoulders(win_30): continue
-                                    targ = rh - ((rh - rl) * (st.session_state.push_r / 100.0))
-                                    if td['AdjL'] <= targ: 
-                                        pos = {'b_i': i, 'b_d': td['Date'], 'b_p': min(td['AdjO'], targ)}
-                            else:
-                                bp = round(pos['b_p'], 1)
-                                held = i - pos['b_i']
-                                sp = 0
-                                rsn = ""
-                                
-                                sl_i = bp * (1 - (st.session_state.bt_sl_i / 100.0))
-                                tp = bp * (1 + (st.session_state.bt_tp / 100.0))
-                                sl_c = bp * (1 - (st.session_state.bt_sl_c / 100.0))
-                                
-                                if td['AdjL'] <= sl_i: 
-                                    sp = min(td['AdjO'], sl_i); rsn = f"損切(-{st.session_state.bt_sl_i}%)"
-                                elif td['AdjH'] >= tp: 
-                                    sp = max(td['AdjO'], tp); rsn = f"利確(+{st.session_state.bt_tp}%)"
-                                elif td['AdjC'] <= sl_c: 
-                                    sp = td['AdjC']; rsn = f"損切終値(-{st.session_state.bt_sl_c}%)"
-                                elif held >= st.session_state.bt_sell_d: 
-                                    sp = td['AdjC']; rsn = f"時間切れ({st.session_state.bt_sell_d}日)"
+                    if pos is None:
+                        win_14 = df.iloc[i-15:i-1]
+                        win_30 = df.iloc[i-31:i-1]
+                        
+                        lc_prev = prev['AdjC']
+                        h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
+                        if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
+                        
+                        atr_prev = prev.get('ATR', 0)
+                        if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue 
+                        
+                        if "待伏" in test_mode:
+                            r14 = h14 / l14
+                            idxmax = win_14['AdjH'].idxmax()
+                            d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                            
+                            is_dt = check_double_top(win_30)
+                            is_hs = check_head_shoulders(win_30)
+                            
+                            bt_val = int(h14 - ((h14 - l14) * (sim_push_r / 100.0)))
+                            
+                            score = 0
+                            if 1.3 <= r14 <= 2.0: score += 1
+                            if d_high <= sim_limit_d: score += 1 
+                            if not is_dt: score += 1
+                            if not is_hs: score += 1
+                            if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
+                            score += 4 
+                            
+                            if score >= sim_pass_req:
+                                if td['AdjL'] <= bt_val:
+                                    exec_p = min(td['AdjO'], bt_val)
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
                                     
-                                if rsn:
-                                    all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held, '買値(円)': bp, '売値(円)': round(sp,1), '損益額(円)': int((sp - bp) * st.session_state.bt_lot), '決済理由': rsn})
-                                    pos = None
-                    else:
-                        # ⚡ 強襲GCモードのバックテストロジック
-                        df_tech = calc_technicals(df)
-                        for i in range(30, len(df_tech)):
-                            td = df_tech.iloc[i]
-                            if pos is None:
-                                latest = df_tech.iloc[i-1]
-                                prev = df_tech.iloc[i-2]
-                                
-                                is_gc = (latest['MACD'] > latest['MACD_Signal']) and (prev['MACD'] <= prev['MACD_Signal'])
-                                is_uptrend = (latest['AdjC'] >= latest['MA25']) and (latest.get('RSI', 50) < 70)
-                                
-                                if is_gc and is_uptrend:
-                                    # トリガー：GC点灯日の高値 + 1%
-                                    pos = {'wait_i': i, 'trigger': latest['AdjH'] * 1.01}
-                            elif 'wait_i' in pos:
-                                if i - pos['wait_i'] > 3: 
-                                    pos = None # 3日でトリガーが引かれなければキャンセル（モメンタム消滅）
-                                elif td['AdjH'] >= pos['trigger']: 
-                                    # トリガー到達でエントリー（窓開け対応で始値とトリガーの高い方）
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': max(td['AdjO'], pos['trigger'])}
-                            elif 'b_i' in pos:
-                                bp = round(pos['b_p'], 1)
-                                held = i - pos['b_i']
-                                sp = 0
-                                rsn = ""
-                                
-                                sl = bp * (1 - (bt_sl_gc / 100.0))
-                                tp = bp * (1 + (bt_tp_gc / 100.0))
-                                
-                                if td['AdjL'] <= sl: 
-                                    sp = min(td['AdjO'], sl); rsn = f"損切(-{bt_sl_gc}%)"
-                                elif td['AdjH'] >= tp: 
-                                    sp = max(td['AdjO'], tp); rsn = f"利確(+{bt_tp_gc}%)"
-                                elif held >= bt_limit_gc: 
-                                    sp = td['AdjC']; rsn = f"時間切れ({bt_limit_gc}日)"
-                                    
-                                if rsn:
-                                    all_t.append({'銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), '保有日数': held, '買値(円)': bp, '売値(円)': round(sp,1), '損益額(円)': int((sp - bp) * st.session_state.bt_lot), '決済理由': rsn})
-                                    pos = None
+                        else:
+                            rsi_prev = prev.get('RSI', 50)
+                            tp_yen = lc_prev * (sim_tp / 100.0)
+                            exp_days = int(tp_yen / atr_prev) if atr_prev > 0 else 99
+                            
+                            gc_triggered = False
+                            trigger_price = 0
+                            
+                            # 🚨 ボスの最新仕様（GC点灯日の高値+1%）をトリガーに適用
+                            for d_ago in range(1, int(sim_limit_d) + 1):
+                                idx_eval = i - d_ago
+                                if idx_eval >= 1:
+                                    mh1 = df.iloc[idx_eval].get('MACD_Hist', 0)
+                                    mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
+                                    if mh1 > 0 and mh2 <= 0:
+                                        gc_triggered = True
+                                        trigger_price = df.iloc[idx_eval]['AdjH'] * 1.01 
+                                        break
+                            
+                            if gc_triggered and rsi_prev <= sim_rsi_lim and exp_days < sim_time_risk:
+                                if td['AdjH'] >= trigger_price:
+                                    exec_p = max(td['AdjO'], trigger_price)
+                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
 
-                b_bar.progress((idx + 1) / len(t_codes))
+                    else:
+                        bp = pos['b_p']; held = i - pos['b_i']; sp = 0; rsn = ""
+                        
+                        sl_val = bp * (1 - (sim_sl_i / 100.0))
+                        tp_val = bp * (1 + (sim_tp / 100.0))
+                        
+                        if td['AdjL'] <= sl_val: 
+                            sp = min(td['AdjO'], sl_val); rsn = f"🛡️ 損切 (-{sim_sl_i}%)"
+                        elif td['AdjH'] >= tp_val: 
+                            sp = max(td['AdjO'], tp_val); rsn = f"🎯 利確 (+{sim_tp}%)"
+                        elif held >= sim_sell_d: 
+                            sp = td['AdjC']; rsn = f"⏳ 時間切れ ({sim_sell_d}日)"
+                        
+                        if sp > 0:
+                            sp = round(sp, 1)
+                            p_pct = round(((sp / bp) - 1) * 100, 2)
+                            p_amt = int((sp - bp) * st.session_state.bt_lot)
+                            all_t.append({
+                                '銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), 
+                                '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn
+                            })
+                            pos = None
+                            
+                b_bar.progress((idx + 1) / len(t_codes)); time.sleep(0.1)
+                
             b_bar.empty()
             
             if not all_t: 
-                st.warning("指定された期間・条件に合致するトレードはありませんでした。")
+                st.warning("指定された期間・条件でシグナル点灯（約定）はありませんでした。")
             else:
                 tdf = pd.DataFrame(all_t)
-                tot = len(tdf)
-                wins = len(tdf[tdf['損益額(円)'] > 0])
+                tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
                 n_prof = tdf['損益額(円)'].sum()
                 sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum()
                 sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                st.markdown(f"### 💰 総合利益額: {n_prof:,} 円")
+                st.success("🎯 バックテスト完了")
+                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回")
                 m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
-                m4.metric("プロフィットファクター", f"{pf}")
+                m4.metric("プロフィットファクター(PF)", f"{pf}")
                 
-                st.markdown("#### 📜 詳細交戦記録（トレード履歴）")
-                st.dataframe(tdf, use_container_width=True, hide_index=True)
+                st.markdown("### 📜 詳細交戦記録（トレード履歴）")
+                
+                def color_pnl(val):
+                    if isinstance(val, (int, float)):
+                        color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
+                        return f'color: {color}'
+                    return ''
+                
+                st.dataframe(
+                    tdf.style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}'}),
+                    use_container_width=True, hide_index=True
+                )
 
 # ------------------------------------------
 # Tab 6: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
