@@ -870,7 +870,7 @@ with tab1:
                     raw_s = get_single_data(api_code, 1)
                     # raw_s の中にある "bars"（株価データ）だけを渡すように指定します
                     if raw_s and "bars" in raw_s: 
-                    hist_chart = clean_df(pd.DataFrame(raw_s["bars"]))
+                        hist_chart = clean_df(pd.DataFrame(raw_s["bars"]))
                     else: hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
                         
                     if not hist_chart.empty:
