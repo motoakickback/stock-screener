@@ -1630,7 +1630,9 @@ with tab5:
                         st.error(f"銘柄 {c} の通信に失敗しました。")
                         continue
                         
-                    df_s = clean_df(pd.DataFrame(raw_s))
+                    # 取得したデータから株価部分(bars)だけを正確に抽出して変換
+                    bars_data = raw_s.get("bars", []) if isinstance(raw_s, dict) else raw_s
+                    df_s = clean_df(pd.DataFrame(bars_data))
                     if df_s.empty: continue
                     
                     df_chart = calc_technicals(df_s)
