@@ -1359,7 +1359,25 @@ with tab4:
                 raw = get_single_data(c + "0", 2)
                 if not raw: continue
                 
-                df = clean_df(pd.json_normalize(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                # rawデータを平坦化
+                temp_df = pd.json_normalize(raw)
+
+                # 列名に含まれる可能性のある接頭辞（"quotes."等）を除去し、正規化
+                # 列名の末尾が期待する文字列で終わるものを抽出してリネーム
+                rename_map = {}
+                for col in temp_df.columns:
+                    for target in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
+                        if col.endswith(target):
+                            rename_map[col] = target
+                temp_df = temp_df.rename(columns=rename_map)
+
+                # 必要な列が存在するか最終確認した上で、欠損値除外を実行
+                required_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                if all(col in temp_df.columns for col in required_cols):
+                    df = clean_df(temp_df).dropna(subset=required_cols).reset_index(drop=True)
+                else:
+                    # 列が見つからない場合のデバッグ用：存在する列名を表示させて停止
+                    raise KeyError(f"Required columns not found. Available columns: {list(temp_df.columns)}")
                 if len(df) < 40: continue
                 
                 df = calc_technicals(df)
