@@ -417,18 +417,35 @@ def render_technical_radar(df, buy_price, tp_pct):
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+    import plotly.graph_objects as go
+    
     df = df.copy()
     
-    df['MA5'] = df['AdjC'].rolling(window=5).mean()
-    df['MA25'] = df['AdjC'].rolling(window=25).mean()
-    df['MA75'] = df['AdjC'].rolling(window=75).mean()
+    # 欠損値（取引休止日等）による線の途切れを防ぐため、前日の終値で補間（ffill）して計算
+    temp_close = df['AdjC'].ffill()
+    df['MA5'] = temp_close.rolling(window=5).mean()
+    df['MA25'] = temp_close.rolling(window=25).mean()
+    df['MA75'] = temp_close.rolling(window=75).mean() # MA75を追加
 
+    # 1. まず「キャンバス（fig）」を作成する
     fig = go.Figure()
+    
+    # 2. ローソク足を描画する
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
+
+    # 3. その上にMA線（移動平均）を描画していく（connectgaps=Trueで途切れを防止）
+    if 'MA5' in df.columns:
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='orange', width=1), connectgaps=True))
+
+    if 'MA25' in df.columns:
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='green', width=1.5), connectgaps=True))
+
+    if 'MA75' in df.columns:
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='purple', width=1.5), connectgaps=True))
 
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
