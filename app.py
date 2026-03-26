@@ -543,7 +543,31 @@ def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
 def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
     raw = get_single_data(c + "0", 2)
     if not raw: return None
-    df = clean_df(pd.DataFrame(raw))
+    # --- ここから差し替え ---
+    if isinstance(raw, dict) and 'bars' in raw:
+        temp_df = pd.json_normalize(raw['bars'])
+    else:
+        temp_df = pd.json_normalize(raw)
+
+    rename_map = {}
+    for col in temp_df.columns:
+        c_up = col.upper()
+        if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
+        if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
+        if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
+        if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
+
+    temp_df = temp_df.rename(columns=rename_map)
+    # 重複カラムの排除
+    temp_df = temp_df.loc[:, ~temp_df.columns.duplicated()]
+    
+    target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+    if all(col in temp_df.columns for col in target_cols):
+        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+    else:
+        # データが破損している場合は空のデータフレームを生成し、後続ループを安全にスキップさせる
+        df = pd.DataFrame(columns=target_cols)
+    # --- ここまで差し替え ---
     if len(df) < 60: return None
     trades = []; pos = None
     for i in range(30, len(df)):
