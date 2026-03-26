@@ -804,8 +804,8 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    event_alerts = check_event_mines(c)
-                    for alert in event_alerts: st.warning(alert)
+                    event_alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
+                                        for alert in event_alerts: st.warning(alert)
                     
                     if r.get('is_bt_broken', False): st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線へ自動シフト。")
                     if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
