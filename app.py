@@ -1642,7 +1642,6 @@ with tab6:
             else:
                 st.error("銘柄コード、買値、売値を正しく入力してください。")
         
-        # 🚨 【新規追加】証券会社CSVの自動解析・取り込みエンジン
         with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
             st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。（※重複データは自動排除されます）")
             uploaded_csv = st.file_uploader("約定履歴CSVファイルをアップロード", type=["csv"], key="aar_csv_uploader")
@@ -1651,14 +1650,14 @@ with tab6:
                 if st.button("⚙️ CSVから戦果を自動解析して追加", use_container_width=True, key="btn_parse_csv"):
                     try:
                         import io
+                        # 🚨 修正：UTF-8での強制読み込みを解除。エラー時は確実にShift-JIS(証券会社標準)へ移行させる
                         try:
-                            content = uploaded_csv.getvalue().decode('utf-8', errors='replace')
-                        except:
+                            content = uploaded_csv.getvalue().decode('utf-8')
+                        except UnicodeDecodeError:
                             content = uploaded_csv.getvalue().decode('shift_jis', errors='replace')
                             
                         lines = content.splitlines()
                         
-                        # 証券会社特有のヘッダ（約定日・銘柄などが並ぶ行）を自動検知
                         header_idx = -1
                         for i, line in enumerate(lines):
                             if "約定日" in line and "銘柄" in line:
@@ -1669,11 +1668,9 @@ with tab6:
                             csv_data = "\n".join(lines[header_idx:])
                             df_csv = pd.read_csv(io.StringIO(csv_data))
                             
-                            # 現物取引のみを抽出
                             df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
                             records = []
                             
-                            # 銘柄ごとに買いと売りを分類してFIFO（先入先出）でペアリング計算
                             for code, group in df_csv.groupby('銘柄コード'):
                                 buys, sells = [], []
                                 for _, row in group.iterrows():
@@ -1727,7 +1724,6 @@ with tab6:
                             if records:
                                 new_df = pd.DataFrame(records)
                                 aar_df = pd.concat([new_df, aar_df], ignore_index=True)
-                                # 同じ「決済日・銘柄・株数」の重複登録を防止
                                 aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
                                 st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
@@ -1767,7 +1763,6 @@ with tab6:
             m3.metric("総合 実損益", f"{int(tot_profit):,} 円", f"実戦PF: {pf}")
             m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
             
-            # 資産推移グラフ（現実）
             st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
             aar_df_sorted = aar_df.sort_values('決済日').reset_index(drop=True)
             aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
