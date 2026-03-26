@@ -1798,9 +1798,43 @@ with tab6:
                 elif '不明' in str(val): return 'color: #9e9e9e;'
                 return 'color: #26a69a;'
 
-            st.dataframe(
-                aar_df.style.applymap(color_pnl, subset=['損益額(円)', '損益(%)']).applymap(color_rule, subset=['規律']).format({
-                    '買値': '{:,.1f}', '売値': '{:,.1f}', '株数': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'
-                }),
-                use_container_width=True, hide_index=True
+            st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
+            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を後追い編集（上書き保存）できます。")
+            
+            # 🚨 st.dataframe を st.data_editor にアップグレード（直接編集機能）
+            edited_df = st.data_editor(
+                aar_df,
+                column_config={
+                    "戦術": st.column_config.SelectboxColumn(
+                        "戦術",
+                        help="使用した戦術を選択",
+                        options=["待伏", "強襲", "自動解析", "その他"],
+                        required=True,
+                    ),
+                    "規律": st.column_config.SelectboxColumn(
+                        "規律",
+                        help="鉄の掟を守れたか",
+                        options=["遵守", "違反", "不明(要修正)"],
+                        required=True,
+                    ),
+                    "敗因/勝因メモ": st.column_config.TextColumn(
+                        "敗因/勝因メモ",
+                        max_chars=200,
+                    ),
+                    "買値": st.column_config.NumberColumn("買値", format="%.1f"),
+                    "売値": st.column_config.NumberColumn("売値", format="%.1f"),
+                    "株数": st.column_config.NumberColumn("株数", format="%d"),
+                    "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="%d"),
+                    "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f"),
+                },
+                # 金額や日付など、改ざんしてはいけないコアデータは編集不可（ロック）にする
+                disabled=["決済日", "銘柄", "買値", "売値", "株数", "損益額(円)", "損益(%)"],
+                hide_index=True,
+                use_container_width=True,
+                key="aar_data_editor"
             )
+            
+            # 🚨 セルが編集され、元のデータと差分が発生した場合、自動でCSVに上書き保存する
+            if not edited_df.equals(aar_df):
+                edited_df.to_csv(AAR_FILE, index=False)
+                st.rerun()
