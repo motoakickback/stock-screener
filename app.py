@@ -186,8 +186,7 @@ def get_old_codes():
             except: pass
     return []
 
-@st.cache_data(ttl=3600)
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=3):
     base = datetime.utcnow() + timedelta(hours=9)
     f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
