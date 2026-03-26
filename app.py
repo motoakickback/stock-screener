@@ -1388,6 +1388,9 @@ with tab4:
             sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=45, step=5, key="sim_rsi_lim_sim_v2")
             sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
 
+    # ==========================================
+    # 🚀 ここから下が実行ブロック（高速化適用済み）
+    # ==========================================
     if (run_bt or optimize_bt) and bt_c_in:
         import pandas as pd
         import time
@@ -1397,7 +1400,6 @@ with tab4:
         if not t_codes:
             st.warning("有効なコードが見つかりません。")
         else:
-            # モードに応じた最適化レンジの設定
             is_ambush = "待伏" in test_mode
             if is_ambush:
                 p1_range = range(5, 26, 2) if optimize_bt else [int(sim_push_r)]
@@ -1408,6 +1410,39 @@ with tab4:
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
+            # --- 1. データの事前取得と計算（プリロード） ---
+            with st.spinner("データをプリロード中（高速化処理）..."):
+                preloaded_data = {}
+                for c in t_codes:
+                    raw = get_single_data(c + "0", 2)
+                    if not raw: continue
+                    if isinstance(raw, dict) and 'bars' in raw: temp_df = pd.json_normalize(raw['bars'])
+                    else: temp_df = pd.json_normalize(raw)
+                    if temp_df.empty: continue
+                    
+                    rename_map = {}
+                    for col in temp_df.columns:
+                        c_up = col.upper()
+                        if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
+                        if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
+                        if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L': rename_map[col] = 'AdjL'
+                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
+                    
+                    temp_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
+                    target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                    if not all(col in temp_df.columns for col in target_cols): continue
+                    
+                    try: 
+                        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                        df = calc_technicals(df) # テクニカル指標を1回だけ計算
+                        preloaded_data[c] = df
+                    except: continue
+
+            if not preloaded_data:
+                st.error("解析可能なデータが取得できませんでした。")
+                st.stop()
+
+            # --- 2. 超高速最適化ループ ---
             opt_results = []
             total_iterations = len(p1_range) * len(p2_range)
             current_iter = 0
@@ -1418,32 +1453,9 @@ with tab4:
                 for t_p2 in p2_range:
                     current_iter += 1
                     all_t = []
-                    for c in t_codes:
-                        raw = get_single_data(c + "0", 2)
-                        if not raw: continue
-                        
-                        if isinstance(raw, dict) and 'bars' in raw: temp_df = pd.json_normalize(raw['bars'])
-                        else: temp_df = pd.json_normalize(raw)
-                        if temp_df.empty: continue
-                        
-                        rename_map = {}
-                        for col in temp_df.columns:
-                            c_up = col.upper()
-                            if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                            if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                            if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L': rename_map[col] = 'AdjL'
-                            if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                        
-                        temp_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
-                        target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                        if not all(col in temp_df.columns for col in target_cols): continue
-                        
-                        try: df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
-                        except: continue
-                        
-                        df = calc_technicals(df)
+                    
+                    for c, df in preloaded_data.items():
                         pos = None
-
                         for i in range(35, len(df)):
                             td = df.iloc[i]; prev = df.iloc[i-1]
                             if pos is None:
@@ -1455,7 +1467,6 @@ with tab4:
                                 if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue
                                 
                                 if is_ambush:
-                                    # 🌐 【待伏】ロジック (t_p1=Push率, t_p2=要求Score)
                                     r14 = h14 / l14
                                     idxmax = win_14['AdjH'].idxmax()
                                     d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
@@ -1475,7 +1486,6 @@ with tab4:
                                             exec_p = min(td['AdjO'], bt_val)
                                             pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
                                 else:
-                                    # ⚡ 【強襲】ロジック (t_p1=RSI上限, t_p2=利確目標)
                                     rsi_prev = prev.get('RSI', 50); exp_days = int((lc_prev * (t_p2/100.0)) / atr_prev) if atr_prev > 0 else 99
                                     gc_triggered = False; trigger_price = 0
                                     for d_ago in range(1, int(sim_limit_d) + 1):
@@ -1491,7 +1501,6 @@ with tab4:
                                             pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
                             else:
                                 bp = pos['b_p']; held = i - pos['b_i']; sp = 0
-                                # 待伏時は固定のsim_tpを使用。強襲時は最適化中のt_p2を使用。
                                 current_tp = sim_tp if is_ambush else t_p2
                                 sl_val = bp * (1 - (sim_sl_i / 100.0)); tp_val = bp * (1 + (current_tp / 100.0))
                                 
@@ -1518,6 +1527,7 @@ with tab4:
             
             p_bar.empty()
 
+            # --- 3. 結果の表示 ---
             if optimize_bt and opt_results:
                 st.markdown(f"### 🏆 {test_mode.split()[1]}・最適化レポート")
                 opt_df = pd.DataFrame(opt_results).sort_values('総合利益(円)', ascending=False)
@@ -1529,7 +1539,6 @@ with tab4:
                 c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
                 
                 st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
-                # 利益額を通貨フォーマットで表示
                 st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
                 
                 if is_ambush:
@@ -1539,7 +1548,6 @@ with tab4:
                 if not opt_results:
                     st.warning("指定された期間・条件でシグナル点灯（約定）はありませんでした。")
                 else:
-                    # 通常のバックテスト詳細表示（all_t は最後のイテレーションのものが残る設計）
                     tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
                     tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
                     st.success("🎯 バックテスト完了")
