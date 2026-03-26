@@ -842,24 +842,23 @@ with tab2:
     st.caption("※全市場から「MACDがゴールデンクロス（0ライン突破）した直後」の銘柄を抽出し、RSIが低い順に狙撃候補として表示します。")
     
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=35, step=5, help="数値が低いほど、大底からの反転初動を狙えます。")
-    vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000, help="流動性のない過疎銘柄を排除します。")
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=35, step=5)
+    vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000)
     
     if st.button(f"🚀 全軍GC初動スキャン開始"):
-        with st.spinner("全銘柄の波形から「真のGC初動」の熱源を抽出中..."):
+        with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 【根本治療】助走データを30日から「80日」へ拡張し、MACDの計算誤差（ダマシ）を完全に排除
-                df_80 = df.groupby('Code').tail(80)
+                # 🚨 Phase 1: キャッシュ限界値（30日）に合わせて広く投網をかける
+                df_30 = df.groupby('Code').tail(30)
                 
                 results = []
-                for code, group in df_80.groupby('Code'):
-                    # 最低40日以上のデータがない新規上場銘柄などはノイズになるため除外
-                    if len(group) < 40: continue
+                for code, group in df_30.groupby('Code'):
+                    if len(group) < 20: continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
@@ -879,7 +878,6 @@ with tab2:
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    # 最初から正確なMACDでGC初動を捕捉
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
@@ -893,138 +891,145 @@ with tab2:
                         bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
-                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi)
-                        
                         results.append({
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
-                            'daily_pct': daily_pct, 'df_chart': g_tech,
-                            'triage_rank': rank, 'triage_bg': bg
+                            'daily_pct': daily_pct, 'df_chart': g_tech
                         })
                         
                 if not results:
                     st.warning(f"現在、RSI {rsi_limit}以下でMACDゴールデンクロスを迎えた銘柄は存在しません。")
                 else:
                     res_df = pd.DataFrame(results).sort_values('RSI', ascending=True)
-                    st.success(f"🎯 抽出完了: {len(res_df)} 銘柄の【真のGC初動】を確認しました。")
                     
-                    st.markdown("#### 📋 コピペ用コード")
-                    copy_codes = ",".join([str(c)[:4] for c in res_df['Code']])
-                    st.code(copy_codes, language="text")
+        # 🚨 Phase 2: 一次通過した銘柄のみ、1年分のデータで精密検査（ダマシの完全排除）
+        if 'res_df' in locals() and not res_df.empty:
+            with st.spinner(f"【Phase 2】一次候補 {len(res_df)} 銘柄の1年分データを取得し、ダマシ(偽GC)を精密排除中..."):
+                final_results = []
+                for _, r in res_df.iterrows():
+                    c = str(r['Code'])
+                    api_code = c if len(c) == 5 else c + "0"
+                    raw_s = get_single_data(api_code, 1)
                     
-                    for _, r in res_df.iterrows():
+                    hist_chart = clean_df(pd.DataFrame(raw_s)) if raw_s else r['df_chart']
+                    
+                    if not hist_chart.empty:
+                        hist_chart = calc_technicals(hist_chart)
+                        latest_acc = hist_chart.iloc[-1]
+                        prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
                         
-                        api_code = r['Code'] if len(str(r['Code'])) == 5 else str(r['Code']) + "0"
-                        raw_s = get_single_data(api_code, 1)
+                        accurate_rsi = latest_acc.get('RSI', r['RSI'])
+                        acc_macd_h = latest_acc.get('MACD_Hist', 0)
+                        acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
                         
-                        if raw_s:
-                            hist_chart = clean_df(pd.DataFrame(raw_s))
-                        else:
-                            hist_chart = r['df_chart']
-                            
-                        accurate_rsi = r['RSI']
-                        t_rank = r['triage_rank']
-                        t_bg = r['triage_bg']
+                        t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
                         
-                        if not hist_chart.empty:
-                            hist_chart = calc_technicals(hist_chart)
-                            latest_acc = hist_chart.iloc[-1]
-                            prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
+                        # キルスイッチ：正確な判定でCランク（勢い減衰など）に落ちた銘柄はここで完全消去
+                        if "C（条件外" in t_rank or "圏外" in t_rank:
+                            continue
                             
-                            accurate_rsi = latest_acc.get('RSI', r['RSI'])
-                            acc_macd_h = latest_acc.get('MACD_Hist', 0)
-                            acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
-                            
-                            t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
-                            
-                            # 🚨 【キルスイッチ】もし精密再計算でCランク（勢い減衰など）に落ちたダマシ銘柄なら、画面に一切表示せずスキップする
-                            if "C（条件外" in t_rank:
-                                continue
+                        item = r.to_dict()
+                        item['accurate_rsi'] = accurate_rsi
+                        item['t_rank'] = t_rank
+                        item['t_bg'] = t_bg
+                        item['hist_chart'] = hist_chart
+                        final_results.append(item)
 
-                        # 審査を通過したエリートのみ UI を描画
-                        st.divider()
-                        c = str(r['Code']); n = r['Name']
-                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                        
-                        scale_val = str(r.get('Scale', ''))
-                        badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-                        triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
+            # 最終的な UI の描画
+            if not final_results:
+                st.warning("🚨 抽出された候補はすべて「ダマシ（計算誤差）」または「勢い減衰」と判定され、キルされました。")
+            else:
+                st.success(f"🎯 最終ロックオン: 純度100%の【真の強襲ターゲット】 {len(final_results)} 銘柄を確認。")
+                
+                st.markdown("#### 📋 コピペ用コード")
+                copy_codes = ",".join([str(item['Code'])[:4] for item in final_results])
+                st.code(copy_codes, language="text")
+                
+                for r in final_results:
+                    st.divider()
+                    c = str(r['Code']); n = r['Name']
+                    daily_sign = "+" if r['daily_pct'] >= 0 else ""
+                    
+                    scale_val = str(r.get('Scale', ''))
+                    badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
+                    triage_badge = f'<span style="background-color: {r["t_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["t_rank"]}</span>'
 
-                        st.markdown(f"""
-                            <div style="margin-bottom: 0.8rem;">
-                                <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
-                                <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                                    {badge}
-                                    <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">⚡ GC初動ターゲット</span>
-                                    {triage_badge}
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        
-                        lc_val = int(r['lc'])
-                        bt_val = int(r['bt'])
-                        high_val = int(r.get('h14', lc_val))
-                        low_val = int(r.get('l14', 0))
-                        wave_len = high_val - low_val
-                        
-                        tp20 = int(bt_val * 1.20)
-                        tp15 = int(bt_val * 1.15)
-                        tp10 = int(bt_val * 1.10)
-                        tp5  = int(bt_val * 1.05)
-                        sl5  = int(bt_val * 0.95)
-                        sl8  = int(bt_val * 0.92)
-                        sl15 = int(bt_val * 0.85)
-                        
-                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
-                        
-                        sc0.metric("直近高値", f"{high_val:,}円")
-                        sc0_1.metric("直近安値", f"{low_val:,}円")
-                        sc0_2.metric("上昇幅", f"{wave_len:,}円")
-                        sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
-                        
-                        html_buy = f"""
-                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (終値+1%強襲)</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
-                        </div>
-                        """
-                        sc2.markdown(html_buy, unsafe_allow_html=True)
-                        
-                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
-                            <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
-                            </div>
-                        </div>"""
-                        sc3.markdown(html_sell, unsafe_allow_html=True)
-                        
-                        vol_val = r.get('avg_vol', 0)
-                        
-                        html_stats = f"""
-                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
-                            <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(accurate_rsi)}%</strong>
-                            </div>
-                            <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
-                            </div>
-                            <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                                {badge}
+                                <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">⚡ GC初動ターゲット</span>
+                                {triage_badge}
                             </div>
                         </div>
-                        """
-                        sc4.markdown(html_stats, unsafe_allow_html=True)
-                        
-                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
-                        
-                        if not hist_chart.empty:
-                            cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
-                            df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
-                            st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                            draw_chart(df_chart_filtered, bt_val, tp10=tp10)
+                    """, unsafe_allow_html=True)
+                    
+                    lc_val = int(r['lc'])
+                    bt_val = int(r['bt'])
+                    high_val = int(r.get('h14', lc_val))
+                    low_val = int(r.get('l14', 0))
+                    wave_len = high_val - low_val
+                    
+                    tp20 = int(bt_val * 1.20)
+                    tp15 = int(bt_val * 1.15)
+                    tp10 = int(bt_val * 1.10)
+                    tp5  = int(bt_val * 1.05)
+                    sl5  = int(bt_val * 0.95)
+                    sl8  = int(bt_val * 0.92)
+                    sl15 = int(bt_val * 0.85)
+                    
+                    sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
+                    
+                    sc0.metric("直近高値", f"{high_val:,}円")
+                    sc0_1.metric("直近安値", f"{low_val:,}円")
+                    sc0_2.metric("上昇幅", f"{wave_len:,}円")
+                    sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                    
+                    html_buy = f"""
+                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (終値+1%強襲)</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
+                    </div>
+                    """
+                    sc2.markdown(html_buy, unsafe_allow_html=True)
+                    
+                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
+                        <div style="font-size: 16px;">
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                        </div>
+                    </div>"""
+                    sc3.markdown(html_sell, unsafe_allow_html=True)
+                    
+                    vol_val = r.get('avg_vol', 0)
+                    
+                    html_stats = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                        <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(r['accurate_rsi'])}%</strong>
+                        </div>
+                        <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
+                        </div>
+                    </div>
+                    """
+                    sc4.markdown(html_stats, unsafe_allow_html=True)
+                    
+                    st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
+                    
+                    hist_chart = r['hist_chart']
+                    if not hist_chart.empty:
+                        cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
+                        df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
+                        st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                        draw_chart(df_chart_filtered, bt_val, tp10=tp10)
                             
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
