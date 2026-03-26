@@ -846,17 +846,20 @@ with tab2:
     vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000, help="流動性のない過疎銘柄を排除します。")
     
     if st.button(f"🚀 全軍GC初動スキャン開始"):
-        with st.spinner("全銘柄のテクニカル波形から「GC初動」の熱源を抽出中..."):
+        with st.spinner("全銘柄の波形から「真のGC初動」の熱源を抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
-                df_30 = df.groupby('Code').tail(30)
+                
+                # 🚨 【根本治療】助走データを30日から「80日」へ拡張し、MACDの計算誤差（ダマシ）を完全に排除
+                df_80 = df.groupby('Code').tail(80)
                 
                 results = []
-                for code, group in df_30.groupby('Code'):
-                    if len(group) < 20: continue
+                for code, group in df_80.groupby('Code'):
+                    # 最低40日以上のデータがない新規上場銘柄などはノイズになるため除外
+                    if len(group) < 40: continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
@@ -876,6 +879,7 @@ with tab2:
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
+                    # 最初から正確なMACDでGC初動を捕捉
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
@@ -883,7 +887,6 @@ with tab2:
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']
                                 c_sector = m_row.iloc[0].get('Sector', '不明')
-                                # 🚨 スケール（規模）データの取得処理を追加
                                 c_scale = m_row.iloc[0].get('Scale', '')
                         
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
@@ -903,18 +906,15 @@ with tab2:
                     st.warning(f"現在、RSI {rsi_limit}以下でMACDゴールデンクロスを迎えた銘柄は存在しません。")
                 else:
                     res_df = pd.DataFrame(results).sort_values('RSI', ascending=True)
-                    st.success(f"🎯 抽出完了: {len(res_df)} 銘柄のGC初動（反転サイン）を確認しました。")
+                    st.success(f"🎯 抽出完了: {len(res_df)} 銘柄の【真のGC初動】を確認しました。")
                     
                     st.markdown("#### 📋 コピペ用コード")
                     copy_codes = ",".join([str(c)[:4] for c in res_df['Code']])
                     st.code(copy_codes, language="text")
                     
                     for _, r in res_df.iterrows():
-                        st.divider()
-                        c = str(r['Code']); n = r['Name']
-                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         
-                        api_code = c if len(c) == 5 else c + "0"
+                        api_code = r['Code'] if len(str(r['Code'])) == 5 else str(r['Code']) + "0"
                         raw_s = get_single_data(api_code, 1)
                         
                         if raw_s:
@@ -922,7 +922,6 @@ with tab2:
                         else:
                             hist_chart = r['df_chart']
                             
-                        # 初期値は簡易スキャンの結果
                         accurate_rsi = r['RSI']
                         t_rank = r['triage_rank']
                         t_bg = r['triage_bg']
@@ -936,13 +935,19 @@ with tab2:
                             acc_macd_h = latest_acc.get('MACD_Hist', 0)
                             acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
                             
-                            # 🚨 計器フライトと同じ正確なデータでトリアージを再計算してバッジを同期
                             t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
+                            
+                            # 🚨 【キルスイッチ】もし精密再計算でCランク（勢い減衰など）に落ちたダマシ銘柄なら、画面に一切表示せずスキップする
+                            if "C（条件外" in t_rank:
+                                continue
+
+                        # 審査を通過したエリートのみ UI を描画
+                        st.divider()
+                        c = str(r['Code']); n = r['Name']
+                        daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         
                         scale_val = str(r.get('Scale', ''))
                         badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-                        
-                        # 同期された正確なランクでバッジを描画
                         triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
                         st.markdown(f"""
@@ -998,7 +1003,6 @@ with tab2:
                         
                         vol_val = r.get('avg_vol', 0)
                         
-                        # 🚨 小数点以下を切り捨てて「整数」表示に完全同期
                         html_stats = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                             <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
