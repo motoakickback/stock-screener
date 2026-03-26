@@ -1002,11 +1002,6 @@ with tab2:
                             draw_chart(hist_chart, bt_val, tp10=tp10)
 
 with tab3:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🛸 【観測】高高度モニター</h3>', unsafe_allow_html=True)
-    st.info("※現在、計器の再調整中（スタンバイ）です。")
-    # ここにあった誤ったバックテストのコードは全て削除されました
-                
-with tab4:
     st.markdown('### 🎯 精密スコープ照準（局地戦スキャン）')
     t_codes_str = st.text_area("標的コード（複数可、改行区切り）", value="7203", height=100)
     
@@ -1072,9 +1067,9 @@ with tab4:
                 draw_chart(hist, bt_val, tp15=int(bt_val * 1.15))
                         
 # ------------------------------------------
-# Tab 5: 戦術シミュレータ（デュアル・バックテスト）
+# Tab 4: 戦術シミュレータ（デュアル・バックテスト）
 # ------------------------------------------
-with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5など）に合わせてください
+with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5など）に合わせてください
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
     col_b1, col_b2 = st.columns([1, 2])
@@ -1264,9 +1259,9 @@ with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                 )
 
 # ------------------------------------------
-# Tab 6: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
+# Tab 5: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
 # ------------------------------------------
-with tab6:
+with tab5:
     st.markdown('### ⏳ IFD-OCO 10日ルール監視')
     st.caption("実戦配備中（保有中）の銘柄と約定日を入力し、タイムリミット（営業日）を自動追跡します。")
     
@@ -1329,9 +1324,9 @@ with tab6:
                     st.error(f"🚨 フォーマットエラー: {line} (YYYY-MM-DD形式で入力してください) - {e}")
                     
 # ------------------------------------------
-# Tab 7: 事後任務報告（AAR）
+# Tab 6: 事後任務報告（AAR）
 # ------------------------------------------
-with tab7:
+with tab6:
     st.markdown('### 🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）')
     st.caption("実際の売却日を完全に無視し、買付日から「指定した利確・損切・保有日数」のルールで完全放置した場合の幻の戦果を算出します。")
     
