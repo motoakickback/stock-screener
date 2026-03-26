@@ -1584,7 +1584,6 @@ with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
     st.caption("※実際の交戦記録（トレード履歴）を記録し、自身の戦績と「規律遵守度（メンタル）」を可視化・分析します。")
     
-    # 実戦データを保存するデータベースファイル
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
     if os.path.exists(AAR_FILE):
@@ -1595,8 +1594,7 @@ with tab6:
     col_a1, col_a2 = st.columns([1, 2.2])
     
     with col_a1:
-        st.markdown("#### 📝 戦果報告フォーム")
-        st.info("決済が完了した直後に、記憶が鮮明なうちに記録してください。")
+        st.markdown("#### 📝 戦果報告フォーム (手動入力)")
         
         with st.form(key="aar_form"):
             c_f1, c_f2 = st.columns(2)
@@ -1643,7 +1641,104 @@ with tab6:
                 st.rerun()
             else:
                 st.error("銘柄コード、買値、売値を正しく入力してください。")
-                
+        
+        # 🚨 【新規追加】証券会社CSVの自動解析・取り込みエンジン
+        with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
+            st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。（※重複データは自動排除されます）")
+            uploaded_csv = st.file_uploader("約定履歴CSVファイルをアップロード", type=["csv"], key="aar_csv_uploader")
+            
+            if uploaded_csv is not None:
+                if st.button("⚙️ CSVから戦果を自動解析して追加", use_container_width=True, key="btn_parse_csv"):
+                    try:
+                        import io
+                        try:
+                            content = uploaded_csv.getvalue().decode('utf-8', errors='replace')
+                        except:
+                            content = uploaded_csv.getvalue().decode('shift_jis', errors='replace')
+                            
+                        lines = content.splitlines()
+                        
+                        # 証券会社特有のヘッダ（約定日・銘柄などが並ぶ行）を自動検知
+                        header_idx = -1
+                        for i, line in enumerate(lines):
+                            if "約定日" in line and "銘柄" in line:
+                                header_idx = i
+                                break
+                                
+                        if header_idx != -1:
+                            csv_data = "\n".join(lines[header_idx:])
+                            df_csv = pd.read_csv(io.StringIO(csv_data))
+                            
+                            # 現物取引のみを抽出
+                            df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
+                            records = []
+                            
+                            # 銘柄ごとに買いと売りを分類してFIFO（先入先出）でペアリング計算
+                            for code, group in df_csv.groupby('銘柄コード'):
+                                buys, sells = [], []
+                                for _, row in group.iterrows():
+                                    item = {
+                                        'date': str(row['約定日']).replace('/', '-'),
+                                        'qty': int(row['約定数量']),
+                                        'price': float(row['約定単価']),
+                                        'code': str(code)
+                                    }
+                                    if "買" in str(row['取引']): buys.append(item)
+                                    elif "売" in str(row['取引']): sells.append(item)
+                                
+                                buys.sort(key=lambda x: x['date'])
+                                sells.sort(key=lambda x: x['date'])
+                                
+                                for s in sells:
+                                    sell_qty = s['qty']
+                                    matched_qty, matched_buy_amount = 0, 0
+                                    
+                                    while sell_qty > 0 and len(buys) > 0:
+                                        b = buys[0]
+                                        if b['qty'] <= sell_qty:
+                                            matched_qty += b['qty']
+                                            matched_buy_amount += b['price'] * b['qty']
+                                            sell_qty -= b['qty']
+                                            buys.pop(0)
+                                        else:
+                                            matched_qty += sell_qty
+                                            matched_buy_amount += b['price'] * sell_qty
+                                            b['qty'] -= sell_qty
+                                            sell_qty = 0
+                                            
+                                    if matched_qty > 0:
+                                        avg_buy_price = matched_buy_amount / matched_qty
+                                        profit = (s['price'] - avg_buy_price) * matched_qty
+                                        profit_pct = ((s['price'] / avg_buy_price) - 1) * 100
+                                        
+                                        records.append({
+                                            "決済日": s['date'],
+                                            "銘柄": s['code'],
+                                            "戦術": "自動解析",
+                                            "買値": round(avg_buy_price, 1),
+                                            "売値": round(s['price'], 1),
+                                            "株数": int(matched_qty),
+                                            "損益額(円)": int(profit),
+                                            "損益(%)": round(profit_pct, 2),
+                                            "規律": "不明(要修正)",
+                                            "敗因/勝因メモ": "CSV自動取り込み"
+                                        })
+                                        
+                            if records:
+                                new_df = pd.DataFrame(records)
+                                aar_df = pd.concat([new_df, aar_df], ignore_index=True)
+                                # 同じ「決済日・銘柄・株数」の重複登録を防止
+                                aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
+                                aar_df.to_csv(AAR_FILE, index=False)
+                                st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
+                                st.rerun()
+                            else:
+                                st.warning("解析可能な決済済みペア（買いと売りのセット）が見つかりませんでした。")
+                        else:
+                            st.error("CSVフォーマットが認識できませんでした。「約定日」「銘柄」を含むヘッダ行が必要です。")
+                    except Exception as e:
+                        st.error(f"解析エラー: {e}")
+
         if not aar_df.empty:
             if st.button("🗑️ 全記録を消去 (データベース初期化)", key="reset_aar", use_container_width=True):
                 os.remove(AAR_FILE)
@@ -1652,7 +1747,7 @@ with tab6:
     with col_a2:
         st.markdown("#### 📊 司令部 総合戦績ダッシュボード")
         if aar_df.empty:
-            st.warning("現在、交戦記録（データ）がありません。左のフォームから初陣の報告を行ってください。")
+            st.warning("現在、交戦記録（データ）がありません。左のフォームから入力するか、CSVをアップロードしてください。")
         else:
             tot_trades = len(aar_df)
             wins = len(aar_df[aar_df['損益額(円)'] > 0])
@@ -1664,7 +1759,6 @@ with tab6:
             gross_loss = abs(aar_df[aar_df['損益額(円)'] < 0]['損益額(円)'].sum())
             pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
             
-            # ボス専用の特殊指標：規律遵守率
             rule_adherence = round((len(aar_df[aar_df['規律'] == '遵守']) / tot_trades) * 100, 1) if tot_trades > 0 else 0
             
             m1, m2, m3, m4 = st.columns(4)
@@ -1690,6 +1784,7 @@ with tab6:
             st.plotly_chart(fig_real_eq, use_container_width=True)
             
             st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
+            st.caption("※CSVから自動登録された記録は、戦術が「自動解析」、規律が「不明」となります。手動での上書き修正は今後の拡張項目です。")
             
             def color_pnl(val):
                 if isinstance(val, (int, float)):
@@ -1699,6 +1794,7 @@ with tab6:
                 
             def color_rule(val):
                 if val == '違反': return 'color: #ef5350; font-weight: bold; background-color: rgba(239, 83, 80, 0.1);'
+                elif '不明' in str(val): return 'color: #9e9e9e;'
                 return 'color: #26a69a;'
 
             st.dataframe(
