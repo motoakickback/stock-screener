@@ -1588,6 +1588,8 @@ with tab6:
     
     if os.path.exists(AAR_FILE):
         aar_df = pd.read_csv(AAR_FILE)
+        # 🚨 起動時に必ず「決済日」の昇順（古い順）に並び替え
+        aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
     else:
         aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
 
@@ -1636,6 +1638,8 @@ with tab6:
                 }])
                 
                 aar_df = pd.concat([new_data, aar_df], ignore_index=True)
+                # 🚨 新規登録時も昇順にソート
+                aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                 aar_df.to_csv(AAR_FILE, index=False)
                 st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録しました。")
                 st.rerun()
@@ -1650,7 +1654,6 @@ with tab6:
                 if st.button("⚙️ CSVから戦果を自動解析して追加", use_container_width=True, key="btn_parse_csv"):
                     try:
                         import io
-                        # 🚨 修正：UTF-8での強制読み込みを解除。エラー時は確実にShift-JIS(証券会社標準)へ移行させる
                         try:
                             content = uploaded_csv.getvalue().decode('utf-8')
                         except UnicodeDecodeError:
@@ -1725,6 +1728,8 @@ with tab6:
                                 new_df = pd.DataFrame(records)
                                 aar_df = pd.concat([new_df, aar_df], ignore_index=True)
                                 aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
+                                # 🚨 CSV取り込み時も昇順にソート
+                                aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
                                 st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
                                 st.rerun()
@@ -1764,7 +1769,8 @@ with tab6:
             m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
             
             st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
-            aar_df_sorted = aar_df.sort_values('決済日').reset_index(drop=True)
+            # グラフ描画用にもソートを確保
+            aar_df_sorted = aar_df.sort_values('決済日', ascending=True).reset_index(drop=True)
             aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
             
             import plotly.express as px
