@@ -201,14 +201,14 @@ def get_single_data(code, yrs=3):
         # c（4桁）ではなく、引数で渡ってきた code（5桁）を指定します
         r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={code}", headers=headers, timeout=10)
         if r_div.status_code == 200:
-            # キーを "data" から API仕様の "dividend" に変更
-            result["events"]["dividend"] = r_div.json().get("dividend", [])
+            
+            result["events"]["dividend"] = r_div.json().get("data", [])
 
         # 3. 決算スケジュールの取得（修正後）
         r_earn = requests.get(f"https://api.jquants.com/v2/equities/earnings-calendar?code={code}", headers=headers, timeout=10)
         if r_earn.status_code == 200:
-            # キーを "data" から API仕様の "earnings_calendar" に変更
-            result["events"]["earnings"] = r_earn.json().get("earnings_calendar", [])
+
+            result["events"]["earnings"] = r_earn.json().get("data", [])
 
     except Exception as e:
         print(f"API Error: {e}")
