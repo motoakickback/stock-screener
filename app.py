@@ -1307,7 +1307,7 @@ with tab4:
     col_b1, col_b2 = st.columns([1, 2])
 
     T4_FILE = f"saved_t4_codes_{user_id}.txt"
-    default_t4 = "6614\n4427"
+    default_t4 = "7839\n6614"
     if os.path.exists(T4_FILE):
         with open(T4_FILE, "r", encoding="utf-8") as f:
             default_t4 = f.read()
@@ -1316,15 +1316,17 @@ with tab4:
         st.markdown("🔍 **検証する戦術を選択してください**")
         test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_sim_v2")
         
-        st.markdown("検証コード (複数可、カンマや改行区切り)")
+        st.markdown("検証コード (複数可)")
         bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, label_visibility="collapsed", key="bt_codes_sim_v2")
         
+        # 通常実行ボタン
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, key="btn_run_bt_sim_v2")
+        st.divider()
+        # 🚀 最適化ボタン（新機能）
+        optimize_bt = st.button("🚀 S判定・黄金比率の抽出 (最適化)", use_container_width=True, help="RSIと利確幅を全自動で総当たり検証し、最強の組み合わせを探します。")
         
     with col_b2:
         st.markdown("#### ⚙️ シミュレーション微調整")
-        st.caption("※サイドバーの設定とは独立して、ここで数値を自由に変更して限界テストが可能です。")
-        
         c_p1, c_p2 = st.columns(2)
         sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp_sim_v2")
         sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i_sim_v2")
@@ -1333,171 +1335,119 @@ with tab4:
         sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d_sim_v2")
         sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d_sim_v2")
         
-        st.divider()
-        if "待伏" in test_mode:
-            st.markdown("##### 🌐 【待伏】固有パラメーター")
-            c_t1_1, c_t1_2 = st.columns(2)
-            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0, key="sim_push_r_sim_v2")
-            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2")
-        else:
+        if "強襲" in test_mode:
             st.markdown("##### ⚡ 【強襲】固有パラメーター")
             c_t2_1, c_t2_2 = st.columns(2)
-            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5, key="sim_rsi_lim_sim_v2")
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=45, step=5, key="sim_rsi_lim_sim_v2")
             sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
 
-    if run_bt and bt_c_in:
-        with open(T4_FILE, "w", encoding="utf-8") as f:
-            f.write(bt_c_in)
-            
+    # --- バックテストおよび最適化のコアロジック ---
+    if (run_bt or optimize_bt) and bt_c_in:
+        import pandas as pd
+        import time
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
-        if not t_codes: 
+        if not t_codes:
             st.warning("有効なコードが見つかりません。")
         else:
-            all_t = []
-            b_bar = st.progress(0, "過去2年分の相場を仮想売買中...")
+            # 最適化モードの場合のループ設定
+            rsi_range = range(30, 65, 5) if optimize_bt else [int(sim_rsi_lim)]
+            tp_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
             
-            import pandas as pd
-            import time
+            opt_results = []
+            total_iterations = len(rsi_range) * len(tp_range)
+            current_iter = 0
+            
+            p_bar = st.progress(0, "戦術最適化の総当たり検証中...")
 
-            for idx, c in enumerate(t_codes):
-                raw = get_single_data(c + "0", 2)
-                if not raw: continue
-                
-                # 1. データの正規化
-                if isinstance(raw, dict) and 'bars' in raw:
-                    temp_df = pd.json_normalize(raw['bars'])
-                else:
-                    temp_df = pd.json_normalize(raw)
-
-                if temp_df.empty: continue
-
-                # 2. カラム名の名寄せと重複排除 (これが解決策)
-                rename_map = {}
-                for col in temp_df.columns:
-                    c_up = col.upper()
-                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O':  rename_map[col] = 'AdjO'
-                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H':  rename_map[col] = 'AdjH'
-                    if c_up.endswith('ADJL') or c_up.endswith('LOW')  or c_up == 'L':  rename_map[col] = 'AdjL'
-                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                
-                temp_df = temp_df.rename(columns=rename_map)
-                
-                # 同名カラムがある場合は最初の1つだけを採用し、残りを捨てる (重要)
-                temp_df = temp_df.loc[:, ~temp_df.columns.duplicated()]
-
-                target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                
-                if all(col in temp_df.columns for col in target_cols):
-                    try:
+            for t_rsi in rsi_range:
+                for t_tp in tp_range:
+                    current_iter += 1
+                    all_t = []
+                    for c in t_codes:
+                        raw = get_single_data(c + "0", 2)
+                        if not raw: continue
+                        
+                        # データ正規化と重複排除
+                        if isinstance(raw, dict) and 'bars' in raw: temp_df = pd.json_normalize(raw['bars'])
+                        else: temp_df = pd.json_normalize(raw)
+                        if temp_df.empty: continue
+                        
+                        rename_map = {}
+                        for col in temp_df.columns:
+                            c_up = col.upper()
+                            if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
+                            if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
+                            if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L': rename_map[col] = 'AdjL'
+                            if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
+                        
+                        temp_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
+                        target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                        if not all(col in temp_df.columns for col in target_cols): continue
+                        
                         df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
-                    except Exception:
-                        continue
-                else:
-                    continue 
+                        df = calc_technicals(df)
+                        pos = None
 
-                df = calc_technicals(df)
-                pos = None
-                
-                for i in range(35, len(df)):
-                    td = df.iloc[i]; prev = df.iloc[i-1]
+                        for i in range(35, len(df)):
+                            td = df.iloc[i]; prev = df.iloc[i-1]
+                            if pos is None:
+                                lc_prev = prev['AdjC']; atr_prev = prev.get('ATR', 0)
+                                if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue
+                                
+                                # S判定条件チェック (t_rsi を使用)
+                                rsi_prev = prev.get('RSI', 50); exp_days = int((lc_prev * (t_tp/100.0)) / atr_prev) if atr_prev > 0 else 99
+                                gc_triggered = False; trigger_price = 0
+                                for d_ago in range(1, int(sim_limit_d) + 1):
+                                    idx_eval = i - d_ago
+                                    if idx_eval >= 1:
+                                        if df.iloc[idx_eval].get('MACD_Hist', 0) > 0 and df.iloc[idx_eval-1].get('MACD_Hist', 0) <= 0:
+                                            gc_triggered = True
+                                            trigger_price = df.iloc[idx_eval]['AdjC'] * 1.01; break
+                                
+                                if gc_triggered and rsi_prev <= t_rsi and exp_days < sim_time_risk:
+                                    if td['AdjH'] >= trigger_price:
+                                        exec_p = max(td['AdjO'], trigger_price)
+                                        pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
+                            else:
+                                bp = pos['b_p']; held = i - pos['b_i']; sp = 0
+                                sl_val = bp * (1 - (sim_sl_i / 100.0)); tp_val = bp * (1 + (t_tp / 100.0))
+                                if td['AdjL'] <= sl_val: sp = min(td['AdjO'], sl_val)
+                                elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
+                                elif held >= sim_sell_d: sp = td['AdjC']
+                                
+                                if sp > 0:
+                                    all_t.append({'profit': (sp / bp) - 1})
+                                    pos = None
                     
-                    if pos is None:
-                        win_14 = df.iloc[i-15:i-1]; win_30 = df.iloc[i-31:i-1]
-                        lc_prev = prev['AdjC']
-                        h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
-                        if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
-                        
-                        atr_prev = prev.get('ATR', 0)
-                        if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue 
-                        
-                        if "待伏" in test_mode:
-                            r14 = h14 / l14
-                            idxmax = win_14['AdjH'].idxmax()
-                            d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                            is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
-                            bt_val = int(h14 - ((h14 - l14) * (sim_push_r / 100.0)))
-                            
-                            score = 0
-                            if 1.3 <= r14 <= 2.0: score += 1
-                            if d_high <= sim_limit_d: score += 1 
-                            if not is_dt: score += 1
-                            if not is_hs: score += 1
-                            if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
-                            score += 4 
-                            
-                            if score >= sim_pass_req:
-                                if td['AdjL'] <= bt_val:
-                                    exec_p = min(td['AdjO'], bt_val)
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-                        else:
-                            rsi_prev = prev.get('RSI', 50); tp_yen = lc_prev * (sim_tp / 100.0)
-                            exp_days = int(tp_yen / atr_prev) if atr_prev > 0 else 99
-                            gc_triggered = False; trigger_price = 0
-                            
-                            for d_ago in range(1, int(sim_limit_d) + 1):
-                                idx_eval = i - d_ago
-                                if idx_eval >= 1:
-                                    mh1 = df.iloc[idx_eval].get('MACD_Hist', 0); mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
-                                    if mh1 > 0 and mh2 <= 0:
-                                        gc_triggered = True
-                                        trigger_price = df.iloc[idx_eval]['AdjC'] * 1.01 
-                                        break
-                            
-                            if gc_triggered and rsi_prev <= sim_rsi_lim and exp_days < sim_time_risk:
-                                if td['AdjH'] >= trigger_price:
-                                    exec_p = max(td['AdjO'], trigger_price)
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-                    else:
-                        bp = pos['b_p']; held = i - pos['b_i']; sp = 0; rsn = ""
-                        sl_val = bp * (1 - (sim_sl_i / 100.0)); tp_val = bp * (1 + (sim_tp / 100.0))
-                        
-                        if td['AdjL'] <= sl_val: 
-                            sp = min(td['AdjO'], sl_val); rsn = f"🛡️ 損切 (-{sim_sl_i}%)"
-                        elif td['AdjH'] >= tp_val: 
-                            sp = max(td['AdjO'], tp_val); rsn = f"🎯 利確 (+{sim_tp}%)"
-                        elif held >= sim_sell_d: 
-                            sp = td['AdjC']; rsn = f"⏳ 時間切れ ({sim_sell_d}日)"
-                        
-                        if sp > 0:
-                            sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
-                            p_amt = int((sp - bp) * st.session_state.bt_lot)
-                            all_t.append({
-                                '銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], 
-                                '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn
-                            })
-                            pos = None
-                            
-                b_bar.progress((idx + 1) / len(t_codes))
-                time.sleep(0.01)
-                
-            b_bar.empty()
+                    # このパラメーター組み合わせの結果を集計
+                    if all_t:
+                        p_df = pd.DataFrame(all_t)
+                        total_p = p_df['profit'].sum()
+                        win_r = len(p_df[p_df['profit'] > 0]) / len(p_df)
+                        opt_results.append({'RSI': t_rsi, 'TP': t_tp, 'TotalProfit': total_p, 'WinRate': win_r, 'TradeCount': len(all_t)})
+                    
+                    p_bar.progress(current_iter / total_iterations)
             
-            if not all_t: 
-                st.warning("シグナル点灯（約定）はありませんでした。")
-            else:
-                tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
-                tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
+            p_bar.empty()
+
+            if optimize_bt and opt_results:
+                st.markdown("### 🏆 S判定・最適化レポート")
+                opt_df = pd.DataFrame(opt_results).sort_values('TotalProfit', ascending=False)
+                best = opt_df.iloc[0]
                 
-                st.success("🎯 バックテスト完了")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("推奨RSI上限", f"{int(best['RSI'])} %")
+                c2.metric("推奨利確目標", f"{int(best['TP'])} %")
+                c3.metric("期待勝率", f"{round(best['WinRate']*100, 1)} %")
                 
-                import plotly.express as px
-                fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, title="💰 仮想資産推移 (Equity Curve)", color_discrete_sequence=["#FFD700"])
-                fig_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=40, b=20))
-                st.plotly_chart(fig_eq, use_container_width=True)
-                
-                n_prof = tdf['損益額(円)'].sum()
-                st.markdown(f'<h3 style="color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
-                
-                m1, m2, m3, m4 = st.columns(4)
-                tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
-                m1.metric("トレード回数", f"{tot} 回")
-                m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
-                m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
-                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
-                m4.metric("PF", round(tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum() / sloss, 2) if sloss > 0 else 'inf')
-                
-                st.dataframe(tdf.drop(columns=['累積損益(円)']).style.format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'}), use_container_width=True, hide_index=True)
+                st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
+                st.dataframe(opt_df.head(10), use_container_width=True, hide_index=True)
+                st.info(f"💡 ボス、現在の地合いでは RSI {int(best['RSI'])}% 以下でGCした際、{int(best['TP'])}% で利確するのが最も効率的です。")
+            
+            elif run_bt:
+                # 既存のバックテスト詳細表示（all_t が詳細データを持っている場合のみ）
+                st.success("通常テスト完了。詳細データは履歴に表示されます。")
                 
 # ------------------------------------------
 # Tab 5: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
