@@ -698,7 +698,7 @@ with tab1:
             raw = get_hist_data_cached()
         if not raw: st.error("データの取得に失敗しました。")
         else:
-            with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中..."):
+            with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
                 d_raw = pd.DataFrame(raw)
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
@@ -800,18 +800,31 @@ with tab1:
                 
                 sum_df['rule_pct'] = 100.0; sum_df['passed'] = 9 
                 
-                # 🚨 S/A/B/Cトリアージスコアの算出とソート機能の復活
-                t_scores = []; t_ranks = []; t_bgs = []
-                for _, r in sum_df.iterrows():
+                # 🚨 【超高速化コア】マルチスレッドによるトリアージ並列計算
+                def process_triage(row_tuple):
+                    idx, r = row_tuple
                     c_code = r['Code']
                     df_for_tech = df_30[df_30['Code'] == c_code]
                     if not df_for_tech.empty:
                         df_for_tech = calc_technicals(df_for_tech.copy())
-                        latest_c = df_for_tech.iloc[-1]; prev_c = df_for_tech.iloc[-2] if len(df_for_tech) > 1 else latest_c
+                        latest_c = df_for_tech.iloc[-1]
+                        prev_c = df_for_tech.iloc[-2] if len(df_for_tech) > 1 else latest_c
                         rank, bg, score, _ = get_triage_info(latest_c.get('MACD_Hist',0), prev_c.get('MACD_Hist',0), latest_c.get('RSI',50))
-                        t_scores.append(score); t_ranks.append(rank); t_bgs.append(bg)
-                    else:
-                        t_scores.append(1); t_ranks.append("C（条件外・監視）👁️"); t_bgs.append("#616161")
+                        return (idx, score, rank, bg)
+                    return (idx, 1, "C（条件外・監視）👁️", "#616161")
+
+                t_scores = pd.Series(index=sum_df.index, dtype=int)
+                t_ranks = pd.Series(index=sum_df.index, dtype=str)
+                t_bgs = pd.Series(index=sum_df.index, dtype=str)
+                
+                # 最大20部隊での並列実行
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                    futures = [executor.submit(process_triage, row) for row in sum_df.iterrows()]
+                    for future in concurrent.futures.as_completed(futures):
+                        idx, score, rank, bg = future.result()
+                        t_scores[idx] = score
+                        t_ranks[idx] = rank
+                        t_bgs[idx] = bg
                         
                 sum_df['triage_score'] = t_scores
                 sum_df['triage_rank'] = t_ranks
@@ -840,7 +853,6 @@ with tab1:
                     scale_val = str(r.get('Scale', ''))
                     badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
                     
-                    # 🚨 トリアージバッジの描画
                     triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                     st.markdown(f"""
@@ -850,10 +862,8 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # --- 修正：銘柄ごとの生データを取得して raw_s に格納 ---
-                    raw_s = get_single_data(f"{str(c)[:4]}0", 1) # 1年分のデータとイベント情報を取得
-                    
-                    # 取得した raw_s からイベント情報を抽出
+                    # --- イベント（地雷）判定 ---
+                    raw_s = get_single_data(f"{str(c)[:4]}0", 1) 
                     event_alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
                     for alert in event_alerts: st.warning(alert)
                     
@@ -916,9 +926,6 @@ with tab1:
                     else:
                         st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
                     
-                    api_code = c if len(c) == 5 else c + "0"
-                    raw_s = get_single_data(api_code, 1)
-                    # raw_s の中にある "bars"（株価データ）だけを渡すように指定します
                     if raw_s and "bars" in raw_s: 
                         hist_chart = clean_df(pd.DataFrame(raw_s["bars"]))
                     else: hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
