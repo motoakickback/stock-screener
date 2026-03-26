@@ -592,14 +592,13 @@ st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_s
 # ==========================================
 # 5. タブ再構成（7タブ構成）
 # ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
-    "🛸 【観測】高高度モニター", 
     "🎯 精密スコープ", 
     "⚙️ 戦術シミュレータ", 
-    "🪤 IFD潜伏カウント", 
-    "📁 事後任務報告(AAR)"
+    "⛺ IFD潜伏カウント", 
+    "📁 事後任務報告 (AAR)"
 ])
 master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
