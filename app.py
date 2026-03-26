@@ -1366,7 +1366,12 @@ with tab4:
 
                 # rawデータの存在確認と正規化
                 if 'raw' in locals() or 'raw' in globals():
-                    temp_df = pd.json_normalize(raw)
+                    # 【ここを差し替え】
+                    # raw['bars'] の中身を取り出してデータフレーム化する
+                    if isinstance(raw, dict) and 'bars' in raw:
+                        temp_df = pd.json_normalize(raw['bars'])
+                    else:
+                        temp_df = pd.json_normalize(raw)
     
                     # デバッグ表示（100株エントリー判断のためのデータ確認）
                     st.write("### 🛠 Debug: データ構造の確認")
