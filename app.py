@@ -1123,17 +1123,6 @@ with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
             sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5, key="sim_rsi_lim_t5")
             sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_t5")
         
-        if "待伏" in test_mode:
-            st.markdown("##### 🌐 【待伏】固有パラメーター")
-            c_t1_1, c_t1_2 = st.columns(2)
-            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0)
-            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1)
-        else:
-            st.markdown("##### ⚡ 【強襲】固有パラメーター")
-            c_t2_1, c_t2_2 = st.columns(2)
-            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5)
-            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1)
-
     if run_bt and bt_c_in:
         with open(T3_FILE, "w", encoding="utf-8") as f:
             f.write(bt_c_in)
