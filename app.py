@@ -1581,163 +1581,129 @@ with tab5:
 # Tab 6: 事後任務報告（AAR）
 # ------------------------------------------
 with tab6:
-    st.markdown('### 🗂️ 過去戦歴の解剖（純粋IFD-OCO検証）')
-    st.caption("実際の売却日を完全に無視し、買付日から「指定した利確・損切・保有日数」のルールで完全放置した場合の幻の戦果を算出します。")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
+    st.caption("※実際の交戦記録（トレード履歴）を記録し、自身の戦績と「規律遵守度（メンタル）」を可視化・分析します。")
     
-    uploaded_file = st.file_uploader("約定履歴CSVをアップロード", type=['csv'])
-    if uploaded_file is not None:
-        try:
-            import io
-            bytes_data = uploaded_file.getvalue()
-            try:
-                content_str = bytes_data.decode('shift_jis')
-            except:
-                content_str = bytes_data.decode('utf-8', errors='replace')
-                
-            lines = content_str.splitlines()
-            header_idx = 0
-            for i, line in enumerate(lines):
-                if "約定日" in line and "銘柄コード" in line and "取引" in line:
-                    header_idx = i
-                    break
-                    
-            df_csv = pd.read_csv(io.StringIO(content_str), skiprows=header_idx)
-            df_csv['約定日'] = pd.to_datetime(df_csv['約定日'])
-            df_csv['銘柄コード'] = df_csv['銘柄コード'].astype(str).str.extract(r'(\d{4})')[0]
-            df_csv['約定単価'] = pd.to_numeric(df_csv['約定単価'], errors='coerce')
-            df_csv['約定数量'] = pd.to_numeric(df_csv['約定数量'], errors='coerce')
+    # 実戦データを保存するデータベースファイル
+    AAR_FILE = f"saved_aar_log_{user_id}.csv"
+    
+    if os.path.exists(AAR_FILE):
+        aar_df = pd.read_csv(AAR_FILE)
+    else:
+        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
 
-            buys = df_csv[df_csv['取引'].str.contains('買', na=False)].sort_values('約定日').copy()
-            sells = df_csv[df_csv['取引'].str.contains('売', na=False)].sort_values('約定日').copy()
-
-            trades = []; buy_queues = {}
-            for idx, buy in buys.iterrows():
-                code = buy['銘柄コード']
-                if pd.isna(code): continue
-                if code not in buy_queues: buy_queues[code] = []
-                buy_queues[code].append({'date': buy['約定日'], 'price': buy['約定単価'], 'qty': buy['約定数量'], 'name': buy['銘柄']})
-
-            for idx, sell in sells.iterrows():
-                code = sell['銘柄コード']
-                if pd.isna(code): continue
-                if code in buy_queues and len(buy_queues[code]) > 0:
-                    buy = buy_queues[code].pop(0)
-                    trades.append({
-                        'code': code, 'name': sell['銘柄'],
-                        'buy_date': buy['date'], 'buy_price': buy['price'],
-                        'sell_date': sell['約定日'], 'sell_price': sell['約定単価'], 'qty': sell['約定数量']
-                    })
+    col_a1, col_a2 = st.columns([1, 2.2])
+    
+    with col_a1:
+        st.markdown("#### 📝 戦果報告フォーム")
+        st.info("決済が完了した直後に、記憶が鮮明なうちに記録してください。")
+        
+        with st.form(key="aar_form"):
+            c_f1, c_f2 = st.columns(2)
+            import datetime
+            aar_date = c_f1.date_input("決済日", datetime.date.today())
+            aar_code = c_f2.text_input("銘柄コード (4桁)", max_chars=4)
             
-            if not trades:
-                st.warning("CSVから買付と売却のペア（交戦記録）を検出できませんでした。")
-            else:
-                st.markdown("#### ⚙️ IFD-OCO 自動判定パラメーター")
-                col_p1, col_p2, col_p3 = st.columns(3)
-                sim_tp = col_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0)
-                sim_sl = col_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0)
-                sim_days = col_p3.number_input("⏳ 期限切れ手仕舞い (営業日)", value=10, step=1)
+            aar_tactics = st.selectbox("使用した戦術", ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他 (裁量・妥協)"])
+            
+            c_f3, c_f4, c_f5 = st.columns(3)
+            aar_buy = c_f3.number_input("買値 (円)", min_value=0.0, step=1.0, format="%.1f")
+            aar_sell = c_f4.number_input("売値 (円)", min_value=0.0, step=1.0, format="%.1f")
+            aar_lot = c_f5.number_input("株数", min_value=100, step=100)
+            
+            st.markdown("**⚖️ 自己評価（メンタル・チェック）**")
+            aar_rule = st.radio("ボスの『鉄の掟』を完全に遵守して撃ちましたか？", 
+                                ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"], horizontal=False)
+            
+            aar_memo = st.text_input("特記事項 (なぜそのルールを破ったか、または勝因など)")
+            
+            submit_aar = st.form_submit_button("💾 記録をデータバンクへ保存", use_container_width=True)
+            
+        if submit_aar:
+            if aar_code and len(aar_code) >= 4 and aar_buy > 0 and aar_sell > 0:
+                profit = int((aar_sell - aar_buy) * aar_lot)
+                profit_pct = round(((aar_sell / aar_buy) - 1) * 100, 2)
                 
-                if st.button(f"🚀 全{len(trades)}件の弾道を「完全放置ルール」で再計算"):
-                    with st.spinner("J-Quantsから当時のチャートを読み込み、未来の弾道を追跡中..."):
-                        results = []
-                        for t in trades:
-                            code = t['code']; bd = t['buy_date']; sd = t['sell_date']
-                            bp = t['buy_price']; sp = t['sell_price']; qty = t['qty']
-                            
-                            tp_val = bp * (1 + (sim_tp / 100.0))
-                            sl_val = bp * (1 - (sim_sl / 100.0))
-                            
-                            api_code = code if len(code) == 5 else code + "0"
-                            raw_data = get_single_data(api_code, 1)
-                            
-                            sim_sell_price = sp
-                            sim_sell_date = sd
-                            rsn = "データ不足"
-                            rsi_val = 50; macd_t = "---"
-                            
-                            if raw_data:
-                                hist = clean_df(pd.DataFrame(raw_data))
-                                hist = calc_technicals(hist) 
-                                
-                                buy_hist = hist[hist['Date'] <= bd]
-                                if len(buy_hist) >= 2:
-                                    latest = buy_hist.iloc[-1]
-                                    prev = buy_hist.iloc[-2]
-                                    rsi = latest.get('RSI', 50)
-                                    macd_h = latest.get('MACD_Hist', 0)
-                                    macd_h_prev = prev.get('MACD_Hist', 0)
-                                    
-                                    if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
-                                    elif macd_h > macd_h_prev: macd_t = "上昇拡大"
-                                    elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
-                                    else: macd_t = "減衰"
-                                    
-                                    rsi_val = int(rsi)
-                                
-                                future_df = hist[hist['Date'] >= bd].sort_values('Date')
-                                period_df = future_df.head(int(sim_days) + 1)
-                                
-                                if not period_df.empty:
-                                    last_row = period_df.iloc[-1]
-                                    sim_sell_price = last_row['AdjC']
-                                    sim_sell_date = last_row['Date']
-                                    rsn = f"⏳ 期限切れ ({len(period_df)-1}日目)"
-                                    
-                                    for i, r in period_df.iterrows():
-                                        if r['AdjH'] >= tp_val:
-                                            sim_sell_price = tp_val
-                                            sim_sell_date = r['Date']
-                                            rsn = f"🎯 利確 (+{sim_tp}%)"
-                                            break
-                                        elif r['AdjL'] <= sl_val:
-                                            sim_sell_price = min(r['AdjO'], sl_val)
-                                            sim_sell_date = r['Date']
-                                            rsn = f"🛡️ 損切 (-{sim_sl}%)"
-                                            break
-                            
-                            actual_profit = (sp - bp) * qty
-                            sim_profit = (sim_sell_price - bp) * qty
-                            
-                            results.append({
-                                '銘柄': t['name'], 'コード': code, 
-                                '買付日': bd.strftime('%m/%d'), 
-                                'RSI/陣形': f"{rsi_val}% / {macd_t}",
-                                '実際の売却': sd.strftime('%m/%d'),
-                                '幻の決済日': sim_sell_date.strftime('%m/%d') if isinstance(sim_sell_date, pd.Timestamp) else "---",
-                                '買値': bp, '実際の売値': sp, '幻の売値': sim_sell_price,
-                                '実際の損益': actual_profit, '幻の損益': sim_profit, 
-                                '改善額': sim_profit - actual_profit, '判定結果': rsn
-                            })
-                                
-                        if results:
-                            res_df = pd.DataFrame(results)
-                            total_actual = res_df['実際の損益'].sum()
-                            total_sim = res_df['幻の損益'].sum()
-                            diff = total_sim - total_actual
-                            
-                            st.markdown("### 💰 総合戦果の比較")
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("実際の合計損益", f"{total_actual:,.0f} 円")
-                            col2.metric(f"完全放置ルール の損益", f"{total_sim:,.0f} 円", f"{diff:,.0f} 円", delta_color="inverse")
-                            
-                            def color_profit(val):
-                                if isinstance(val, (int, float)):
-                                    return 'color: #ef5350' if val > 0 else 'color: #26a69a' if val < 0 else ''
-                                return ''
-                            
-                            format_dict = {
-                                '買値': '{:,.0f}', '実際の売値': '{:,.0f}', '幻の売値': '{:,.0f}',
-                                '実際の損益': '{:,.0f}', '幻の損益': '{:,.0f}', '改善額': '{:,.0f}'
-                            }
-                            
-                            st.dataframe(
-                                res_df.style.format(format_dict).applymap(color_profit, subset=['実際の損益', '幻の損益', '改善額']), 
-                                use_container_width=True
-                            )
-                            
-                            if diff > 0:
-                                st.success(f"🔥 【証明完了】人間の裁量（ノイズ）を完全に捨て、機械的IFD-OCOルールを徹底した方が、利益は {diff:,.0f}円 高くなります。")
-                            else:
-                                st.warning(f"🛡️ 【証明完了】当時のボスの裁量決済（途中での手動利確・損切など）は、完全放置ルールよりも {abs(diff):,.0f}円 優秀でした。")
-        except Exception as e:
-            st.error(f"🚨 CSVの解析に失敗しました: {e}")
+                new_data = pd.DataFrame([{
+                    "決済日": aar_date.strftime("%Y-%m-%d"),
+                    "銘柄": aar_code,
+                    "戦術": aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
+                    "買値": aar_buy,
+                    "売値": aar_sell,
+                    "株数": aar_lot,
+                    "損益額(円)": profit,
+                    "損益(%)": profit_pct,
+                    "規律": "遵守" if "遵守" in aar_rule else "違反",
+                    "敗因/勝因メモ": aar_memo
+                }])
+                
+                aar_df = pd.concat([new_data, aar_df], ignore_index=True)
+                aar_df.to_csv(AAR_FILE, index=False)
+                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録しました。")
+                st.rerun()
+            else:
+                st.error("銘柄コード、買値、売値を正しく入力してください。")
+                
+        if not aar_df.empty:
+            if st.button("🗑️ 全記録を消去 (データベース初期化)", key="reset_aar", use_container_width=True):
+                os.remove(AAR_FILE)
+                st.rerun()
+
+    with col_a2:
+        st.markdown("#### 📊 司令部 総合戦績ダッシュボード")
+        if aar_df.empty:
+            st.warning("現在、交戦記録（データ）がありません。左のフォームから初陣の報告を行ってください。")
+        else:
+            tot_trades = len(aar_df)
+            wins = len(aar_df[aar_df['損益額(円)'] > 0])
+            losses = len(aar_df[aar_df['損益額(円)'] <= 0])
+            win_rate = round((wins / tot_trades) * 100, 1) if tot_trades > 0 else 0
+            
+            tot_profit = aar_df['損益額(円)'].sum()
+            gross_profit = aar_df[aar_df['損益額(円)'] > 0]['損益額(円)'].sum()
+            gross_loss = abs(aar_df[aar_df['損益額(円)'] < 0]['損益額(円)'].sum())
+            pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
+            
+            # ボス専用の特殊指標：規律遵守率
+            rule_adherence = round((len(aar_df[aar_df['規律'] == '遵守']) / tot_trades) * 100, 1) if tot_trades > 0 else 0
+            
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("総交戦回数", f"{tot_trades} 回")
+            m2.metric("実戦 勝率", f"{win_rate}%", f"{wins}勝 {losses}敗", delta_color="off")
+            m3.metric("総合 実損益", f"{int(tot_profit):,} 円", f"実戦PF: {pf}")
+            m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
+            
+            # 資産推移グラフ（現実）
+            st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
+            aar_df_sorted = aar_df.sort_values('決済日').reset_index(drop=True)
+            aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
+            
+            import plotly.express as px
+            fig_real_eq = px.line(aar_df_sorted, x='決済日', y='累積損益(円)', markers=True, 
+                             color_discrete_sequence=["#26a69a"])
+            fig_real_eq.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)',
+                margin=dict(l=20, r=20, t=10, b=20),
+                xaxis_title="", yaxis_title="実損益額 (円)",
+                height=250, hovermode="x unified"
+            )
+            st.plotly_chart(fig_real_eq, use_container_width=True)
+            
+            st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
+            
+            def color_pnl(val):
+                if isinstance(val, (int, float)):
+                    color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
+                    return f'color: {color}'
+                return ''
+                
+            def color_rule(val):
+                if val == '違反': return 'color: #ef5350; font-weight: bold; background-color: rgba(239, 83, 80, 0.1);'
+                return 'color: #26a69a;'
+
+            st.dataframe(
+                aar_df.style.applymap(color_pnl, subset=['損益額(円)', '損益(%)']).applymap(color_rule, subset=['規律']).format({
+                    '買値': '{:,.1f}', '売値': '{:,.1f}', '株数': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'
+                }),
+                use_container_width=True, hide_index=True
+            )
