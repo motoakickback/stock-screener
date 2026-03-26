@@ -1586,12 +1586,26 @@ with tab6:
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
+    # 🚨 銘柄コードから企業規模を判定する関数
+    def get_scale_for_code(code):
+        api_code = str(code) if len(str(code)) == 5 else str(code) + "0"
+        if not master_df.empty:
+            m_row = master_df[master_df['Code'] == api_code]
+            if not m_row.empty:
+                scale_val = str(m_row.iloc[0].get('Scale', ''))
+                return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
+        return "不明"
+    
     if os.path.exists(AAR_FILE):
         aar_df = pd.read_csv(AAR_FILE)
-        # 🚨 起動時に必ず「決済日」の昇順（古い順）に並び替え
+        # 🚨 過去のデータに「規模」カラムがない場合の自動補完
+        if "規模" not in aar_df.columns:
+            aar_df.insert(2, "規模", aar_df["銘柄"].apply(get_scale_for_code))
+            aar_df.to_csv(AAR_FILE, index=False)
+            
         aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
     else:
-        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
 
     col_a1, col_a2 = st.columns([1, 2.2])
     
@@ -1627,6 +1641,7 @@ with tab6:
                 new_data = pd.DataFrame([{
                     "決済日": aar_date.strftime("%Y-%m-%d"),
                     "銘柄": aar_code,
+                    "規模": get_scale_for_code(aar_code),
                     "戦術": aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
                     "買値": aar_buy,
                     "売値": aar_sell,
@@ -1638,7 +1653,6 @@ with tab6:
                 }])
                 
                 aar_df = pd.concat([new_data, aar_df], ignore_index=True)
-                # 🚨 新規登録時も昇順にソート
                 aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                 aar_df.to_csv(AAR_FILE, index=False)
                 st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録しました。")
@@ -1714,6 +1728,7 @@ with tab6:
                                         records.append({
                                             "決済日": s['date'],
                                             "銘柄": s['code'],
+                                            "規模": get_scale_for_code(s['code']),
                                             "戦術": "自動解析",
                                             "買値": round(avg_buy_price, 1),
                                             "売値": round(s['price'], 1),
@@ -1728,7 +1743,6 @@ with tab6:
                                 new_df = pd.DataFrame(records)
                                 aar_df = pd.concat([new_df, aar_df], ignore_index=True)
                                 aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
-                                # 🚨 CSV取り込み時も昇順にソート
                                 aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
                                 st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
@@ -1769,7 +1783,6 @@ with tab6:
             m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
             
             st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
-            # グラフ描画用にもソートを確保
             aar_df_sorted = aar_df.sort_values('決済日', ascending=True).reset_index(drop=True)
             aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
             
@@ -1784,10 +1797,11 @@ with tab6:
             )
             st.plotly_chart(fig_real_eq, use_container_width=True)
             
+            # 🚨 利益は赤、損失は緑のカラーリング関数
             def color_pnl(val):
                 if isinstance(val, (int, float)):
                     color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
-                    return f'color: {color}'
+                    return f'color: {color}; font-weight: bold;'
                 return ''
                 
             def color_rule(val):
@@ -1796,12 +1810,16 @@ with tab6:
                 return 'color: #26a69a;'
 
             st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
-            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を後追い編集（上書き保存）できます。")
-            
-            # 🚨 st.dataframe を st.data_editor にアップグレード（直接編集機能）
+            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）できます。")
+
+            # 色を適用したStylerオブジェクトを作成
+            styled_df = aar_df.style.applymap(color_pnl, subset=['損益額(円)', '損益(%)']).applymap(color_rule, subset=['規律'])
+
+            # 🚨 st.data_editorによる直接編集可能なインタラクティブボード
             edited_df = st.data_editor(
-                aar_df,
+                styled_df,
                 column_config={
+                    "規模": st.column_config.TextColumn("規模", disabled=True),
                     "戦術": st.column_config.SelectboxColumn(
                         "戦術",
                         help="使用した戦術を選択",
@@ -1824,14 +1842,13 @@ with tab6:
                     "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="%d"),
                     "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f"),
                 },
-                # 金額や日付など、改ざんしてはいけないコアデータは編集不可（ロック）にする
-                disabled=["決済日", "銘柄", "買値", "売値", "株数", "損益額(円)", "損益(%)"],
+                disabled=["決済日", "銘柄", "規模", "買値", "売値", "株数", "損益額(円)", "損益(%)"],
                 hide_index=True,
                 use_container_width=True,
                 key="aar_data_editor"
             )
             
-            # 🚨 セルが編集され、元のデータと差分が発生した場合、自動でCSVに上書き保存する
+            # セルが編集された場合、自動でCSVに上書き保存して再読み込み
             if not edited_df.equals(aar_df):
                 edited_df.to_csv(AAR_FILE, index=False)
                 st.rerun()
