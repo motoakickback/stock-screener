@@ -356,7 +356,10 @@ def calc_technicals(df):
     df['RSI'] = 100 - (100 / (1 + rs))
     macd = df['AdjC'].ewm(span=12, adjust=False).mean() - df['AdjC'].ewm(span=26, adjust=False).mean()
     df['MACD'] = macd; df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean(); df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+    df['MA5'] = temp_close.rolling(window=5).mean()
     df['MA25'] = df['AdjC'].rolling(window=25).mean()
+    df['MA75'] = temp_close.rolling(window=75).mean() # 🚨 MA75を新規追加
+    temp_close = df['AdjC'].ffill()
     tr = pd.concat([df['AdjH'] - df['AdjL'], (df['AdjH'] - df['AdjC'].shift(1)).abs(), (df['AdjL'] - df['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
     return df
