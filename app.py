@@ -426,12 +426,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     from datetime import timedelta
     
     df = df.copy()
-    
-    def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
-    import plotly.graph_objects as go
-    from datetime import timedelta
-    
-    df = df.copy()
 
     # 1. まず「キャンバス（fig）」を作成する
     fig = go.Figure()
