@@ -1351,57 +1351,42 @@ with tab4:
             
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
-        if not t_codes: st.warning("有効なコードが見つかりません。")
+        if not t_codes: 
+            st.warning("有効なコードが見つかりません。")
         else:
-            all_t = []; b_bar = st.progress(0, "過去2年分の相場を仮想売買中...")
+            all_t = []
+            b_bar = st.progress(0, "過去2年分の相場を仮想売買中...")
             
             for idx, c in enumerate(t_codes):
                 raw = get_single_data(c + "0", 2)
                 if not raw: continue
                 
-                # --- デバッグ用コード ---
-                # --- ここから差し替え ---
-                import streamlit as st
+                # --- 内部データ処理 (サイレント) ---
                 import pandas as pd
-
-                # rawデータの存在確認と正規化
-                if 'raw' in locals() or 'raw' in globals():
-                    # 【ここを差し替え】
-                    # raw['bars'] の中身を取り出してデータフレーム化する
-                    if isinstance(raw, dict) and 'bars' in raw:
-                        temp_df = pd.json_normalize(raw['bars'])
-                    else:
-                        temp_df = pd.json_normalize(raw)
-    
-                    # デバッグ表示（100株エントリー判断のためのデータ確認）
-                    st.write("### 🛠 Debug: データ構造の確認")
-                    st.code(f"検出されたカラム名: {list(temp_df.columns)}")
-    
-                    # カラム名の大文字・小文字、接頭辞の違いを吸収して名寄せ
-                    rename_map = {}
-                    for col in temp_df.columns:
-                        c_up = col.upper()
-                        if c_up.endswith('ADJO') or c_up.endswith('OPEN'):  rename_map[col] = 'AdjO'
-                        if c_up.endswith('ADJH') or c_up.endswith('HIGH'):  rename_map[col] = 'AdjH'
-                        if c_up.endswith('ADJL') or c_up.endswith('LOW'):   rename_map[col] = 'AdjL'
-                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE'): rename_map[col] = 'AdjC'
-    
-                    temp_df = temp_df.rename(columns=rename_map)
-    
-                    # 必須カラムの存在チェック
-                    target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                    if all(c in temp_df.columns for c in target_cols):
-                        # 元のクレンジング関数(clean_df)へ渡す
-                        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
-                        st.success("✅ データ構造の適合に成功しました。")
-                    else:
-                        st.error(f"❌ 必要な価格データが見つかりません。カラムを確認してください: {list(temp_df.columns)}")
-                        st.stop() # 処理を中断してエラーを表示
+                # bars階層の自動展開
+                if isinstance(raw, dict) and 'bars' in raw:
+                    temp_df = pd.json_normalize(raw['bars'])
                 else:
-                    st.error("変数 'raw' が存在しません。データ取得ステップを確認してください。")
-                    st.stop()
-                # --- ここまで差し替え ---
+                    temp_df = pd.json_normalize(raw)
+
+                # カラム名の名寄せ (o,h,l,c 等を AdjO...へ)
+                rename_map = {}
+                for col in temp_df.columns:
+                    c_up = col.upper()
+                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O':  rename_map[col] = 'AdjO'
+                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H':  rename_map[col] = 'AdjH'
+                    if c_up.endswith('ADJL') or c_up.endswith('LOW')  or c_up == 'L':  rename_map[col] = 'AdjL'
+                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
                 
+                temp_df = temp_df.rename(columns=rename_map)
+                target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                
+                # 四本値が揃っている場合のみ続行
+                if all(col in temp_df.columns for col in target_cols):
+                    df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                else:
+                    continue 
+
                 df = calc_technicals(df)
                 pos = None
                 
@@ -1451,7 +1436,6 @@ with tab4:
                             gc_triggered = False
                             trigger_price = 0
                             
-                            # 🚨 強襲トリガー：GC発生日の「終値＋1%」に完全同期
                             for d_ago in range(1, int(sim_limit_d) + 1):
                                 idx_eval = i - d_ago
                                 if idx_eval >= 1:
@@ -1490,7 +1474,9 @@ with tab4:
                             })
                             pos = None
                             
-                b_bar.progress((idx + 1) / len(t_codes)); time.sleep(0.1)
+                b_bar.progress((idx + 1) / len(t_codes))
+                import time
+                time.sleep(0.05)
                 
             b_bar.empty()
             
@@ -1504,13 +1490,11 @@ with tab4:
                 sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                # 🚨 新機能：累積損益（エクイティ・カーブ）の計算
                 tdf = tdf.sort_values('決済日').reset_index(drop=True)
                 tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
                 
                 st.success("🎯 バックテスト完了")
                 
-                # 🚨 資産推移グラフの描画
                 import plotly.express as px
                 fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, 
                                  title="💰 仮想資産推移 (Equity Curve)",
@@ -1523,7 +1507,6 @@ with tab4:
                 )
                 st.plotly_chart(fig_eq, use_container_width=True)
                 
-                # メトリクスパネル
                 st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回")
@@ -1533,7 +1516,6 @@ with tab4:
                 
                 st.markdown("### 📜 詳細交戦記録（トレード履歴）")
                 
-                # 日付を文字列フォーマットに戻して表示
                 tdf['購入日'] = tdf['購入日'].dt.strftime('%Y-%m-%d')
                 tdf['決済日'] = tdf['決済日'].dt.strftime('%Y-%m-%d')
                 
@@ -1543,7 +1525,6 @@ with tab4:
                         return f'color: {color}'
                     return ''
                 
-                # 🚨 損益(%)に '{:.2f}' を追加し、小数点第二位まで強制表示
                 st.dataframe(
                     tdf.drop(columns=['累積損益(円)']).style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({
                         '買値(円)': '{:,}', 
