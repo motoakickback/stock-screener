@@ -954,7 +954,8 @@ with tab2:
                     api_code = c if len(c) == 5 else c + "0"
                     raw_s = get_single_data(api_code, 1)
                     
-                    hist_chart = clean_df(pd.DataFrame(raw_s)) if raw_s else r_dict['df_chart']
+                    # raw_s が辞書なら、その中の "bars" を使うように変更
+                    hist_chart = clean_df(pd.DataFrame(raw_s["bars"])) if (raw_s and "bars" in raw_s) else r_dict['df_chart']
                     
                     if not hist_chart.empty:
                         hist_chart = calc_technicals(hist_chart)
