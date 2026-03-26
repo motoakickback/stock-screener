@@ -1461,66 +1461,121 @@ with tab4:
 # Tab 5: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
 # ------------------------------------------
 with tab5:
-    st.markdown('### ⏳ IFD-OCO 10日ルール監視')
-    st.caption("実戦配備中（保有中）の銘柄と約定日を入力し、タイムリミット（営業日）を自動追跡します。")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⛺ IFD潜伏カウント（指値・逆指値の接近アラート）</h3>', unsafe_allow_html=True)
+    st.caption("※証券会社に仕掛けた指値（待伏）や逆指値（強襲）のコードと価格を入力し、現在値との距離や「注文の賞味期限」を監視します。")
     
-    HOLD_FILE = f"saved_hold_{user_id}.txt"
-    default_hold = "7203, 2026-03-10, 3500\n6614, 2026-03-15, 1200"
-    if os.path.exists(HOLD_FILE):
-        with open(HOLD_FILE, "r", encoding="utf-8") as f:
-            default_hold = f.read()
-            
-    hold_input = st.text_area("保有銘柄（銘柄コード, 約定日[YYYY-MM-DD], 買値）", value=default_hold, height=150)
+    col_i1, col_i2 = st.columns([1, 2])
     
-    if st.button("🔄 戦況更新 (10日タイマー確認)"):
-        with open(HOLD_FILE, "w", encoding="utf-8") as f:
-            f.write(hold_input)
-            
-        lines = hold_input.strip().split('\n')
-        today = datetime.utcnow() + timedelta(hours=9)
-        today_date = today.date()
+    T5_FILE = f"saved_t5_ifd_{user_id}.txt"
+    default_ifd = "6614, 2500\n4427, 1200" # コード, 指値
+    if os.path.exists(T5_FILE):
+        with open(T5_FILE, "r", encoding="utf-8") as f:
+            default_ifd = f.read()
+
+    with col_i1:
+        st.markdown("📝 **監視リスト入力**")
+        st.caption("書式: `銘柄コード, 設定した指値` (改行で複数入力)")
+        ifd_in = st.text_area("IFD注文リスト", value=default_ifd, height=150, label_visibility="collapsed", key="ifd_in_t5")
         
+        c_exp1, c_exp2 = st.columns(2)
+        expire_d = c_exp1.number_input("⏳ 注文の有効期限 (日)", value=int(st.session_state.limit_d), step=1, key="expire_d_t5")
+        run_ifd = st.button("📡 潜伏レーダー更新", use_container_width=True, key="btn_run_ifd_t5")
+        
+    with col_i2:
+        st.markdown("#### 🛡️ 参謀の監視プロトコル")
+        st.info("・現在値が指値に接近（±2%以内）すると激熱アラートが点灯します。\n・強襲（逆指値）の場合は上に抜けたら、待伏（指値）の場合は下に落ちたら約定とみなします。\n・相場環境は日々変化します。有効期限を過ぎた注文は、速やかに取り消す（パージする）ことを推奨します。")
+
+    if run_ifd and ifd_in:
+        with open(T5_FILE, "w", encoding="utf-8") as f:
+            f.write(ifd_in)
+            
+        lines = ifd_in.strip().split('\n')
+        targets = []
         for line in lines:
-            if not line.strip(): continue
             parts = [p.strip() for p in line.split(',')]
-            if len(parts) >= 2:
-                c = parts[0]; date_str = parts[1]
-                bp = parts[2] if len(parts) >= 3 else "---"
+            if len(parts) >= 2 and parts[0].isdigit():
+                targets.append({'code': parts[0], 'price': int(parts[1])})
                 
-                try:
-                    buy_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if not targets:
+            st.warning("有効な形式（コード, 指値）で見つかりません。")
+        else:
+            with st.spinner("前線に展開中の各部隊（注文）の現在地を照会中..."):
+                for t in targets:
+                    c = t['code']
+                    order_p = t['price']
                     
-                    # 🛡️ JPX完全カレンダー（土日・祝日・年末年始の除外）
-                    days_elapsed = 0
-                    curr_date = buy_date
-                    while curr_date < today_date:
-                        # 土日(5,6)以外 ＆ 日本の祝日以外 ＆ 年末年始(12/31〜1/3)以外なら「営業日」としてカウント
-                        if curr_date.weekday() < 5 and not jpholiday.is_holiday(curr_date):
-                            if not ((curr_date.month == 1 and curr_date.day in [1, 2, 3]) or (curr_date.month == 12 and curr_date.day == 31)):
-                                days_elapsed += 1
-                        curr_date += timedelta(days=1)
+                    api_code = c if len(c) == 5 else c + "0"
+                    raw_s = get_single_data(api_code, 1)
                     
-                    c_name = master_df[master_df['Code'] == c + "0"]['CompanyName'].iloc[0] if not master_df.empty and (c + "0") in master_df['Code'].values else "不明"
-                    
-                    if days_elapsed <= 7:
-                        status = "🟢 巡航中"
-                        bg_color = "rgba(38, 166, 154, 0.1)"; border_color = "#26a69a"
-                    elif days_elapsed <= 9:
-                        status = "⚠️ 撤退準備 (タイムリミット接近)"
-                        bg_color = "rgba(255, 215, 0, 0.1)"; border_color = "#FFD700"
-                    else:
-                        status = "💀 強制撤退日 (本日中にIFDを取消し、成行決済せよ)"
-                        bg_color = "rgba(239, 83, 80, 0.1)"; border_color = "#ef5350"
+                    if not raw_s:
+                        st.error(f"銘柄 {c} の通信に失敗しました。")
+                        continue
                         
+                    df_s = clean_df(pd.DataFrame(raw_s))
+                    if df_s.empty: continue
+                    
+                    df_chart = calc_technicals(df_s)
+                    latest = df_chart.iloc[-1]
+                    prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
+                    
+                    lc = int(latest['AdjC'])
+                    daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
+                    daily_sign = "+" if daily_pct >= 0 else ""
+                    
+                    # 企業情報の取得
+                    c_name = f"銘柄 {c[:4]}"; c_market = "不明"; c_sector = "不明"
+                    if not master_df.empty:
+                        m_row = master_df[master_df['Code'] == api_code]
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
+                    
+                    # 距離計算
+                    diff_yen = lc - order_p
+                    diff_pct = (diff_yen / lc) * 100 if lc > 0 else 0
+                    
+                    # アラート判定
+                    alert_html = ""
+                    if abs(diff_pct) <= 2.0:
+                        alert_html = '<span style="background-color: #ef5350; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🔥 約定目前（交戦距離）</span>'
+                    elif diff_yen > 0:
+                        alert_html = '<span style="background-color: #0288d1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">📡 高度待機中（上空）</span>'
+                    else:
+                        alert_html = '<span style="background-color: #ed6c02; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">📉 買値割れ（既に通過）</span>'
+                    
+                    st.divider()
                     st.markdown(f"""
-                    <div style="background-color: {bg_color}; border-left: 4px solid {border_color}; padding: 1rem; margin-bottom: 0.8rem; border-radius: 4px;">
-                        <div style="font-size: 14px; color: #aaa;">約定日: {date_str} (買値: {bp}円)</div>
-                        <div style="font-size: 20px; font-weight: bold; margin: 0.3rem 0;">({c}) {c_name}</div>
-                        <div style="font-size: 18px; font-weight: bold; color: {border_color};">{status} : 経過 {days_elapsed} 営業日</div>
-                    </div>
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {c_name}</h3>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                {alert_html}
+                                <span style="font-size: 13px; color: #aaa;">| 🏢 {c_market} | 🏭 {c_sector}</span>
+                            </div>
+                        </div>
                     """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"🚨 フォーマットエラー: {line} (YYYY-MM-DD形式で入力してください) - {e}")
+                    
+                    sc1, sc2, sc3 = st.columns([1, 1, 1.5])
+                    
+                    sc1.metric("最新終値", f"{lc:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                    
+                    html_order = f"""
+                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 設置済み 指値/逆指値</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{order_p:,}円</div>
+                    </div>
+                    """
+                    sc2.markdown(html_order, unsafe_allow_html=True)
+                    
+                    # 距離の表示
+                    dist_color = "#ef5350" if abs(diff_pct) <= 2.0 else "#26a69a"
+                    html_dist = f"""
+                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">📏 現在値との乖離（距離）</div>
+                        <div style="font-size: 1.5rem; font-weight: bold; color: {dist_color};">
+                            {"+" if diff_yen > 0 else ""}{diff_yen:,}円 ({"+" if diff_pct > 0 else ""}{diff_pct:.1f}%)
+                        </div>
+                    </div>
+                    """
+                    sc3.markdown(html_dist, unsafe_allow_html=True)
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
