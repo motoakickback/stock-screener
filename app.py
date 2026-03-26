@@ -1132,7 +1132,9 @@ with tab3:
                         st.error(f"銘柄 {c} のデータ取得に失敗しました。")
                         continue
                         
-                    df_s = clean_df(pd.DataFrame(raw_s))
+                    # 取得したデータ(raw_s)が辞書型なら "bars" を、古い形式(リスト)ならそのまま使う安全な書き方
+                    bars_data = raw_s.get("bars", []) if isinstance(raw_s, dict) else raw_s
+                    df_s = clean_df(pd.DataFrame(bars_data))
                     if len(df_s) < 30:
                         st.warning(f"銘柄 {c} は上場直後など、データが不足しているため解析不能です。")
                         continue
