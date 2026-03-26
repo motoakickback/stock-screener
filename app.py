@@ -1205,9 +1205,14 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # APIから取得した「events」データも一緒に渡すように書き換えます
-                    # ※変数名は、直前でデータを取得している変数（res や data）に合わせてください
+                    # 1. アラートの計算
                     alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
+                    
+                    # 2. 【デバッグ用強制出力】システムが持っている生データを画面に晒す
+                    st.info(f"【参謀通信】J-Quantsからの受信データ: {raw_s.get('events')}")
+                    
+                    # 3. アラートの描画（これがないと画面に出ません）
+                    for alert in alerts: st.warning(alert)
                     
                     if is_trend_broken: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
                     elif is_bt_broken: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
