@@ -351,15 +351,20 @@ def calc_technicals(df):
     df = df.copy()
     if len(df) < 16:
         df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA25'] = df['AdjC']; return df
+    
     delta = df['AdjC'].diff(); gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
     rs = gain.ewm(alpha=1/14, adjust=False).mean() / loss.ewm(alpha=1/14, adjust=False).mean()
     df['RSI'] = 100 - (100 / (1 + rs))
+    
     macd = df['AdjC'].ewm(span=12, adjust=False).mean() - df['AdjC'].ewm(span=26, adjust=False).mean()
     df['MACD'] = macd; df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean(); df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
-    df['MA5'] = temp_close.rolling(window=5).mean()
-    df['MA25'] = df['AdjC'].rolling(window=25).mean()
-    df['MA75'] = temp_close.rolling(window=75).mean() # 🚨 MA75を新規追加
+    
+    # 🚨 修正箇所：MA計算の「前」に欠損値補間（ffill）を実行し、全MAを temp_close で計算する
     temp_close = df['AdjC'].ffill()
+    df['MA5'] = temp_close.rolling(window=5).mean()
+    df['MA25'] = temp_close.rolling(window=25).mean()
+    df['MA75'] = temp_close.rolling(window=75).mean()
+    
     tr = pd.concat([df['AdjH'] - df['AdjL'], (df['AdjH'] - df['AdjC'].shift(1)).abs(), (df['AdjL'] - df['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
     return df
