@@ -1137,6 +1137,11 @@ with tab3:
                     denom = h14 - bt_val
                     reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
                     
+                    # 🚨 追加：ATRと高値経過日数の算出
+                    atr_val = int(latest.get('ATR', 0))
+                    idxmax = df_14['AdjH'].idxmax()
+                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                    
                     # 7カラムUI
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     
@@ -1164,13 +1169,14 @@ with tab3:
                     </div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
+                    # 🚨 RSIを撤去し「ATR / 高値経過」の戦術パラメーターへ置換
                     html_stats = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                         <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                             <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_val:.1f}%</strong>
                         </div>
-                        <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #26a69a;">{rsi_v:.1f}%</strong>
+                        <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 4px 8px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{atr_val:,}円 / {d_high}日</strong>
                         </div>
                         <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
                             <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
