@@ -1357,19 +1357,22 @@ with tab4:
             all_t = []
             b_bar = st.progress(0, "過去2年分の相場を仮想売買中...")
             
+            import pandas as pd
+            import time
+
             for idx, c in enumerate(t_codes):
                 raw = get_single_data(c + "0", 2)
                 if not raw: continue
                 
-                # --- 内部データ処理 (サイレント) ---
-                import pandas as pd
-                # bars階層の自動展開
+                # 1. データの正規化
                 if isinstance(raw, dict) and 'bars' in raw:
                     temp_df = pd.json_normalize(raw['bars'])
                 else:
                     temp_df = pd.json_normalize(raw)
 
-                # カラム名の名寄せ (o,h,l,c 等を AdjO...へ)
+                if temp_df.empty: continue
+
+                # 2. カラム名の名寄せと重複排除 (これが解決策)
                 rename_map = {}
                 for col in temp_df.columns:
                     c_up = col.upper()
@@ -1379,11 +1382,17 @@ with tab4:
                     if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
                 
                 temp_df = temp_df.rename(columns=rename_map)
+                
+                # 同名カラムがある場合は最初の1つだけを採用し、残りを捨てる (重要)
+                temp_df = temp_df.loc[:, ~temp_df.columns.duplicated()]
+
                 target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                 
-                # 四本値が揃っている場合のみ続行
                 if all(col in temp_df.columns for col in target_cols):
-                    df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                    try:
+                        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                    except Exception:
+                        continue
                 else:
                     continue 
 
@@ -1391,13 +1400,10 @@ with tab4:
                 pos = None
                 
                 for i in range(35, len(df)):
-                    td = df.iloc[i]
-                    prev = df.iloc[i-1]
+                    td = df.iloc[i]; prev = df.iloc[i-1]
                     
                     if pos is None:
-                        win_14 = df.iloc[i-15:i-1]
-                        win_30 = df.iloc[i-31:i-1]
-                        
+                        win_14 = df.iloc[i-15:i-1]; win_30 = df.iloc[i-31:i-1]
                         lc_prev = prev['AdjC']
                         h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
                         if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
@@ -1409,10 +1415,7 @@ with tab4:
                             r14 = h14 / l14
                             idxmax = win_14['AdjH'].idxmax()
                             d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                            
-                            is_dt = check_double_top(win_30)
-                            is_hs = check_head_shoulders(win_30)
-                            
+                            is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
                             bt_val = int(h14 - ((h14 - l14) * (sim_push_r / 100.0)))
                             
                             score = 0
@@ -1427,20 +1430,15 @@ with tab4:
                                 if td['AdjL'] <= bt_val:
                                     exec_p = min(td['AdjO'], bt_val)
                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-                                    
                         else:
-                            rsi_prev = prev.get('RSI', 50)
-                            tp_yen = lc_prev * (sim_tp / 100.0)
+                            rsi_prev = prev.get('RSI', 50); tp_yen = lc_prev * (sim_tp / 100.0)
                             exp_days = int(tp_yen / atr_prev) if atr_prev > 0 else 99
-                            
-                            gc_triggered = False
-                            trigger_price = 0
+                            gc_triggered = False; trigger_price = 0
                             
                             for d_ago in range(1, int(sim_limit_d) + 1):
                                 idx_eval = i - d_ago
                                 if idx_eval >= 1:
-                                    mh1 = df.iloc[idx_eval].get('MACD_Hist', 0)
-                                    mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
+                                    mh1 = df.iloc[idx_eval].get('MACD_Hist', 0); mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
                                     if mh1 > 0 and mh2 <= 0:
                                         gc_triggered = True
                                         trigger_price = df.iloc[idx_eval]['AdjC'] * 1.01 
@@ -1450,12 +1448,9 @@ with tab4:
                                 if td['AdjH'] >= trigger_price:
                                     exec_p = max(td['AdjO'], trigger_price)
                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-
                     else:
                         bp = pos['b_p']; held = i - pos['b_i']; sp = 0; rsn = ""
-                        
-                        sl_val = bp * (1 - (sim_sl_i / 100.0))
-                        tp_val = bp * (1 + (sim_tp / 100.0))
+                        sl_val = bp * (1 - (sim_sl_i / 100.0)); tp_val = bp * (1 + (sim_tp / 100.0))
                         
                         if td['AdjL'] <= sl_val: 
                             sp = min(td['AdjO'], sl_val); rsn = f"🛡️ 損切 (-{sim_sl_i}%)"
@@ -1465,8 +1460,7 @@ with tab4:
                             sp = td['AdjC']; rsn = f"⏳ 時間切れ ({sim_sell_d}日)"
                         
                         if sp > 0:
-                            sp = round(sp, 1)
-                            p_pct = round(((sp / bp) - 1) * 100, 2)
+                            sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
                             p_amt = int((sp - bp) * st.session_state.bt_lot)
                             all_t.append({
                                 '銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], 
@@ -1475,66 +1469,36 @@ with tab4:
                             pos = None
                             
                 b_bar.progress((idx + 1) / len(t_codes))
-                import time
-                time.sleep(0.05)
+                time.sleep(0.01)
                 
             b_bar.empty()
             
             if not all_t: 
-                st.warning("指定された期間・条件でシグナル点灯（約定）はありませんでした。")
+                st.warning("シグナル点灯（約定）はありませんでした。")
             else:
-                tdf = pd.DataFrame(all_t)
-                tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
-                n_prof = tdf['損益額(円)'].sum()
-                sprof = tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum()
-                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
-                pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
-                
-                tdf = tdf.sort_values('決済日').reset_index(drop=True)
+                tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
                 tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
                 
                 st.success("🎯 バックテスト完了")
                 
                 import plotly.express as px
-                fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, 
-                                 title="💰 仮想資産推移 (Equity Curve)",
-                                 color_discrete_sequence=["#FFD700"])
-                fig_eq.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)',
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    xaxis_title="", yaxis_title="損益額 (円)",
-                    hovermode="x unified"
-                )
+                fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, title="💰 仮想資産推移 (Equity Curve)", color_discrete_sequence=["#FFD700"])
+                fig_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=40, b=20))
                 st.plotly_chart(fig_eq, use_container_width=True)
                 
-                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                n_prof = tdf['損益額(円)'].sum()
+                st.markdown(f'<h3 style="color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                
                 m1, m2, m3, m4 = st.columns(4)
+                tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
                 m1.metric("トレード回数", f"{tot} 回")
                 m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
                 m3.metric("平均損益額", f"{int(n_prof/tot):,} 円")
-                m4.metric("プロフィットファクター(PF)", f"{pf}")
+                sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
+                m4.metric("PF", round(tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum() / sloss, 2) if sloss > 0 else 'inf')
                 
-                st.markdown("### 📜 詳細交戦記録（トレード履歴）")
+                st.dataframe(tdf.drop(columns=['累積損益(円)']).style.format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'}), use_container_width=True, hide_index=True)
                 
-                tdf['購入日'] = tdf['購入日'].dt.strftime('%Y-%m-%d')
-                tdf['決済日'] = tdf['決済日'].dt.strftime('%Y-%m-%d')
-                
-                def color_pnl(val):
-                    if isinstance(val, (int, float)):
-                        color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
-                        return f'color: {color}'
-                    return ''
-                
-                st.dataframe(
-                    tdf.drop(columns=['累積損益(円)']).style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({
-                        '買値(円)': '{:,}', 
-                        '売値(円)': '{:,}', 
-                        '損益額(円)': '{:,}',
-                        '損益(%)': '{:.2f}'
-                    }),
-                    use_container_width=True, hide_index=True
-                )
-
 # ------------------------------------------
 # Tab 5: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
 # ------------------------------------------
