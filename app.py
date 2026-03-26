@@ -837,11 +837,10 @@ with tab1:
                         draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
 
 with tab2:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚔️ 強襲（GC初動レーダー）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     st.caption("※全市場から「MACDがゴールデンクロス（0ライン突破）した直後」の銘柄を抽出し、RSIが低い順に狙撃候補として表示します。")
     
     col_t2_1, col_t2_2 = st.columns(2)
-    # 🚨 RSIデフォルト値を35に設定
     rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=35, step=5, help="数値が低いほど、大底からの反転初動を狙えます。")
     vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000, help="流動性のない過疎銘柄を排除します。")
     
@@ -868,7 +867,6 @@ with tab2:
                     lc = latest['AdjC']
                     atr = latest.get('ATR', 0)
                     
-                    # 🚨 ハイブリッド不発弾キル
                     if atr < 10 or (atr / lc) < 0.01: continue
                     tp_yen = lc * (st.session_state.bt_tp / 100.0)
                     exp_days = int(tp_yen / atr) if atr > 0 else 99
@@ -878,20 +876,23 @@ with tab2:
                     rsi = latest.get('RSI', 50)
                     
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
-                        c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"
+                        c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
                             if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
+                                c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']
+                                c_sector = m_row.iloc[0].get('Sector', '不明')
+                                # 🚨 スケール（規模）データの取得処理を追加
+                                c_scale = m_row.iloc[0].get('Scale', '')
                         
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
-                        bt_val = int(h14 - ((h14 - l14) * (st.session_state.push_r / 100.0))) if h14 and l14 else int(lc)
+                        bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
                         rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi)
                         
                         results.append({
-                            'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
+                            'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
                             'daily_pct': daily_pct, 'df_chart': g_tech,
                             'triage_rank': rank, 'triage_bg': bg
@@ -912,29 +913,30 @@ with tab2:
                         c = str(r['Code']); n = r['Name']
                         daily_sign = "+" if r['daily_pct'] >= 0 else ""
                         
-                        # 🚨 処理順序変更：UIを描画する前に、1年分の詳細データを取得して正確なRSIを算出
                         api_code = c if len(c) == 5 else c + "0"
                         raw_s = get_single_data(api_code, 1)
                         
                         if raw_s:
                             hist_chart = clean_df(pd.DataFrame(raw_s))
                         else:
-                            hist_chart = r['df_chart'] # 通信失敗時の予備
+                            hist_chart = r['df_chart']
                             
-                        accurate_rsi = r['RSI'] # デフォルトは簡易スキャン時の値
+                        accurate_rsi = r['RSI']
                         if not hist_chart.empty:
                             hist_chart = calc_technicals(hist_chart)
-                            # 1年分のデータから算出した正確なRSIを抽出
                             accurate_rsi = hist_chart.iloc[-1].get('RSI', r['RSI'])
                         
-                        # --- ここからUI描画 ---
+                        # 🚨 企業規模（Scale）バッジの生成と描画
+                        scale_val = str(r.get('Scale', ''))
+                        badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
                         triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
                                 <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                                 <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                                    <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold;">🔥 MACD GC発動直後</span>
+                                    {badge}
+                                    <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">🔥 MACD GC発動直後</span>
                                     {triage_badge}
                                 </div>
                             </div>
@@ -982,11 +984,11 @@ with tab2:
                         
                         vol_val = r.get('avg_vol', 0)
                         
-                        # 🚨 accurate_rsi（再計算された正確なRSI）をパネルに適用
+                        # 🚨 小数点以下を切り捨てて「整数」表示に完全同期
                         html_stats = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                             <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{accurate_rsi:.1f}%</strong>
+                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(accurate_rsi)}%</strong>
                             </div>
                             <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                                 <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
@@ -1001,9 +1003,11 @@ with tab2:
                         st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
                         
                         if not hist_chart.empty:
-                            st.markdown(render_technical_radar(hist_chart, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                            draw_chart(hist_chart, bt_val, tp10=tp10)
-
+                            cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
+                            df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
+                            st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                            draw_chart(df_chart_filtered, bt_val, tp10=tp10)
+                            
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
     st.caption("※気になっている銘柄や、レーダーで抽出した銘柄のコードを入力し、現在のテクニカル状態と迎撃ラインを精密に解析します。")
