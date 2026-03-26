@@ -927,8 +927,10 @@ with tab2:
                         
                         lc_val = int(r['lc'])
                         bt_val = int(r['bt'])
+                        high_val = int(r.get('h14', lc_val))
+                        low_val = int(r.get('l14', 0))
+                        wave_len = high_val - low_val
                         
-                        # 🚨 5%, 10%, 15%, 20% と -5%, -8%, -15% の全数値を計算
                         tp20 = int(bt_val * 1.20)
                         tp15 = int(bt_val * 1.15)
                         tp10 = int(bt_val * 1.10)
@@ -937,7 +939,12 @@ with tab2:
                         sl8  = int(bt_val * 0.92)
                         sl15 = int(bt_val * 0.85)
                         
-                        sc1, sc2, sc3, sc4 = st.columns([1, 1.2, 1.5, 1])
+                        # 🚨 Tab 1 と完全に一致する 7カラム構成に復元
+                        sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
+                        
+                        sc0.metric("直近高値", f"{high_val:,}円")
+                        sc0_1.metric("直近安値", f"{low_val:,}円")
+                        sc0_2.metric("上昇幅", f"{wave_len:,}円")
                         sc1.metric("最新終値", f"{lc_val:,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                         
                         html_buy = f"""
@@ -948,7 +955,6 @@ with tab2:
                         """
                         sc2.markdown(html_buy, unsafe_allow_html=True)
                         
-                        # 🚨 Tab 1 と全く同じ4段表示のUIパネルに復元
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
                             <div style="font-size: 16px;">
@@ -960,18 +966,41 @@ with tab2:
                         </div>"""
                         sc3.markdown(html_sell, unsafe_allow_html=True)
                         
-                        sc4.metric("RSI (過熱感)", f"{r['RSI']:.1f}%")
+                        vol_val = r.get('avg_vol', 0)
+                        rsi_v = r.get('RSI', 50)
                         
-                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 出来高(5日平均): {r['avg_vol']:,}株")
+                        # 🚨 右端のステータスボードを復旧（到達度の代わりにRSIとGC判定を表示）
+                        html_stats = f"""
+                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
+                            <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{rsi_v:.1f}%</strong>
+                            </div>
+                            <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
+                            </div>
+                            <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
+                                <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
+                            </div>
+                        </div>
+                        """
+                        sc4.markdown(html_stats, unsafe_allow_html=True)
                         
-                        df_chart = r['df_chart']
-                        cutoff_chart = df_chart['Date'].max() - timedelta(days=60)
-                        df_chart_filtered = df_chart[df_chart['Date'] >= cutoff_chart]
+                        st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
                         
-                        st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                        # 🚨 グラフ描画用に、1年分の詳細データを個別に取得（MA25/75の完全復活）
+                        api_code = c if len(c) == 5 else c + "0"
+                        raw_s = get_single_data(api_code, 1)
                         
-                        # 🚨 グラフには10%の売値ラインのみを引数として渡す
-                        draw_chart(df_chart_filtered, bt_val, tp10=tp10)
+                        if raw_s:
+                            hist_chart = clean_df(pd.DataFrame(raw_s))
+                        else:
+                            hist_chart = r['df_chart'] # 通信失敗時の予備
+                            
+                        if not hist_chart.empty:
+                            hist_chart = calc_technicals(hist_chart)
+                            st.markdown(render_technical_radar(hist_chart, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
+                            # 10%の売値ラインのみを渡して描画
+                            draw_chart(hist_chart, bt_val, tp10=tp10)
 
 with tab3:
     st.info("高高度モニター（待機中）")
