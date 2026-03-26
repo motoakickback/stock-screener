@@ -1784,9 +1784,6 @@ with tab6:
             )
             st.plotly_chart(fig_real_eq, use_container_width=True)
             
-            st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
-            st.caption("※CSVから自動登録された記録は、戦術が「自動解析」、規律が「不明」となります。手動での上書き修正は今後の拡張項目です。")
-            
             def color_pnl(val):
                 if isinstance(val, (int, float)):
                     color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
