@@ -127,13 +127,32 @@ def clean_df(df):
         df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
-def check_event_mines(code):
+def check_event_mines(code, event_data=None):
     alerts = []
     c = str(code)[:4]
-    test_dividend_mines = ["5986", "5162", "4625", "6378", "8604"]
-    test_earnings_mines = ["7066"]
-    if c in test_dividend_mines: alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
-    if c in test_earnings_mines: alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
+    
+    if not event_data:
+        return alerts
+
+    # J-Quants API (v2/fins/dividend) からの配当情報判定
+    div_info = event_data.get("dividend", [])
+    for item in div_info:
+        # 基準日（RecordDate）が今月末（3/31）付近かチェック
+        # 簡易判定：2026-03-31が含まれていれば警告
+        if item.get("RecordDate") == "2026-03-31":
+            alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
+            break
+
+    # J-Quants API (v2/equities/earnings-calendar) からの決算判定
+    earn_info = event_data.get("earnings", [])
+    for item in earn_info:
+        # 発表日が直近（本日3/26〜4/2程度）なら警告
+        if item.get("Date"):
+            # 発表予定日が3月下旬〜4月頭なら発火
+            if "2026-03-" in item["Date"] or "2026-04-0" in item["Date"]:
+                alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
+                break
+                
     return alerts
 
 @st.cache_data(ttl=86400)
@@ -163,15 +182,35 @@ def get_old_codes():
     return []
 
 @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def get_single_data(code, yrs=3):
     base = datetime.utcnow() + timedelta(hours=9)
     f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
     t_d = base.strftime('%Y%m%d')
+    
+    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
+    c = str(code)[:4]
+    
     try:
-        r = requests.get(f"{BASE_URL}/equities/bars/daily?code={code}&from={f_d}&to={t_d}", headers=headers, timeout=15)
-        if r.status_code == 200: return r.json().get("data", [])
-    except: pass
-    return []
+        # 1. 既存の株価取得
+        r_bars = requests.get(f"{BASE_URL}/equities/bars/daily?code={c}&from={f_d}&to={t_d}", headers=headers, timeout=15)
+        if r_bars.status_code == 200:
+            result["bars"] = r_bars.json().get("data", [])
+        
+        # 2. 配当情報の取得（追加）
+        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={c}", headers=headers, timeout=10)
+        if r_div.status_code == 200:
+            result["events"]["dividend"] = r_div.json().get("data", [])
+
+        # 3. 決算スケジュールの取得（追加）
+        r_earn = requests.get(f"https://api.jquants.com/v2/equities/earnings-calendar?code={c}", headers=headers, timeout=10)
+        if r_earn.status_code == 200:
+            result["events"]["earnings"] = r_earn.json().get("data", [])
+
+    except Exception as e:
+        print(f"API Error: {e}")
+        
+    return result
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_hist_data_cached():
