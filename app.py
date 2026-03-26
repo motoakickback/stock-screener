@@ -1359,7 +1359,7 @@ with tab4:
                 raw = get_single_data(c + "0", 2)
                 if not raw: continue
                 
-                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
+                df = clean_df(pd.json_normalize(raw)).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
                 if len(df) < 40: continue
                 
                 df = calc_technicals(df)
