@@ -1268,10 +1268,15 @@ with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
 
     with col_b1: 
         st.markdown("🔍 **検証する戦術を選択してください**")
-        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed")
+        # 🚨 key="bt_mode_t5" を付与
+        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_t5")
+        
         st.markdown("検証コード (複数可、カンマや改行区切り)")
-        bt_c_in = st.text_area("銘柄コード", value=default_t3, height=100, label_visibility="collapsed")
-        run_bt = st.button("🔥 一括バックテスト実行", use_container_width=True)
+        # 🚨 key="bt_codes_t5" を付与
+        bt_c_in = st.text_area("銘柄コード", value=default_t3, height=100, label_visibility="collapsed", key="bt_codes_t5")
+        
+        # 🚨 key="btn_run_bt_t5" を付与（エラーの直接原因を完全排除）
+        run_bt = st.button("🔥 一括バックテスト実行", use_container_width=True, key="btn_run_bt_t5")
         
     with col_b2:
         st.markdown("#### ⚙️ シミュレーション微調整")
