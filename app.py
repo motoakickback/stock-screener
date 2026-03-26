@@ -1197,9 +1197,9 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # アラート表示
-                    event_alerts = check_event_mines(c)
-                    for alert in event_alerts: st.warning(alert)
+                    # APIから取得した「events」データも一緒に渡すように書き換えます
+                    # ※変数名は、直前でデータを取得している変数（res や data）に合わせてください
+                    alerts = check_event_mines(code, res["events"])
                     
                     if is_trend_broken: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
                     elif is_bt_broken: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
