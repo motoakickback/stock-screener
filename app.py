@@ -922,22 +922,35 @@ with tab2:
                         else:
                             hist_chart = r['df_chart']
                             
+                        # 初期値は簡易スキャンの結果
                         accurate_rsi = r['RSI']
+                        t_rank = r['triage_rank']
+                        t_bg = r['triage_bg']
+                        
                         if not hist_chart.empty:
                             hist_chart = calc_technicals(hist_chart)
-                            accurate_rsi = hist_chart.iloc[-1].get('RSI', r['RSI'])
+                            latest_acc = hist_chart.iloc[-1]
+                            prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
+                            
+                            accurate_rsi = latest_acc.get('RSI', r['RSI'])
+                            acc_macd_h = latest_acc.get('MACD_Hist', 0)
+                            acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
+                            
+                            # 🚨 計器フライトと同じ正確なデータでトリアージを再計算してバッジを同期
+                            t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
                         
-                        # 🚨 企業規模（Scale）バッジの生成と描画
                         scale_val = str(r.get('Scale', ''))
                         badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-                        triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
+                        
+                        # 同期された正確なランクでバッジを描画
+                        triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
                         st.markdown(f"""
                             <div style="margin-bottom: 0.8rem;">
                                 <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                                 <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                                     {badge}
-                                    <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">🔥 MACD GC発動直後</span>
+                                    <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">⚡ GC初動ターゲット</span>
                                     {triage_badge}
                                 </div>
                             </div>
