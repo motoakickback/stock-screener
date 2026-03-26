@@ -1244,56 +1244,52 @@ with tab3:
 # ------------------------------------------
 # Tab 4: 戦術シミュレータ（デュアル・バックテスト）
 # ------------------------------------------
-with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5など）に合わせてください
+with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
     col_b1, col_b2 = st.columns([1, 2])
 
-    T3_FILE = f"saved_t3_codes_{user_id}.txt"
-    default_t3 = "6614\n4427"
-    if os.path.exists(T3_FILE):
-        with open(T3_FILE, "r", encoding="utf-8") as f:
-            default_t3 = f.read()
+    T4_FILE = f"saved_t4_codes_{user_id}.txt"
+    default_t4 = "6614\n4427"
+    if os.path.exists(T4_FILE):
+        with open(T4_FILE, "r", encoding="utf-8") as f:
+            default_t4 = f.read()
 
     with col_b1: 
         st.markdown("🔍 **検証する戦術を選択してください**")
-        # 🚨 key="bt_mode_t5" を付与
-        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_t5")
+        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_sim_v2")
         
         st.markdown("検証コード (複数可、カンマや改行区切り)")
-        # 🚨 key="bt_codes_t5" を付与
-        bt_c_in = st.text_area("銘柄コード", value=default_t3, height=100, label_visibility="collapsed", key="bt_codes_t5")
+        bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, label_visibility="collapsed", key="bt_codes_sim_v2")
         
-        # 🚨 key="btn_run_bt_t5" を付与（エラーの直接原因を完全排除）
-        run_bt = st.button("🔥 一括バックテスト実行", use_container_width=True, key="btn_run_bt_t5")
+        run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, key="btn_run_bt_sim_v2")
         
     with col_b2:
         st.markdown("#### ⚙️ シミュレーション微調整")
-        st.caption("※サイドバーの設定とは独立して、ここで数値を自由に変更してテストできます。")
+        st.caption("※サイドバーの設定とは独立して、ここで数値を自由に変更して限界テストが可能です。")
         
-        # 🚨 すべての key に "_t5" を付与し、他タブとの衝突を完全排除
         c_p1, c_p2 = st.columns(2)
-        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp_t5")
-        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i_t5")
+        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp_sim_v2")
+        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i_sim_v2")
         
         c_p3, c_p4 = st.columns(2)
-        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d_t5")
-        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d_t5")
+        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d_sim_v2")
+        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d_sim_v2")
         
         st.divider()
         if "待伏" in test_mode:
             st.markdown("##### 🌐 【待伏】固有パラメーター")
             c_t1_1, c_t1_2 = st.columns(2)
-            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0, key="sim_push_r_t5")
-            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_t5")
+            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0, key="sim_push_r_sim_v2")
+            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2")
         else:
             st.markdown("##### ⚡ 【強襲】固有パラメーター")
             c_t2_1, c_t2_2 = st.columns(2)
-            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5, key="sim_rsi_lim_t5")
-            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_t5")
-        
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5, key="sim_rsi_lim_sim_v2")
+            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
+
     if run_bt and bt_c_in:
-        with open(T3_FILE, "w", encoding="utf-8") as f:
+        with open(T4_FILE, "w", encoding="utf-8") as f:
             f.write(bt_c_in)
             
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
@@ -1358,7 +1354,7 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                             gc_triggered = False
                             trigger_price = 0
                             
-                            # 🚨 ボスの最新仕様（GC点灯日の高値+1%）をトリガーに適用
+                            # 🚨 強襲トリガー：GC発生日の「終値＋1%」に完全同期
                             for d_ago in range(1, int(sim_limit_d) + 1):
                                 idx_eval = i - d_ago
                                 if idx_eval >= 1:
@@ -1366,7 +1362,7 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                                     mh2 = df.iloc[idx_eval-1].get('MACD_Hist', 0)
                                     if mh1 > 0 and mh2 <= 0:
                                         gc_triggered = True
-                                        trigger_price = df.iloc[idx_eval]['AdjH'] * 1.01 
+                                        trigger_price = df.iloc[idx_eval]['AdjC'] * 1.01 
                                         break
                             
                             if gc_triggered and rsi_prev <= sim_rsi_lim and exp_days < sim_time_risk:
@@ -1392,7 +1388,7 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                             p_pct = round(((sp / bp) - 1) * 100, 2)
                             p_amt = int((sp - bp) * st.session_state.bt_lot)
                             all_t.append({
-                                '銘柄': c, '購入日': pos['b_d'].strftime('%Y-%m-%d'), '決済日': td['Date'].strftime('%Y-%m-%d'), 
+                                '銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], 
                                 '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt, '決済理由': rsn
                             })
                             pos = None
@@ -1411,9 +1407,27 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                 sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
                 pf = round(sprof / sloss, 2) if sloss > 0 else 'inf'
                 
-                st.success("🎯 バックテスト完了")
-                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">💰 総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                # 🚨 新機能：累積損益（エクイティ・カーブ）の計算
+                tdf = tdf.sort_values('決済日').reset_index(drop=True)
+                tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
                 
+                st.success("🎯 バックテスト完了")
+                
+                # 🚨 資産推移グラフの描画
+                import plotly.express as px
+                fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, 
+                                 title="💰 仮想資産推移 (Equity Curve)",
+                                 color_discrete_sequence=["#FFD700"])
+                fig_eq.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)',
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    xaxis_title="", yaxis_title="損益額 (円)",
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig_eq, use_container_width=True)
+                
+                # メトリクスパネル
+                st.markdown(f'<h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("トレード回数", f"{tot} 回")
                 m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
@@ -1422,6 +1436,10 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                 
                 st.markdown("### 📜 詳細交戦記録（トレード履歴）")
                 
+                # 日付を文字列フォーマットに戻して表示
+                tdf['購入日'] = tdf['購入日'].dt.strftime('%Y-%m-%d')
+                tdf['決済日'] = tdf['決済日'].dt.strftime('%Y-%m-%d')
+                
                 def color_pnl(val):
                     if isinstance(val, (int, float)):
                         color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
@@ -1429,7 +1447,7 @@ with tab4: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
                     return ''
                 
                 st.dataframe(
-                    tdf.style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}'}),
+                    tdf.drop(columns=['累積損益(円)']).style.applymap(color_pnl, subset=['損益(%)', '損益額(円)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}'}),
                     use_container_width=True, hide_index=True
                 )
 
