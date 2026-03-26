@@ -667,7 +667,7 @@ st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_s
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
-    "🎯 精密スコープ", 
+    "🎯 【照準】精密スコープ", 
     "⚙️ 戦術シミュレータ", 
     "⛺ IFD潜伏カウント", 
     "📁 事後任務報告 (AAR)"
@@ -1127,7 +1127,7 @@ with tab2:
                         draw_chart(df_chart_filtered, bt_val, tp10=tp10)
                             
 with tab3:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
     st.caption("※気になっている銘柄や、レーダーで抽出した銘柄のコードを入力し、現在のテクニカル状態と迎撃ラインを精密に解析します。")
     
     col_s1, col_s2 = st.columns([1, 2])
@@ -1157,7 +1157,7 @@ with tab3:
                 for c in t_codes:
                     st.divider()
                     
-                    # 🚨 精密スコープでは、MA25/75を描画するために1年分のデータを取得
+                    # 🚨 【照準】精密スコープでは、MA25/75を描画するために1年分のデータを取得
                     api_code = c if len(c) == 5 else c + "0"
                     raw_s = get_single_data(api_code, 1)
                     
