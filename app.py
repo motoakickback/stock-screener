@@ -812,6 +812,10 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
+                    # --- 修正：銘柄ごとの生データを取得して raw_s に格納 ---
+                    raw_s = get_single_data(f"{str(c)[:4]}0", 1) # 1年分のデータとイベント情報を取得
+                    
+                    # 取得した raw_s からイベント情報を抽出
                     event_alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
                     for alert in event_alerts: st.warning(alert)
                     
