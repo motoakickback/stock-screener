@@ -423,6 +423,7 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     import plotly.graph_objects as go
+    from datetime import timedelta
     
     df = df.copy()
     
@@ -442,23 +443,18 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
 
-    # 3. その上にMA線（移動平均）を描画していく（connectgaps=Trueで途切れを防止）
+    # 3. MA線を描画（重複を排除し、元のカラーリングに connectgaps=True を統合）
     if 'MA5' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='orange', width=1), connectgaps=True))
-
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
     if 'MA25' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='green', width=1.5), connectgaps=True))
-
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
     if 'MA75' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='purple', width=1.5), connectgaps=True))
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
 
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))      
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))     
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))      
-
+    # 4. ターゲットライン（買値目標）
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
-    # 🚨 渡された売値ラインのみを独立して描画するよう改良
+    # 🚨 渡された売値ラインのみを独立して描画する
     if tp5 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp5)]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
     if tp10 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp10)]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1.5, dash='dot')))
     if tp15 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp15)]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
