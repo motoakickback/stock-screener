@@ -1360,25 +1360,42 @@ with tab4:
                 if not raw: continue
                 
                 # --- デバッグ用コード ---
+                # --- ここから差し替え ---
                 import streamlit as st
+                import pandas as pd
 
-                st.write("### Debug: Data Structure")
-                st.write("Columns found:", list(temp_df.columns))
-                st.write("First 2 rows of data:", temp_df.head(2))
-
-                # 取得データのキー名が 'Open', 'High'... などの場合に対応させるための暫定処理
-                # もし画面に表示された列名が違っていたら、ここのリストを書き換えてください
-                possible_map = {
-                    'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC',
-                    'open': 'AdjO', 'high': 'AdjH', 'low': 'AdjL', 'close': 'AdjC'
-                }
-                temp_df = temp_df.rename(columns=possible_map)
-                # -----------------------
-
-                # 以降、元の処理へ
-                rename_map = {}
-                # ...（以下略）
-                if len(df) < 40: continue
+                # rawデータの存在確認と正規化
+                if 'raw' in locals() or 'raw' in globals():
+                    temp_df = pd.json_normalize(raw)
+    
+                    # デバッグ表示（100株エントリー判断のためのデータ確認）
+                    st.write("### 🛠 Debug: データ構造の確認")
+                    st.code(f"検出されたカラム名: {list(temp_df.columns)}")
+    
+                    # カラム名の大文字・小文字、接頭辞の違いを吸収して名寄せ
+                    rename_map = {}
+                    for col in temp_df.columns:
+                        c_up = col.upper()
+                        if c_up.endswith('ADJO') or c_up.endswith('OPEN'):  rename_map[col] = 'AdjO'
+                        if c_up.endswith('ADJH') or c_up.endswith('HIGH'):  rename_map[col] = 'AdjH'
+                        if c_up.endswith('ADJL') or c_up.endswith('LOW'):   rename_map[col] = 'AdjL'
+                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE'): rename_map[col] = 'AdjC'
+    
+                    temp_df = temp_df.rename(columns=rename_map)
+    
+                    # 必須カラムの存在チェック
+                    target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                    if all(c in temp_df.columns for c in target_cols):
+                        # 元のクレンジング関数(clean_df)へ渡す
+                        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                        st.success("✅ データ構造の適合に成功しました。")
+                    else:
+                        st.error(f"❌ 必要な価格データが見つかりません。カラムを確認してください: {list(temp_df.columns)}")
+                        st.stop() # 処理を中断してエラーを表示
+                else:
+                    st.error("変数 'raw' が存在しません。データ取得ステップを確認してください。")
+                    st.stop()
+                # --- ここまで差し替え ---
                 
                 df = calc_technicals(df)
                 pos = None
