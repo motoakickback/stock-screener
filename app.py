@@ -1282,15 +1282,27 @@ with tab5: # 🚨 ※ここはボスのコードのタブ番号（tab4やtab5な
         st.markdown("#### ⚙️ シミュレーション微調整")
         st.caption("※サイドバーの設定とは独立して、ここで数値を自由に変更してテストできます。")
         
+        # 🚨 すべての key に "_t5" を付与し、他タブとの衝突を完全排除
         c_p1, c_p2 = st.columns(2)
-        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp")
-        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i")
+        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp_t5")
+        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i_t5")
         
         c_p3, c_p4 = st.columns(2)
-        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d")
-        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d")
+        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d_t5")
+        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d_t5")
         
         st.divider()
+        if "待伏" in test_mode:
+            st.markdown("##### 🌐 【待伏】固有パラメーター")
+            c_t1_1, c_t1_2 = st.columns(2)
+            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0, key="sim_push_r_t5")
+            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_t5")
+        else:
+            st.markdown("##### ⚡ 【強襲】固有パラメーター")
+            c_t2_1, c_t2_2 = st.columns(2)
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=35, step=5, key="sim_rsi_lim_t5")
+            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_t5")
+        
         if "待伏" in test_mode:
             st.markdown("##### 🌐 【待伏】固有パラメーター")
             c_t1_1, c_t1_2 = st.columns(2)
