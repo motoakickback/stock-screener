@@ -197,15 +197,18 @@ def get_single_data(code, yrs=3):
         if r_bars.status_code == 200:
             result["bars"] = r_bars.json().get("data", [])
         
-        # 2. 配当情報の取得（追加）
-        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={c}", headers=headers, timeout=10)
+        # 2. 配当情報の取得（修正後）
+        # c（4桁）ではなく、引数で渡ってきた code（5桁）を指定します
+        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={code}", headers=headers, timeout=10)
         if r_div.status_code == 200:
-            result["events"]["dividend"] = r_div.json().get("data", [])
+            # キーを "data" から API仕様の "dividend" に変更
+            result["events"]["dividend"] = r_div.json().get("dividend", [])
 
-        # 3. 決算スケジュールの取得（追加）
-        r_earn = requests.get(f"https://api.jquants.com/v2/equities/earnings-calendar?code={c}", headers=headers, timeout=10)
+        # 3. 決算スケジュールの取得（修正後）
+        r_earn = requests.get(f"https://api.jquants.com/v2/equities/earnings-calendar?code={code}", headers=headers, timeout=10)
         if r_earn.status_code == 200:
-            result["events"]["earnings"] = r_earn.json().get("data", [])
+            # キーを "data" から API仕様の "earnings_calendar" に変更
+            result["events"]["earnings"] = r_earn.json().get("earnings_calendar", [])
 
     except Exception as e:
         print(f"API Error: {e}")
