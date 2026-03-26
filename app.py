@@ -902,38 +902,55 @@ with tab2:
                 else:
                     res_df = pd.DataFrame(results).sort_values('RSI', ascending=True)
                     
-        # 🚨 Phase 2: 一次通過した銘柄のみ、1年分のデータで精密検査（ダマシの完全排除）
+        # 🚨 Phase 2: 一次通過した銘柄のみ、マルチスレッドで並列精密検査（ダマシの完全排除）
         if 'res_df' in locals() and not res_df.empty:
-            with st.spinner(f"【Phase 2】一次候補 {len(res_df)} 銘柄の1年分データを取得し、ダマシ(偽GC)を精密排除中..."):
-                final_results = []
-                for _, r in res_df.iterrows():
-                    c = str(r['Code'])
+            with st.spinner(f"【Phase 2】一次候補 {len(res_df)} 銘柄へ並列通信（マルチスレッド）を実行。ダマシ(偽GC)を排除中..."):
+                import concurrent.futures
+                
+                # 並列処理させるための独立任務（関数）
+                def fetch_and_check(r_dict):
+                    c = str(r_dict['Code'])
                     api_code = c if len(c) == 5 else c + "0"
                     raw_s = get_single_data(api_code, 1)
                     
-                    hist_chart = clean_df(pd.DataFrame(raw_s)) if raw_s else r['df_chart']
+                    hist_chart = clean_df(pd.DataFrame(raw_s)) if raw_s else r_dict['df_chart']
                     
                     if not hist_chart.empty:
                         hist_chart = calc_technicals(hist_chart)
                         latest_acc = hist_chart.iloc[-1]
                         prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
                         
-                        accurate_rsi = latest_acc.get('RSI', r['RSI'])
+                        accurate_rsi = latest_acc.get('RSI', r_dict['RSI'])
                         acc_macd_h = latest_acc.get('MACD_Hist', 0)
                         acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
                         
                         t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
                         
-                        # キルスイッチ：正確な判定でCランク（勢い減衰など）に落ちた銘柄はここで完全消去
+                        # キルスイッチ：Cランクや圏外に落ちた銘柄は破棄
                         if "C（条件外" in t_rank or "圏外" in t_rank:
-                            continue
+                            return None
                             
-                        item = r.to_dict()
+                        item = r_dict.copy()
                         item['accurate_rsi'] = accurate_rsi
                         item['t_rank'] = t_rank
                         item['t_bg'] = t_bg
                         item['hist_chart'] = hist_chart
-                        final_results.append(item)
+                        return item
+                    return None
+
+                final_results = []
+                tasks = [r.to_dict() for _, r in res_df.iterrows()]
+                
+                # 🚨 10部隊（スレッド）を同時展開して通信の待ち時間を極限まで圧縮
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    futures = [executor.submit(fetch_and_check, task) for task in tasks]
+                    for future in concurrent.futures.as_completed(futures):
+                        res = future.result()
+                        if res is not None:
+                            final_results.append(res)
+                            
+                # 並列処理でバラバラになった順序を、RSIの低い順に再ソートして整列
+                final_results = sorted(final_results, key=lambda x: x['accurate_rsi'])
 
             # 最終的な UI の描画
             if not final_results:
