@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-import time
 import os
 import re
 from datetime import datetime, timedelta
@@ -10,7 +9,6 @@ import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
 import yfinance as yf
-import jpholiday
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -533,64 +531,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
     
     config = {'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
-    st.plotly_chart(fig, use_container_width=True, config=config)
-    
-# --- 🛸 Tab 6専用チャート（こちらも併せて右側配置に修正） ---
-def draw_chart_t6(df, targ_p, tp5, tp10, tp15):
-    df = df.copy()
-    df['MA5'] = df['AdjC'].rolling(window=5).mean()
-
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=df['Date'], open=df['AdjO'], high=df['AdjH'],
-        low=df['AdjL'], close=df['AdjC'], name='株価',
-        increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
-    ))
-
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(命綱)', line=dict(color='rgba(156, 39, 176, 0.9)', width=2.5)))      
-
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='現在値', line=dict(color='#FFD700', width=2, dash='dash')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp5]*len(df), mode='lines', name='+5%', line=dict(color='rgba(239, 83, 80, 0.5)', width=1, dash='dot')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp10]*len(df), mode='lines', name='+10%', line=dict(color='rgba(239, 83, 80, 0.7)', width=1.5, dash='dot')))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[tp15]*len(df), mode='lines', name='+15%', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
-    
-    last_date = df['Date'].max()
-    start_date = df['Date'].iloc[-14] if len(df) >= 14 else df['Date'].min()
-    padding_days = timedelta(days=0.5)
-
-    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
-    if not visible_df.empty:
-        y_max = max(visible_df['AdjH'].max(), tp15)
-        y_min = min(visible_df['AdjL'].min(), visible_df['MA5'].min()) 
-        margin = (y_max - y_min) * 0.05
-        y_range = [y_min - margin, y_max + margin]
-    else:
-        y_range = None
-
-    layout_args = dict(
-        height=380, 
-        margin=dict(l=10, r=60, t=20, b=40), 
-        xaxis_rangeslider_visible=False, 
-        xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
-        # 🚨 【修正】こちらも右側に完全固定
-        yaxis=dict(tickformat=",.0f", hoverformat=",.0f", side="right"),
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)', 
-        hovermode="x unified", 
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
-    )
-    
-    if y_range:
-        layout_args['yaxis'].update(range=y_range, fixedrange=False)
-
-    fig.update_layout(**layout_args)
-    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
-    
-    config = {
-        'displayModeBar': True,
-        'displaylogo': False,
-        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
-    }
     st.plotly_chart(fig, use_container_width=True, config=config)
     
 # --- 🚨 復元パッチ：欠落していた2つのスナイパー機能 ---
@@ -1952,7 +1892,7 @@ with tab6:
             st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）できます。")
 
             # 色を適用したStylerオブジェクトを作成
-            styled_df = aar_df.style.applymap(color_pnl, subset=['損益額(円)', '損益(%)']).applymap(color_rule, subset=['規律'])
+            styled_df = aar_df.style.map(color_pnl, subset=['損益額(円)', '損益(%)']).map(color_rule, subset=['規律'])
 
             # 🚨 st.data_editorによる直接編集可能なインタラクティブボード
             edited_df = st.data_editor(
