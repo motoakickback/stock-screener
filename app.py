@@ -31,6 +31,7 @@ def check_password():
         st.session_state["current_user"] = "" 
     if not st.session_state["password_correct"]:
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
+        render_macro_board()
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.form("login_form"):
@@ -91,30 +92,69 @@ BASE_URL = "https://api.jquants.com/v2"
 @st.cache_data(ttl=900, show_spinner=False)
 def get_macro_weather():
     try:
+        import yfinance as yf
+        import pandas as pd
         tk_ni = yf.Ticker("^N225")
-        hist_ni = tk_ni.history(period="5d")
+        # トレンドを視認するため過去3ヶ月分を取得
+        hist_ni = tk_ni.history(period="3mo")
         if len(hist_ni) >= 2:
-            lc_ni = hist_ni['Close'].iloc[-1]; prev_ni = hist_ni['Close'].iloc[-2]
-            diff_ni = lc_ni - prev_ni; pct_ni = (diff_ni / prev_ni) * 100
-            return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni}}
+            lc_ni = hist_ni['Close'].iloc[-1]
+            prev_ni = hist_ni['Close'].iloc[-2]
+            diff_ni = lc_ni - prev_ni
+            pct_ni = (diff_ni / prev_ni) * 100
+            
+            df_ni = hist_ni.reset_index()
+            if 'Date' in df_ni.columns:
+                df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
+                
+            return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni, "df": df_ni}}
     except: return None
 
 def render_macro_board():
+    import plotly.graph_objects as go
     data = get_macro_weather()
     if data and "nikkei" in data:
         ni = data["nikkei"]
+        df = ni["df"]
         color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"
         sign = "+" if ni['diff'] >= 0 else ""
-        html = f"""
-        <div style="background: rgba(20, 20, 20, 0.6); padding: 0.8rem 1.5rem; border-radius: 8px; border-left: 4px solid {color}; margin-bottom: 1.5rem;">
-            <div style="font-size: 13px; color: #aaa; margin-bottom: 4px;">🌤️ 戦場の天候（マクロ環境モニター）</div>
-            <div style="font-size: 22px; font-weight: bold; color: #fff;">
-                日経平均株価: <span style="color: {color}; margin-left: 10px;">{ni['price']:,.2f} 円</span>
-                <span style="font-size: 16px; color: {color}; margin-left: 8px;">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</span>
+        
+        c1, c2 = st.columns([1, 2.5])
+        with c1:
+            html = f"""
+            <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌤️ 戦場の天候 (日経平均)</div>
+                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.2f} 円</div>
+                <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</div>
             </div>
-        </div>
-        """
-        st.markdown(html, unsafe_allow_html=True)
+            """
+            st.markdown(html, unsafe_allow_html=True)
+            
+        with c2:
+            df['MA25'] = df['Close'].rolling(window=25).mean()
+            
+            fig = go.Figure()
+            
+            # 🚨 修正箇所：折れ線グラフ（Scatter / lines）に変更
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Close'], mode='lines', name='日経平均',
+                line=dict(color='#FFD700', width=2) # 視認性の高い主線
+            ))
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['MA25'], mode='lines', name='25日線',
+                line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot') # 控えめな補助線
+            ))
+            
+            fig.update_layout(
+                height=160, margin=dict(l=10, r=20, t=10, b=10),
+                xaxis_rangeslider_visible=False,
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                showlegend=False,
+                yaxis=dict(side="right", tickformat=",.0f")
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+        st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
 # --- 3. 共通関数 & 地雷検知 ---
 def clean_df(df):
