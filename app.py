@@ -1215,37 +1215,25 @@ with tab3:
         
         if not t_codes: st.warning("有効な4桁の銘柄コードが見つかりません。")
         else:
-            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を精密計算中..."):
+            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を精密計算・ソート中..."):
+                
+                # 🚨 段階1：全銘柄のデータを計算し、リストに格納する（まだ描画しない）
+                scope_results = []
+                
                 for c in t_codes:
-                    st.divider()
-                    
-                    # 🚨 【照準】精密スコープでは、MA25/75を描画するために1年分のデータを取得
                     api_code = c if len(c) == 5 else c + "0"
                     raw_s = get_single_data(api_code, 1)
-                    
-                    if not raw_s:
-                        st.error(f"銘柄 {c} のデータ取得に失敗しました。")
-                        continue
+                    if not raw_s: continue
                         
-                    # 取得したデータ(raw_s)が辞書型なら "bars" を、古い形式(リスト)ならそのまま使う安全な書き方
                     bars_data = raw_s.get("bars", []) if isinstance(raw_s, dict) else raw_s
                     df_s = clean_df(pd.DataFrame(bars_data))
-                    if len(df_s) < 30:
-                        st.warning(f"銘柄 {c} は上場直後など、データが不足しているため解析不能です。")
-                        continue
+                    if len(df_s) < 30: continue
                         
-                    # テクニカル指標の計算
                     df_chart = calc_technicals(df_s.copy())
+                    df_14 = df_s.tail(10); df_30 = df_s.tail(30)
+                    latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
                     
-                    # 🚨 10営業日同期と判定ロジック
-                    df_14 = df_s.tail(10)
-                    df_30 = df_s.tail(30)
-                    latest = df_chart.iloc[-1]
-                    prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
-                    
-                    lc = latest['AdjC']
-                    h14 = df_14['AdjH'].max()
-                    l14 = df_14['AdjL'].min()
+                    lc = latest['AdjC']; h14 = df_14['AdjH'].max(); l14 = df_14['AdjL'].min()
                     if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
                     
                     ur = h14 - l14
@@ -1254,100 +1242,91 @@ with tab3:
                     bt_secondary = h14 - (ur * shift_ratio)
                     
                     is_bt_broken = lc < bt_primary
-                    bt_val = bt_secondary if is_bt_broken else bt_primary
-                    bt_val = int(bt_val)
+                    bt_val = int(bt_secondary if is_bt_broken else bt_primary)
                     
                     dead_line = h14 - (ur * 0.618)
                     is_trend_broken = lc < (dead_line * 0.98)
-                    
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
-                    daily_sign = "+" if daily_pct >= 0 else ""
                     
-                    # 危険アラートの判定
-                    is_dt = check_double_top(df_14)
-                    is_hs = check_head_shoulders(df_14)
-                    is_db = check_double_bottom(df_14)
+                    is_dt = check_double_top(df_14); is_hs = check_head_shoulders(df_14); is_db = check_double_bottom(df_14)
                     is_defense = (not is_dt) and (not is_hs) and (lc <= (l14 * 1.03))
                     
-                    # マスター情報の取得
                     c_name = f"銘柄 {c[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == api_code]
                         if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']
-                            c_market = m_row.iloc[0]['Market']
-                            c_sector = m_row.iloc[0].get('Sector', '不明')
-                            c_scale = m_row.iloc[0].get('Scale', '')
+                            c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']
+                            c_sector = m_row.iloc[0].get('Sector', '不明'); c_scale = m_row.iloc[0].get('Scale', '')
                             
-                    # トリアージ判定
-                    macd_h = latest.get('MACD_Hist', 0)
-                    macd_h_prev = prev.get('MACD_Hist', 0)
+                    macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50)
                     rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v)
                     
+                    denom = h14 - bt_val
+                    reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
+                    atr_val = int(latest.get('ATR', 0))
+                    idxmax = df_14['AdjH'].idxmax()
+                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
                     avg_vol = int(df_s['AdjVo'].tail(5).mean()) if 'AdjVo' in df_s.columns else 0
                     
-                    # ---------------- UI描画フェーズ ----------------
+                    alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
                     
-                    scale_val = str(c_scale)
+                    # データを辞書として格納
+                    scope_results.append({
+                        'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector, 'scale': c_scale,
+                        'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'is_bt_broken': is_bt_broken,
+                        'is_trend_broken': is_trend_broken, 'daily_pct': daily_pct, 'alerts': alerts,
+                        'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense,
+                        'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_val, 'atr_val': atr_val,
+                        'd_high': d_high, 'avg_vol': avg_vol, 'df_chart': df_chart
+                    })
+                    
+                # 🚨 段階2：S/A/B/Cスコア順、同点なら到達度（reach_val）が高い順にソート
+                scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
+                
+                # 🚨 段階3：ソート済みのリストを展開してUIに描画
+                for r in scope_results:
+                    st.divider()
+                    
+                    scale_val = str(r['scale'])
                     badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-                    triage_badge = f'<span style="background-color: {bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {rank}</span>'
+                    triage_badge = f'<span style="background-color: {r["bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["rank"]}</span>'
 
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {c_name}</h3>
+                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({r['code'][:4]}) {r['name']}</h3>
                             <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 1. アラートの計算
-                    alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
+                    for alert in r['alerts']: st.warning(alert)
                     
-                    # 2. 【デバッグ用強制出力】システムが持っている生データを画面に晒す
-                    # st.info(f"【参謀通信】J-Quantsからの受信データ: {raw_s.get('events')}")
+                    if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
+                    elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
                     
-                    # 3. アラートの描画（これがないと画面に出ません）
-                    for alert in alerts: st.warning(alert)
+                    if r['sector'] == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
+                    if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r['name']), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
                     
-                    if is_trend_broken: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
-                    elif is_bt_broken: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
+                    if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
+                    if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                     
-                    if c_sector == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
-                    if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(c_name), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
+                    tp20 = int(r['bt_val'] * 1.20); tp15 = int(r['bt_val'] * 1.15)
+                    tp10 = int(r['bt_val'] * 1.10); tp5  = int(r['bt_val'] * 1.05)
+                    sl5  = int(r['bt_val'] * 0.95); sl8  = int(r['bt_val'] * 0.92); sl15 = int(r['bt_val'] * 0.85)
                     
-                    if is_dt or is_hs: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
-                    if is_db: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
-                    if is_defense: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
+                    daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     
-                    # パネル計算
-                    tp20 = int(bt_val * 1.20)
-                    tp15 = int(bt_val * 1.15)
-                    tp10 = int(bt_val * 1.10)
-                    tp5  = int(bt_val * 1.05)
-                    sl5  = int(bt_val * 0.95)
-                    sl8  = int(bt_val * 0.92)
-                    sl15 = int(bt_val * 0.85)
-                    
-                    denom = h14 - bt_val
-                    reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
-                    
-                    # 🚨 追加：ATRと高値経過日数の算出
-                    atr_val = int(latest.get('ATR', 0))
-                    idxmax = df_14['AdjH'].idxmax()
-                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                    
-                    # 7カラムUI
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
-                    
-                    sc0.metric("直近高値", f"{int(h14):,}円")
-                    sc0_1.metric("直近安値", f"{int(l14):,}円")
-                    sc0_2.metric("上昇幅", f"{int(ur):,}円")
-                    sc1.metric("最新終値", f"{int(lc):,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
+                    sc0.metric("直近高値", f"{int(r['h14']):,}円")
+                    sc0_1.metric("直近安値", f"{int(r['l14']):,}円")
+                    sc0_2.metric("上昇幅", f"{int(r['ur']):,}円")
+                    sc1.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
                     html_buy = f"""
                     <div style="font-family: sans-serif; padding-top: 0.2rem;">
                         <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (待伏)</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{bt_val:,}円</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['bt_val']:,}円</div>
                     </div>
                     """
                     sc2.markdown(html_buy, unsafe_allow_html=True)
@@ -1363,30 +1342,28 @@ with tab3:
                     </div>"""
                     sc3.markdown(html_sell, unsafe_allow_html=True)
                     
-                    # 🚨 RSIを撤去し「ATR / 高値経過」の戦術パラメーターへ置換
                     html_stats = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                         <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{reach_val:.1f}%</strong>
+                            <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{r['reach_val']:.1f}%</strong>
                         </div>
                         <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{atr_val:,}円 / {d_high}日</strong>
+                            <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{r['atr_val']:,}円 / {r['d_high']}日</strong>
                         </div>
                         <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{avg_vol:,} 株</strong>
+                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{r['avg_vol']:,} 株</strong>
                         </div>
                     </div>
                     """
                     sc4.markdown(html_stats, unsafe_allow_html=True)
+                    st.caption(f"🏢 {r['market']} ｜ 🏭 {r['sector']}")
                     
-                    st.caption(f"🏢 {c_market} ｜ 🏭 {c_sector}")
+                    from datetime import timedelta
+                    cutoff_chart = r['df_chart']['Date'].max() - timedelta(days=60)
+                    df_chart_filtered = r['df_chart'][r['df_chart']['Date'] >= cutoff_chart]
                     
-                    # グラフ描画（右寄り防止フィルターをかけ、10%ラインのみを描画）
-                    cutoff_chart = df_chart['Date'].max() - timedelta(days=60)
-                    df_chart_filtered = df_chart[df_chart['Date'] >= cutoff_chart]
-                    
-                    st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                    draw_chart(df_chart_filtered, bt_val, tp10=tp10)
+                    st.markdown(render_technical_radar(df_chart_filtered, r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
+                    draw_chart(df_chart_filtered, r['bt_val'], tp10=tp10)
                         
 # ------------------------------------------
 # Tab 4: 戦術シミュレータ（デュアル・バックテスト）
