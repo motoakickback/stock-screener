@@ -560,20 +560,6 @@ def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
     wins = len([t for t in trades if t > 0])
     return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
 
-macd_hist, macd_hist_prev, rsi):
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
-    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
-    else: macd_t = "減衰"
-
-    rank = "C（条件外・監視）👁️"; bg = "#616161"; score = 1
-    if macd_t == "下落継続" or rsi >= 70: rank = "圏外（手出し無用）🚫"; bg = "#d32f2f"; score = 0
-    elif macd_t == "GC直後" and rsi <= 50: rank = "S（即時狙撃）🔥"; bg = "#2e7d32"; score = 4
-    elif macd_t == "減衰" and rsi <= 30: rank = "A（罠の設置）🪤"; bg = "#0288d1"; score = 3
-    elif macd_t == "上昇拡大" and 50 <= rsi <= 65: rank = "B（順張り警戒）📈"; bg = "#ed6c02"; score = 2
-    return rank, bg, score, macd_t
-# -------------------------------------------------------------
-
 # --- 4. サイドバー UI ---
 if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
 if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
