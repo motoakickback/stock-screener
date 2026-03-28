@@ -171,31 +171,43 @@ def check_event_mines(code, event_data=None):
     c = str(code)[:4]
 
     # --- 1. 絶対防衛線（フェイルセーフ） ---
-    # J-Quantsのデータ欠落に備え、確実に発火させる銘柄群
     critical_mines = ["6240", "5986", "5162", "4625", "6378", "8604"]
     if c in critical_mines:
-        alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（強制ギャップダウンのリスク）")
+        alerts.append("💣 【地雷警戒】配当権利落ち日等の危険イベントが接近（強制ギャップダウンのリスク）")
 
     if not event_data:
         return alerts
 
+    # --- ボスの戦術に最適化：10営業日（約14カレンダー日）を警戒距離に設定 ---
+    from datetime import datetime, timedelta
+    today = datetime.utcnow() + timedelta(hours=9)
+    danger_zone = today + timedelta(days=14) 
+
     # --- 2. APIデータ（配当）からの動的判定 ---
     for item in event_data.get("dividend", []):
-        if "2026-03-31" in str(item.get("RecordDate", "")):
-            if c not in critical_mines: # 重複表示の防止
-                alerts.append("💣 【地雷警戒】月末に配当権利落ち日が接近（API自動検知）")
-            break
+        rec_date_str = str(item.get("RecordDate", ""))
+        if rec_date_str and len(rec_date_str) >= 10:
+            try:
+                rec_date = datetime.strptime(rec_date_str[:10], "%Y-%m-%d")
+                if today <= rec_date <= danger_zone:
+                    if c not in critical_mines: # 重複表示の防止
+                        alerts.append(f"💣 【地雷警戒】直近 ({rec_date_str[:10]}) に配当権利落ち日が接近")
+                    break
+            except: pass
 
-    # --- 3. APIデータ（決算）の厳格判定 ---
+    # --- 3. APIデータ（決算）の動的判定 ---
     for item in event_data.get("earnings", []):
-        # APIが他銘柄を混入させてくるため、自身のコードと一致するか厳重にチェック
         if str(item.get("Code", ""))[:4] != c:
             continue
             
         date_str = str(item.get("Date", item.get("DisclosedDate", "")))
-        if "2026-03-" in date_str or "2026-04-0" in date_str:
-            alerts.append("🔥 【地雷警戒】直近に決算発表あり（大口の乱高下リスク）")
-            break
+        if date_str and len(date_str) >= 10:
+            try:
+                earn_date = datetime.strptime(date_str[:10], "%Y-%m-%d")
+                if today <= earn_date <= danger_zone:
+                    alerts.append(f"🔥 【地雷警戒】直近 ({date_str[:10]}) に決算発表あり（大口の乱高下リスク）")
+                    break
+            except: pass
 
     return alerts
 
