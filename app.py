@@ -974,8 +974,8 @@ with tab2:
                         # 🚨 修正1：捨てていた「t_score（優先度数値）」を正確に取得する
                         t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
                         
-                        # キルスイッチ：Cランクや圏外に落ちた銘柄は破棄
-                        if "C（条件外" in t_rank or "圏外" in t_rank:
+                        # 🚨 強化キルスイッチ：「GC直後」以外のフェーズに移行した銘柄はすべて破棄
+                        if "GC直後" not in t_rank and "S（即時狙撃" not in t_rank:
                             return None
                             
                         item = r_dict.copy()
