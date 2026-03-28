@@ -971,7 +971,8 @@ with tab2:
                         acc_macd_h = latest_acc.get('MACD_Hist', 0)
                         acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
                         
-                        t_rank, t_bg, _, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
+                        # 🚨 修正1：捨てていた「t_score（優先度数値）」を正確に取得する
+                        t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
                         
                         # キルスイッチ：Cランクや圏外に落ちた銘柄は破棄
                         if "C（条件外" in t_rank or "圏外" in t_rank:
@@ -981,6 +982,7 @@ with tab2:
                         item['accurate_rsi'] = accurate_rsi
                         item['t_rank'] = t_rank
                         item['t_bg'] = t_bg
+                        item['t_score'] = t_score  # 🚨 修正2：スコアを辞書に保存
                         item['hist_chart'] = hist_chart
                         return item
                     return None
@@ -988,7 +990,7 @@ with tab2:
                 final_results = []
                 tasks = [r.to_dict() for _, r in res_df.iterrows()]
                 
-                # 🚨 10部隊（スレッド）を同時展開して通信の待ち時間を極限まで圧縮
+                # 10部隊（スレッド）を同時展開して通信の待ち時間を極限まで圧縮
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                     futures = [executor.submit(fetch_and_check, task) for task in tasks]
                     for future in concurrent.futures.as_completed(futures):
@@ -996,9 +998,9 @@ with tab2:
                         if res is not None:
                             final_results.append(res)
                             
-                # 並列処理でバラバラになった順序を、RSIの低い順に再ソートして整列
-                final_results = sorted(final_results, key=lambda x: x['accurate_rsi'])
-
+                # 🚨 修正3：第一条件を「S/A/B/Cスコア(降順)」、第二条件を「RSI(昇順)」に変更
+                final_results = sorted(final_results, key=lambda x: (-x['t_score'], x['accurate_rsi']))
+                
             # 最終的な UI の描画
             if not final_results:
                 st.warning("🚨 抽出された候補はすべて「ダマシ（計算誤差）」または「勢い減衰」と判定され、キルされました。")
