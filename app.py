@@ -31,7 +31,6 @@ def check_password():
         st.session_state["current_user"] = "" 
     if not st.session_state["password_correct"]:
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
-        render_macro_board()
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.form("login_form"):
@@ -155,6 +154,8 @@ def render_macro_board():
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+
+render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
 def clean_df(df):
