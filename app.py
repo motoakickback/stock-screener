@@ -354,37 +354,6 @@ def check_sakata_patterns(df_sub):
     elif b3c and c['AdjC'] < sma25: return "🔥 陰の極み（セリクラ反発待ち）"
     return None
 
-# 🚨 追加：S/A/B/C 判定（トリアージ）エンジン
-def get_triage_info(macd_h, macd_h_prev, rsi_val):
-    if macd_h > 0 and macd_h_prev <= 0: macd_t = "GC直後"
-    elif macd_h > macd_h_prev: macd_t = "上昇拡大"
-    elif macd_h < 0 and macd_h < macd_h_prev: macd_t = "下落継続"
-    else: macd_t = "減衰"
-
-    triage_rank = "C（条件外・監視）👁️"
-    triage_bg = "#616161"
-    triage_score = 1
-    
-    if macd_t == "下落継続" or rsi_val >= 70:
-        triage_rank = "圏外（手出し無用）🚫"
-        triage_bg = "#d32f2f"
-        triage_score = 0
-    # 🚨 ルール拡張：「GC直後」だけでなく、勢いのついた「上昇拡大」でRSIが低い場合もSランクとして狙撃対象とする
-    elif (macd_t == "GC直後" or macd_t == "上昇拡大") and rsi_val <= 50:
-        triage_rank = "S（即時狙撃）🔥"
-        triage_bg = "#2e7d32"
-        triage_score = 4
-    elif macd_t == "減衰" and rsi_val <= 30:
-        triage_rank = "A（罠の設置）🪤"
-        triage_bg = "#0288d1"
-        triage_score = 3
-    elif macd_t == "上昇拡大" and 50 < rsi_val <= 65:
-        triage_rank = "B（順張り警戒）📈"
-        triage_bg = "#ed6c02"
-        triage_score = 2
-        
-    return triage_rank, triage_bg, triage_score, macd_t
-    
 def calc_technicals(df):
     df = df.copy()
     if len(df) < 16:
@@ -408,6 +377,25 @@ def calc_technicals(df):
     return df
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi):
+    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
+    else: macd_t = "減衰"
+
+    if macd_t == "下落継続" or rsi >= 75: 
+        return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
+    elif macd_t == "GC直後":
+        if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, macd_t
+        else: return "A（強襲追撃）⚡", "#ed6c02", 4, macd_t
+    elif macd_t == "減衰" and rsi <= 35: 
+        return "A（罠の設置）🪤", "#0288d1", 4, macd_t
+    elif macd_t == "上昇拡大":
+        if rsi <= 60: return "B（順張り警戒）📈", "#0288d1", 3, macd_t
+        else: return "C（過熱警戒）👁️", "#616161", 2, macd_t
+    else:
+        return "C（条件外・監視）👁️", "#616161", 1, macd_t
+
+macd_hist, macd_hist_prev, rsi):
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
@@ -591,7 +579,7 @@ def calc_historical_win_rate(c, push_r, buy_d, tp, sl_i, sl_c, sell_d, mode):
     wins = len([t for t in trades if t > 0])
     return {'total': len(trades), 'win_rate': (wins / len(trades)) * 100, 'exp_val': sum(trades) / len(trades)}
 
-def get_triage_info(macd_hist, macd_hist_prev, rsi):
+macd_hist, macd_hist_prev, rsi):
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
