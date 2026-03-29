@@ -270,8 +270,9 @@ def get_single_data(code, yrs=3):
         
     return result
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_hist_data_cached():
+    @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+    def get_hist_data_cached():
+    
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days = 0
