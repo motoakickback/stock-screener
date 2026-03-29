@@ -1116,7 +1116,14 @@ with tab2:
                     if not hist_chart.empty:
                         hist_chart = calc_technicals(hist_chart)
                         st.markdown(render_technical_radar(hist_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
-                        draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                        # データが存在しない場合は、bt（買い値）を基準に自動算出する
+                        bt_val = r['bt']
+                        tp5_val  = r.get('tp5', bt_val * 1.05)
+                        tp10_val = r.get('tp10', bt_val * 1.10)
+                        tp15_val = r.get('tp15', bt_val * 1.15)
+                        tp20_val = r.get('tp20', bt_val * 1.20)
+
+                        draw_chart(hist_chart, bt_val, tp5_val, tp10_val, tp15_val, tp20_val)
                         
                 import gc
                 gc.collect()  # 処理済みの不要なメモリを強制排出
