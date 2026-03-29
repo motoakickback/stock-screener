@@ -883,6 +883,9 @@ with tab1:
                         hist_chart = calc_technicals(hist_chart)
                         st.markdown(render_technical_radar(hist_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                        
+                import gc
+                gc.collect()  # 処理済みの不要なメモリを強制排出
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
@@ -1097,7 +1100,25 @@ with tab2:
                         df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
                         st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                         draw_chart(df_chart_filtered, bt_val, tp10=tp10)
-                            
+                                     bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
+                    if bt_stats and bt_stats['total'] > 0:
+                        wr_color = "#ef5350" if bt_stats['win_rate'] >= 60 else "#FFD700" if bt_stats['win_rate'] >= 50 else "#888888"
+                        st.markdown(f'<div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;"><span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats["total"]}戦):</span><strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {bt_stats["win_rate"]:.1f}%</strong><span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span><strong style="color: {"#ef5350" if bt_stats["exp_val"] > 0 else "#26a69a"}; font-size: 16px; margin-left: 8px;">{bt_stats["exp_val"]:+.1f}円</strong></div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
+                    
+                    if raw_s and "bars" in raw_s: 
+                        hist_chart = clean_df(pd.DataFrame(raw_s["bars"]))
+                    else: hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
+                        
+                    if not hist_chart.empty:
+                        hist_chart = calc_technicals(hist_chart)
+                        st.markdown(render_technical_radar(hist_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
+                        draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                        
+                import gc
+                gc.collect()  # 処理済みの不要なメモリを強制排出
+                    
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
     st.caption("※気になっている銘柄や、レーダーで抽出した銘柄のコードを入力し、現在のテクニカル状態と迎撃ラインを精密に解析します。")
