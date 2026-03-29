@@ -46,7 +46,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- 🚁 司令部へ帰還ボタン ---
+# --- 🚁 司令部へ帰還ボタン (改修版) ---
 import streamlit.components.v1 as components
 components.html(
     """
@@ -62,14 +62,15 @@ components.html(
         btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
         btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
         btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+        
         btn.onclick = function() {
-            window.parent.scrollTo({top: 0, behavior: 'smooth'});
-            const allElements = parentDoc.querySelectorAll('*');
-            for (let i = 0; i < allElements.length; i++) {
-                if (allElements[i].scrollHeight > allElements[i].clientHeight) {
-                    allElements[i].scrollTo({top: 0, behavior: 'smooth'});
-                }
+            // 標的1: Streamlitのメインスクロール領域をピンポイント狙撃
+            const mainContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
+            if (mainContainer) {
+                mainContainer.scrollTo({top: 0, behavior: 'smooth'});
             }
+            // 標的2: フォールバック（念のためウィンドウ全体も）
+            window.parent.scrollTo({top: 0, behavior: 'smooth'});
         };
         parentDoc.body.appendChild(btn);
     }
