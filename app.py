@@ -389,24 +389,45 @@ def calc_technicals(df):
     df['ATR'] = tr.rolling(window=14).mean()
     return df
 
-def get_triage_info(macd_hist, macd_hist_prev, rsi):
+# 🚨 置き換え対象：def get_triage_info(macd_hist, macd_hist_prev, rsi): ～ のブロック全て
+def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
+    # 1. MACDの基本状態（計器レーダー描画用・共通処理）
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
 
-    if macd_t == "下落継続" or rsi >= 75: 
-        return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
-    elif macd_t == "GC直後":
-        if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, macd_t
-        else: return "A（強襲追撃）⚡", "#ed6c02", 4, macd_t
-    elif macd_t == "減衰" and rsi <= 35: 
-        return "A（罠の設置）🪤", "#0288d1", 4, macd_t
-    elif macd_t == "上昇拡大":
-        if rsi <= 60: return "B（順張り警戒）📈", "#0288d1", 3, macd_t
-        else: return "C（過熱警戒）👁️", "#616161", 2, macd_t
+    # 2. 戦術別のSABC判定（完全分離）
+    if mode == "強襲":
+        # 【強襲（順張り）用ロジック】: MACD GCとRSIを重視
+        if macd_t == "下落継続" or rsi >= 75:
+            return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
+        elif macd_t == "GC直後":
+            if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, macd_t
+            else: return "A（強襲追撃）⚡", "#ed6c02", 4, macd_t
+        elif macd_t == "上昇拡大":
+            if rsi <= 60: return "B（順張り警戒）📈", "#0288d1", 3, macd_t
+            else: return "C（過熱警戒）👁️", "#616161", 2, macd_t
+        else:
+            return "C（条件外・監視）👁️", "#616161", 1, macd_t
+
     else:
-        return "C（条件外・監視）👁️", "#616161", 1, macd_t
+        # 【待伏（逆張り）用ロジック】: 買値目標(bt)との距離とRSIを重視
+        if bt == 0 or lc == 0:
+            return "C（計算不能）👁️", "#616161", 1, macd_t
+
+        dist_pct = ((lc / bt) - 1) * 100 # 目標値までの距離(%)
+
+        if dist_pct < -2.0:
+            return "圏外（防衛線突破）💀", "#d32f2f", 0, macd_t
+        elif dist_pct <= 2.0: # -2.0% ～ +2.0% の交戦距離
+            if rsi <= 45: return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
+            else: return "A（接近中）⚡", "#ed6c02", 4, macd_t
+        elif dist_pct <= 5.0: # +2.0% ～ +5.0%
+            if rsi <= 50: return "A（罠の設置）🪤", "#0288d1", 4, macd_t
+            else: return "B（高高度）📈", "#0288d1", 3, macd_t
+        else:
+            return "C（射程外・監視）👁️", "#616161", 1, macd_t
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
@@ -758,7 +779,9 @@ with tab1:
                         df_for_tech = calc_technicals(df_for_tech.copy())
                         latest_c = df_for_tech.iloc[-1]
                         prev_c = df_for_tech.iloc[-2] if len(df_for_tech) > 1 else latest_c
-                        rank, bg, score, _ = get_triage_info(latest_c.get('MACD_Hist',0), prev_c.get('MACD_Hist',0), latest_c.get('RSI',50))
+                        lc_val = latest_c['AdjC']
+                        bt_val = r['bt']
+                        rank, bg, score, _ = get_triage_info(latest_c.get('MACD_Hist',0), prev_c.get('MACD_Hist',0), latest_c.get('RSI',50), lc_val, bt_val, mode="待伏")
                         return (idx, score, rank, bg)
                     return (idx, 1, "C（条件外・監視）👁️", "#616161")
 
@@ -975,8 +998,10 @@ with tab2:
                         acc_macd_h = latest_acc.get('MACD_Hist', 0)
                         acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
                         
-                        # 🚨 修正1：捨てていた「t_score（優先度数値）」を正確に取得する
-                        t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi)
+                        # ⭕️ 修正後（現在値、目標値、モード"強襲"を渡す）
+                        lc_val = latest_acc['AdjC']
+                        bt_val = r_dict['bt']
+                        t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi, lc_val, bt_val, mode="強襲")
                         
                         # 🚨 強化キルスイッチ：「GC直後」以外のフェーズに移行した銘柄はすべて破棄
                         if "GC直後" not in t_rank and "S（即時狙撃" not in t_rank:
@@ -1196,7 +1221,8 @@ with tab3:
                             
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50)
-                    rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v)
+                    # ⭕️ 修正後（モード"待伏"を指定。※Tab3は精密スコープなので待伏基準が最適です）
+                    rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, lc, bt_val, mode="待伏")
                     
                     denom = h14 - bt_val
                     reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
