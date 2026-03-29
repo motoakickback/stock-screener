@@ -46,44 +46,47 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- 🚁 司令部へ帰還ボタン (完全制圧版) ---
+# --- 🚁 司令部へ帰還ボタン (真・完全版) ---
 import streamlit.components.v1 as components
 components.html(
     """
     <script>
     const parentDoc = window.parent.document;
-    if (!parentDoc.getElementById('sniper-return-btn')) {
-        const btn = parentDoc.createElement('button');
-        btn.id = 'sniper-return-btn';
-        btn.innerHTML = '🚁 司令部へ帰還';
-        btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
-        btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#00e676';
-        btn.style.border = '1px solid #00e676'; btn.style.padding = '12px 20px';
-        btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
-        btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
-        btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
-        
-        btn.onclick = function() {
-            // Streamlitのスクロール領域となり得る「すべての的」を配列化
-            const targets = [
-                parentDoc.querySelector('.main'),
-                parentDoc.querySelector('.stApp'),
-                parentDoc.querySelector('.block-container'),
-                parentDoc.querySelector('[data-testid="stAppViewContainer"]'),
-                parentDoc.documentElement,
-                parentDoc.body,
-                window.parent
-            ];
-            
-            // 存在するすべての的に向かって一斉にトップへ戻る命令を発砲
-            targets.forEach(t => {
-                if (t && typeof t.scrollTo === 'function') {
-                    t.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            });
-        };
-        parentDoc.body.appendChild(btn);
+    
+    // 🚨 【重要】過去のゾンビボタン（脳死状態の残骸）を発見次第、完全に破壊する
+    const oldBtn = parentDoc.getElementById('sniper-return-btn');
+    if (oldBtn) {
+        oldBtn.remove();
     }
+
+    // 新しい機体（ボタン）の生成と配備
+    const btn = parentDoc.createElement('button');
+    btn.id = 'sniper-return-btn';
+    btn.innerHTML = '🚁 司令部へ帰還';
+    btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
+    btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#00e676';
+    btn.style.border = '1px solid #00e676'; btn.style.padding = '12px 20px';
+    btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
+    btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
+    btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+    
+    // トリガー処理（確実に機能するスクロール）
+    btn.onclick = function() {
+        // 1. 基本領域のスクロール
+        window.parent.scrollTo({top: 0, behavior: 'smooth'});
+        
+        // 2. Streamlit内部コンテナのスクロール（フリーズ防止のため対象をdiv, main等に限定）
+        const containers = parentDoc.querySelectorAll('div, main, section');
+        for (let i = 0; i < containers.length; i++) {
+            // スクロール可能な領域を見つけたらトップへ戻す
+            if (containers[i].scrollHeight > containers[i].clientHeight) {
+                containers[i].scrollTo({top: 0, behavior: 'smooth'});
+            }
+        }
+    };
+    
+    // 画面へ出力
+    parentDoc.body.appendChild(btn);
     </script>
     """, height=0, width=0
 )
