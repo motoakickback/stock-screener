@@ -270,12 +270,12 @@ def get_single_data(code, yrs=3):
         
     return result
 
-    @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-    def get_hist_data_cached():
+@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+def get_hist_data_cached():
     
-        base = datetime.utcnow() + timedelta(hours=9)
-        dates = []
-        days = 0
+    base = datetime.utcnow() + timedelta(hours=9)
+    dates = []
+    days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
         if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
