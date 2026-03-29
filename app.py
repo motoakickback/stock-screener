@@ -1248,7 +1248,27 @@ with tab3:
                     d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
                     avg_vol = int(df_s['AdjVo'].tail(5).mean()) if 'AdjVo' in df_s.columns else 0
                     
-                    alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
+                    # ⭕️ 修正後（Tab3専用・地雷探知APIの直接通信）
+                    # 広域スキャンではスキップした配当・決算データを、ここで初めてピンポイントで取得する
+                    target_event_data = {"dividend": [], "earnings": []}
+                    try:
+                        # 1. 配当データ（権利落ち日）の取得
+                        # ※ cli は J-Quants API のクライアントインスタンス（st.session_state.cli 等）に合わせて調整してください
+                        res_div = cli.get_dividend(code=api_code) 
+                        if res_div is not None and not res_div.empty: # DataFrameの場合
+                            target_event_data["dividend"] = res_div.to_dict(orient="records")
+                            
+                        # 2. 決算データ（決算発表日）の取得
+                        res_earn = cli.get_statements(code=api_code)
+                        if res_earn is not None and not res_earn.empty: # DataFrameの場合
+                            target_event_data["earnings"] = res_earn.to_dict(orient="records")
+                    except Exception as e:
+                        # 通信エラーやデータ無し（新興株など）の場合はスキップ
+                        # ※フェイルセーフとして登録した絶対防衛線（critical_mines）は引き続き機能します
+                        pass
+                    
+                    # 取得した生データを地雷判定ロジックへ流し込む
+                    alerts = check_event_mines(c, target_event_data)
                     
                     # データを辞書として格納
                     scope_results.append({
