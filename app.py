@@ -387,16 +387,29 @@ def check_sakata_patterns(df_sub):
 def calc_technicals(df):
     df = df.copy()
     if len(df) < 16:
-        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA25'] = df['AdjC']; return df
+        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA5'] = df['AdjC']; df['MA25'] = df['AdjC']; df['MA75'] = df['AdjC']; return df
     
-    delta = df['AdjC'].diff(); gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
-    rs = gain.ewm(alpha=1/14, adjust=False).mean() / loss.ewm(alpha=1/14, adjust=False).mean()
+    # 🚨 防衛パッチ：計算前の生データの欠損（NaNやInf）を強制補間
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df.fillna(method='ffill', inplace=True)
+    df.fillna(0, inplace=True)
+
+    delta = df['AdjC'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    # RSIの計算（ゼロ割りやNaNを徹底排除）
+    loss_ewm = loss.ewm(alpha=1/14, adjust=False).mean()
+    loss_ewm = loss_ewm.replace(0, 0.0001) # ゼロ割りを防ぐための微小値
+    rs = gain.ewm(alpha=1/14, adjust=False).mean() / loss_ewm
     df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = df['RSI'].fillna(50) # RSIのNaNは中立(50)として扱う
     
     macd = df['AdjC'].ewm(span=12, adjust=False).mean() - df['AdjC'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = macd; df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean(); df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+    df['MACD'] = macd
+    df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
     
-    # 🚨 修正箇所：MA計算の「前」に欠損値補間（ffill）を実行し、全MAを temp_close で計算する
     temp_close = df['AdjC'].ffill()
     df['MA5'] = temp_close.rolling(window=5).mean()
     df['MA25'] = temp_close.rolling(window=25).mean()
@@ -404,6 +417,10 @@ def calc_technicals(df):
     
     tr = pd.concat([df['AdjH'] - df['AdjL'], (df['AdjH'] - df['AdjC'].shift(1)).abs(), (df['AdjL'] - df['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean()
+    
+    # 🚨 最終防衛：計算終了後に残ったすべてのNaNを0で埋め尽くし、Plotlyのクラッシュを完全に防ぐ
+    df.fillna(0, inplace=True)
+    
     return df
 
 # 🚨 置き換え対象：def get_triage_info(macd_hist, macd_hist_prev, rsi): ～ のブロック全て
