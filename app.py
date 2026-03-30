@@ -520,11 +520,11 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
     # 4. ターゲットライン（買値目標）
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
-    # 🚨 渡された売値ラインのみを独立して描画する
-    if tp5 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp5)]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
-    if tp10 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp10)]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1.5, dash='dot')))
-    if tp15 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp15)]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
-    if tp20 is not None: fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp20)]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
+    # 🚨 パッチ3：売値(tp)が万が一NaNだった場合、int()変換でのシステムクラッシュを防ぐ
+    if tp5 is not None and not pd.isna(tp5): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp5)]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
+    if tp10 is not None and not pd.isna(tp10): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp10)]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1.5, dash='dot')))
+    if tp15 is not None and not pd.isna(tp15): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp15)]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
+    if tp20 is not None and not pd.isna(tp20): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp20)]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
