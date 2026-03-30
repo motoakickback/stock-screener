@@ -183,46 +183,56 @@ def clean_df(df):
 def check_event_mines(code, event_data=None):
     alerts = []
     c = str(code)[:4]
+    from datetime import datetime, timedelta
+    
+    # 基準時刻（JST）と判定用ウィンドウの設定
+    today = datetime.utcnow() + timedelta(hours=9)
+    today_date = today.date()
+    # 14日後の境界線を設定（この日より先のイベントは無視する）
+    max_warning_date = today_date + timedelta(days=14)
 
-    # --- 1. 絶対防衛線（フェイルセーフ） ---
-    critical_mines = [
-        "6240", "5986", "5162", "4625", "6378", "8604",
-        "3137", "4167", "4031", "5726", "6836", "8835"  # ボスが特定した地雷群を追加
-    ]
+    # --- 1. 絶対防衛線（手動設定：14日前～当日まで表示） ---
+    # 形式: "銘柄コード": "イベント当日(YYYY-MM-DD)"
+    critical_mines = {
+        "8835": "2026-03-30", # 権利落ち
+        "3137": "2026-03-27", # 個別材料
+        "4167": "2026-03-27",
+        "4031": "2026-03-27",
+        "2195": "2026-03-27",
+        "4379": "2026-03-27",
+    }
+
     if c in critical_mines:
-        alerts.append("💣 【地雷警戒】配当権利落ち日等の危険イベントが接近（強制ギャップダウンのリスク）")
+        try:
+            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
+            # 判定：今日が「イベント14日前以降」かつ「イベント当日まで」
+            if (event_date - timedelta(days=14)) <= today_date <= event_date:
+                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
+        except: pass
 
     if not event_data:
         return alerts
 
-    # --- ボスの戦術に最適化：10営業日（約14カレンダー日）を警戒距離に設定 ---
-    from datetime import datetime, timedelta
-    today = datetime.utcnow() + timedelta(hours=9)
-    danger_zone = today + timedelta(days=14) 
-
-    # --- 2. APIデータ（配当）からの動的判定 ---
+    # --- 2. APIデータ（配当：14日前～当日まで表示） ---
     for item in event_data.get("dividend", []):
-        rec_date_str = str(item.get("RecordDate", ""))
-        if rec_date_str and len(rec_date_str) >= 10:
+        d_str = str(item.get("RecordDate", ""))[:10]
+        if d_str:
             try:
-                rec_date = datetime.strptime(rec_date_str[:10], "%Y-%m-%d")
-                if today <= rec_date <= danger_zone:
-                    if c not in critical_mines: # 重複表示の防止
-                        alerts.append(f"💣 【地雷警戒】直近 ({rec_date_str[:10]}) に配当権利落ち日が接近")
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
                     break
             except: pass
 
-    # --- 3. APIデータ（決算）の動的判定 ---
+    # --- 3. APIデータ（決算：14日前～当日まで表示） ---
     for item in event_data.get("earnings", []):
-        if str(item.get("Code", ""))[:4] != c:
-            continue
-            
-        date_str = str(item.get("Date", item.get("DisclosedDate", "")))
-        if date_str and len(date_str) >= 10:
+        if str(item.get("Code", ""))[:4] != c: continue
+        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
+        if d_str:
             try:
-                earn_date = datetime.strptime(date_str[:10], "%Y-%m-%d")
-                if today <= earn_date <= danger_zone:
-                    alerts.append(f"🔥 【地雷警戒】直近 ({date_str[:10]}) に決算発表あり（大口の乱高下リスク）")
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
                     break
             except: pass
 
