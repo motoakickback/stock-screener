@@ -264,23 +264,20 @@ def get_single_data(code, yrs=3):
     c = str(code)[:4]
     
     try:
+        # 🚨 パッチ1：J-Quants APIの仕様に合わせ、確実に5桁(末尾0等)でリクエストする
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+
         # 1. 既存の株価取得
-        r_bars = requests.get(f"{BASE_URL}/equities/bars/daily?code={c}&from={f_d}&to={t_d}", headers=headers, timeout=15)
+        # 【修正】 code={c} を code={api_code} に変更して5桁でリクエスト
+        r_bars = requests.get(f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}", headers=headers, timeout=15)
         if r_bars.status_code == 200:
             result["bars"] = r_bars.json().get("data", [])
         
-        # 2. 配当情報の取得（修正後）
-        # c（4桁）ではなく、引数で渡ってきた code（5桁）を指定します
-        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={code}", headers=headers, timeout=10)
+        # 2. 配当情報の取得
+        # 【念のため修正】 こちらも code={api_code} に統一し、エラーの余地を完全に排除
+        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={api_code}", headers=headers, timeout=10)
         if r_div.status_code == 200:
-            
             result["events"]["dividend"] = r_div.json().get("data", [])
-
-        # 3. 決算スケジュールの取得（修正後）
-        r_earn = requests.get(f"https://api.jquants.com/v2/equities/earnings-calendar?code={code}", headers=headers, timeout=10)
-        if r_earn.status_code == 200:
-
-            result["events"]["earnings"] = r_earn.json().get("data", [])
 
     except Exception as e:
         print(f"API Error: {e}")
