@@ -929,9 +929,11 @@ with tab1:
                     else:
                         st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
                     
-                    if raw_s and "bars" in raw_s: 
+                    # 🚨 パッチ2：空リスト([])を正確に弾き、安全装置を確実に発動させる
+                    if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0: 
                         hist_chart = clean_df(pd.DataFrame(raw_s["bars"]))
-                    else: hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
+                    else: 
+                        hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
                         
                     if not hist_chart.empty:
                         hist_chart = calc_technicals(hist_chart)
