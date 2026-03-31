@@ -810,9 +810,9 @@ with tab1:
 
                 # 🚨 【ここに追記】掟⑤・改：上場1年未満（データ245日未満）の銘柄を一括排除
                 # 全データ(df)の長さを銘柄ごとにカウントし、245日以上の成熟銘柄だけを抽出する
-                counts_full = df.groupby('Code').size()
-                mature_codes = counts_full[counts_full >= 245].index
-                df = df[df['Code'].isin(mature_codes)]
+                #counts_full = df.groupby('Code').size()
+                #mature_codes = counts_full[counts_full >= 245].index
+                #df = df[df['Code'].isin(mature_codes)]
                 
                 df_30 = df.groupby('Code').tail(30)
                 df_14 = df_30.groupby('Code').tail(10)
