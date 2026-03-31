@@ -702,10 +702,22 @@ tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全軍スキャン</h3>', unsafe_allow_html=True)
+    
+    # 🚨 パッチ1：スキャン結果を保持するためのセッション変数を初期化
+    if 'tab1_scan_results' not in st.session_state:
+        st.session_state.tab1_scan_results = None
+
     run_scan = st.button(f"🚀 最新データで全軍スキャン開始 ({tactics_mode.split()[0]}モード)")
 
+    # 🚨 パッチ2：ボタンが押されたら計算を実行し、結果（データフレーム）をセッションに保存する
     if run_scan:
         with st.spinner("神速モードで相場データを一括取得中..."):
+            raw = get_hist_data_cached()
+            if not raw: 
+                st.error("データの取得に失敗しました。")
+                st.session_state.tab1_scan_results = None # 失敗時はクリア
+            else:
+                with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
             raw = get_hist_data_cached()
         if not raw: st.error("データの取得に失敗しました。")
         else:
