@@ -126,6 +126,30 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
+# --- 🔴 安全装置：マニュアル・オーバーライド ---
+API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
+headers = {"x-api-key": API_KEY}
+BASE_URL = "https://api.jquants.com/v2"
+
+# --- ⏱️ 18:00 完全自動パージ機構（第一防衛線） ---
+import pytz
+from datetime import datetime
+
+jst = pytz.timezone('Asia/Tokyo')
+now = datetime.now(jst)
+
+if 'last_auto_purge_date' not in st.session_state:
+    st.session_state.last_auto_purge_date = None
+
+if now.hour >= 18:
+    today_str = now.strftime('%Y-%m-%d')
+    if st.session_state.last_auto_purge_date != today_str:
+        st.cache_data.clear()
+        st.session_state.tab1_scan_results = None
+        st.session_state.tab2_scan_results = None
+        st.session_state.tab5_ifd_results = None
+        st.session_state.last_auto_purge_date = today_str
+
 # --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
 @st.cache_data(ttl=900, show_spinner=False)
 def get_macro_weather():
@@ -712,6 +736,17 @@ st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp")
 st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
 st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
+
+# --- 🔴 安全装置：マニュアル・オーバーライド（第二防衛線） ---
+st.sidebar.divider()
+st.sidebar.markdown("### 🛠️ システム管理")
+if st.sidebar.button("🔴 キャッシュ強制パージ (API遅延時用)", use_container_width=True, help="18時以降もデータが古い場合、このボタンで強制的にJ-Quantsへ再取得を要求します。"):
+    st.cache_data.clear()
+    st.session_state.tab1_scan_results = None
+    st.session_state.tab2_scan_results = None
+    st.session_state.tab5_ifd_results = None
+    st.sidebar.success("全記憶を強制パージしました。最新データを再取得します。")
+    st.rerun()
 
 # ==========================================
 # 5. タブ再構成（7タブ構成）
