@@ -804,9 +804,6 @@ with tab1:
                     if old_c: sum_df = sum_df[sum_df['Code'].isin(old_c)]
                     sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
                 
-                if f6_risk and 'CompanyName' in sum_df.columns:
-                    sum_df = sum_df[~sum_df['CompanyName'].astype(str).str.contains("疑義|重要事象", na=False)]
-                
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
                 sum_df = sum_df[~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False)]
                 sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
