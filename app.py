@@ -1110,7 +1110,9 @@ with tab2:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
-    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True)
+    # 🎯 ターゲット開始地点
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True, key="tab2_ipo_filter")
+
     if run_scan_t2:
         with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
             raw = get_hist_data_cached()
@@ -1118,43 +1120,39 @@ with tab2:
                 st.error("データの取得に失敗しました。")
                 st.session_state.tab2_scan_results = None
             else:
+                # 1. 全データ展開
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 サイドバーのスイッチが見つからないため、このタブ内のUI(rsi_limitの横など)で直接制御
-                # ※ st.columns(2) の後に以下の1行を追加し、判定を繋ぎ変えます
-                     
+                # 🚨 【重要】切り出し前に「全データ」で計算（これで505A等の新興株のMACDを捻り出す）
+                with st.spinner("全4000銘柄のテクニカルを精密計算中..."):
+                    df = df.groupby('Code', group_keys=False).apply(calc_technicals)
+                
+                # 2. IPO除外フィルター（チェックが外れていれば英字入りも通過）
                 if exclude_ipo_flag: 
                     df = df[~df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)]
                 
+                # 3. 計算済みのデータから直近30日に絞る
                 df_30 = df.groupby('Code').tail(30)
                 
+                # 🚨 【デバッグ】352Aがここに存在するか画面に表示
+                if "352A" in df_30['Code'].values:
+                    st.success("🎯 ターゲット「352A」を捕捉。判定フェーズへ移行。")
+                
                 results = []
-                for code, group in df_30.groupby('Code'):  
+                for code, group in df_30.groupby('Code'):
+                    if len(group) < 2: continue
                     
-                    # 🚨 以前ここにあった遅延の元凶（len(...) < 245）は完全にパージ（削除）しました。
-                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
-                    #if avg_vol < vol_limit: continue
+                    # 既に計算済みなのでilocで取得（再計算不要）
+                    latest = group.iloc[-1]
+                    prev = group.iloc[-2]
                     
-                    g_tech = calc_technicals(group.copy())
-                    # 🚨 【絶対防衛パッチ】データが2件未満（昨日が存在しない銘柄）によるクラッシュを物理的に回避
-                    if len(g_tech) < 2:
-                        continue
-                    latest = g_tech.iloc[-1]; prev = g_tech.iloc[-2]
-                    
-                    lc = latest['AdjC']
-                    atr = latest.get('ATR', 0)
-                    
-                    #if atr < 10 or (atr / lc) < 0.01: continue
-                    tp_yen = lc * (st.session_state.bt_tp / 100.0)
-                    exp_days = int(tp_yen / atr) if atr > 0 else 99
-                    #if exp_days >= 5: continue
-                    
-                    macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
+                    macd_h = latest.get('MACD_Hist', 0)
+                    macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    #if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
-                    if macd_h > 0 and macd_h_prev <= 0:
+                    # RSI 45以下のGC初動を狙撃（足切り制限は解除済み）
+                    if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
+                        # 🎯 ターゲット終了地点（これより下は既存の c_name = ... から続けてください）
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
