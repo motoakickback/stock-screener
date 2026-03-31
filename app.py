@@ -1679,6 +1679,10 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⛺ IFD潜伏カウント（指値・逆指値の接近アラート）</h3>', unsafe_allow_html=True)
     st.caption("※証券会社に仕掛けた指値（待伏）や逆指値（強襲）のコードと価格を入力し、現在値との距離や「注文の賞味期限」を監視します。")
     
+    # 🚨 パッチ1：Tab5専用の監視データ保存領域（セッション）を確保
+    if 'tab5_ifd_results' not in st.session_state:
+        st.session_state.tab5_ifd_results = None
+
     col_i1, col_i2 = st.columns([1, 2])
     
     T5_FILE = f"saved_t5_ifd_{user_id}.txt"
@@ -1700,6 +1704,9 @@ with tab5:
         st.markdown("#### 🛡️ 参謀の監視プロトコル")
         st.info("・現在値が指値に接近（±2%以内）すると激熱アラートが点灯します。\n・強襲（逆指値）の場合は上に抜けたら、待伏（指値）の場合は下に落ちたら約定とみなします。\n・相場環境は日々変化します。有効期限を過ぎた注文は、速やかに取り消す（パージする）ことを推奨します。")
 
+    # ==========================================
+    # 💥 フェーズ1：計算とデータ抽出（ボタンが押された時のみ実行）
+    # ==========================================
     if run_ifd and ifd_in:
         with open(T5_FILE, "w", encoding="utf-8") as f:
             f.write(ifd_in)
@@ -1713,8 +1720,10 @@ with tab5:
                 
         if not targets:
             st.warning("有効な形式（コード, 指値）で見つかりません。")
+            st.session_state.tab5_ifd_results = []
         else:
             with st.spinner("前線に展開中の各部隊（注文）の現在地を照会中..."):
+                processed_results = []
                 for t in targets:
                     c = t['code']
                     order_p = t['price']
@@ -1726,7 +1735,6 @@ with tab5:
                         st.error(f"銘柄 {c} の通信に失敗しました。")
                         continue
                         
-                    # 取得したデータから株価部分(bars)だけを正確に抽出して変換
                     bars_data = raw_s.get("bars", []) if isinstance(raw_s, dict) else raw_s
                     df_s = clean_df(pd.DataFrame(bars_data))
                     if df_s.empty: continue
@@ -1739,18 +1747,15 @@ with tab5:
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                     daily_sign = "+" if daily_pct >= 0 else ""
                     
-                    # 企業情報の取得
                     c_name = f"銘柄 {c[:4]}"; c_market = "不明"; c_sector = "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == api_code]
                         if not m_row.empty:
                             c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
                     
-                    # 距離計算
                     diff_yen = lc - order_p
                     diff_pct = (diff_yen / lc) * 100 if lc > 0 else 0
                     
-                    # アラート判定
                     alert_html = ""
                     if abs(diff_pct) <= 2.0:
                         alert_html = '<span style="background-color: #ef5350; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🔥 約定目前（交戦距離）</span>'
@@ -1759,40 +1764,60 @@ with tab5:
                     else:
                         alert_html = '<span style="background-color: #ed6c02; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">📉 買値割れ（既に通過）</span>'
                     
-                    st.divider()
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {c_name}</h3>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                {alert_html}
-                                <span style="font-size: 13px; color: #aaa;">| 🏢 {c_market} | 🏭 {c_sector}</span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    sc1, sc2, sc3 = st.columns([1, 1, 1.5])
-                    
-                    sc1.metric("最新終値", f"{lc:,}円", f"{daily_sign}{daily_pct*100:.1f}%", delta_color="inverse")
-                    
-                    html_order = f"""
-                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 設置済み 指値/逆指値</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{order_p:,}円</div>
-                    </div>
-                    """
-                    sc2.markdown(html_order, unsafe_allow_html=True)
-                    
-                    # 距離の表示
-                    dist_color = "#ef5350" if abs(diff_pct) <= 2.0 else "#26a69a"
-                    html_dist = f"""
-                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">📏 現在値との乖離（距離）</div>
-                        <div style="font-size: 1.5rem; font-weight: bold; color: {dist_color};">
-                            {"+" if diff_yen > 0 else ""}{diff_yen:,}円 ({"+" if diff_pct > 0 else ""}{diff_pct:.1f}%)
+                    processed_results.append({
+                        'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector,
+                        'lc': lc, 'order_p': order_p, 'daily_pct': daily_pct, 'daily_sign': daily_sign,
+                        'diff_yen': diff_yen, 'diff_pct': diff_pct, 'alert_html': alert_html
+                    })
+                
+                # フェーズ1の完了：セッション変数へロックオン
+                st.session_state.tab5_ifd_results = processed_results
+
+    # ==========================================
+    # 🖼️ フェーズ2：UI描画（セッションから読み出し）
+    # ==========================================
+    if st.session_state.tab5_ifd_results is not None:
+        results = st.session_state.tab5_ifd_results
+        
+        if not results:
+            pass # エラー時はPhase1で警告済み
+        else:
+            st.success(f"📡 潜伏レーダー展開中: {len(results)} 部隊を捕捉。（データ保持中）")
+            
+            for r in results:
+                st.divider()
+                st.markdown(f"""
+                    <div style="margin-bottom: 0.8rem;">
+                        <h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; margin: 0 0 0.3rem 0;">({r['code'][:4]}) {r['name']}</h3>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            {r['alert_html']}
+                            <span style="font-size: 13px; color: #aaa;">| 🏢 {r['market']} | 🏭 {r['sector']}</span>
                         </div>
                     </div>
-                    """
-                    sc3.markdown(html_dist, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+                
+                sc1, sc2, sc3 = st.columns([1, 1, 1.5])
+                
+                sc1.metric("最新終値", f"{r['lc']:,}円", f"{r['daily_sign']}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                
+                html_order = f"""
+                <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                    <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 設置済み 指値/逆指値</div>
+                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['order_p']:,}円</div>
+                </div>
+                """
+                sc2.markdown(html_order, unsafe_allow_html=True)
+                
+                dist_color = "#ef5350" if abs(r['diff_pct']) <= 2.0 else "#26a69a"
+                html_dist = f"""
+                <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                    <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">📏 現在値との乖離（距離）</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: {dist_color};">
+                        {"+" if r['diff_yen'] > 0 else ""}{r['diff_yen']:,}円 ({"+" if r['diff_pct'] > 0 else ""}{r['diff_pct']:.1f}%)
+                    </div>
+                </div>
+                """
+                sc3.markdown(html_dist, unsafe_allow_html=True)
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
