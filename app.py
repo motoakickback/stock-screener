@@ -805,17 +805,26 @@ with tab1:
                     sum_df = sum_df[~sum_df['Code'].astype(str).str.contains(r'[a-zA-Z]')]
                 
                 # 🚨 パッチ1：掟⑥ 疑義注記の完全排除（ハードコード・ブラックリスト）
-                # ※APIで自動取得できないため、手動でのリスト化が必須です。以下は代表的なボロ株・疑義銘柄の例です。
                 if f6_risk:
                     gigi_mines = ['2134', '3350', '6172', '6740', '7647', '8783', '8836', '8925', '9318'] 
                     sum_df = sum_df[~sum_df['Code'].astype(str).str[:4].isin(gigi_mines)]
                 
                 # 🚨 パッチ2：掟③ 中長期暴落の排除（1年高値から50%以上の下落を強制キル）
-                # サイドバーの「f3_drop」の値（-30等）にかかわらず、-50%を下回る「落ちてくるナイフ」を絶対防衛線として排除します。
-                sum_df = sum_df[sum_df['ldrop'] >= -50.0]
+                sum_df = sum_df[sum_df['ldrop'] >= -50.0] 
+
+                # --- 既存の防衛線（復元部） ---
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
-                sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
-                sum_df['rule_pct'] = 100.0; sum_df['passed'] = 9 
+                sum_df = sum_df[~sum_df['sakata_signal'].astype(str).str.contains("下落警戒", na=False)]
+                sum_df = sum_df[(sum_df['r14'] >= f9_min14) & (sum_df['r14'] <= f9_max14)]
+                sum_df = sum_df[sum_df['d_high'] <= st.session_state.limit_d]
+                sum_df = sum_df[(sum_df['lc'] <= (sum_df['bt'] * 1.35)) & (sum_df['lc'] >= (sum_df['bt'] * 0.85))]
+                
+                if f10_ex_knife:
+                    dynamic_sl_ratio = - (st.session_state.bt_sl_i / 100.0)
+                    three_days_sl = dynamic_sl_ratio * 1.5
+                    sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
+                
+                sum_df['rule_pct'] = 100.0; sum_df['passed'] = 9
                 
                 # 🚨 【超高速化コア】マルチスレッドによるトリアージ並列計算
                 def process_triage(row_tuple):
