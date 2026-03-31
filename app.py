@@ -1159,23 +1159,21 @@ with tab2:
                     lc = latest['AdjC']
                     atr = latest.get('ATR', 0)
                     
-                    if atr < 10 or (atr / lc) < 0.01: continue
-                    tp_yen = lc * (st.session_state.bt_tp / 100.0)
-                    exp_days = int(tp_yen / atr) if atr > 0 else 99
-                    if exp_days >= 5: continue
+                    # 🚨 【排除1】過剰な足切り（ボラティリティ・想定日数）を無効化し、純粋なGCを狙う
+                    # if atr < 10 or (atr / lc) < 0.01: continue
+                    # tp_yen = lc * (st.session_state.bt_tp / 100.0)
+                    # exp_days = int(tp_yen / atr) if atr > 0 else 99
+                    # if exp_days >= 5: continue
                     
                     macd_h = latest.get('MACD_Hist', 0)
                     macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
-                        # 🎯 （これより下はボスの既存コード results.append 等へそのまま繋ぐ）
-                        # df_chart: g_tech もボスの元の書き方のままにする
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
                         bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
-                        # 銘柄情報の取得
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
@@ -1188,7 +1186,7 @@ with tab2:
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
                             'daily_pct': daily_pct, 
-                            'df_chart': group  # 🚨 g_techの代わりに、計算済みのgroupをそのまま渡す
+                            'df_chart': g_tech  # 🚨 修正: 生のgroupではなく、計算済みのg_techを渡す
                         })
                         
                 if not results:
@@ -1201,57 +1199,35 @@ with tab2:
                         import concurrent.futures
                         
                         def fetch_and_check(r_dict):
-                            c = str(r_dict['Code'])
-                            api_code = c if len(c) == 5 else c + "0"
-                            raw_s = get_single_data(api_code, 1)
+                            # 🚨 【排除2】APIで「1日分だけ」再取得してMACDを破壊する最悪の挙動をパージ。
+                            # Phase 1で構築した精密データ(g_tech)をそのまま信用して判定する。
+                            hist_chart = r_dict['df_chart']
                             
-                            # 防衛パッチ：APIのカラム重複エラーを排除
-                            if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
-                                temp_df = pd.DataFrame(raw_s["bars"])
-                                rename_map = {}
-                                for col in temp_df.columns:
-                                    c_up = col.upper()
-                                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                                    if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
-                                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                                renamed_df = temp_df.rename(columns=rename_map)
-                                dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
-                                hist_chart = clean_df(dedup_df)
-                            else:
-                                hist_chart = r_dict['df_chart']
-                                
-                            if not hist_chart.empty:
-                                hist_chart = calc_technicals(hist_chart)
-                                latest_acc = hist_chart.iloc[-1]
-                                prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
-                                
-                                accurate_rsi = latest_acc.get('RSI', r_dict['RSI'])
-                                acc_macd_h = latest_acc.get('MACD_Hist', 0)
-                                acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
-                                
-                                lc_val = latest_acc['AdjC']
-                                bt_val = r_dict['bt']
-                                t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi, lc_val, bt_val, mode="強襲")
-                                
-                                # 🚨 判定基準を緩和：S判定だけでなく、A判定やGC関連の全シグナルを通過させる
-                                # 特にIPO銘柄（英字入り）の場合は、無条件で通過させるセーフティを追加
-                                is_ipo = any(char.isalpha() for char in str(r_dict['Code']))
-
-                                if not is_ipo: # 通常銘柄はA判定以上で選別
-                                    if not any(keyword in t_rank for keyword in ["S", "A", "GC", "即時狙撃"]):
-                                        return None
-                                # IPO銘柄の場合は、Phase 1を通過している時点で「生存」確定とする
+                            latest_acc = hist_chart.iloc[-1]
+                            prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
+                            
+                            accurate_rsi = latest_acc.get('RSI', r_dict['RSI'])
+                            acc_macd_h = latest_acc.get('MACD_Hist', 0)
+                            acc_macd_h_prev = prev_acc.get('MACD_Hist', 0)
+                            
+                            lc_val = latest_acc['AdjC']
+                            bt_val = r_dict['bt']
+                            t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi, lc_val, bt_val, mode="強襲")
+                            
+                            # IPO特例：英字コードはA判定等でも生存させる
+                            is_ipo = any(char.isalpha() for char in str(r_dict['Code']))
+                            if not is_ipo: 
+                                if not any(keyword in t_rank for keyword in ["S", "A", "GC", "即時狙撃"]):
+                                    return None
                                     
-                                # 🚨 極限圧縮：メモリ圧迫の元凶であるDataFrameを破棄し、軽量な文字列と数値のみを返す
-                                item = r_dict.copy()
-                                item.pop('df_chart', None) # ゴミ箱へ
-                                
-                                item['accurate_rsi'] = accurate_rsi
-                                item['t_rank'] = t_rank
-                                item['t_bg'] = t_bg
-                                item['t_score'] = t_score 
-                                return item
+                            # 極限圧縮
+                            item = r_dict.copy()
+                            item.pop('df_chart', None) 
+                            item['accurate_rsi'] = accurate_rsi
+                            item['t_rank'] = t_rank
+                            item['t_bg'] = t_bg
+                            item['t_score'] = t_score 
+                            return item
                             return None
 
                         final_results = []
