@@ -21,6 +21,33 @@ st.markdown("""
 # --- 1. ページ設定 & ゲートキーパー ---
 st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide", page_icon="🎯")
 
+# --- ⏱️ 19:00 完全自動パージ機構（第一防衛線） ---
+from datetime import datetime, timedelta
+import pytz
+
+def check_and_auto_purge():
+    jst = pytz.timezone('Asia/Tokyo')
+    now = datetime.now(jst)
+    
+    # 状態管理キーが存在しなければ初期化
+    if 'last_auto_purge_date' not in st.session_state:
+        st.session_state.last_auto_purge_date = None
+
+    # 本日の18時を回っているか判定
+    if now.hour >= 19:
+        today_str = now.strftime('%Y-%m-%d')
+        # 今日、まだ自動パージを実行していなければ執行する
+        if st.session_state.last_auto_purge_date != today_str:
+            st.cache_data.clear() # APIキャッシュを全焼却
+            
+            # 各タブの保持データをリセット
+            st.session_state.tab1_scan_results = None
+            st.session_state.tab2_scan_results = None
+            st.session_state.tab5_ifd_results = None
+            
+            st.session_state.last_auto_purge_date = today_str
+            # ここでリロードはせず、この後の処理で最新データを取得させる
+
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
 def check_password():
