@@ -1119,10 +1119,11 @@ with tab2:
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 【神速パッチ】ループに入る前に、英字コード（新興IPO等）を一瞬で全滅させるベクトル化処理
-                # ※サイドバーのIPO除外チェックのキー名が 'exclude_ipo' であると仮定しています。
-                # もしキー名が違う場合（例：'bt_exclude_ipo'等）は、下記を書き換えてください。
-                if st.session_state.get('exclude_ipo', True): 
+                # 🚨 サイドバーのスイッチが見つからないため、このタブ内のUI(rsi_limitの横など)で直接制御
+                # ※ st.columns(2) の後に以下の1行を追加し、判定を繋ぎ変えます
+                exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True)
+                
+                if exclude_ipo_flag: 
                     df = df[~df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)]
                 
                 df_30 = df.groupby('Code').tail(30)
