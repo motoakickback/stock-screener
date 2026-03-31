@@ -1725,7 +1725,6 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⛺ IFD潜伏カウント（指値・逆指値の接近アラート）</h3>', unsafe_allow_html=True)
     st.caption("※証券会社に仕掛けた指値（待伏）や逆指値（強襲）のコードと価格を入力し、現在値との距離や「注文の賞味期限」を監視します。")
     
-    # 🚨 パッチ1：Tab5専用の監視データ保存領域（セッション）を確保
     if 'tab5_ifd_results' not in st.session_state:
         st.session_state.tab5_ifd_results = None
 
@@ -1781,8 +1780,22 @@ with tab5:
                         st.error(f"銘柄 {c} の通信に失敗しました。")
                         continue
                         
-                    bars_data = raw_s.get("bars", []) if isinstance(raw_s, dict) else raw_s
-                    df_s = clean_df(pd.DataFrame(bars_data))
+                    # 🚨 防衛パッチ：APIのカラム重複エラーを排除しつつデータを構築
+                    if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
+                        temp_df = pd.DataFrame(raw_s["bars"])
+                        rename_map = {}
+                        for col in temp_df.columns:
+                            c_up = col.upper()
+                            if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
+                            if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
+                            if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
+                            if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
+                        renamed_df = temp_df.rename(columns=rename_map)
+                        dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
+                        df_s = clean_df(dedup_df)
+                    else:
+                        continue
+                        
                     if df_s.empty: continue
                     
                     df_chart = calc_technicals(df_s)
@@ -1815,9 +1828,14 @@ with tab5:
                         'lc': lc, 'order_p': order_p, 'daily_pct': daily_pct, 'daily_sign': daily_sign,
                         'diff_yen': diff_yen, 'diff_pct': diff_pct, 'alert_html': alert_html
                     })
+                    
+                    # 🚨 極限最適化：1銘柄の計算が終わるたびに一時データを完全に破棄
+                    del temp_df, renamed_df, dedup_df, df_s, df_chart
                 
                 # フェーズ1の完了：セッション変数へロックオン
                 st.session_state.tab5_ifd_results = processed_results
+                import gc
+                gc.collect()
 
     # ==========================================
     # 🖼️ フェーズ2：UI描画（セッションから読み出し）
@@ -1864,6 +1882,9 @@ with tab5:
                 </div>
                 """
                 sc3.markdown(html_dist, unsafe_allow_html=True)
+
+    import gc
+    gc.collect()  # 処理済みの不要なメモリを強制排出
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
