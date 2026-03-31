@@ -1110,7 +1110,7 @@ with tab2:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
-    # 🎯 スイッチをUIと連動させる（ボスのサイドバーにあるETF除外スイッチを変数で受け取ります）
+    # 🎯 スイッチをUIと完全に連動
     exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True, key="tab2_ipo_filter")
     exclude_etf_flag = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab2_etf_filter") 
 
@@ -1121,10 +1121,9 @@ with tab2:
                 st.error("データの取得に失敗しました。")
                 st.session_state.tab2_scan_results = None
             else:
-                # 1. データ展開
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 【修正1】ETF・REIT除外フィルター（サイドバーのスイッチと完全連動）
+                # 🚨 掟①：ETF・REIT完全除外（スイッチ連動）
                 if exclude_etf_flag and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
@@ -1132,7 +1131,7 @@ with tab2:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 【修正2】IPO除外フィルター（英字コードかつ1年未満を排除）
+                # 🚨 掟②：IPO除外（スイッチ連動 ＋ 1年経過の熟成銘柄は許容）
                 if exclude_ipo_flag:
                     code_counts = df['Code'].value_counts()
                     mature_codes = code_counts[code_counts >= 245].index
@@ -1140,47 +1139,56 @@ with tab2:
                     is_mature = df['Code'].isin(mature_codes)
                     df = df[~(is_alpha & ~is_mature)]
                 
-                # 🚨 MACD計算精度を上げるための150日抽出
+                # MACD精度確保のため150日抽出
                 df_target = df.groupby('Code').tail(150)
                 
                 results = []
                 for code, group in df_target.groupby('Code'):
-                    # 過去3日分を調べるため、最低4日分のデータが必要
                     if len(group) < 4: continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
-                    if avg_vol < vol_limit: continue
+                    if avg_vol < vol_limit: continue # 出来高の掟
                     
                     g_tech = calc_technicals(group.copy())
                     if len(g_tech) < 4: continue
                     
-                    # 最新から過去3日分までのデータを取得
                     latest = g_tech.iloc[-1]
                     prev = g_tech.iloc[-2]
                     prev2 = g_tech.iloc[-3]
                     prev3 = g_tech.iloc[-4]
                     
                     lc = latest['AdjC']
+                    atr = latest.get('ATR', 0)
                     
-                    # 過去3日間のMACDヒストグラムを取得
+                    # 🚨 掟③：ボラティリティと想定日数の足切り（甘えを完全に排除して復活）
+                    if atr < 10 or (atr / lc) < 0.01: continue
+                    tp_yen = lc * (st.session_state.bt_tp / 100.0)
+                    exp_days = int(tp_yen / atr) if atr > 0 else 99
+                    if exp_days >= 5: continue
+                    
                     macd_h = latest.get('MACD_Hist', 0)
                     macd_h_prev = prev.get('MACD_Hist', 0)
                     macd_h_prev2 = prev2.get('MACD_Hist', 0)
                     macd_h_prev3 = prev3.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    # 🚨 【最大の修正：352A救済の追尾照準】
-                    # 「今日クロスした」だけでなく、「過去3日の間にクロスして、今もプラス圏にいる」銘柄を捕捉する
-                    is_gc_recently = macd_h > 0 and (macd_h_prev <= 0 or macd_h_prev2 <= 0 or macd_h_prev3 <= 0)
-                    
-                    # 🎯 ここを1つに統合しました
-                    if is_gc_recently and rsi <= rsi_limit:
+                    # 🚨 掟④：GCタイミングの厳密測定（0日〜2日前までを特定）
+                    gc_days_ago = -1
+                    if macd_h > 0:
+                        if macd_h_prev <= 0:
+                            gc_days_ago = 0  # 今日GCした直後
+                        elif macd_h_prev2 <= 0:
+                            gc_days_ago = 1  # 昨日GCした
+                        elif macd_h_prev3 <= 0:
+                            gc_days_ago = 2  # 一昨日GCした
+
+                    # RSI制限クリア ＆ GC3日以内のみ生存
+                    if gc_days_ago >= 0 and rsi <= rsi_limit:
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
                         bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
-                        # 銘柄情報の取得
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
@@ -1193,23 +1201,20 @@ with tab2:
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
                             'daily_pct': daily_pct, 
-                            'df_chart': g_tech  
+                            'df_chart': g_tech,
+                            'gc_days_ago': gc_days_ago  # UI表示用に日数を記録
                         })
                         
                 if not results:
-                    st.warning(f"現在、RSI {rsi_limit}以下でMACDゴールデンクロスを迎えた銘柄は存在しません。")
+                    st.warning(f"現在、RSI {rsi_limit}以下で直近3日以内にMACDゴールデンクロスを迎えた銘柄は存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
                     res_df = pd.DataFrame(results).sort_values('RSI', ascending=True)
                     
-                    with st.spinner(f"【Phase 2】一次候補 {len(res_df)} 銘柄へ並列通信を実行。ダマシ(偽GC)を排除中..."):
+                    with st.spinner(f"【Phase 2】一次候補 {len(res_df)} 銘柄の精密照準。鉄の掟でダマシを排除中..."):
                         import concurrent.futures
-                        
                         def fetch_and_check(r_dict):
-                            # 🚨 【排除2】APIで「1日分だけ」再取得してMACDを破壊する最悪の挙動をパージ。
-                            # Phase 1で構築した精密データ(g_tech)をそのまま信用して判定する。
                             hist_chart = r_dict['df_chart']
-                            
                             latest_acc = hist_chart.iloc[-1]
                             prev_acc = hist_chart.iloc[-2] if len(hist_chart) > 1 else latest_acc
                             
@@ -1221,13 +1226,11 @@ with tab2:
                             bt_val = r_dict['bt']
                             t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi, lc_val, bt_val, mode="強襲")
                             
-                            # IPO特例：英字コードはA判定等でも生存させる
-                            is_ipo = any(char.isalpha() for char in str(r_dict['Code']))
-                            if not is_ipo: 
-                                if not any(keyword in t_rank for keyword in ["S", "A", "GC", "即時狙撃"]):
-                                    return None
+                            # 🚨 掟⑤：Phase 2 絶対評価（IPOの依怙贔屓を完全撤廃）
+                            # トレンド崩壊(D)や警戒(C)など、S・A・GC判定以外は容赦なくキルする
+                            if not any(keyword in t_rank for keyword in ["S", "A", "GC", "即時狙撃"]):
+                                return None
                                     
-                            # 極限圧縮
                             item = r_dict.copy()
                             item.pop('df_chart', None) 
                             item['accurate_rsi'] = accurate_rsi
@@ -1235,7 +1238,6 @@ with tab2:
                             item['t_bg'] = t_bg
                             item['t_score'] = t_score 
                             return item
-                            return None
 
                         final_results = []
                         tasks = [r.to_dict() for _, r in res_df.iterrows()]
@@ -1248,25 +1250,21 @@ with tab2:
                                     final_results.append(res)
                                     
                         final_results = sorted(final_results, key=lambda x: (-x['t_score'], x['accurate_rsi']))
-                        
-                        # 🚨 フェーズ1の完了：セッション変数へ軽量リストをロックオン
                         st.session_state.tab2_scan_results = final_results
-                        
-                        # 🚨 強制メモリパージ（司令部からの絶対命令）
                         del raw, df, df_target, results, res_df
                         import gc
                         gc.collect()
 
     # ==========================================
-    # 🖼️ フェーズ2：UI描画（軽量セッションデータからオンデマンド展開）
+    # 🖼️ フェーズ2：UI描画
     # ==========================================
     if st.session_state.tab2_scan_results is not None:
         light_results = st.session_state.tab2_scan_results
         
         if not light_results:
-            st.warning("🚨 抽出された候補はすべて「ダマシ（計算誤差）」または「勢い減衰」と判定され、キルされました。")
+            st.warning("🚨 抽出された候補はすべて「鉄の掟（ダマシ・勢い減衰）」に抵触し、キルされました。")
         else:
-            st.success(f"🎯 最終ロックオン: 純度100%の【真の強襲ターゲット】 {len(light_results)} 銘柄を確認。（データ保持中）")
+            st.success(f"🎯 最終ロックオン: 純度100%の【真の強襲ターゲット】 {len(light_results)} 銘柄を確認。")
             
             st.markdown("#### 📋 コピペ用コード")
             copy_codes = ",".join([str(item['Code'])[:4] for item in light_results])
@@ -1281,12 +1279,19 @@ with tab2:
                 badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
                 triage_badge = f'<span style="background-color: {r["t_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["t_rank"]}</span>'
 
+                # 🚨 UI追加：GCタイミングのバッジを動的生成
+                gc_days = r.get('gc_days_ago', 0)
+                if gc_days == 0:
+                    gc_timing_badge = '<span style="background-color: #d32f2f; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">🔥 GC直後(0日)</span>'
+                else:
+                    gc_timing_badge = f'<span style="background-color: #f57c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">⚡ GC通過({gc_days}日経過)</span>'
+
                 st.markdown(f"""
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                             {badge}
-                            <span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block; font-weight: bold; margin-left: 4px;">⚡ GC初動ターゲット</span>
+                            {gc_timing_badge}
                             {triage_badge}
                         </div>
                     </div>
