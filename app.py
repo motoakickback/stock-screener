@@ -807,6 +807,12 @@ with tab1:
             with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
                 d_raw = pd.DataFrame(raw)
                 df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+
+                # 🚨 【ここに追記】掟⑤・改：上場1年未満（データ245日未満）の銘柄を一括排除
+                # 全データ(df)の長さを銘柄ごとにカウントし、245日以上の成熟銘柄だけを抽出する
+                counts_full = df.groupby('Code').size()
+                mature_codes = counts_full[counts_full >= 245].index
+                df = df[df['Code'].isin(mature_codes)]
                 
                 df_30 = df.groupby('Code').tail(30)
                 df_14 = df_30.groupby('Code').tail(10)
