@@ -1115,8 +1115,13 @@ with tab2:
                 df_30 = df.groupby('Code').tail(30)
                 
                 results = []
-                for code, group in df_30.groupby('Code'):
-                    if len(group) < 20: continue
+                for code, group in df_30.groupby('Code'):  
+                    
+                    # 🚨 掟⑤・改：上場から1年（約245営業日）未満の未成熟銘柄を排除
+                    # トラップ回避：groupの長さではなく、大元データ(df)のその銘柄のデータ長を測定する
+                    # （※もし大元データの変数が df ではない場合、ボスの環境に合わせて変更してください）
+                    if len(df[df['Code'] == code]) < 245: 
+                        continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
