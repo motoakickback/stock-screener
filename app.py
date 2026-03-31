@@ -703,14 +703,14 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🌐 ボスの「鉄の掟」全軍スキャン</h3>', unsafe_allow_html=True)
     
-    # 🚨 パッチ1：スキャン結果の保存領域（セッション）を確保
+    # 🚨 軽量化パッチ：スキャン結果の保存領域（セッション）を確保
     if 'tab1_scan_results' not in st.session_state:
         st.session_state.tab1_scan_results = None
 
     run_scan = st.button(f"🚀 最新データで全軍スキャン開始 ({tactics_mode.split()[0]}モード)")
 
     # ==========================================
-    # 💥 フェーズ1：計算と抽出（ボタンが押された時のみ実行）
+    # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
     if run_scan:
         with st.spinner("神速モードで相場データを一括取得中..."):
@@ -718,7 +718,7 @@ with tab1:
             
         if not raw: 
             st.error("データの取得に失敗しました。")
-            st.session_state.tab1_scan_results = None # 失敗時はクリア
+            st.session_state.tab1_scan_results = None
         else:
             with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
                 d_raw = pd.DataFrame(raw)
@@ -824,7 +824,6 @@ with tab1:
                 
                 sum_df['rule_pct'] = 100.0; sum_df['passed'] = 9 
                 
-                # マルチスレッドによるトリアージ並列計算
                 def process_triage(row_tuple):
                     idx, r = row_tuple
                     c_code = r['Code']
@@ -862,30 +861,48 @@ with tab1:
                 else:
                     res = sum_df.sort_values(['triage_score', 'reach_pct'], ascending=[False, False]).head(30)
                 
-                # 🚨 フェーズ1の完了：最終結果をセッション変数にカプセル化（ロックオン）
-                st.session_state.tab1_scan_results = res
+                # 🚨 メモリ圧縮：重いDataFrameを捨て、描画に必要なテキストと数値のみを「辞書のリスト」として保存
+                light_results = []
+                for _, r in res.iterrows():
+                    light_results.append({
+                        'Code': r['Code'], 'CompanyName': r.get('CompanyName', ''), 'Scale': r.get('Scale', ''),
+                        'Market': r.get('Market', ''), 'Sector': r.get('Sector', ''),
+                        'triage_bg': r.get('triage_bg', ''), 'triage_rank': r.get('triage_rank', ''),
+                        'is_bt_broken': r.get('is_bt_broken', False), 'is_db': r.get('is_db', False),
+                        'is_defense': r.get('is_defense', False), 'sakata_signal': r.get('sakata_signal', ''),
+                        'lc': r.get('lc', 0), 'bt': r.get('bt', 0), 'h14': r.get('h14', r.get('lc', 0)),
+                        'l14': r.get('l14', 0), 'tp20': r.get('tp20', 0), 'tp15': r.get('tp15', 0),
+                        'tp10': r.get('tp10', 0), 'tp5': r.get('tp5', 0), 'daily_pct': r.get('daily_pct', 0),
+                        'reach_pct': r.get('reach_pct', 0), 'avg_vol': r.get('avg_vol', 0), 'd_high': r.get('d_high', 0)
+                    })
+                
+                st.session_state.tab1_scan_results = light_results
+
+                # 🚨 司令部からの強制命令：計算に使った数千件の巨大データをメモリから完全に抹消する
+                del d_raw, df, df_30, df_14, df_past, sum_df, res
+                import gc
+                gc.collect()
 
     # ==========================================
-    # 🖼️ フェーズ2：UI描画（セッションにデータが存在する限り何度でも描画）
+    # 🖼️ フェーズ2：UI描画（軽量セッションデータからオンデマンド展開）
     # ==========================================
     if st.session_state.tab1_scan_results is not None:
-        res = st.session_state.tab1_scan_results
+        light_results = st.session_state.tab1_scan_results
         
-        if res.empty: 
+        if not light_results: 
             st.warning("現在の相場に、標的は存在しません。")
         else:
-            st.success(f"🎯 スキャン結果保持中: {len(res)} 銘柄（タブを移動しても消滅しません）")
+            st.success(f"🎯 スキャン結果保持中: {len(light_results)} 銘柄（タブを移動しても消滅しません）")
             
             st.markdown("#### 📋 コピペ用コード")
-            if 'Code' in res.columns:
-                copy_codes = ",".join([str(c)[:4] for c in res['Code']])
-                st.code(copy_codes, language="text")
+            copy_codes = ",".join([str(r['Code'])[:4] for r in light_results])
+            st.code(copy_codes, language="text")
 
-            for _, r in res.iterrows():
+            for r in light_results:
                 st.divider()
-                c = str(r['Code']); n = r['CompanyName'] if not pd.isna(r.get('CompanyName')) else f"銘柄 {c[:4]}"
+                c = str(r['Code']); n = r['CompanyName'] if r['CompanyName'] else f"銘柄 {c[:4]}"
                 
-                scale_val = str(r.get('Scale', ''))
+                scale_val = str(r['Scale'])
                 badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
                 triage_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
 
@@ -896,31 +913,29 @@ with tab1:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # イベント（地雷）判定
+                # イベント（地雷）判定とチャート描画用データのオンデマンド取得
                 raw_s = get_single_data(f"{str(c)[:4]}0", 1) 
                 event_alerts = check_event_mines(c, raw_s.get("events") if isinstance(raw_s, dict) else None)
                 for alert in event_alerts: st.warning(alert)
                 
-                if r.get('is_bt_broken', False): st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線へ自動シフト。")
+                if r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値目標を第二防衛線へ自動シフト。")
                 if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                 if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。安全圏です。")
-                if pd.notna(r.get('sakata_signal')):
+                if r['sakata_signal']:
                     if "下落警戒" in str(r['sakata_signal']): st.error(f"🚨 【撤退推奨】{r['sakata_signal']}")
                     else: st.success(f"🔥 【反転攻勢】{r['sakata_signal']}")
                         
-                lc_val = int(r.get('lc', 0)); bt_val = int(r.get('bt', 0)); high_val = int(r.get('h14', lc_val)); low_val = int(r.get('l14', 0))
+                lc_val = int(r['lc']); bt_val = int(r['bt']); high_val = int(r['h14']); low_val = int(r['l14'])
                 if low_val == 0:
-                    bt_ratio = st.session_state.push_r / 100.0 if not r.get('is_bt_broken', False) else 0.618
+                    bt_ratio = st.session_state.push_r / 100.0 if not r['is_bt_broken'] else 0.618
                     ur_approx = (high_val - bt_val) / bt_ratio if bt_ratio > 0 else 0
                     low_val = int(high_val - ur_approx)
                 wave_len = high_val - low_val
 
                 sl5 = int(bt_val * 0.95); sl8 = int(bt_val * 0.92); sl15 = int(bt_val * 0.85)
-                tp20 = int(r.get('tp20', bt_val * 1.2)); tp15 = int(r.get('tp15', bt_val * 1.15))
-                tp10 = int(r.get('tp10', bt_val * 1.1)); tp5 = int(r.get('tp5', bt_val * 1.05))
+                tp20 = int(r['tp20']); tp15 = int(r['tp15']); tp10 = int(r['tp10']); tp5 = int(r['tp5'])
 
-                daily_pct = r.get('daily_pct', 0)
-                daily_sign = "+" if daily_pct >= 0 else ""
+                daily_pct = r['daily_pct']; daily_sign = "+" if daily_pct >= 0 else ""
 
                 sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                 sc0.metric("直近高値", f"{high_val:,}円"); sc0_1.metric("直近安値", f"{low_val:,}円"); sc0_2.metric("上昇幅", f"{wave_len:,}円")
@@ -937,7 +952,7 @@ with tab1:
                         <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
                     </div></div>""", unsafe_allow_html=True)
                 
-                reach_val = r.get('reach_pct', 0); vol_val = r.get('avg_vol', 0)
+                reach_val = r['reach_pct']; vol_val = r['avg_vol']
                 sc4.markdown(f"""
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                     <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
@@ -951,7 +966,7 @@ with tab1:
                     </div>
                 </div>""", unsafe_allow_html=True)
                 
-                st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}営業日")
+                st.caption(f"🏢 {r['Market']} ｜ 🏭 {r['Sector']} ｜ ⏱️ 高値経過: {int(r['d_high'])}営業日")
 
                 bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
                 if bt_stats and bt_stats['total'] > 0:
@@ -960,8 +975,9 @@ with tab1:
                 else:
                     st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
                 
+                # 🚨 チャート描画：過去の巨大データを引き回さず、キャッシュAPIから必要な時だけ瞬時に呼び出して描画する
+                hist_chart = pd.DataFrame()
                 if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0: 
-                    # APIから再取得した最新データでチャートを描画
                     temp_df = pd.DataFrame(raw_s["bars"])
                     rename_map = {}
                     for col in temp_df.columns:
@@ -970,19 +986,19 @@ with tab1:
                         if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
                         if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
                         if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                    
-                    # 🚨 パッチ：リネーム後の重複カラム（CloseとAdjustmentCloseの衝突など）を強制排除
                     renamed_df = temp_df.rename(columns=rename_map)
                     dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
                     hist_chart = clean_df(dedup_df)
                 else: 
-                    # 過去のキャッシュからフォールバック
-                    hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
+                    st.error(f"銘柄 {c[:4]} の最新チャートデータがAPIから取得できませんでした。")
                     
                 if not hist_chart.empty:
                     hist_chart = calc_technicals(hist_chart)
                     st.markdown(render_technical_radar(hist_chart, r['bt'], st.session_state.bt_tp), unsafe_allow_html=True)
                     draw_chart(hist_chart, r['bt'], r['tp5'], r['tp10'], r['tp15'], r['tp20'])
+                    
+                    # 使用後のチャートデータを1銘柄ごとに即座に破棄してメモリ爆発を防ぐ
+                    del hist_chart
                     
     import gc
     gc.collect()  # 処理済みの不要なメモリを強制排出
