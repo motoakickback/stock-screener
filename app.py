@@ -718,8 +718,8 @@ with tab1:
                 st.session_state.tab1_scan_results = None # 失敗時はクリア
             else:
                 with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
-            raw = get_hist_data_cached()
-        if not raw: st.error("データの取得に失敗しました。")
+                    raw = get_hist_data_cached()
+                    if not raw: st.error("データの取得に失敗しました。")
         else:
             with st.spinner("全4000銘柄に鉄の掟と波形認識を一括執行中（マルチスレッド処理中）..."):
                 d_raw = pd.DataFrame(raw)
