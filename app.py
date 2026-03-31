@@ -1261,7 +1261,7 @@ with tab2:
                         st.session_state.tab2_scan_results = final_results
                         
                         # 🚨 強制メモリパージ（司令部からの絶対命令）
-                        del raw, df, df_30, results, res_df
+                        del raw, df, df_target, results, res_df
                         import gc
                         gc.collect()
 
