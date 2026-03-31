@@ -33,7 +33,7 @@ def check_and_auto_purge():
     if 'last_auto_purge_date' not in st.session_state:
         st.session_state.last_auto_purge_date = None
 
-    # 本日の18時を回っているか判定
+    # 本日の19時を回っているか判定
     if now.hour >= 19:
         today_str = now.strftime('%Y-%m-%d')
         # 今日、まだ自動パージを実行していなければ執行する
