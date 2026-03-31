@@ -814,9 +814,7 @@ with tab1:
                 # サイドバーの「f3_drop」の値（-30等）にかかわらず、-50%を下回る「落ちてくるナイフ」を絶対防衛線として排除します。
                 sum_df = sum_df[sum_df['ldrop'] >= -50.0]
                 sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
-                
-                    sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
-                
+                sum_df = sum_df[(sum_df['daily_pct'] >= dynamic_sl_ratio) & (sum_df['pct_3days'] >= three_days_sl)]
                 sum_df['rule_pct'] = 100.0; sum_df['passed'] = 9 
                 
                 # 🚨 【超高速化コア】マルチスレッドによるトリアージ並列計算
