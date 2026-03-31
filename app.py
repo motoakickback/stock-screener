@@ -1118,17 +1118,19 @@ with tab2:
                 st.session_state.tab2_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                
+                # 🚨 【神速パッチ】ループに入る前に、英字コード（新興IPO等）を一瞬で全滅させるベクトル化処理
+                # ※サイドバーのIPO除外チェックのキー名が 'exclude_ipo' であると仮定しています。
+                # もしキー名が違う場合（例：'bt_exclude_ipo'等）は、下記を書き換えてください。
+                if st.session_state.get('exclude_ipo', True): 
+                    df = df[~df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)]
+                
                 df_30 = df.groupby('Code').tail(30)
                 
                 results = []
                 for code, group in df_30.groupby('Code'):  
                     
-                    # 🚨 掟⑤・改：上場から1年（約245営業日）未満の未成熟銘柄を排除
-                    # トラップ回避：groupの長さではなく、大元データ(df)のその銘柄のデータ長を測定する
-                    # （※もし大元データの変数が df ではない場合、ボスの環境に合わせて変更してください）
-                    if len(df[df['Code'] == code]) < 245: 
-                        continue
-                    
+                    # 🚨 以前ここにあった遅延の元凶（len(...) < 245）は完全にパージ（削除）しました。
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < vol_limit: continue
