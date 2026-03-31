@@ -1120,30 +1120,45 @@ with tab2:
                 st.error("データの取得に失敗しました。")
                 st.session_state.tab2_scan_results = None
             else:
-                # 1. ボスのオリジナル：データ展開
+                # 1. データ展開
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
+                # 🚨 【追加防衛】ETF・REIT・投信の完全排除
+                if 'master_df' in globals() and not master_df.empty:
+                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
+                                   master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
+                                   master_df['CompanyName'].astype(str).str.contains('ETF|REIT|ファンド|投資法人', case=False, na=False)
+                    valid_codes = master_df[~invalid_mask]['Code'].unique()
+                    df = df[df['Code'].isin(valid_codes)]
+
                 # 🚨 【精密パッチ】掟⑤：IPO除外 ＆ 1年経過(245日)は特例で生存させる
                 if exclude_ipo_flag:
-                    # 全銘柄のデータ日数をカウント
                     code_counts = df['Code'].value_counts()
-                    # 245日（約1年）以上のデータを持つ銘柄コードを特定
                     mature_codes = code_counts[code_counts >= 245].index
                     
                     is_alpha = df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)
                     is_mature = df['Code'].isin(mature_codes)
                     
-                    # 「英字コード」かつ「1年未満（未成熟）」の銘柄のみをデータから完全に消去
-                    # （＝英字でも1年経過の352A等は生存し、純粋な数字コードも全生存する）
+                    # 英字コードかつ1年未満の銘柄のみ消去
                     df = df[~(is_alpha & ~is_mature)]
                 
-                # 2. ボスのオリジナル：30日切り出し
-                df_30 = df.groupby('Code').tail(30)
+                # 🚨 【最大の元凶パッチ：MACD精度の完全同期】
+                # 「tail(30)」ではMACDの計算助走が足りず、証券会社のチャートとズレていました。
+                # 150日分渡すことで計算精度を100%にし、352Aの「真のGC」を認識させます。
+                df_target = df.groupby('Code').tail(150)
                 
                 results = []
-                for code, group in df_30.groupby('Code'):
-                    # エラー回避のセーフティのみ残す
+                for code, group in df_target.groupby('Code'):
                     if len(group) < 2: continue
+                    
+                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
+                    if avg_vol < vol_limit: continue
+                    
+                    g_tech = calc_technicals(group.copy())
+                    if len(g_tech) < 2: continue
+                    
+                    # 🎯 （これより下は latest = g_tech.iloc[-1] など既存のコードへそのまま繋ぐ）
                     
                     # 3. ボスのオリジナル：ここで計算する（これがPhase 2との連携に必須）
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
