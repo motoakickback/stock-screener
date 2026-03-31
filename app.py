@@ -1136,6 +1136,9 @@ with tab2:
                     if avg_vol < vol_limit: continue
                     
                     g_tech = calc_technicals(group.copy())
+                    # 🚨 【絶対防衛パッチ】データが2件未満（昨日が存在しない銘柄）によるクラッシュを物理的に回避
+                    if len(g_tech) < 2:
+                        continue
                     latest = g_tech.iloc[-1]; prev = g_tech.iloc[-2]
                     
                     lc = latest['AdjC']
