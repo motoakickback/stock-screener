@@ -131,7 +131,7 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- ⏱️ 18:00 完全自動パージ機構（第一防衛線） ---
+# --- ⏱️ 19:00 完全自動パージ機構（第一防衛線） ---
 import pytz
 from datetime import datetime
 
