@@ -1007,7 +1007,7 @@ with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     st.caption("※全市場から「MACDがゴールデンクロス（0ライン突破）した直後」の銘柄を抽出し、RSIが低い順に狙撃候補として表示します。")
     
-    # 🚨 パッチ1：Tab2専用のスキャン結果保存領域（セッション）を確保
+    # 🚨 軽量化パッチ：Tab2専用のスキャン結果保存領域（セッション）を確保
     if 'tab2_scan_results' not in st.session_state:
         st.session_state.tab2_scan_results = None
 
@@ -1018,7 +1018,7 @@ with tab2:
     run_scan_t2 = st.button(f"🚀 全軍GC初動スキャン開始")
     
     # ==========================================
-    # 💥 フェーズ1：計算と抽出（ボタンが押された時のみ実行）
+    # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
     if run_scan_t2:
         with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
@@ -1068,7 +1068,7 @@ with tab2:
                         results.append({
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
-                            'daily_pct': daily_pct, 'df_chart': g_tech
+                            'daily_pct': daily_pct, 'df_chart': g_tech # まだここで持っておく（Phase2で計算に使うため）
                         })
                         
                 if not results:
@@ -1085,7 +1085,7 @@ with tab2:
                             api_code = c if len(c) == 5 else c + "0"
                             raw_s = get_single_data(api_code, 1)
                             
-                            # 🚨 防衛パッチ：APIのカラム重複エラーを排除
+                            # 防衛パッチ：APIのカラム重複エラーを排除
                             if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
                                 temp_df = pd.DataFrame(raw_s["bars"])
                                 rename_map = {}
@@ -1117,12 +1117,14 @@ with tab2:
                                 if "GC直後" not in t_rank and "S（即時狙撃" not in t_rank:
                                     return None
                                     
+                                # 🚨 極限圧縮：メモリ圧迫の元凶であるDataFrameを破棄し、軽量な文字列と数値のみを返す
                                 item = r_dict.copy()
+                                item.pop('df_chart', None) # ゴミ箱へ
+                                
                                 item['accurate_rsi'] = accurate_rsi
                                 item['t_rank'] = t_rank
                                 item['t_bg'] = t_bg
                                 item['t_score'] = t_score 
-                                item['hist_chart'] = hist_chart
                                 return item
                             return None
 
@@ -1138,25 +1140,30 @@ with tab2:
                                     
                         final_results = sorted(final_results, key=lambda x: (-x['t_score'], x['accurate_rsi']))
                         
-                        # フェーズ1の完了：セッション変数へロックオン
+                        # 🚨 フェーズ1の完了：セッション変数へ軽量リストをロックオン
                         st.session_state.tab2_scan_results = final_results
+                        
+                        # 🚨 強制メモリパージ（司令部からの絶対命令）
+                        del raw, df, df_30, results, res_df
+                        import gc
+                        gc.collect()
 
     # ==========================================
-    # 🖼️ フェーズ2：UI描画（セッションにデータが存在する限り何度でも描画）
+    # 🖼️ フェーズ2：UI描画（軽量セッションデータからオンデマンド展開）
     # ==========================================
     if st.session_state.tab2_scan_results is not None:
-        final_results = st.session_state.tab2_scan_results
+        light_results = st.session_state.tab2_scan_results
         
-        if not final_results:
+        if not light_results:
             st.warning("🚨 抽出された候補はすべて「ダマシ（計算誤差）」または「勢い減衰」と判定され、キルされました。")
         else:
-            st.success(f"🎯 最終ロックオン: 純度100%の【真の強襲ターゲット】 {len(final_results)} 銘柄を確認。（データ保持中）")
+            st.success(f"🎯 最終ロックオン: 純度100%の【真の強襲ターゲット】 {len(light_results)} 銘柄を確認。（データ保持中）")
             
             st.markdown("#### 📋 コピペ用コード")
-            copy_codes = ",".join([str(item['Code'])[:4] for item in final_results])
+            copy_codes = ",".join([str(item['Code'])[:4] for item in light_results])
             st.code(copy_codes, language="text")
             
-            for r in final_results:
+            for r in light_results:
                 st.divider()
                 c = str(r['Code']); n = r['Name']
                 daily_sign = "+" if r['daily_pct'] >= 0 else ""
@@ -1235,12 +1242,32 @@ with tab2:
                 
                 st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
                 
-                hist_chart = r['hist_chart']
+                # 🚨 チャート描画：過去の巨大データを引き回さず、キャッシュAPIから必要な時だけ瞬時に呼び出して描画する
+                hist_chart = pd.DataFrame()
+                api_code = c if len(c) == 5 else c + "0"
+                raw_s = get_single_data(api_code, 1)
+                
+                if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
+                    temp_df = pd.DataFrame(raw_s["bars"])
+                    rename_map = {}
+                    for col in temp_df.columns:
+                        c_up = col.upper()
+                        if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
+                        if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
+                        if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
+                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
+                    renamed_df = temp_df.rename(columns=rename_map)
+                    dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
+                    hist_chart = clean_df(dedup_df)
+                else:
+                    st.error(f"銘柄 {c[:4]} の最新チャートデータがAPIから取得できませんでした。")
+                    
                 if not hist_chart.empty:
                     from datetime import timedelta
                     cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
                     df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
                     
+                    df_chart_filtered = calc_technicals(df_chart_filtered)
                     st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
                     
                     tp5_val  = int(r.get('tp5', bt_val * 1.05))
@@ -1250,13 +1277,16 @@ with tab2:
 
                     draw_chart(df_chart_filtered, bt_val, tp5_val, tp10_val, tp15_val, tp20_val)
                     
-                    bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
+                    # 🚨 描画済みの重いオブジェクトは速やかに破壊し、メモリのオーバーフローを防ぐ
+                    del hist_chart, df_chart_filtered
                     
-                    if bt_stats and bt_stats['total'] > 0:
-                        wr_color = "#ef5350" if bt_stats['win_rate'] >= 60 else "#FFD700" if bt_stats['win_rate'] >= 50 else "#888888"
-                        st.markdown(f'<div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;"><span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats["total"]}戦):</span><strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {bt_stats["win_rate"]:.1f}%</strong><span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span><strong style="color: {"#ef5350" if bt_stats["exp_val"] > 0 else "#26a69a"}; font-size: 16px; margin-left: 8px;">{bt_stats["exp_val"]:+.1f}円</strong></div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
+                bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
+                
+                if bt_stats and bt_stats['total'] > 0:
+                    wr_color = "#ef5350" if bt_stats['win_rate'] >= 60 else "#FFD700" if bt_stats['win_rate'] >= 50 else "#888888"
+                    st.markdown(f'<div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;"><span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats["total"]}戦):</span><strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {bt_stats["win_rate"]:.1f}%</strong><span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span><strong style="color: {"#ef5350" if bt_stats["exp_val"] > 0 else "#26a69a"}; font-size: 16px; margin-left: 8px;">{bt_stats["exp_val"]:+.1f}円</strong></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
 
     import gc
     gc.collect()  # 処理済みの不要なメモリを強制排出
