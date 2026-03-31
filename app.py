@@ -970,7 +970,11 @@ with tab1:
                         if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
                         if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
                         if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                    hist_chart = clean_df(temp_df.rename(columns=rename_map))
+                    
+                    # 🚨 パッチ：リネーム後の重複カラム（CloseとAdjustmentCloseの衝突など）を強制排除
+                    renamed_df = temp_df.rename(columns=rename_map)
+                    dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
+                    hist_chart = clean_df(dedup_df)
                 else: 
                     # 過去のキャッシュからフォールバック
                     hist_chart = df[df['Code'] == c].sort_values('Date').tail(30)
