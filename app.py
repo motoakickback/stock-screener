@@ -1110,7 +1110,7 @@ with tab2:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
-    # 🎯 ターゲット開始地点
+    # 🎯 修正1：チェックボックスを外側に配置。これで設定が維持されます。
     exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True, key="tab2_ipo_filter")
 
     if run_scan_t2:
@@ -1120,47 +1120,48 @@ with tab2:
                 st.error("データの取得に失敗しました。")
                 st.session_state.tab2_scan_results = None
             else:
-                # 1. 全データ展開
+                # 1. データ展開
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 【重要】切り出し前に「全データ」で計算（これで505A等の新興株のMACDを捻り出す）
+                # 🚨 【温め処理】切り出し前に「全データ」でテクニカルを一括計算。これで505A等の新興株も計算可能に。
                 with st.spinner("全4000銘柄のテクニカルを精密計算中..."):
                     df = df.groupby('Code', group_keys=False).apply(calc_technicals)
                 
-                # 2. IPO除外フィルター（チェックが外れていれば英字入りも通過）
+                # 2. IPO除外フィルター（英字入りコードの処理）
                 if exclude_ipo_flag: 
                     df = df[~df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)]
                 
                 # 3. 計算済みのデータから直近30日に絞る
                 df_30 = df.groupby('Code').tail(30)
                 
-                # 🚨 【デバッグ】352Aがここに存在するか画面に表示
+                # 🚨 【デバッグ】352Aの生存確認
                 if "352A" in df_30['Code'].values:
                     st.success("🎯 ターゲット「352A」を捕捉。判定フェーズへ移行。")
                 
                 results = []
                 for code, group in df_30.groupby('Code'):
-                    # 🚨 最優先：データ件数不足の銘柄を即座にキル（エラー回避）
-                    if len(group) < 2: 
-                        continue
+                    if len(group) < 2: continue
                     
-                    # 🚨 ステップ1：最新データ(latest)と1日前(prev)を抽出
+                    # 各種変数の定義（NameError回避）
                     latest = group.iloc[-1]
                     prev = group.iloc[-2]
-                    
-                    # 🚨 ステップ2：【重要】ここで lc を定義（NameErrorを物理的に消滅させる）
                     lc = latest['AdjC'] 
                     
-                    # 判定用変数の取得
+                    # 出来高の計算（5日平均）
+                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
+                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
+                    
                     macd_h = latest.get('MACD_Hist', 0)
                     macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    # 🚨 ステップ3：【鉄の掟】MACDのゴールデンクロスとRSI上限を判定
+                    # 判定：MACDのGC ＆ RSI制限
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
-                        # ここから下は既存の c_name = ... や results.append に繋がる
-                        # bt_val = int(lc * 1.01)  <-- ここで lc が使われても、もうエラーは出ません
-                        # 🎯 ターゲット終了地点（これより下は既存の c_name = ... から続けてください）
+                        h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
+                        bt_val = int(lc * 1.01)
+                        daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
+                        
+                        # 銘柄情報の取得
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
@@ -1168,15 +1169,12 @@ with tab2:
                                 c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']
                                 c_sector = m_row.iloc[0].get('Sector', '不明')
                                 c_scale = m_row.iloc[0].get('Scale', '')
-                        
-                        h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
-                        bt_val = int(lc * 1.01)
-                        daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
-                        
+
                         results.append({
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
-                            'daily_pct': daily_pct, 'df_chart': g_tech # まだここで持っておく（Phase2で計算に使うため）
+                            'daily_pct': daily_pct, 
+                            'df_chart': group  # 🚨 g_techの代わりに、計算済みのgroupをそのまま渡す
                         })
                         
                 if not results:
