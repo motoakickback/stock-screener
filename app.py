@@ -1184,7 +1184,12 @@ with tab2:
                     macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
+                    # prev2(一昨日), prev3(3日前) のMACDヒストグラムも確認するように緩める
+                    macd_h_prev2 = group.iloc[-3].get('MACD_Hist', 0) if len(group) > 2 else 0
+                    macd_h_prev3 = group.iloc[-4].get('MACD_Hist', 0) if len(group) > 3 else 0
+
+                    # 過去3日間のどこかでマイナスからプラスに転じていればOKとする
+                    if macd_h > 0 and (macd_h_prev <= 0 or macd_h_prev2 <= 0 or macd_h_prev3 <= 0) and rsi <= rsi_limit:
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
                         bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
