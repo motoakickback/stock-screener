@@ -217,6 +217,10 @@ def render_macro_board():
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+    else:
+        # 🚨 堅牢化パッチ：エラー時のサイレント消失を防ぎ、警告を明示する
+        st.warning("⚠️ 現在、外部気象レーダー（Yahoo Finance）からの応答がありません。通信回復を待機しています。")
+        st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
 render_macro_board()
 
