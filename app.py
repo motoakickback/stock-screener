@@ -1220,8 +1220,14 @@ with tab2:
                                 bt_val = r_dict['bt']
                                 t_rank, t_bg, t_score, _ = get_triage_info(acc_macd_h, acc_macd_h_prev, accurate_rsi, lc_val, bt_val, mode="強襲")
                                 
-                                if "GC直後" not in t_rank and "S（即時狙撃" not in t_rank:
-                                    return None
+                                # 🚨 判定基準を緩和：S判定だけでなく、A判定やGC関連の全シグナルを通過させる
+                                # 特にIPO銘柄（英字入り）の場合は、無条件で通過させるセーフティを追加
+                                is_ipo = any(char.isalpha() for char in str(r_dict['Code']))
+
+                                if not is_ipo: # 通常銘柄はA判定以上で選別
+                                    if not any(keyword in t_rank for keyword in ["S", "A", "GC", "即時狙撃"]):
+                                        return None
+                                # IPO銘柄の場合は、Phase 1を通過している時点で「生存」確定とする
                                     
                                 # 🚨 極限圧縮：メモリ圧迫の元凶であるDataFrameを破棄し、軽量な文字列と数値のみを返す
                                 item = r_dict.copy()
