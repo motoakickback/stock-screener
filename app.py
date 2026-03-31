@@ -1110,8 +1110,9 @@ with tab2:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
-    # 🎯 スイッチは外に置く
+    # 🎯 スイッチをUIと連動させる（ボスのサイドバーにあるETF除外スイッチを変数で受け取ります）
     exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True, key="tab2_ipo_filter")
+    exclude_etf_flag = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab2_etf_filter") 
 
     if run_scan_t2:
         with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
@@ -1123,77 +1124,63 @@ with tab2:
                 # 1. データ展開
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # 🚨 【追加防衛】ETF・REIT・投信の完全排除
-                if 'master_df' in globals() and not master_df.empty:
+                # 🚨 【修正1】ETF・REIT除外フィルター（サイドバーのスイッチと完全連動）
+                if exclude_etf_flag and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
                                    master_df['CompanyName'].astype(str).str.contains('ETF|REIT|ファンド|投資法人', case=False, na=False)
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 【精密パッチ】掟⑤：IPO除外 ＆ 1年経過(245日)は特例で生存させる
+                # 🚨 【修正2】IPO除外フィルター（英字コードかつ1年未満を排除）
                 if exclude_ipo_flag:
                     code_counts = df['Code'].value_counts()
                     mature_codes = code_counts[code_counts >= 245].index
-                    
                     is_alpha = df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)
                     is_mature = df['Code'].isin(mature_codes)
-                    
-                    # 英字コードかつ1年未満の銘柄のみ消去
                     df = df[~(is_alpha & ~is_mature)]
                 
-                # 🚨 【最大の元凶パッチ：MACD精度の完全同期】
-                # 「tail(30)」ではMACDの計算助走が足りず、証券会社のチャートとズレていました。
-                # 150日分渡すことで計算精度を100%にし、352Aの「真のGC」を認識させます。
+                # 🚨 MACD計算精度を上げるための150日抽出
                 df_target = df.groupby('Code').tail(150)
                 
                 results = []
                 for code, group in df_target.groupby('Code'):
-                    if len(group) < 2: continue
+                    # 過去3日分を調べるため、最低4日分のデータが必要
+                    if len(group) < 4: continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < vol_limit: continue
                     
                     g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 2: continue
+                    if len(g_tech) < 4: continue
                     
-                    # 🎯 （これより下は latest = g_tech.iloc[-1] など既存のコードへそのまま繋ぐ）
-                    
-                    # 3. ボスのオリジナル：ここで計算する（これがPhase 2との連携に必須）
-                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
-                    if avg_vol < vol_limit: continue
-                    
-                    g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 2: continue
-                    
+                    # 最新から過去3日分までのデータを取得
                     latest = g_tech.iloc[-1]
                     prev = g_tech.iloc[-2]
+                    prev2 = g_tech.iloc[-3]
+                    prev3 = g_tech.iloc[-4]
                     
                     lc = latest['AdjC']
-                    atr = latest.get('ATR', 0)
                     
-                    # 🚨 【排除1】過剰な足切り（ボラティリティ・想定日数）を無効化し、純粋なGCを狙う
-                    # if atr < 10 or (atr / lc) < 0.01: continue
-                    # tp_yen = lc * (st.session_state.bt_tp / 100.0)
-                    # exp_days = int(tp_yen / atr) if atr > 0 else 99
-                    # if exp_days >= 5: continue
-                    
+                    # 過去3日間のMACDヒストグラムを取得
                     macd_h = latest.get('MACD_Hist', 0)
                     macd_h_prev = prev.get('MACD_Hist', 0)
+                    macd_h_prev2 = prev2.get('MACD_Hist', 0)
+                    macd_h_prev3 = prev3.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    # prev2(一昨日), prev3(3日前) のMACDヒストグラムも確認するように緩める
-                    macd_h_prev2 = group.iloc[-3].get('MACD_Hist', 0) if len(group) > 2 else 0
-                    macd_h_prev3 = group.iloc[-4].get('MACD_Hist', 0) if len(group) > 3 else 0
-
-                    # 過去3日間のどこかでマイナスからプラスに転じていればOKとする
-                    if macd_h > 0 and (macd_h_prev <= 0 or macd_h_prev2 <= 0 or macd_h_prev3 <= 0) and rsi <= rsi_limit:
+                    # 🚨 【最大の修正：352A救済の追尾照準】
+                    # 「今日クロスした」だけでなく、「過去3日の間にクロスして、今もプラス圏にいる」銘柄を捕捉する
+                    is_gc_recently = macd_h > 0 and (macd_h_prev <= 0 or macd_h_prev2 <= 0 or macd_h_prev3 <= 0)
+                    
+                    # 🎯 ここを1つに統合しました
+                    if is_gc_recently and rsi <= rsi_limit:
                         h14 = group.tail(14)['AdjH'].max(); l14 = group.tail(14)['AdjL'].min()
                         bt_val = int(lc * 1.01)
                         daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                         
+                        # 銘柄情報の取得
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
@@ -1206,7 +1193,7 @@ with tab2:
                             'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                             'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'l14': l14, 'bt': bt_val,
                             'daily_pct': daily_pct, 
-                            'df_chart': g_tech  # 🚨 修正: 生のgroupではなく、計算済みのg_techを渡す
+                            'df_chart': g_tech  
                         })
                         
                 if not results:
