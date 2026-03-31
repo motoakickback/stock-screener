@@ -1140,18 +1140,26 @@ with tab2:
                 
                 results = []
                 for code, group in df_30.groupby('Code'):
-                    if len(group) < 2: continue
+                    # 🚨 最優先：データ件数不足の銘柄を即座にキル（エラー回避）
+                    if len(group) < 2: 
+                        continue
                     
-                    # 既に計算済みなのでilocで取得（再計算不要）
+                    # 🚨 ステップ1：最新データ(latest)と1日前(prev)を抽出
                     latest = group.iloc[-1]
                     prev = group.iloc[-2]
                     
+                    # 🚨 ステップ2：【重要】ここで lc を定義（NameErrorを物理的に消滅させる）
+                    lc = latest['AdjC'] 
+                    
+                    # 判定用変数の取得
                     macd_h = latest.get('MACD_Hist', 0)
                     macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    # RSI 45以下のGC初動を狙撃（足切り制限は解除済み）
+                    # 🚨 ステップ3：【鉄の掟】MACDのゴールデンクロスとRSI上限を判定
                     if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
+                        # ここから下は既存の c_name = ... や results.append に繋がる
+                        # bt_val = int(lc * 1.01)  <-- ここで lc が使われても、もうエラーは出ません
                         # 🎯 ターゲット終了地点（これより下は既存の c_name = ... から続けてください）
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
