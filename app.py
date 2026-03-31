@@ -1110,6 +1110,7 @@ with tab2:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True)
     if run_scan_t2:
         with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
             raw = get_hist_data_cached()
@@ -1121,8 +1122,7 @@ with tab2:
                 
                 # 🚨 サイドバーのスイッチが見つからないため、このタブ内のUI(rsi_limitの横など)で直接制御
                 # ※ st.columns(2) の後に以下の1行を追加し、判定を繋ぎ変えます
-                exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True)
-                
+                     
                 if exclude_ipo_flag: 
                     df = df[~df['Code'].astype(str).str.contains(r'[a-zA-Z]', regex=True, na=False)]
                 
