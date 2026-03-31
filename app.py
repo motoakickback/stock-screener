@@ -1134,7 +1134,7 @@ with tab2:
                     # 🚨 以前ここにあった遅延の元凶（len(...) < 245）は完全にパージ（削除）しました。
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
-                    if avg_vol < vol_limit: continue
+                    #if avg_vol < vol_limit: continue
                     
                     g_tech = calc_technicals(group.copy())
                     # 🚨 【絶対防衛パッチ】データが2件未満（昨日が存在しない銘柄）によるクラッシュを物理的に回避
@@ -1145,15 +1145,16 @@ with tab2:
                     lc = latest['AdjC']
                     atr = latest.get('ATR', 0)
                     
-                    if atr < 10 or (atr / lc) < 0.01: continue
+                    #if atr < 10 or (atr / lc) < 0.01: continue
                     tp_yen = lc * (st.session_state.bt_tp / 100.0)
                     exp_days = int(tp_yen / atr) if atr > 0 else 99
-                    if exp_days >= 5: continue
+                    #if exp_days >= 5: continue
                     
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi = latest.get('RSI', 50)
                     
-                    if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
+                    #if macd_h > 0 and macd_h_prev <= 0 and rsi <= rsi_limit:
+                    if macd_h > 0 and macd_h_prev <= 0:
                         c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = ""
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'] == code]
