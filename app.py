@@ -741,6 +741,19 @@ st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
 st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
 st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
 
+st.sidebar.markdown("#### 🚨 掟⑥：除外ブラックリスト")
+GIGI_FILE = f"saved_gigi_mines_{user_id}.txt"
+default_gigi = "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
+if os.path.exists(GIGI_FILE):
+    with open(GIGI_FILE, "r", encoding="utf-8") as f:
+        default_gigi = f.read()
+
+gigi_input = st.sidebar.text_area("疑義注記・ボロ株コード (カンマ区切り)", value=default_gigi, height=100)
+with open(GIGI_FILE, "w", encoding="utf-8") as f:
+    f.write(gigi_input)
+
+gigi_mines_list = [code.strip() for code in gigi_input.replace('\n', ',').split(',') if code.strip().isdigit()]
+
 # --- 🔴 安全装置：マニュアル・オーバーライド（第二防衛線） ---
 st.sidebar.divider()
 st.sidebar.markdown("### 🛠️ システム管理")
@@ -753,7 +766,7 @@ if st.sidebar.button("🔴 キャッシュ強制パージ (API遅延時用)", us
     st.rerun()
 
 # ==========================================
-# 5. タブ再構成（7タブ構成）
+# 5. タブ再構成（6タブ構成）
 # ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
