@@ -956,7 +956,6 @@ with tab2:
                     if len(group) < 15: continue
                     
                     lc = group.iloc[-1]['AdjC']
-                    if lc < 200: continue
                     
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
