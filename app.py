@@ -1068,15 +1068,26 @@ with tab2:
             m_cols[1].metric("RSI (過熱感)", f"{rsi_val:.1f}%")
             m_cols[2].metric("出来高(5日)", f"{int(vol_val):,}株")
             
-            # 🚨 修正3: Tab 1準拠の「逆指値目安」レッドボックス
-            stop_loss = int(lc_val * 0.95)
-            html_sl = f"""
-            <div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
-                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 逆指値目安 (強襲)</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{stop_loss:,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
+            # 🚨 修正：マルチ・ターゲット・マトリクス（強襲用）
+            tp_list = [5, 8, 10, 15, 20]
+            sl_list = [3, 5, 8]
+            
+            html_matrix = f"""
+            <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2);">
+                <div style="font-size: 14px; color: #aaa; margin-bottom: 10px; border-bottom: 1px solid #444;">🎯 強襲・利確／損切マトリクス (最新終値: {int(lc_val):,}円)</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <div style="font-size: 12px; color: #26a69a; font-weight: bold;">【利確目標】</div>
+                        {" ".join([f'<div style="font-size: 14px; color: #eee;">+{p}% : <span style="color: #26a69a; font-weight: bold;">{int(lc_val*(1+p/100)):,}円</span></div>' for p in tp_list])}
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #ef5350; font-weight: bold;">【損切目安】</div>
+                        {" ".join([f'<div style="font-size: 14px; color: #eee;">-{l}% : <span style="color: #ef5350; font-weight: bold;">{int(lc_val*(1-l/100)):,}円</span></div>' for l in sl_list])}
+                    </div>
+                </div>
             </div>
             """
-            m_cols[3].markdown(html_sl, unsafe_allow_html=True)
+            m_cols[3].markdown(html_matrix, unsafe_allow_html=True)
             
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
             
