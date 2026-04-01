@@ -1178,6 +1178,17 @@ with tab2:
                     from datetime import timedelta
                     cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
                     df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
+
+                    # --- 1183行目の手前に挿入する「安全装置」 ---
+                    if 'df_chart_filtered' not in locals():
+                        df_chart_filtered = None  # あるいは空のDataFrame
+
+                    if 'bt_val' not in locals():
+                        bt_val = 0  # デフォルト値を設定
+
+                    if 'bt_tp' not in st.session_state:
+                        st.session_state.bt_tp = 10.0  # 利確目標の初期値（例: 10%）
+                    # ------------------------------------------
                     
                     df_chart_filtered = calc_technicals(df_chart_filtered)
                     st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
