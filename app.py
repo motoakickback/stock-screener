@@ -1105,16 +1105,21 @@ with tab2:
     rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=35, step=5)
     vol_limit = col_t2_2.number_input("最低出来高（5日平均・株）", value=10000, step=10000)
     
-    run_scan_t2 = st.button(f"🚀 全軍GC初動スキャン開始")
+    # 🚨 強襲レーダー専用の引き金（混線を防ぐため独自の key を強制指定）
+    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
     
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
     # 🎯 スイッチをUIと完全に連動
-    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab1_etf_filter") 
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄(英字コード)を除外", value=True, key="tab2_ipo_filter")
+    exclude_etf_flag = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab2_etf_filter")
 
-    if run_scan:
-        with st.spinner("【Phase 1】全銘柄から「鉄の掟（半値押し）」適合ターゲットを索敵中..."):
+    if run_scan_t2:
+        # 🚨 通信テスト：ボタンが正常に押されたら、画面右下に一瞬通知を出します
+        st.toast("🟢 狙撃トリガーを確認。強襲レーダー起動！", icon="🚀")
+        
+        with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を一次抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗しました。")
