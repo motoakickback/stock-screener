@@ -1288,36 +1288,8 @@ with tab3:
                         </div>
                     </div>
                     """
-                    # sc2に統合して出力（sc3は空きスペースとしてレイアウトを担保）
+                    # sc2に統合して出力
                     sc2.markdown(html_matrix_scope, unsafe_allow_html=True)
-                        
-                        tp10 = int(r['bt_val'] * 1.10); sl8 = int(r['bt_val'] * 0.92)
-                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
-                            <div style="font-size: 16px;">
-                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                            </div>
-                        </div>"""
-                        sc3.markdown(html_sell, unsafe_allow_html=True)
-                        
-                        reach_display = f"到達度: {r['reach_val']:.1f}%"
-                    else:
-                        # 強襲用の表示（逆指値と利確目標）
-                        html_sl = f"""
-                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🛡️ 逆指値目安 (強襲)</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{r['sl_val']:,}円</div>
-                        </div>
-                        """
-                        sc2.markdown(html_sl, unsafe_allow_html=True)
-                        
-                        html_tp = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 利確目標 (+10%)</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #26a69a;">{r['tp_val']:,}円</div>
-                        </div>"""
-                        sc3.markdown(html_tp, unsafe_allow_html=True)
-                        
-                        reach_display = f"RSI: {r['rsi']:.1f}%"
                     
                     html_stats = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
