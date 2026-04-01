@@ -1230,31 +1230,45 @@ with tab2:
                 c = str(r.get('Code', '0000'))
                 n = r.get('Name', r.get('CompanyName', f"銘柄 {c[:4]}"))
                 
-                reach_val = r['reach_rate']
+                for r in light_results:
+                st.divider()
+                # 🚨 古いメモリが来ても絶対にクラッシュさせない防弾処理
+                c = str(r.get('Code', '0000'))
+                n = r.get('Name', r.get('CompanyName', f"銘柄 {c[:4]}"))
+                
+                # 安全なデータ抽出（古いデータの場合は0を代入して回避）
+                reach_val = r.get('reach_rate', 0)
+                high_val = r.get('high_4d', 0)
+                low_val = r.get('low_14d', 0)
+                lc_val = r.get('lc', 0)
+                target_buy_val = r.get('target_buy', 0)
+                
                 if reach_val >= 100:
                     reach_badge = f'<span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">🎯 到達率: {reach_val:.1f}% (射程内)</span>'
-                else:
+                elif reach_val > 0:
                     reach_badge = f'<span style="background-color: #f57c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">⏳ 到達率: {reach_val:.1f}% (接近中)</span>'
+                else:
+                    reach_badge = '<span style="background-color: #888888; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">⚠️ 旧データ（再スキャン推奨）</span>'
 
                 st.markdown(f"""
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                             {reach_badge}
-                            <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">RSI: {r["RSI"]:.1f}%</span>
+                            <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
-                sc0.metric("直近高値(4日以内)", f"{int(r['high_4d']):,}円")
-                sc1.metric("起点安値(2週間)", f"{int(r['low_14d']):,}円")
-                sc2.metric("最新終値", f"{int(r['lc']):,}円")
+                sc0.metric("直近高値(4日以内)", f"{int(high_val):,}円")
+                sc1.metric("起点安値(2週間)", f"{int(low_val):,}円")
+                sc2.metric("最新終値", f"{int(lc_val):,}円")
                 
                 html_buy = f"""
                 <div style="font-family: sans-serif; padding-top: 0.2rem;">
                     <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div>
-                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['target_buy']:,}円</div>
+                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(target_buy_val):,}円</div>
                 </div>
                 """
                 sc3.markdown(html_buy, unsafe_allow_html=True)
