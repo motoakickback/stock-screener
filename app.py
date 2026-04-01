@@ -933,28 +933,6 @@ with tab1:
             
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日")
 
-            # 📈 チャート描画（固有キーを渡してエラーを完全封鎖）
-            hist_chart = pd.DataFrame()
-            api_code = c if len(c) == 5 else c + "0"
-            raw_s = get_single_data(api_code, 1)
-            
-            if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
-                temp_df = pd.DataFrame(raw_s["bars"])
-                rename_map = {}
-                for col in temp_df.columns:
-                    c_up = col.upper()
-                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                    if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
-                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                dedup_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
-                hist_chart = calc_technicals(clean_df(dedup_df))
-            
-            if not hist_chart.empty:
-                st.markdown(render_technical_radar(hist_chart, target_buy_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                # 🚨 chart_key に銘柄コードを渡して一意に識別させる
-                draw_chart(hist_chart, target_buy_val, target_buy_val*1.05, target_buy_val*1.1, target_buy_val*1.15, target_buy_val*1.2, chart_key=f"chart_{c}")
-                del hist_chart
         import gc; gc.collect()
 
 with tab2:
