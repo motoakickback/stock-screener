@@ -971,7 +971,7 @@ with tab2:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 案A：API取得上限(32件)未満しかデータがない銘柄を「上場直後のIPO」とみなして弾く
+                    # 🚨 案A：API取得上限未満しかデータがない銘柄をIPOとみなして弾く
                     if exclude_ipo_flag and len(group) < 31: continue
                     if len(group) < 15: continue
                     
@@ -994,22 +994,36 @@ with tab2:
                     if rsi > rsi_limit: continue
                     if not (prev_hist < 0 and macd_hist >= 0): continue # GC判定
                     
-                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"
+                    # 🚨 追加：SABC判定ロジックの呼び出し
+                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲")
+                    
+                    # 企業規模と基本情報の取得
+                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_size = "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == code]
                         if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
+                            c_name = m_row.iloc[0].get('CompanyName', c_name)
+                            c_market = m_row.iloc[0].get('Market', '不明')
+                            c_sector = m_row.iloc[0].get('Sector', '不明')
+                            # 時価総額から企業規模を判定（無い場合は不明）
+                            mcap = pd.to_numeric(m_row.iloc[0].get('MarketCap', 0), errors='coerce')
+                            if pd.isna(mcap) or mcap == 0: c_size = "規模不明"
+                            elif mcap >= 500000000000: c_size = "大型株"
+                            elif mcap >= 100000000000: c_size = "中型株"
+                            else: c_size = "小型株"
 
                     results.append({
-                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
-                        'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol
+                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Size': c_size,
+                        'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol,
+                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'T_MACD': t_macd
                     })
                         
                 if not results:
                     st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
-                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: x['RSI']) # RSIが低い順
+                    # 🚨 修正：SABCスコアが高い順（同点ならRSIが低い順）にソート
+                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['RSI']))
                 
                 del raw, df, results
                 import gc; gc.collect()
@@ -1027,24 +1041,36 @@ with tab2:
             lc_val = r.get('lc', 0)
             rsi_val = r.get('RSI', 50)
             vol_val = r.get('avg_vol', 0)
+            
+            # SABC判定データの抽出
+            t_rank = r.get('T_Rank', '判定不能')
+            t_color = r.get('T_Color', '#616161')
+            t_macd = r.get('T_MACD', '不明')
+            c_size = r.get('Size', '不明')
 
+            # 🚨 修正：UIヘッダーにSABCバッジを追加
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                        <span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">{t_rank}</span>
+                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">{t_macd}</span>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
             
             sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
             sc0.metric("最新終値", f"{int(lc_val):,}円")
-            sc1.metric("逆指値目安", f"{int(lc_val * 1.01):,}円")
+            sc1.metric("逆指値目安", f"{int(lc_val * 0.95):,}円") # 強襲の場合、逆指値は下に置くべき（0.95倍などに修正）
             
+            # 🚨 修正：右側のステータスパネルに企業規模を追加
             html_stats = f"""
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                     <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{rsi_val:.1f}%</strong>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                    <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
+                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {t_color}; padding: 4px 8px; border-radius: 4px;">
+                    <span style="font-size: 12px; color: #aaa;">企業規模:</span> <strong style="font-size: 15px; color: #fff;">{c_size}</strong>
                 </div>
                 <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
                     <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{int(vol_val):,} 株</strong>
@@ -1054,7 +1080,6 @@ with tab2:
             sc3.markdown(html_stats, unsafe_allow_html=True)
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
             
-            # 🚨 修正完了: ここで確実に最新APIデータを取得してからチャートを描く
             hist_chart = pd.DataFrame()
             api_code = c if len(c) == 5 else c + "0"
             raw_s = get_single_data(api_code, 1)
@@ -1074,145 +1099,13 @@ with tab2:
                 st.error(f"銘柄 {c[:4]} のチャートデータ取得に失敗しました。")
                 
             if not hist_chart.empty:
-                st.markdown(render_technical_radar(hist_chart, lc_val, lc_val * 1.1), unsafe_allow_html=True)
+                # 🚨 安全装置（render_technical_radar エラー回避）
+                if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10.0
+                
+                st.markdown(render_technical_radar(hist_chart, lc_val, st.session_state.bt_tp), unsafe_allow_html=True)
                 draw_chart(hist_chart, lc_val, lc_val*1.05, lc_val*1.1, lc_val*1.15, lc_val*1.2)
                 del hist_chart
         import gc; gc.collect()
-
-    # ==========================================
-    # 🖼️ フェーズ2：UI描画（Tab 1専用）
-    # ==========================================
-    if 'tab1_scan_results' in st.session_state and st.session_state.tab1_scan_results is not None:
-        light_results = st.session_state.tab1_scan_results
-        
-        if not light_results:
-            pass # 警告はPhase1で出力済み
-        else:
-            st.success(f"🎯 待伏ロックオン: 鉄の掟をクリアした【半値押しターゲット】 {len(light_results)} 銘柄を確認。")
-            
-            for r in light_results:
-                st.divider()
-                # 🚨 古いメモリが来ても絶対にクラッシュさせない防弾処理
-                c = str(r.get('Code', '0000'))
-                n = r.get('Name', r.get('CompanyName', f"銘柄 {c[:4]}"))
-                
-                # 安全なデータ抽出（古いデータの場合は0を代入して回避）
-                reach_val = r.get('reach_rate', 0)
-                high_val = r.get('high_4d', 0)
-                low_val = r.get('low_14d', 0)
-                lc_val = r.get('lc', 0)
-                target_buy_val = r.get('target_buy', 0)
-                
-                if reach_val >= 100:
-                    reach_badge = f'<span style="background-color: #2e7d32; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">🎯 到達率: {reach_val:.1f}% (射程内)</span>'
-                elif reach_val > 0:
-                    reach_badge = f'<span style="background-color: #f57c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">⏳ 到達率: {reach_val:.1f}% (接近中)</span>'
-                else:
-                    reach_badge = '<span style="background-color: #888888; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">⚠️ 旧データ（再スキャン推奨）</span>'
-
-                st.markdown(f"""
-                    <div style="margin-bottom: 0.8rem;">
-                        <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                            {reach_badge}
-                            <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                sc0, sc1, sc2, sc3, sc4 = st.columns([1, 1, 1, 1, 1.5])
-                sc0.metric("直近高値(4日以内)", f"{int(high_val):,}円")
-                sc1.metric("起点安値(2週間)", f"{int(low_val):,}円")
-                sc2.metric("最新終値", f"{int(lc_val):,}円")
-                
-                html_buy = f"""
-                <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                    <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div>
-                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(target_buy_val):,}円</div>
-                </div>
-                """
-                sc3.markdown(html_buy, unsafe_allow_html=True)
-                
-                vol_val = r.get('avg_vol', 0)
-                # 🚨 防弾仕様：古いメモリが来てもエラーで落とさず、代替データ(RSI)を入れる
-                acc_rsi_val = r.get('accurate_rsi', r.get('RSI', 50))
-                
-                html_stats = f"""
-                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
-                    <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                        <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(acc_rsi_val)}%</strong>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                        <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
-                    </div>
-                    <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                        <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{vol_val:,} 株</strong>
-                    </div>
-                </div>
-                """
-                sc4.markdown(html_stats, unsafe_allow_html=True)
-                
-                st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
-                
-                # 🚨 チャート描画：過去の巨大データを引き回さず、キャッシュAPIから必要な時だけ瞬時に呼び出して描画する
-                hist_chart = pd.DataFrame()
-                api_code = c if len(c) == 5 else c + "0"
-                raw_s = get_single_data(api_code, 1)
-                
-                if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
-                    temp_df = pd.DataFrame(raw_s["bars"])
-                    rename_map = {}
-                    for col in temp_df.columns:
-                        c_up = col.upper()
-                        if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                        if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                        if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
-                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                    renamed_df = temp_df.rename(columns=rename_map)
-                    dedup_df = renamed_df.loc[:, ~renamed_df.columns.duplicated()]
-                    hist_chart = clean_df(dedup_df)
-                else:
-                    st.error(f"銘柄 {c[:4]} の最新チャートデータがAPIから取得できませんでした。")
-                    
-                if not hist_chart.empty:
-                    from datetime import timedelta
-                    cutoff_chart = hist_chart['Date'].max() - timedelta(days=60)
-                    df_chart_filtered = hist_chart[hist_chart['Date'] >= cutoff_chart]
-
-                    # --- 1183行目の手前に挿入する「安全装置」 ---
-                    if 'df_chart_filtered' not in locals():
-                        df_chart_filtered = None  # あるいは空のDataFrame
-
-                    if 'bt_val' not in locals():
-                        bt_val = 0  # デフォルト値を設定
-
-                    if 'bt_tp' not in st.session_state:
-                        st.session_state.bt_tp = 10.0  # 利確目標の初期値（例: 10%）
-                    # ------------------------------------------
-                    
-                    df_chart_filtered = calc_technicals(df_chart_filtered)
-                    st.markdown(render_technical_radar(df_chart_filtered, bt_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                    
-                    tp5_val  = int(r.get('tp5', bt_val * 1.05))
-                    tp10_val = int(r.get('tp10', bt_val * 1.10))
-                    tp15_val = int(r.get('tp15', bt_val * 1.15))
-                    tp20_val = int(r.get('tp20', bt_val * 1.20))
-
-                    draw_chart(df_chart_filtered, bt_val, tp5_val, tp10_val, tp15_val, tp20_val)
-                    
-                    # 🚨 描画済みの重いオブジェクトは速やかに破壊し、メモリのオーバーフローを防ぐ
-                    del hist_chart, df_chart_filtered
-                    
-                bt_stats = calc_historical_win_rate(c[:4], st.session_state.push_r, st.session_state.limit_d, st.session_state.bt_tp, st.session_state.bt_sl_i, st.session_state.bt_sl_c, st.session_state.bt_sell_d, tactics_mode)
-                
-                if bt_stats and bt_stats['total'] > 0:
-                    wr_color = "#ef5350" if bt_stats['win_rate'] >= 60 else "#FFD700" if bt_stats['win_rate'] >= 50 else "#888888"
-                    st.markdown(f'<div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;"><span style="font-size: 12px; color: #aaa;">📊 過去2年の掟適合率 ({bt_stats["total"]}戦):</span><strong style="color: {wr_color}; font-size: 16px; margin-left: 8px;">勝率 {bt_stats["win_rate"]:.1f}%</strong><span style="font-size: 12px; color: #aaa; margin-left: 12px;">1株期待値:</span><strong style="color: {"#ef5350" if bt_stats["exp_val"] > 0 else "#26a69a"}; font-size: 16px; margin-left: 8px;">{bt_stats["exp_val"]:+.1f}円</strong></div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; border: 1px dashed rgba(255,255,255,0.2);"><span style="font-size: 12px; color: #666;">📊 過去2年の掟適合率:</span><span style="color: #666; font-size: 14px; margin-left: 8px;">該当取引なし（データ不足）</span></div>', unsafe_allow_html=True)
-
-    import gc
-    gc.collect()  # 処理済みの不要なメモリを強制排出
                     
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
