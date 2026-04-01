@@ -790,18 +790,19 @@ with tab1:
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < 10000: continue
                     
-                    # 波形の計算（1.3倍〜2.0倍の「鉄の掟」フィルタ装填済み）
+                    # 波形の計算（10営業日固定・鉄の掟フィルタ）
                     group_reset = group.reset_index(drop=True)
                     recent_4d = group_reset.tail(4)
                     high_idx = recent_4d['AdjH'].idxmax()
                     high_4d_val = recent_4d.loc[high_idx, 'AdjH']
                     
-                    start_idx = max(0, high_idx - 14)
-                    window_14d = group_reset.iloc[start_idx : high_idx + 1]
-                    low_14d_val = window_14d['AdjL'].min()
+                    # 🚨 14営業日ではなく「10営業日（2週間）」に修正
+                    start_idx = max(0, high_idx - 10)
+                    window_10d = group_reset.iloc[start_idx : high_idx + 1]
+                    low_10d_val = window_10d['AdjL'].min()
 
                     # 🚨 【鉄の掟 第九条】サイドバーの設定値（下限・上限）を動的に反映
-                    rise_ratio = high_4d_val / low_14d_val
+                    rise_ratio = high_4d_val / low_10d_val
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
 
