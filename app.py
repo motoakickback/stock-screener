@@ -971,7 +971,8 @@ with tab2:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 results = []
                 for code, group in df.groupby('Code'):
-                    if exclude_ipo_flag and len(group) < 31: continue
+                    # 🚨 修正：API取得上限と祝日の欠損を考慮し、足切りラインを20に緩和
+                    if exclude_ipo_flag and len(group) < 20: continue
                     if len(group) < 15: continue
                     
                     lc = group.iloc[-1]['AdjC']
