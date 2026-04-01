@@ -814,36 +814,28 @@ with tab1:
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 掟：データ不足の排除（50日未満は論外として弾く）
-                    if len(group) < 50: continue
+                    # 🚨 案A：APIの取得仕様(32件)に合わせ、足切りを15件に設定（神速の維持）
+                    if len(group) < 15: continue
                     
                     lc = group.iloc[-1]['AdjC']
-                    
-                    # 🚨 掟：低位銘柄（終値200円未満）は除外
                     if lc < 200: continue
                     
-                    # 🚨 掟：1ヶ月以内で2倍以上の暴騰銘柄は除外
+                    # 1ヶ月暴騰チェック（データが20件以上ある場合のみ実行）
                     if len(group) >= 20:
                         price_1m_ago = group.iloc[-20]['AdjC']
                         if lc >= price_1m_ago * 2: continue
-                    
-                    # 🚨 掟：半年から1年以内で大幅（-30%以上）下落は除外
-                    if len(group) >= 245:
-                        max_6m_1y = group.iloc[-245:-120]['AdjH'].max()
-                        if pd.notna(max_6m_1y) and lc <= max_6m_1y * 0.7: continue
                     
                     # 出来高の足切り
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < 10000: continue
                     
-                    # 🚨 日付計算（内部インデックスで確実に波を捉える）
+                    # 波形の計算
                     group_reset = group.reset_index(drop=True)
                     recent_4d = group_reset.tail(4)
                     high_idx = recent_4d['AdjH'].idxmax()
                     high_4d_val = recent_4d.loc[high_idx, 'AdjH']
                     
-                    # 直近高値から14日遡って最安値を取得
                     start_idx = max(0, high_idx - 14)
                     window_14d = group_reset.iloc[start_idx : high_idx + 1]
                     low_14d_val = window_14d['AdjL'].min()
@@ -851,14 +843,11 @@ with tab1:
                     wave_len = high_4d_val - low_14d_val
                     if wave_len <= 0: continue
                     
-                    # 🎯 買値目標（半値押し）と到達率の算出
                     target_buy = high_4d_val - (wave_len / 2.0)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # 🔪【元凶の排除】過剰な「到達率の足切り」を完全に消去しました。
-                    # これにより、ターゲットに向けて降下中の銘柄もすべてレーダーに映るようになります。
-                    
-                    g_tech = calc_technicals(group.tail(150).copy())
+                    # RSI計算
+                    g_tech = calc_technicals(group.copy())
                     rsi = g_tech.iloc[-1].get('RSI', 50)
                     
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"
