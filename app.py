@@ -497,7 +497,7 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
     else:
         macd_t = "減衰"
 
-    # 2. 戦術別のSABC判定
+    # 2. 戦術別のSABC判定（完全分離）
     if mode == "強襲":
         # 【強襲（順張り）用ロジック】
         if macd_t == "下落継続" or rsi >= 75:
@@ -513,7 +513,7 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
 
     else:
         # 【待伏（逆張り）用ロジック】
-        # 🚨 司令部要求：接近中(オレンジ)を 4.5点、罠(青)を 4.0点に設定
+        # 🚨 司令部要求：接近中(4.5点)、罠(4.0点)に設定
         if bt == 0 or lc == 0:
             return "C（計算不能）👁️", "#616161", 1, macd_t
 
@@ -534,7 +534,6 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
         else:
             return "C（射程外・監視）👁️", "#616161", 1, macd_t
 
-# 565行目以降にあった重複した else ブロックは削除しました
     else:
         # 【待伏（逆張り）用ロジック】: 買値目標(bt)との距離とRSIを重視
         if bt == 0 or lc == 0:
