@@ -1058,7 +1058,7 @@ with tab2:
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
         
         # 🚨 追加：照準（TAB3）への一括コピペ用ボックス
-        all_codes = "\n".join([str(r.get('Code', ''))[:4] for r in light_results])
+        all_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results])
         st.info("📋 以下のコードをコピーして、照準（TAB3）に一括ペースト可能です。")
         st.code(all_codes, language="text")
         
