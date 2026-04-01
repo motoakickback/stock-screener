@@ -857,10 +857,19 @@ with tab1:
                             c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
 
                     score = 100 - abs(100 - reach_rate) + (50 - rsi)
+                    # 🎯 トリアージ判定（SABC）の実行
+                    rank, bg, t_score, _ = get_triage_info(
+                        g_tech.iloc[-1].get('MACD_Hist', 0), 
+                        g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech)>1 else 0, 
+                        rsi, lc, target_buy, mode="待伏"
+                    )
+
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
-                        'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': high_4d_val, 'low_14d': low_14d_val,
-                        'target_buy': target_buy, 'reach_rate': reach_rate, 't_score': score
+                        'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
+                        'high_4d': high_4d_val, 'low_14d': low_14d_val,
+                        'target_buy': target_buy, 'reach_rate': reach_rate, 
+                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
                     })
                         
                 if not results:
