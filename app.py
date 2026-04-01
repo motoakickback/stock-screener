@@ -1268,11 +1268,13 @@ with tab2:
                 sc3.markdown(html_buy, unsafe_allow_html=True)
                 
                 vol_val = r.get('avg_vol', 0)
+                # 🚨 防弾仕様：古いメモリが来てもエラーで落とさず、代替データ(RSI)を入れる
+                acc_rsi_val = r.get('accurate_rsi', r.get('RSI', 50))
                 
                 html_stats = f"""
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                     <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                        <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(r['accurate_rsi'])}%</strong>
+                        <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{int(acc_rsi_val)}%</strong>
                     </div>
                     <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                         <span style="font-size: 12px; color: #aaa;">GC判定:</span> <strong style="font-size: 15px; color: #26a69a;">条件クリア</strong>
