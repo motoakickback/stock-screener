@@ -976,6 +976,10 @@ with tab2:
 
                     if gc_days == 0: continue
 
+                    # 🚨 追加：関数に渡すための直近2日分のMACDヒストグラムを配列から抽出
+                    macd_hist = hist_vals[-1]
+                    prev_hist = hist_vals[-2]
+
                     t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲", gc_days=gc_days)
 
                     # 🚨 修正6&7: 企業規模と社名の正確な抽出
