@@ -790,7 +790,7 @@ with tab1:
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < 10000: continue
                     
-                    # 波形の計算
+                    # 波形の計算（1.3倍〜2.0倍の「鉄の掟」フィルタ装填済み）
                     group_reset = group.reset_index(drop=True)
                     recent_4d = group_reset.tail(4)
                     high_idx = recent_4d['AdjH'].idxmax()
@@ -799,6 +799,12 @@ with tab1:
                     start_idx = max(0, high_idx - 14)
                     window_14d = group_reset.iloc[start_idx : high_idx + 1]
                     low_14d_val = window_14d['AdjL'].min()
+
+                    # 🚨 【鉄の掟 第九条】14日安値から直近高値が 1.3倍〜2.0倍 のものだけを許可
+                    rise_ratio = high_4d_val / low_14d_val
+                    if not (1.3 <= rise_ratio <= 2.0):
+                        continue
+
                     wave_len = high_4d_val - low_14d_val
                     if wave_len <= 0: continue
                     
