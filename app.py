@@ -1206,7 +1206,7 @@ with tab3:
                         elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
                         elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
                         
-                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, mode="強襲")
+                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, mode="強襲", gc_days=gc_days)
                         # 強襲は「勢い（スコア）」を優先するため reach_val はダミーとしてRSIの逆数を使用
                         reach_val = 100 - rsi_v
 
