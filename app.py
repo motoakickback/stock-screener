@@ -952,11 +952,12 @@ with tab2:
         st.session_state.tab2_scan_results = None
 
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=60, step=5) # デフォルト60に最適化
-    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=10000, step=10000)
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=60, step=5)
+    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=15000, step=5000)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
-    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外", value=True, key="tab2_ipo_filter")
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外 (強襲)", value=True, key="tab2_ipo_filter")
+    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF・REITを除外 (強襲)", value=True, key="tab2_etf_filter")
 
     # ==========================================
     # 💥 フェーズ1：GC初動順張りスキャン（Tab 2専用）
@@ -969,9 +970,17 @@ with tab2:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                
+                # 🚨 修正1: ETF/REITの完全排除
+                if exclude_etf_flag_t2 and 'master_df' in globals() and not master_df.empty:
+                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
+                                   master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
+                                   master_df['CompanyName'].astype(str).str.contains('ETF|REIT|ファンド|投資法人', case=False, na=False)
+                    valid_codes = master_df[~invalid_mask]['Code'].unique()
+                    df = df[df['Code'].isin(valid_codes)]
+
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 修正：API取得上限と祝日の欠損を考慮し、足切りラインを20に緩和
                     if exclude_ipo_flag and len(group) < 20: continue
                     if len(group) < 15: continue
                     
@@ -983,59 +992,56 @@ with tab2:
                     if avg_vol < vol_limit: continue
                     
                     g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 5: continue # 過去判定のため最低5行必要
+                    if len(g_tech) < 5: continue
                     
                     latest = g_tech.iloc[-1]
                     rsi = latest.get('RSI', 50)
                     if rsi > rsi_limit: continue
 
-                    # 🚨 修正：GC後3日目までの判定ロジック
                     hist_vals = g_tech['MACD_Hist'].tail(5).values
                     gc_days = 0
-                    
-                    # hist_vals[-1]が最新日(T)、[-2]がT-1、[-3]がT-2、[-4]がT-3
-                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                        gc_days = 1 # 今日GC（1日目）
-                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0:
-                        gc_days = 2 # 昨日GC（2日目）
-                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0:
-                        gc_days = 3 # 一昨日GC（3日目）
+                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
+                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
+                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
 
-                    if gc_days == 0: continue # 3日以内にGCしていない、または再度マイナスに沈んだ銘柄は弾く
-                    
-                    macd_hist = hist_vals[-1]
-                    prev_hist = hist_vals[-2]
-                    
-                    # SABC判定ロジックの呼び出し
-                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲")
-                    
-                    # 企業規模と基本情報の取得
-                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_size = "不明"
+                    if gc_days == 0: continue
+
+                    # 🚨 修正4&5: SABC判定のバグを修正し、GC日数と完全に同期
+                    if gc_days == 1:
+                        if rsi <= 50: t_rank, t_color, t_score = "S（即時狙撃）🔥", "#2e7d32", 5
+                        else: t_rank, t_color, t_score = "A（強襲追撃）⚡", "#ed6c02", 4
+                    elif gc_days == 2:
+                        if rsi <= 55: t_rank, t_color, t_score = "A（強襲追撃）⚡", "#ed6c02", 4
+                        else: t_rank, t_color, t_score = "B（順張り警戒）📈", "#0288d1", 3
+                    else:
+                        t_rank, t_color, t_score = "B（順張り警戒）📈", "#0288d1", 3
+
+                    # 🚨 修正6&7: 企業規模と社名の正確な抽出
+                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == code]
                         if not m_row.empty:
                             c_name = m_row.iloc[0].get('CompanyName', c_name)
                             c_market = m_row.iloc[0].get('Market', '不明')
                             c_sector = m_row.iloc[0].get('Sector', '不明')
-                            mcap = pd.to_numeric(m_row.iloc[0].get('MarketCap', 0), errors='coerce')
-                            if pd.isna(mcap) or mcap == 0: c_size = "規模不明"
-                            elif mcap >= 500000000000: c_size = "大型株"
-                            elif mcap >= 100000000000: c_size = "中型株"
-                            else: c_size = "小型株"
+                            scale_val = str(m_row.iloc[0].get('Scale', ''))
+                            if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]): c_scale = "🏢 大型/中型"
+                            elif scale_val and scale_val != 'nan' and scale_val != '-': c_scale = "🚀 小型/新興"
 
                     results.append({
-                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Size': c_size,
+                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                         'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol,
-                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'T_MACD': t_macd,
-                        'GC_Days': gc_days # 🚨 追加：経過日数を格納
+                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score,
+                        'GC_Days': gc_days
                     })
                         
                 if not results:
                     st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
-                    # SABCスコア降順 ＞ 経過日数が若い順 ＞ RSI低い順
-                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))
+                    # 🚨 修正8: 上位30件に絞り込み（スコア降順 ＞ 日数が若い順 ＞ RSI低い順）
+                    sorted_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))
+                    st.session_state.tab2_scan_results = sorted_results[:30]
                 
                 del raw, df, results
                 import gc; gc.collect()
@@ -1045,7 +1051,7 @@ with tab2:
     # ==========================================
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) {len(light_results)} 銘柄を確認。")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
         for r in light_results:
             st.divider()
             c = str(r.get('Code', '0000'))
@@ -1056,42 +1062,39 @@ with tab2:
             
             t_rank = r.get('T_Rank', '判定不能')
             t_color = r.get('T_Color', '#616161')
-            t_macd = r.get('T_MACD', '不明')
-            c_size = r.get('Size', '不明')
+            c_size = r.get('Scale', '不明')
             gc_d = r.get('GC_Days', 1)
+
+            # 🚨 修正2: Tab 1に合わせた企業規模バッジの描画
+            badge_color = "#0d47a1" if "大型" in c_size else "#b71c1c"
+            scale_badge = f'<span style="background-color: {badge_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">{c_size}</span>'
+            triage_badge = f'<span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        <span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">{t_rank}</span>
-                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">{t_macd}</span>
+                        {scale_badge}{triage_badge}
+                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">GC後 {gc_d}日目</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
-            sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
-            sc0.metric("最新終値", f"{int(lc_val):,}円")
-            sc1.metric("逆指値目安", f"{int(lc_val * 0.95):,}円")
+            m_cols = st.columns([1, 1, 1.2, 1.5])
+            m_cols[0].metric("最新終値", f"{int(lc_val):,}円")
+            m_cols[1].metric("RSI (過熱感)", f"{rsi_val:.1f}%")
+            m_cols[2].metric("出来高(5日)", f"{int(vol_val):,}株")
             
-            # 🚨 修正：UIパネルに「GC後〇日目」をハイライト表示
-            html_stats = f"""
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-                <div style="background: rgba(237, 108, 2, 0.15); border-left: 3px solid #ed6c02; padding: 4px 8px; border-radius: 4px;">
-                    <span style="font-size: 12px; color: #aaa;">経過日数:</span> <strong style="font-size: 15px; color: #ed6c02;">GC後 {gc_d}日目</strong>
-                </div>
-                <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                    <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{rsi_val:.1f}%</strong>
-                </div>
-                <div style="background: rgba(255, 255, 255, 0.05); border-left: 3px solid {t_color}; padding: 4px 8px; border-radius: 4px;">
-                    <span style="font-size: 12px; color: #aaa;">企業規模:</span> <strong style="font-size: 15px; color: #fff;">{c_size}</strong>
-                </div>
-                <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 4px 8px; border-radius: 4px;">
-                    <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{int(vol_val):,} 株</strong>
-                </div>
+            # 🚨 修正3: Tab 1準拠の「逆指値目安」レッドボックス
+            stop_loss = int(lc_val * 0.95)
+            html_sl = f"""
+            <div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
+                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 逆指値目安 (強襲)</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{stop_loss:,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
             </div>
             """
-            sc3.markdown(html_stats, unsafe_allow_html=True)
+            m_cols[3].markdown(html_sl, unsafe_allow_html=True)
+            
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
             
             hist_chart = pd.DataFrame()
@@ -1115,7 +1118,8 @@ with tab2:
             if not hist_chart.empty:
                 if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10.0
                 st.markdown(render_technical_radar(hist_chart, lc_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                draw_chart(hist_chart, lc_val, lc_val*1.05, lc_val*1.1, lc_val*1.15, lc_val*1.2)
+                # 🚨 重複エラー防止のため chart_key を一意に設定
+                draw_chart(hist_chart, lc_val, lc_val*1.05, lc_val*1.1, lc_val*1.15, lc_val*1.2, chart_key=f"t2_chart_{c}")
                 del hist_chart
         import gc; gc.collect()
                     
