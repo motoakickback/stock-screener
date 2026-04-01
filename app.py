@@ -958,7 +958,10 @@ with tab2:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 results = []
                 for code, group in df.groupby('Code'):
-                    if exclude_ipo_flag and len(group) < 245: continue
+                    # 🚨 案A：API取得上限(32件)未満しかデータがない銘柄を「上場直後のIPO」とみなして弾く
+                    if exclude_ipo_flag and len(group) < 31: continue
+                    if len(group) < 15: continue
+                    
                     lc = group.iloc[-1]['AdjC']
                     if lc < 200: continue
                     
@@ -966,7 +969,7 @@ with tab2:
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < vol_limit: continue
                     
-                    g_tech = calc_technicals(group.tail(150).copy())
+                    g_tech = calc_technicals(group.copy())
                     if len(g_tech) < 2: continue
                     
                     latest = g_tech.iloc[-1]
