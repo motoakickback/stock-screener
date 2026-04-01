@@ -1113,7 +1113,7 @@ with tab2:
     # 🎯 スイッチをUIと完全に連動
     exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab1_etf_filter") 
 
-    if run_scan_t1: # Tab1のボタン変数に合わせてください
+    if run_scan
         with st.spinner("【Phase 1】全銘柄から「鉄の掟（半値押し）」適合ターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
