@@ -1120,7 +1120,7 @@ with tab2:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                sc1, sc2, sc3, sc4 = st.columns([1, 1, 1, 1.5])
+                sc0, sc1, sc2, sc3, sc4 = st.columns([1, 1, 1, 1, 1.5])
                 sc0.metric("直近高値(4日以内)", f"{int(high_val):,}円")
                 sc1.metric("起点安値(2週間)", f"{int(low_val):,}円")
                 sc2.metric("最新終値", f"{int(lc_val):,}円")
