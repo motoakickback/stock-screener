@@ -834,11 +834,11 @@ with tab1:
                         rsi, lc, target_buy, mode="待伏"
                     )
 
-                    # 🚀 データの格納
+                    # 🚀 データの格納（変数名を最新の 10d 版に同期）
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
                         'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
-                        'high_4d': high_4d_val, 'low_14d': low_14d_val,
+                        'high_4d': high_4d_val, 'low_14d': low_10d_val, # ← ここを修正
                         'target_buy': target_buy, 'reach_rate': reach_rate, 
                         'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
                     })
