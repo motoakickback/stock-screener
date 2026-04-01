@@ -1056,7 +1056,14 @@ with tab2:
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
+        
+        # 🚨 追加：照準（TAB3）への一括コピペ用ボックス
+        all_codes = "\n".join([str(r.get('Code', ''))[:4] for r in light_results])
+        st.info("📋 以下のコードをコピーして、照準（TAB3）に一括ペースト可能です。")
+        st.code(all_codes, language="text")
+        
         for r in light_results:
+            # --- 以下、前回の修正を反映した強襲専用UI（そのまま継続） ---
             st.divider()
             c = str(r.get('Code', '0000'))
             n = r.get('Name', f"銘柄 {c[:4]}")
