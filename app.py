@@ -814,16 +814,11 @@ with tab1:
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 案A：APIの取得仕様(32件)に合わせ、足切りを15件に設定（神速の維持）
+                    # 🚨 案A：API取得仕様に合わせた足切り
                     if len(group) < 15: continue
                     
                     lc = group.iloc[-1]['AdjC']
                     if lc < 200: continue
-                    
-                    # 1ヶ月暴騰チェック（データが20件以上ある場合のみ実行）
-                    if len(group) >= 20:
-                        price_1m_ago = group.iloc[-20]['AdjC']
-                        if lc >= price_1m_ago * 2: continue
                     
                     # 出来高の足切り
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
@@ -839,31 +834,34 @@ with tab1:
                     start_idx = max(0, high_idx - 14)
                     window_14d = group_reset.iloc[start_idx : high_idx + 1]
                     low_14d_val = window_14d['AdjL'].min()
-                    
                     wave_len = high_4d_val - low_14d_val
                     if wave_len <= 0: continue
                     
                     target_buy = high_4d_val - (wave_len / 2.0)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # RSI計算
+                    # テクニカル計算
                     g_tech = calc_technicals(group.copy())
                     rsi = g_tech.iloc[-1].get('RSI', 50)
                     
-                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"
+                    # 🚨 【修正：変数定義】ここで c_scale を含め、全てのマスター情報を定義します
+                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == code]
                         if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_market = m_row.iloc[0]['Market']
+                            c_sector = m_row.iloc[0].get('Sector', '不明')
+                            c_scale = m_row.iloc[0].get('Scale', '不明') # ← これが漏れていました
 
-                    score = 100 - abs(100 - reach_rate) + (50 - rsi)
-                    # 🎯 トリアージ判定（SABC）の実行
+                    # 🎯 トリアージ判定（SABC）
                     rank, bg, t_score, _ = get_triage_info(
                         g_tech.iloc[-1].get('MACD_Hist', 0), 
                         g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech)>1 else 0, 
                         rsi, lc, target_buy, mode="待伏"
                     )
 
+                    # 🚀 データの格納
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
                         'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
