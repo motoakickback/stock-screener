@@ -982,7 +982,15 @@ with tab2:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
-                
+                # --------------------------------------------------
+                # ⚡ 爆速化パッチ：ループ前の一括足切り（プレフィルタ）
+                # --------------------------------------------------
+                latest_date = df['Date'].max()
+                latest_df = df[df['Date'] == latest_date]
+                # 終値200円未満の銘柄を一瞬で全削除
+                valid_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                df = df[df['Code'].isin(valid_codes)]
+                # --------------------------------------------------
                 # 🚨 修正1: ETF/REITの完全排除
                 if exclude_etf_flag_t2 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
