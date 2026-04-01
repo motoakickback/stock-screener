@@ -486,7 +486,7 @@ def calc_technicals(df):
     return df
 
 # 🚨 置き換え対象：def get_triage_info(macd_hist, macd_hist_prev, rsi): ～ のブロック全て
-def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
+def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     # 1. MACDの基本状態（共通処理）
     if macd_hist > 0 and macd_hist_prev <= 0:
         macd_t = "GC直後"
@@ -499,21 +499,23 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
 
     # 2. 戦術別のSABC判定（完全分離）
     if mode == "強襲":
-        # 【強襲（順張り）用ロジック】
+        # 🚨 【強襲（順張り）用ロジック：GC日数統合版】
         if macd_t == "下落継続" or rsi >= 75:
             return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
-        elif macd_t == "GC直後":
-            if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, macd_t
-            else: return "A（強襲追撃）⚡", "#ed6c02", 4, macd_t
-        elif macd_t == "上昇拡大":
-            if rsi <= 60: return "B（順張り警戒）📈", "#0288d1", 3, macd_t
-            else: return "C（過熱警戒）👁️", "#616161", 2, macd_t
+            
+        if gc_days == 1:
+            if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, "GC直後(1日目)"
+            else: return "A（強襲追撃）⚡", "#ed6c02", 4, "GC直後(1日目)"
+        elif gc_days == 2:
+            if rsi <= 55: return "A（強襲追撃）⚡", "#ed6c02", 4, "GC継続(2日目)"
+            else: return "B（順張り警戒）📈", "#0288d1", 3, "GC継続(2日目)"
+        elif gc_days >= 3:
+            return "B（順張り警戒）📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
         else:
             return "C（条件外・監視）👁️", "#616161", 1, macd_t
 
     else:
         # 【待伏（逆張り）用ロジック】
-        # 🚨 司令部要求：接近中(4.5点)、罠(4.0点)に設定
         if bt == 0 or lc == 0:
             return "C（計算不能）👁️", "#616161", 1, macd_t
 
@@ -522,15 +524,11 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
         if dist_pct < -2.0:
             return "圏外（防衛線突破）💀", "#d32f2f", 0, macd_t
         elif dist_pct <= 2.0: # -2.0% ～ +2.0% (射程圏内)
-            if rsi <= 45: 
-                return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
-            else: 
-                return "A（接近中）⚡", "#ed6c02", 4.5, macd_t 
+            if rsi <= 45: return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
+            else: return "A（接近中）⚡", "#ed6c02", 4.5, macd_t 
         elif dist_pct <= 5.0: # +2.0% ～ +5.0% (準備段階)
-            if rsi <= 50: 
-                return "A（罠の設置）🪤", "#0288d1", 4.0, macd_t 
-            else: 
-                return "B（高高度）📈", "#0288d1", 3, macd_t
+            if rsi <= 50: return "A（罠の設置）🪤", "#0288d1", 4.0, macd_t 
+            else: return "B（高高度）📈", "#0288d1", 3, macd_t
         else:
             return "C（射程外・監視）👁️", "#616161", 1, macd_t
 
