@@ -800,9 +800,9 @@ with tab1:
                     window_14d = group_reset.iloc[start_idx : high_idx + 1]
                     low_14d_val = window_14d['AdjL'].min()
 
-                    # 🚨 【鉄の掟 第九条】14日安値から直近高値が 1.3倍〜2.0倍 のものだけを許可
+                    # 🚨 【鉄の掟 第九条】サイドバーの設定値（下限・上限）を動的に反映
                     rise_ratio = high_4d_val / low_14d_val
-                    if not (1.3 <= rise_ratio <= 2.0):
+                    if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
 
                     wave_len = high_4d_val - low_14d_val
