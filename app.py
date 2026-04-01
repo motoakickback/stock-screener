@@ -814,7 +814,7 @@ with tab1:
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 防弾1：APIの取得日数が短い場合を考慮し、最低日数を50日に緩和
+                    # 🚨 掟：データ不足の排除（50日未満は論外として弾く）
                     if len(group) < 50: continue
                     
                     lc = group.iloc[-1]['AdjC']
@@ -822,12 +822,12 @@ with tab1:
                     # 🚨 掟：低位銘柄（終値200円未満）は除外
                     if lc < 200: continue
                     
-                    # 🚨 掟：1ヶ月以内で2倍以上の暴騰銘柄は除外（データがある場合のみ）
+                    # 🚨 掟：1ヶ月以内で2倍以上の暴騰銘柄は除外
                     if len(group) >= 20:
                         price_1m_ago = group.iloc[-20]['AdjC']
                         if lc >= price_1m_ago * 2: continue
                     
-                    # 🚨 掟：半年から1年以内で大幅（-30%以上）下落は除外（データがある場合のみ）
+                    # 🚨 掟：半年から1年以内で大幅（-30%以上）下落は除外
                     if len(group) >= 245:
                         max_6m_1y = group.iloc[-245:-120]['AdjH'].max()
                         if pd.notna(max_6m_1y) and lc <= max_6m_1y * 0.7: continue
@@ -837,13 +837,13 @@ with tab1:
                     avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
                     if avg_vol < 10000: continue
                     
-                    # 🚨 防弾2：日付のズレによる計算エラーを完全に防ぐため、内部で番号を振り直す
+                    # 🚨 日付計算（内部インデックスで確実に波を捉える）
                     group_reset = group.reset_index(drop=True)
                     recent_4d = group_reset.tail(4)
                     high_idx = recent_4d['AdjH'].idxmax()
                     high_4d_val = recent_4d.loc[high_idx, 'AdjH']
                     
-                    # 確実な位置から14日遡って最安値を取得
+                    # 直近高値から14日遡って最安値を取得
                     start_idx = max(0, high_idx - 14)
                     window_14d = group_reset.iloc[start_idx : high_idx + 1]
                     low_14d_val = window_14d['AdjL'].min()
@@ -855,8 +855,8 @@ with tab1:
                     target_buy = high_4d_val - (wave_len / 2.0)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # 🚨 防弾3：射程圏の猶予を少し広げる（80%〜120%）
-                    if reach_rate < 80 or reach_rate > 120: continue
+                    # 🔪【元凶の排除】過剰な「到達率の足切り」を完全に消去しました。
+                    # これにより、ターゲットに向けて降下中の銘柄もすべてレーダーに映るようになります。
                     
                     g_tech = calc_technicals(group.tail(150).copy())
                     rsi = g_tech.iloc[-1].get('RSI', 50)
@@ -875,10 +875,12 @@ with tab1:
                     })
                         
                 if not results:
-                    st.warning("現在、射程圏内のターゲットは存在しません。")
+                    st.warning("現在、掟を満たすターゲットは存在しません。")
                     st.session_state.tab1_scan_results = []
                 else:
-                    st.session_state.tab1_scan_results = sorted(results, key=lambda x: x['t_score'], reverse=True)
+                    # 🚨 到達度とRSIの総合スコアでソートし、上位30件だけを抽出（UIの激重化を防ぐ）
+                    sorted_results = sorted(results, key=lambda x: x['t_score'], reverse=True)
+                    st.session_state.tab1_scan_results = sorted_results[:30]
                 
                 del raw, df, results
                 import gc; gc.collect()
