@@ -899,11 +899,22 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
             
+            # 🚨 修正：待伏（Tab 1）は sc0〜sc3 の「4列」で完璧に完結させます。
             sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
             sc0.metric("直近高値(4日以内)", f"{int(high_val):,}円")
             sc1.metric("起点安値(2週間)", f"{int(low_val):,}円")
             sc2.metric("最新終値", f"{int(lc_val):,}円")
-            sc3.markdown(f'<div style="font-family: sans-serif; padding-top: 0.2rem;"><div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(target_buy_val):,}円</div></div>', unsafe_allow_html=True)
+            
+            # 🎯 買値目標を sc3 に描画。ここに sc4 の記述があったら削除してください。
+            html_buy = f"""
+            <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(target_buy_val):,}円</div>
+            </div>
+            """
+            sc3.markdown(html_buy, unsafe_allow_html=True)
+            
+            # 🚨 重要：この直下に「sc4.markdown(...)」という記述が残っていたら、必ず削除してください。
             
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
             
