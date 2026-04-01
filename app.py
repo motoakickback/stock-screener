@@ -1125,7 +1125,7 @@ with tab2:
                     
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
-    st.caption("※気になっている銘柄や、レーダーで抽出した銘柄のコードを入力し、現在のテクニカル状態と迎撃ラインを精密に解析します。")
+    st.caption("※レーダーで抽出した銘柄のコードを入力し、現在のテクニカル状態と迎撃ラインを精密に解析します。")
     
     col_s1, col_s2 = st.columns([1, 2])
     T3_SCOPE_FILE = f"saved_t3_scope_{user_id}.txt"
@@ -1135,12 +1135,17 @@ with tab3:
             default_scope = f.read()
             
     with col_s1:
+        # 🚨 デュアル・スコープの要：戦術モードの選択
+        scope_mode = st.radio("🎯 解析モード（戦術）を選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
         target_codes_str = st.text_area("標的コード（複数可、改行区切り）", value=default_scope, height=100)
         run_scope = st.button("🔫 精密スキャン実行", use_container_width=True)
         
     with col_s2:
         st.markdown("#### 🔍 解析対象データ")
-        st.caption("・ボスの「鉄の掟」9項目に基づく押し目ラインと適合度\n・トレンド崩壊、落ちるナイフ、危険波形（三尊等）の検知\n・MACDとRSIに基づくトリアージ（優先度）判定")
+        if "待伏" in scope_mode:
+            st.info("・ボスの「鉄の掟」に基づく押し目ライン(半値押し等)と適合度\n・トレンド崩壊、落ちるナイフ、危険波形（三尊等）の検知\n・待伏ロジックに基づくSABC優先度判定")
+        else:
+            st.warning("・MACDクロス（GC）からの経過日数とRSIの過熱感\n・順張り用の逆指値（ロスカット）と上値ターゲットの算出\n・強襲ロジックに基づくSABC優先度判定")
 
     if run_scope and target_codes_str:
         with open(T3_SCOPE_FILE, "w", encoding="utf-8") as f:
@@ -1150,9 +1155,8 @@ with tab3:
         
         if not t_codes: st.warning("有効な4桁の銘柄コードが見つかりません。")
         else:
-            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を精密計算・ソート中..."):
+            with st.spinner(f"指定された {len(t_codes)} 銘柄の軌道を【{scope_mode.split(' ')[1]}】ロジックで精密計算中..."):
                 
-                # 🚨 段階1：全銘柄のデータを計算し、リストに格納する（まだ描画しない）
                 scope_results = []
                 
                 for c in t_codes:
@@ -1172,15 +1176,6 @@ with tab3:
                     if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
                     
                     ur = h14 - l14
-                    bt_primary = h14 - (ur * (st.session_state.push_r / 100.0))
-                    shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
-                    bt_secondary = h14 - (ur * shift_ratio)
-                    
-                    is_bt_broken = lc < bt_primary
-                    bt_val = int(bt_secondary if is_bt_broken else bt_primary)
-                    
-                    dead_line = h14 - (ur * 0.618)
-                    is_trend_broken = lc < (dead_line * 0.98)
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
                     
                     is_dt = check_double_top(df_14); is_hs = check_head_shoulders(df_14); is_db = check_double_bottom(df_14)
@@ -1195,52 +1190,69 @@ with tab3:
                             
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50)
-                    # ⭕️ 修正後（モード"待伏"を指定。※Tab3は精密スコープなので待伏基準が最適です）
-                    rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, lc, bt_val, mode="待伏")
-                    
-                    denom = h14 - bt_val
-                    reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
                     atr_val = int(latest.get('ATR', 0))
-                    idxmax = df_14['AdjH'].idxmax()
-                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
                     avg_vol = int(df_s['AdjVo'].tail(5).mean()) if 'AdjVo' in df_s.columns else 0
                     
-                    # ⭕️ 修正後（Tab3専用・地雷探知APIの直接通信）
-                    # 広域スキャンではスキップした配当・決算データを、ここで初めてピンポイントで取得する
+                    # 🚨 モード別の変数初期化
+                    bt_val = 0; reach_val = 0; sl_val = 0; tp_val = 0; gc_days = 0; is_bt_broken = False; is_trend_broken = False
+                    
+                    if "待伏" in scope_mode:
+                        # 🌐 待伏ロジック計算
+                        bt_primary = h14 - (ur * (st.session_state.push_r / 100.0))
+                        shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
+                        bt_secondary = h14 - (ur * shift_ratio)
+                        
+                        is_bt_broken = lc < bt_primary
+                        bt_val = int(bt_secondary if is_bt_broken else bt_primary)
+                        
+                        dead_line = h14 - (ur * 0.618)
+                        is_trend_broken = lc < (dead_line * 0.98)
+                        
+                        denom = h14 - bt_val
+                        reach_val = ((h14 - lc) / denom * 100) if denom > 0 else 0
+                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, lc, bt_val, mode="待伏")
+                    
+                    else:
+                        # ⚡ 強襲ロジック計算
+                        sl_val = int(lc * 0.95) # 逆指値：現在値の-5%
+                        tp_val = int(lc * 1.10) # 上値目標：現在値の+10%
+                        
+                        hist_vals = df_chart['MACD_Hist'].tail(5).values
+                        if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
+                        elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
+                        elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
+                        
+                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, mode="強襲")
+                        # 強襲は「勢い（スコア）」を優先するため reach_val はダミーとしてRSIの逆数を使用
+                        reach_val = 100 - rsi_v
+
+                    idxmax = df_14['AdjH'].idxmax()
+                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                    
+                    # 地雷探知API
                     target_event_data = {"dividend": [], "earnings": []}
                     try:
-                        # 1. 配当データ（権利落ち日）の取得
-                        # ※ cli は J-Quants API のクライアントインスタンス（st.session_state.cli 等）に合わせて調整してください
                         res_div = cli.get_dividend(code=api_code) 
-                        if res_div is not None and not res_div.empty: # DataFrameの場合
-                            target_event_data["dividend"] = res_div.to_dict(orient="records")
-                            
-                        # 2. 決算データ（決算発表日）の取得
+                        if res_div is not None and not res_div.empty: target_event_data["dividend"] = res_div.to_dict(orient="records")
                         res_earn = cli.get_statements(code=api_code)
-                        if res_earn is not None and not res_earn.empty: # DataFrameの場合
-                            target_event_data["earnings"] = res_earn.to_dict(orient="records")
-                    except Exception as e:
-                        # 通信エラーやデータ無し（新興株など）の場合はスキップ
-                        # ※フェイルセーフとして登録した絶対防衛線（critical_mines）は引き続き機能します
-                        pass
+                        if res_earn is not None and not res_earn.empty: target_event_data["earnings"] = res_earn.to_dict(orient="records")
+                    except: pass
                     
-                    # 取得した生データを地雷判定ロジックへ流し込む
                     alerts = check_event_mines(c, target_event_data)
                     
-                    # データを辞書として格納
                     scope_results.append({
                         'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector, 'scale': c_scale,
-                        'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'is_bt_broken': is_bt_broken,
-                        'is_trend_broken': is_trend_broken, 'daily_pct': daily_pct, 'alerts': alerts,
-                        'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense,
+                        'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'sl_val': sl_val, 'tp_val': tp_val,
+                        'is_bt_broken': is_bt_broken, 'is_trend_broken': is_trend_broken, 'daily_pct': daily_pct, 'alerts': alerts,
+                        'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'is_defense': is_defense, 'gc_days': gc_days,
                         'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_val, 'atr_val': atr_val,
-                        'd_high': d_high, 'avg_vol': avg_vol, 'df_chart': df_chart
+                        'd_high': d_high, 'avg_vol': avg_vol, 'df_chart': df_chart, 'rsi': rsi_v
                     })
                     
-                # 🚨 段階2：S/A/B/Cスコア順、同点なら到達度（reach_val）が高い順にソート
+                # 🚨 スコア順ソート
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
-                # 🚨 段階3：ソート済みのリストを展開してUIに描画
+                # 🚨 段階3：UI描画
                 for r in scope_results:
                     st.divider()
                     
@@ -1257,51 +1269,69 @@ with tab3:
                     
                     for alert in r['alerts']: st.warning(alert)
                     
-                    if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
-                    elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
-                    
                     if r['sector'] == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
                     if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r['name']), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
-                    
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
-                    if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
-                    if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                     
-                    tp20 = int(r['bt_val'] * 1.20); tp15 = int(r['bt_val'] * 1.15)
-                    tp10 = int(r['bt_val'] * 1.10); tp5  = int(r['bt_val'] * 1.05)
-                    sl5  = int(r['bt_val'] * 0.95); sl8  = int(r['bt_val'] * 0.92); sl15 = int(r['bt_val'] * 0.85)
+                    if "待伏" in scope_mode:
+                        if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
+                        elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
+                        if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
+                        if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
+                    else:
+                        if r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過しています。")
                     
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     
+                    # --- 計器盤の描画（モード分岐） ---
                     sc0, sc0_1, sc0_2, sc1, sc2, sc3, sc4 = st.columns([0.8, 0.8, 0.8, 0.9, 1.1, 1.8, 1.5])
                     sc0.metric("直近高値", f"{int(r['h14']):,}円")
                     sc0_1.metric("直近安値", f"{int(r['l14']):,}円")
                     sc0_2.metric("上昇幅", f"{int(r['ur']):,}円")
                     sc1.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
-                    html_buy = f"""
-                    <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (待伏)</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['bt_val']:,}円</div>
-                    </div>
-                    """
-                    sc2.markdown(html_buy, unsafe_allow_html=True)
-                    
-                    html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
-                        <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
-                        <div style="font-size: 16px;">
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">20%</span> <span style="color: #ef5350;">{tp20:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">15%</span> <span style="color: #ef5350;">{tp15:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-5%</span> <span style="color: #26a69a;">{sl5:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
-                            <span style="display: inline-block; width: 2.5em; color: #ef5350;">5%</span> <span style="color: #ef5350;">{tp5:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-15%</span> <span style="color: #26a69a;">{sl15:,}円</span>
+                    if "待伏" in scope_mode:
+                        # 待伏用の表示（買値目標）
+                        html_buy = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (待伏)</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['bt_val']:,}円</div>
                         </div>
-                    </div>"""
-                    sc3.markdown(html_sell, unsafe_allow_html=True)
+                        """
+                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                        
+                        tp10 = int(r['bt_val'] * 1.10); sl8 = int(r['bt_val'] * 0.92)
+                        html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 売値目標 ＆ 🛡️ 損切目安</div>
+                            <div style="font-size: 16px;">
+                                <span style="display: inline-block; width: 2.5em; color: #ef5350;">10%</span> <span style="color: #ef5350;">{tp10:,}円</span> <span style="color: rgba(250, 250, 250, 0.3); margin: 0 4px;">|</span> <span style="display: inline-block; width: 2.8em; color: #26a69a;">-8%</span> <span style="color: #26a69a;">{sl8:,}円</span><br>
+                            </div>
+                        </div>"""
+                        sc3.markdown(html_sell, unsafe_allow_html=True)
+                        
+                        reach_display = f"到達度: {r['reach_val']:.1f}%"
+                    else:
+                        # 強襲用の表示（逆指値と利確目標）
+                        html_sl = f"""
+                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🛡️ 逆指値目安 (強襲)</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #ef5350;">{r['sl_val']:,}円</div>
+                        </div>
+                        """
+                        sc2.markdown(html_sl, unsafe_allow_html=True)
+                        
+                        html_tp = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 利確目標 (+10%)</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #26a69a;">{r['tp_val']:,}円</div>
+                        </div>"""
+                        sc3.markdown(html_tp, unsafe_allow_html=True)
+                        
+                        reach_display = f"RSI: {r['rsi']:.1f}%"
                     
                     html_stats = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0.5rem;">
                         <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
-                            <span style="font-size: 12px; color: #aaa;">到達度:</span> <strong style="font-size: 15px; color: #fff;">{r['reach_val']:.1f}%</strong>
+                            <span style="font-size: 12px; color: #aaa;">ステータス:</span> <strong style="font-size: 15px; color: #fff;">{reach_display}</strong>
                         </div>
                         <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 4px 8px; border-radius: 4px;">
                             <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{r['atr_val']:,}円 / {r['d_high']}日</strong>
@@ -1318,8 +1348,10 @@ with tab3:
                     cutoff_chart = r['df_chart']['Date'].max() - timedelta(days=60)
                     df_chart_filtered = r['df_chart'][r['df_chart']['Date'] >= cutoff_chart]
                     
-                    st.markdown(render_technical_radar(df_chart_filtered, r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
-                    draw_chart(df_chart_filtered, r['bt_val'], tp10=tp10)
+                    # チャートの基準線をモードによって切り替え
+                    c_base = r['bt_val'] if "待伏" in scope_mode else r['lc']
+                    st.markdown(render_technical_radar(df_chart_filtered, c_base, st.session_state.bt_tp), unsafe_allow_html=True)
+                    draw_chart(df_chart_filtered, c_base, tp10=int(c_base*1.10), chart_key=f"t3_chart_{r['code']}")
                         
 # ------------------------------------------
 # Tab 4: 戦術シミュレータ（デュアル・バックテスト）
