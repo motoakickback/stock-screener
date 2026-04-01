@@ -558,79 +558,44 @@ def render_technical_radar(df, buy_price, tp_pct):
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}">
         <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
-def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None):
+# --- チャート描画エンジンの更新（ID重複エラー対策版） ---
+def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     import plotly.graph_objects as go
     from datetime import timedelta
     
     df = df.copy()
-
-    # 1. まず「キャンバス（fig）」を作成する
     fig = go.Figure()
     
-    # 2. ローソク足を描画する
+    # ローソク足
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
         increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
     ))
 
-    # 3. MA線を描画（重複を排除し、元のカラーリングに connectgaps=True を統合）
-    if 'MA5' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日線(短期)', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
-    if 'MA25' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日線(中期)', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
-    if 'MA75' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日線(長期)', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
+    # 移動平均線
+    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
+    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
+    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
 
-    # 4. ターゲットライン（買値目標）
+    # ターゲットライン
     fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    
-    # 🚨 パッチ3：売値(tp)が万が一NaNだった場合、int()変換でのシステムクラッシュを防ぐ
-    if tp5 is not None and not pd.isna(tp5): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp5)]*len(df), mode='lines', name='売値(5%)', line=dict(color='rgba(239, 83, 80, 0.4)', width=1, dash='dot')))
-    if tp10 is not None and not pd.isna(tp10): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp10)]*len(df), mode='lines', name='売値(10%)', line=dict(color='rgba(239, 83, 80, 0.6)', width=1.5, dash='dot')))
-    if tp15 is not None and not pd.isna(tp15): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp15)]*len(df), mode='lines', name='売値(15%)', line=dict(color='rgba(239, 83, 80, 0.8)', width=1.5, dash='dot')))
-    if tp20 is not None and not pd.isna(tp20): fig.add_trace(go.Scatter(x=df['Date'], y=[int(tp20)]*len(df), mode='lines', name='売値(20%)', line=dict(color='rgba(239, 83, 80, 1.0)', width=1.5, dash='dot')))
     
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    padding_days = timedelta(days=0.5)
-
-    visible_df = df[(df['Date'] >= start_date) & (df['Date'] <= last_date)]
-    if not visible_df.empty:
-        y_max_vals = [visible_df['AdjH'].max(), targ_p, visible_df['MA5'].max(), visible_df['MA25'].max(), visible_df['MA75'].max()]
-        y_min_vals = [visible_df['AdjL'].min(), targ_p * 0.85, visible_df['MA5'].min(), visible_df['MA25'].min(), visible_df['MA75'].min()] 
-        
-        for tp in [tp5, tp10, tp15, tp20]:
-            if tp is not None: y_max_vals.append(tp)
-        
-        y_max = max([v for v in y_max_vals if not pd.isna(v)])
-        y_min = min([v for v in y_min_vals if not pd.isna(v)])
-        
-        margin = (y_max - y_min) * 0.05
-        y_range = [y_min - margin, y_max + margin]
-    else:
-        y_range = None
-
-    layout_args = dict(
-        height=450, 
-        margin=dict(l=10, r=60, t=20, b=40), 
+    
+    fig.update_layout(
+        height=450, margin=dict(l=0, r=60, t=30, b=40),
         xaxis_rangeslider_visible=True,
-        xaxis=dict(range=[start_date, last_date + padding_days], type="date"),
-        yaxis=dict(tickformat=",.0f", hoverformat=",.0f", side="right"),
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)', 
-        hovermode="x unified", 
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"),
+        yaxis=dict(tickformat=",.0f", side="right"),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     
-    if y_range:
-        layout_args['yaxis'].update(range=y_range, fixedrange=False)
-
-    fig.update_layout(**layout_args)
-    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
-    
-    config = {'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
-    st.plotly_chart(fig, use_container_width=True, config=config)
+    # 🚨 修正の核心：固有の key を付与して重複エラーを防ぐ
+    config = {'displayModeBar': True, 'displaylogo': False}
+    st.plotly_chart(fig, use_container_width=True, config=config, key=chart_key)
     
 # --- 🚨 復元パッチ：欠落していた2つのスナイパー機能 ---
 @st.cache_data(ttl=86400, show_spinner=False)
