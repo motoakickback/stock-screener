@@ -796,17 +796,18 @@ with tab1:
                     high_idx = recent_4d['AdjH'].idxmax()
                     high_4d_val = recent_4d.loc[high_idx, 'AdjH']
                     
-                    # 🚨 14営業日ではなく「10営業日（2週間）」に修正
+                    # 🚨 10営業日（2週間）の安値を正確に取得
                     start_idx = max(0, high_idx - 10)
                     window_10d = group_reset.iloc[start_idx : high_idx + 1]
                     low_10d_val = window_10d['AdjL'].min()
 
-                    # 🚨 【鉄の掟 第九条】サイドバーの設定値（下限・上限）を動的に反映
+                    # 🚨 【鉄の掟 第九条】サイドバーの設定値（下限・上限）を反映
                     rise_ratio = high_4d_val / low_10d_val
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
 
-                    wave_len = high_4d_val - low_14d_val
+                    # 🚨 変数名を low_10d_val に統一して計算
+                    wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
                     target_buy = high_4d_val - (wave_len / 2.0)
