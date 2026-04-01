@@ -1008,15 +1008,7 @@ with tab2:
 
                     if gc_days == 0: continue
 
-                    # 🚨 修正4&5: SABC判定のバグを修正し、GC日数と完全に同期
-                    if gc_days == 1:
-                        if rsi <= 50: t_rank, t_color, t_score = "S（即時狙撃）🔥", "#2e7d32", 5
-                        else: t_rank, t_color, t_score = "A（強襲追撃）⚡", "#ed6c02", 4
-                    elif gc_days == 2:
-                        if rsi <= 55: t_rank, t_color, t_score = "A（強襲追撃）⚡", "#ed6c02", 4
-                        else: t_rank, t_color, t_score = "B（順張り警戒）📈", "#0288d1", 3
-                    else:
-                        t_rank, t_color, t_score = "B（順張り警戒）📈", "#0288d1", 3
+                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲", gc_days=gc_days)
 
                     # 🚨 修正6&7: 企業規模と社名の正確な抽出
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
