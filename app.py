@@ -1226,12 +1226,6 @@ with tab2:
             
             for r in light_results:
                 st.divider()
-                # 🚨 古いメモリや別名のキー（CompanyName等）が来ても絶対にクラッシュさせない防弾処理
-                c = str(r.get('Code', '0000'))
-                n = r.get('Name', r.get('CompanyName', f"銘柄 {c[:4]}"))
-                
-                for r in light_results:
-                st.divider()
                 # 🚨 古いメモリが来ても絶対にクラッシュさせない防弾処理
                 c = str(r.get('Code', '0000'))
                 n = r.get('Name', r.get('CompanyName', f"銘柄 {c[:4]}"))
