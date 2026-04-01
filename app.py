@@ -878,10 +878,16 @@ with tab1:
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
         
-        # 🚨 追加：照準（TAB3）への一括コピペ用ボックス
-        all_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results])
-        st.info("📋 以下のコードをコピーして、照準（TAB3）に一括ペースト可能です。")
-        st.code(all_codes, language="text")
+        sa_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A'))])
+        other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A'))])
+        
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能です。")
+        if sa_codes:
+            st.markdown("**🎯 優先度 S・A (主力標的)**")
+            st.code(sa_codes, language="text")
+        if other_codes:
+            with st.expander("👀 優先度 B・C・圏外 (監視対象)"):
+                st.code(other_codes, language="text")
         
         for r in light_results:
             # --- 以下、既存の銘柄別表示ロジック（そのまま継続） ---
