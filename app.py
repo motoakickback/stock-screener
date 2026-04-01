@@ -122,10 +122,6 @@ components.html(
 user_id = st.session_state["current_user"]
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
-API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
-headers = {"x-api-key": API_KEY}
-BASE_URL = "https://api.jquants.com/v2"
-
 # --- 🔴 安全装置：マニュアル・オーバーライド ---
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
