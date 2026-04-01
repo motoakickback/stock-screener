@@ -1102,30 +1102,6 @@ with tab2:
             
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
             
-            hist_chart = pd.DataFrame()
-            api_code = c if len(c) == 5 else c + "0"
-            raw_s = get_single_data(api_code, 1)
-            
-            if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
-                temp_df = pd.DataFrame(raw_s["bars"])
-                rename_map = {}
-                for col in temp_df.columns:
-                    c_up = col.upper()
-                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                    if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
-                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                dedup_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
-                hist_chart = calc_technicals(clean_df(dedup_df))
-            else:
-                st.error(f"銘柄 {c[:4]} のチャートデータ取得に失敗しました。")
-                
-            if not hist_chart.empty:
-                if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10.0
-                st.markdown(render_technical_radar(hist_chart, lc_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                # 🚨 重複エラー防止のため chart_key を一意に設定
-                draw_chart(hist_chart, lc_val, lc_val*1.05, lc_val*1.1, lc_val*1.15, lc_val*1.2, chart_key=f"t2_chart_{c}")
-                del hist_chart
         import gc; gc.collect()
                     
 with tab3:
