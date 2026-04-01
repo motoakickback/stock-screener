@@ -534,24 +534,6 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
         else:
             return "C（射程外・監視）👁️", "#616161", 1, macd_t
 
-    else:
-        # 【待伏（逆張り）用ロジック】: 買値目標(bt)との距離とRSIを重視
-        if bt == 0 or lc == 0:
-            return "C（計算不能）👁️", "#616161", 1, macd_t
-
-        dist_pct = ((lc / bt) - 1) * 100 # 目標値までの距離(%)
-
-        if dist_pct < -2.0:
-            return "圏外（防衛線突破）💀", "#d32f2f", 0, macd_t
-        elif dist_pct <= 2.0: # -2.0% ～ +2.0% の交戦距離
-            if rsi <= 45: return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
-            else: return "A（接近中）⚡", "#ed6c02", 4, macd_t
-        elif dist_pct <= 5.0: # +2.0% ～ +5.0%
-            if rsi <= 50: return "A（罠の設置）🪤", "#0288d1", 4, macd_t
-            else: return "B（高高度）📈", "#0288d1", 3, macd_t
-        else:
-            return "C（射程外・監視）👁️", "#616161", 1, macd_t
-
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
     latest = df.iloc[-1]; prev = df.iloc[-2]
