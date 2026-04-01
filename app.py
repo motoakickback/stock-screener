@@ -854,11 +854,12 @@ with tab1:
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
         
         # --- Tab 1（待伏）UI描画：高密度・完全版 ---
+        # --- Tab 1（待伏）UI描画：ボスの「重装甲」完全復刻版 ---
         for r in light_results:
             st.divider()
             c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
             
-            # 🚨 司令部命令：全ての変数をここで一括定義（NameErrorを物理的に封じる）
+            # 変数一括抽出（安全装置）
             target_buy_val = int(r.get('target_buy', 0))
             reach_val = r.get('reach_rate', 0)
             high_val = int(r.get('high_4d', 0))
@@ -869,40 +870,41 @@ with tab1:
             t_bg = r.get('triage_bg', '#616161')
             scale_val = str(r.get('Scale', ''))
             
-            # 🏢 規模バッジ
+            # 🏢 規模・優先度バッジ（重装甲レイアウト）
             badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-            # 🎯 優先度バッジ
             triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
-            # 🖼️ ヘッダーエリア
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                         {badge}{triage_badge}
-                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; margin-left:0.5rem;">RSI: {r.get("RSI", 50):.1f}%</span>
-                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
+                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
-            # 📊 メトリクスエリア（4列構成）
-            sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
-            sc0.metric("直近高値", f"{high_val:,}円")
-            sc1.metric("起点安値", f"{low_val:,}円")
-            sc2.metric("最新終値", f"{lc_val:,}円")
+            # 📊 メトリクスエリア：平均出来高を独立させて復活
+            m_cols = st.columns([1, 1, 1, 1.2, 1.5])
+            m_cols[0].metric("直近高値", f"{high_val:,}円")
+            m_cols[1].metric("起点安値", f"{low_val:,}円")
+            m_cols[2].metric("最新終値", f"{lc_val:,}円")
+            # 🔥 復活：平均出来高
+            m_cols[3].metric("平均出来高(5日)", f"{avg_vol_val:,}株")
             
+            # 🎯 買値目標（右端に配置）
             html_buy = f"""
-            <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{target_buy_val:,}円</div>
+            <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
+                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 半値押し 買値目標</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{target_buy_val:,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
             </div>
             """
-            sc3.markdown(html_buy, unsafe_allow_html=True)
+            m_cols[4].markdown(html_buy, unsafe_allow_html=True)
             
-            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 📊 平均出来高: {avg_vol_val:,}株")
+            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日")
 
-            # 📈 チャート描画セクション
+            # 📈 チャート描画（固有キーを渡してエラーを完全封鎖）
             hist_chart = pd.DataFrame()
             api_code = c if len(c) == 5 else c + "0"
             raw_s = get_single_data(api_code, 1)
@@ -920,33 +922,9 @@ with tab1:
                 hist_chart = calc_technicals(clean_df(dedup_df))
             
             if not hist_chart.empty:
-                # 🚨 ここで target_buy_val を安全に使用
                 st.markdown(render_technical_radar(hist_chart, target_buy_val, st.session_state.bt_tp), unsafe_allow_html=True)
-                draw_chart(hist_chart, target_buy_val, target_buy_val*1.05, target_buy_val*1.1, target_buy_val*1.15, target_buy_val*1.2)
-                del hist_chart
-                
-            # 🚨 修正完了: ここで確実に最新APIデータを取得してからチャートを描く
-            hist_chart = pd.DataFrame()
-            api_code = c if len(c) == 5 else c + "0"
-            raw_s = get_single_data(api_code, 1)
-            
-            if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
-                temp_df = pd.DataFrame(raw_s["bars"])
-                rename_map = {}
-                for col in temp_df.columns:
-                    c_up = col.upper()
-                    if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                    if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                    if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L':  rename_map[col] = 'AdjL'
-                    if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                dedup_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
-                hist_chart = calc_technicals(clean_df(dedup_df))
-            else:
-                st.error(f"銘柄 {c[:4]} のチャートデータ取得に失敗しました。")
-                
-            if not hist_chart.empty:
-                st.markdown(render_technical_radar(hist_chart, target_buy_val, target_buy_val * 1.1), unsafe_allow_html=True)
-                draw_chart(hist_chart, target_buy_val, target_buy_val*1.05, target_buy_val*1.1, target_buy_val*1.15, target_buy_val*1.2)
+                # 🚨 chart_key に銘柄コードを渡して一意に識別させる
+                draw_chart(hist_chart, target_buy_val, target_buy_val*1.05, target_buy_val*1.1, target_buy_val*1.15, target_buy_val*1.2, chart_key=f"chart_{c}")
                 del hist_chart
         import gc; gc.collect()
 
