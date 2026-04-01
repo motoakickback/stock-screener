@@ -763,9 +763,9 @@ with tab1:
                     df = df[df['Code'].isin(valid_codes)]
 
                     if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                    invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                    valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                    df = df[df['Code'].isin(valid_codes_bio)]
+                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
+                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
+                        df = df[df['Code'].isin(valid_codes_bio)]
                 
                 results = []
                 for code, group in df.groupby('Code'):
