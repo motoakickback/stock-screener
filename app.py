@@ -1261,14 +1261,35 @@ with tab3:
                     sc1.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
                     if "待伏" in scope_mode:
-                        # 待伏用の表示（買値目標）
-                        html_buy = f"""
-                        <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 買値目標 (待伏)</div>
-                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['bt_val']:,}円</div>
+                        reach_display = f"到達度: {r['reach_val']:.1f}%"
+                    else:
+                        reach_display = f"RSI: {r['rsi']:.1f}%"
+
+                    # マルチ・ターゲット・マトリクス（照準・精密解析用）
+                    tp_list = [5, 8, 10, 15, 20]
+                    sl_list = [3, 5, 8]
+                    
+                    # 基準価格の決定
+                    c_price = r['bt_val'] if "待伏" in scope_mode else r['lc']
+                    mode_label = "指値" if "待伏" in scope_mode else "現在値"
+
+                    html_matrix_scope = f"""
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 8px; border-left: 4px solid #FFD700;">
+                        <div style="font-size: 12px; color: #888; margin-bottom: 5px;">🎯 {mode_label}基準 P/Lマトリクス ({int(c_price):,}円)</div>
+                        <div style="display: flex; justify-content: space-between; gap: 20px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 11px; color: #26a69a; border-bottom: 1px solid #26a69a; margin-bottom: 4px;">利確目標</div>
+                                {" ".join([f'<div style="font-size: 13px; color: #eee; display: flex; justify-content: space-between;"><span>+{p}%</span><span style="font-weight:bold;">{int(c_price*(1+p/100)):,}</span></div>' for p in tp_list])}
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 11px; color: #ef5350; border-bottom: 1px solid #ef5350; margin-bottom: 4px;">損切目安</div>
+                                {" ".join([f'<div style="font-size: 13px; color: #eee; display: flex; justify-content: space-between;"><span>-{l}%</span><span style="font-weight:bold;">{int(c_price*(1-l/100)):,}</span></div>' for l in sl_list])}
+                            </div>
                         </div>
-                        """
-                        sc2.markdown(html_buy, unsafe_allow_html=True)
+                    </div>
+                    """
+                    # sc2に統合して出力（sc3は空きスペースとしてレイアウトを担保）
+                    sc2.markdown(html_matrix_scope, unsafe_allow_html=True)
                         
                         tp10 = int(r['bt_val'] * 1.10); sl8 = int(r['bt_val'] * 0.92)
                         html_sell = f"""<div style="font-family: sans-serif; padding-top: 0.2rem;">
