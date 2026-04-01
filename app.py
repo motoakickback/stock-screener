@@ -487,15 +487,19 @@ def calc_technicals(df):
 
 # 🚨 置き換え対象：def get_triage_info(macd_hist, macd_hist_prev, rsi): ～ のブロック全て
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
-    # 1. MACDの基本状態（計器レーダー描画用・共通処理）
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
-    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
-    else: macd_t = "減衰"
+    # 1. MACDの基本状態（共通処理）
+    if macd_hist > 0 and macd_hist_prev <= 0:
+        macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev:
+        macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev:
+        macd_t = "下落継続"
+    else:
+        macd_t = "減衰"
 
     # 2. 戦術別のSABC判定（完全分離）
     if mode == "強襲":
-        # 【強襲（順張り）用ロジック】: MACD GCとRSIを重視
+        # 【強襲（順張り）用ロジック】
         if macd_t == "下落継続" or rsi >= 75:
             return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
         elif macd_t == "GC直後":
@@ -508,7 +512,8 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
             return "C（条件外・監視）👁️", "#616161", 1, macd_t
 
     else:
-        # 【待伏（逆張り）用ロジック】: 買値目標(bt)との距離を最優先
+        # 【待伏（逆張り）用ロジック】
+        # 🚨 司令部要求：接近中(オレンジ)を 4.5点、罠(青)を 4.0点に設定し、ソート順を強制浮上させる
         if bt == 0 or lc == 0:
             return "C（計算不能）👁️", "#616161", 1, macd_t
 
@@ -520,15 +525,14 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏"):
             if rsi <= 45: 
                 return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
             else: 
-                return "A（接近中）⚡", "#ed6c02", 4.5, macd_t
+                return "A（接近中）⚡", "#ed6c02", 4.5, macd_t # 🔥 オレンジ 4.5点
         elif dist_pct <= 5.0: # +2.0% ～ +5.0% (準備段階)
             if rsi <= 50: 
-                return "A（罠の設置）🪤", "#0288d1", 4.0, macd_t
+                return "A（罠の設置）🪤", "#0288d1", 4.0, macd_t # ⚡ 青 4.0点
             else: 
                 return "B（高高度）📈", "#0288d1", 3, macd_t
         else:
             return "C（射程外・監視）👁️", "#616161", 1, macd_t
-
     else:
         # 【待伏（逆張り）用ロジック】: 買値目標(bt)との距離とRSIを重視
         if bt == 0 or lc == 0:
