@@ -952,7 +952,7 @@ with tab2:
         st.session_state.tab2_scan_results = None
 
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=40, step=5)
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=60, step=5) # デフォルト60に最適化
     vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=10000, step=10000)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
@@ -963,7 +963,7 @@ with tab2:
     # ==========================================
     if run_scan_t2:
         st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
-        with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補」を抽出中..."):
+        with st.spinner("【Phase 1】全銘柄の波形から「GC初動候補（3日以内）」を抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗しました。")
@@ -971,7 +971,6 @@ with tab2:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 案A：API取得上限未満しかデータがない銘柄をIPOとみなして弾く
                     if exclude_ipo_flag and len(group) < 31: continue
                     if len(group) < 15: continue
                     
@@ -983,18 +982,30 @@ with tab2:
                     if avg_vol < vol_limit: continue
                     
                     g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 2: continue
+                    if len(g_tech) < 5: continue # 過去判定のため最低5行必要
                     
                     latest = g_tech.iloc[-1]
-                    prev = g_tech.iloc[-2]
                     rsi = latest.get('RSI', 50)
-                    macd_hist = latest.get('MACD_Hist', 0)
-                    prev_hist = prev.get('MACD_Hist', 0)
-                    
                     if rsi > rsi_limit: continue
-                    if not (prev_hist < 0 and macd_hist >= 0): continue # GC判定
+
+                    # 🚨 修正：GC後3日目までの判定ロジック
+                    hist_vals = g_tech['MACD_Hist'].tail(5).values
+                    gc_days = 0
                     
-                    # 🚨 追加：SABC判定ロジックの呼び出し
+                    # hist_vals[-1]が最新日(T)、[-2]がT-1、[-3]がT-2、[-4]がT-3
+                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
+                        gc_days = 1 # 今日GC（1日目）
+                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0:
+                        gc_days = 2 # 昨日GC（2日目）
+                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0:
+                        gc_days = 3 # 一昨日GC（3日目）
+
+                    if gc_days == 0: continue # 3日以内にGCしていない、または再度マイナスに沈んだ銘柄は弾く
+                    
+                    macd_hist = hist_vals[-1]
+                    prev_hist = hist_vals[-2]
+                    
+                    # SABC判定ロジックの呼び出し
                     t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲")
                     
                     # 企業規模と基本情報の取得
@@ -1005,7 +1016,6 @@ with tab2:
                             c_name = m_row.iloc[0].get('CompanyName', c_name)
                             c_market = m_row.iloc[0].get('Market', '不明')
                             c_sector = m_row.iloc[0].get('Sector', '不明')
-                            # 時価総額から企業規模を判定（無い場合は不明）
                             mcap = pd.to_numeric(m_row.iloc[0].get('MarketCap', 0), errors='coerce')
                             if pd.isna(mcap) or mcap == 0: c_size = "規模不明"
                             elif mcap >= 500000000000: c_size = "大型株"
@@ -1015,15 +1025,16 @@ with tab2:
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Size': c_size,
                         'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol,
-                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'T_MACD': t_macd
+                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'T_MACD': t_macd,
+                        'GC_Days': gc_days # 🚨 追加：経過日数を格納
                     })
                         
                 if not results:
                     st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
-                    # 🚨 修正：SABCスコアが高い順（同点ならRSIが低い順）にソート
-                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['RSI']))
+                    # SABCスコア降順 ＞ 経過日数が若い順 ＞ RSI低い順
+                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))
                 
                 del raw, df, results
                 import gc; gc.collect()
@@ -1033,7 +1044,7 @@ with tab2:
     # ==========================================
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動 {len(light_results)} 銘柄を確認。")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) {len(light_results)} 銘柄を確認。")
         for r in light_results:
             st.divider()
             c = str(r.get('Code', '0000'))
@@ -1042,13 +1053,12 @@ with tab2:
             rsi_val = r.get('RSI', 50)
             vol_val = r.get('avg_vol', 0)
             
-            # SABC判定データの抽出
             t_rank = r.get('T_Rank', '判定不能')
             t_color = r.get('T_Color', '#616161')
             t_macd = r.get('T_MACD', '不明')
             c_size = r.get('Size', '不明')
+            gc_d = r.get('GC_Days', 1)
 
-            # 🚨 修正：UIヘッダーにSABCバッジを追加
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
@@ -1061,11 +1071,14 @@ with tab2:
             
             sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
             sc0.metric("最新終値", f"{int(lc_val):,}円")
-            sc1.metric("逆指値目安", f"{int(lc_val * 0.95):,}円") # 強襲の場合、逆指値は下に置くべき（0.95倍などに修正）
+            sc1.metric("逆指値目安", f"{int(lc_val * 0.95):,}円")
             
-            # 🚨 修正：右側のステータスパネルに企業規模を追加
+            # 🚨 修正：UIパネルに「GC後〇日目」をハイライト表示
             html_stats = f"""
             <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="background: rgba(237, 108, 2, 0.15); border-left: 3px solid #ed6c02; padding: 4px 8px; border-radius: 4px;">
+                    <span style="font-size: 12px; color: #aaa;">経過日数:</span> <strong style="font-size: 15px; color: #ed6c02;">GC後 {gc_d}日目</strong>
+                </div>
                 <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 4px 8px; border-radius: 4px;">
                     <span style="font-size: 12px; color: #aaa;">RSI (過熱感):</span> <strong style="font-size: 15px; color: #fff;">{rsi_val:.1f}%</strong>
                 </div>
@@ -1099,9 +1112,7 @@ with tab2:
                 st.error(f"銘柄 {c[:4]} のチャートデータ取得に失敗しました。")
                 
             if not hist_chart.empty:
-                # 🚨 安全装置（render_technical_radar エラー回避）
                 if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10.0
-                
                 st.markdown(render_technical_radar(hist_chart, lc_val, st.session_state.bt_tp), unsafe_allow_html=True)
                 draw_chart(hist_chart, lc_val, lc_val*1.05, lc_val*1.1, lc_val*1.15, lc_val*1.2)
                 del hist_chart
