@@ -796,6 +796,7 @@ with tab1:
     # ==========================================
     # 💥 フェーズ1：計算・抽出・超圧縮（ボタンが押された時のみ実行）
     # ==========================================
+    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外", value=True, key="tab1_etf_filter")
     if run_scan:
         with st.spinner("神速モードで相場データを一括取得中..."):
             raw = get_hist_data_cached()
