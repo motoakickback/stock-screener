@@ -889,43 +889,45 @@ with tab1:
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
+        
         for r in light_results:
             st.divider()
-            c = str(r.get('Code', '0000'))
-            n = r.get('Name', f"銘柄 {c[:4]}")
-            reach_val = r.get('reach_rate', 0); high_val = r.get('high_4d', 0); low_val = r.get('low_14d', 0)
-            lc_val = r.get('lc', 0); target_buy_val = r.get('target_buy', 0)
+            c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
             
-            reach_badge = f'<span style="background-color: {"#2e7d32" if reach_val >= 100 else "#f57c00"}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold;">{"🎯" if reach_val >= 100 else "⏳"} 到達率: {reach_val:.1f}%</span>'
+            # 🏢 規模バッジの生成
+            scale_val = str(r.get('Scale', ''))
+            badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
+            # 🎯 優先度バッジの生成
+            triage_badge = f'<span style="background-color: {r.get("triage_bg", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank", "不明")}</span>'
 
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        {reach_badge}
-                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
+                        {badge}{triage_badge}
+                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; margin-left:0.5rem;">RSI: {r.get("RSI", 50):.1f}%</span>
+                        <span style="background-color: rgba(255,255,255,0.1); color: #ccc; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px;">到達度: {r.get("reach_rate", 0):.1f}%</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
-            # 🚨 修正：待伏（Tab 1）は sc0〜sc3 の「4列」で完璧に完結させます。
+            # 🚨 4列(sc0-sc3)の中に情報を凝縮。sc4はエラーの元なので使いません。
             sc0, sc1, sc2, sc3 = st.columns([1, 1, 1, 1.5])
-            sc0.metric("直近高値(4日以内)", f"{int(high_val):,}円")
-            sc1.metric("起点安値(2週間)", f"{int(low_val):,}円")
-            sc2.metric("最新終値", f"{int(lc_val):,}円")
+            sc0.metric("直近高値", f"{int(r.get('high_4d', 0)):,}円")
+            sc1.metric("起点安値", f"{int(r.get('low_14d', 0)):,}円")
+            sc2.metric("最新終値", f"{int(r.get('lc', 0)):,}円")
             
-            # 🎯 買値目標を sc3 に描画。ここに sc4 の記述があったら削除してください。
             html_buy = f"""
             <div style="font-family: sans-serif; padding-top: 0.2rem;">
                 <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 半値押し 買値目標</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(target_buy_val):,}円</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r.get('target_buy', 0)):,}円</div>
             </div>
             """
             sc3.markdown(html_buy, unsafe_allow_html=True)
             
-            # 🚨 重要：この直下に「sc4.markdown(...)」という記述が残っていたら、必ず削除してください。
-            
-            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
+            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ 📊 平均出来高: {int(r.get('avg_vol', 0)):,}株")
+
+            # --- 以下チャート描画（略） ---
             
             # 🚨 修正完了: ここで確実に最新APIデータを取得してからチャートを描く
             hist_chart = pd.DataFrame()
