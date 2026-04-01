@@ -974,9 +974,9 @@ with tab2:
                     elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
                     elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
 
-                    if gc_days == 0: continue
+                   if gc_days == 0: continue
 
-                    # 🚨 追加：関数に渡すための直近2日分のMACDヒストグラムを配列から抽出
+                    # 🚨 座標修正：計算に必要な2日分のMACDヒストグラムをここで抽出
                     macd_hist = hist_vals[-1]
                     prev_hist = hist_vals[-2]
 
