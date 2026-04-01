@@ -779,6 +779,15 @@ with tab1:
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                # --------------------------------------------------
+                # ⚡ 爆速化パッチ：ループ前の一括足切り（プレフィルタ）
+                # --------------------------------------------------
+                latest_date = df['Date'].max()
+                latest_df = df[df['Date'] == latest_date]
+                # 終値200円未満の銘柄を一瞬で全削除
+                valid_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                df = df[df['Code'].isin(valid_codes)]
+                # --------------------------------------------------
                 if exclude_etf_flag_t1 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
@@ -792,7 +801,6 @@ with tab1:
                     if len(group) < 15: continue
                     
                     lc = group.iloc[-1]['AdjC']
-                    if lc < 200: continue
                     
                     # 出来高の足切り
                     v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
