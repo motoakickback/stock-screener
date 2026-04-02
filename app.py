@@ -1385,60 +1385,62 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # 🚨 段階3：UI描画
-            for r in scope_results:
-                st.divider()
-                
-                # 0. 基本情報
-                c = str(r.get('Code', r.get('code', '0000')))
-                n = str(r.get('Name', r.get('name', f"銘柄 {c[:4]}")))
-                
-                # 1. 市場区分バッジ
-                raw_market = str(r.get('Market', r.get('market', '不明')))
-                m_lower = raw_market.lower()
-                if 'プライム' in m_lower or '一部' in m_lower:
-                    badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                elif 'グロース' in m_lower or 'マザーズ' in m_lower:
-                    badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                else:
-                    badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
+                for r in scope_results:
+                    st.divider()
+                    
+                    # 0. 基本情報
+                    c = str(r.get('Code', r.get('code', '0000')))
+                    n = str(r.get('Name', r.get('name', f"銘柄 {c[:4]}")))
+                    
+                    # 1. 市場区分バッジ
+                    raw_market = str(r.get('Market', r.get('market', '不明')))
+                    m_lower = raw_market.lower()
+                    if 'プライム' in m_lower or '一部' in m_lower:
+                        badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                        badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                    else:
+                        badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
 
-                # 2. 変数一括抽出
-                target_buy_val = int(r.get('target_buy', 0))
-                reach_val = r.get('reach_rate', r.get('reach_val', 0))
-                high_val = int(r.get('high_4d', 0))
-                low_val = int(r.get('low_14d', r.get('low_10d', 0)))
-                lc_val = int(r.get('lc', 0))
-                t_rank = r.get('triage_rank', r.get('t_rank', '不明'))
-                t_bg = r.get('triage_bg', r.get('t_color', '#616161'))
-                
-                # 3. 🎯 優先度バッジ
-                triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
+                    # 2. 変数一括抽出
+                    target_buy_val = int(r.get('target_buy', 0))
+                    reach_val = r.get('reach_rate', r.get('reach_val', 0))
+                    high_val = int(r.get('high_4d', 0))
+                    low_val = int(r.get('low_14d', r.get('low_10d', 0)))
+                    lc_val = int(r.get('lc', 0))
+                    t_rank = r.get('triage_rank', r.get('t_rank', '不明'))
+                    t_bg = r.get('triage_bg', r.get('t_color', '#616161'))
+                    
+                    # 3. 🎯 優先度バッジ
+                    triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
-                # 4. ⚡ ボラティリティ（高機動）センサー
-                swing_pct = 0
-                if low_val > 0:
-                    swing_pct = ((high_val - low_val) / low_val) * 100
-                
-                volatility_badge = ""
-                if swing_pct >= 15.0:
-                    volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+                    # 4. ⚡ ボラティリティ（高機動）センサー
+                    swing_pct = 0
+                    if low_val > 0:
+                        swing_pct = ((high_val - low_val) / low_val) * 100
+                    
+                    volatility_badge = ""
+                    if swing_pct >= 15.0:
+                        volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
 
-                # 5. 🚨 UI描画
-                st.markdown(f"""
-                    <div style="margin-bottom: 0.8rem;">
-                        <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
-                        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                            {badge_html}{triage_badge}{volatility_badge}
-                            <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("rsi", r.get("RSI", 50)):.1f}%</span>
-                            <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
+                    # 5. 🚨 UI描画
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                                {badge_html}{triage_badge}{volatility_badge}
+                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("rsi", r.get("RSI", 50)):.1f}%</span>
+                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
+                            </div>
                         </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                        
-                for alert in r.get('alerts', []): st.warning(alert)
-            if r['sector'] == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
-            if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r['name']), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
-            if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
+                    """, unsafe_allow_html=True)
+                            
+                    for alert in r.get('alerts', []): st.warning(alert)
+                    
+                    # 🚨 修正：ここもループ内に収容（字下げ）し、エラー回避仕様にしました
+                    if r.get('sector') == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
+                    if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r.get('name', '')), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
+                    if r.get('is_dt') or r.get('is_hs'): st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
             
             if "待伏" in scope_mode:
                 if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
