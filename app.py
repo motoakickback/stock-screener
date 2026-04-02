@@ -1260,26 +1260,43 @@ with tab3:
                     sc0_2.metric("上昇幅", f"{int(r['ur']):,}円")
                     sc1.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
                     
-                    # 🚨 修正：買値目標ボックス ＆ P/Lマトリクスのデュアル配置
-                    # 🚨 修正：買値目標ボックス ＆ P/Lマトリクスのデュアル配置
+                    # 🚨 修正：買値目標ボックス（強襲モードに執行価格と防衛ラインを追加）
                     if "待伏" in scope_mode:
                         reach_display = f"到達度: {r['reach_val']:.1f}%"
                         c_target = r['bt_val']
-                        target_label = "🎯 半値押し 買値目標"
+                        
+                        # ① 買値目標ボックス（待伏用）
+                        html_buy_scope = f"""
+                        <div style="background: rgba(255, 215, 0, 0.05); padding: 0.6rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                            <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 4px;">🎯 半値押し 買値目標</div>
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(c_target):,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
+                        </div>
+                        """
                     else:
                         reach_display = f"RSI: {r['rsi']:.1f}%"
-                        c_target = int(r['lc'] * 1.01)
-                        target_label = "🎯 終値+1% 買値目標"
+                        c_target = int(r['lc'] * 1.01)       # トリガー価格 (+1%)
+                        exec_price = int(r['lc'] * 1.02)     # 執行価格 (+2%)
+                        defense_line = int(r['lc'] * 0.95)   # 絶対防衛ライン (-5%)
+                        
+                        # ① 買値目標ボックス（強襲用：IFD-OCO入力用HUD）
+                        html_buy_scope = f"""
+                        <div style="background: rgba(255, 215, 0, 0.05); padding: 0.6rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                            <div style="font-size: 11px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px; text-align: center;">🎯 トリガー (終値+1%)</div>
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #FFD700; text-align: center;">{int(c_target):,}<span style="font-size: 12px; margin-left:2px;">円</span></div>
+                            <div style="margin: 4px 0; border-top: 1px dashed rgba(255, 215, 0, 0.3);"></div>
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 0 4px;">
+                                <span style="color: #ccc;">⚔️ 執行(+2%)</span>
+                                <span style="font-weight: bold; color: #FFD700;">{exec_price:,}円</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; padding: 0 4px;">
+                                <span style="color: #ccc;">🛡️ 防衛(-5%)</span>
+                                <span style="font-weight: bold; color: #ef5350;">{defense_line:,}円</span>
+                            </div>
+                        </div>
+                        """
 
-                    # ① 買値目標ボックス（sc2に配置）
-                    html_buy_scope = f"""
-                    <div style="background: rgba(255, 215, 0, 0.05); padding: 0.6rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                        <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 4px;">{target_label}</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(c_target):,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
-                    </div>
-                    """
-                    # 🚨 修正：変数名を html_buy_scope に統一しました
-                    sc2.markdown(html_buy_scope, unsafe_allow_html=True) 
+                    # sc2に統合して出力
+                    sc2.markdown(html_buy_scope, unsafe_allow_html=True)
 
                     # ② P/Lマトリクス（sc3に配置）
                     tp_list = [5, 8, 10, 15, 20]
