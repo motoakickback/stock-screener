@@ -781,6 +781,21 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
+                # 🚨 第1.5関門：市場セグメント・オートフィルター（爆速化）
+                if 'master_df' in globals() and not master_df.empty:
+                    # サイドバーの選択肢からキーワードを判定
+                    target_preset = st.session_state.preset_target
+                    
+                    if "大型株" in target_preset:
+                        # プライム市場のみに限定
+                        m_mask = master_df['Market'].astype(str).str.contains('プライム', na=False)
+                    else:
+                        # スタンダード・グロースに限定
+                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース', na=False)
+                    
+                    v_codes = master_df[m_mask]['Code'].unique()
+                    df = df[df['Code'].isin(v_codes)]
+
                 # 🚨 第2関門: バイオ排除（インデントを独立）
                 if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
                     invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
@@ -978,6 +993,21 @@ with tab2:
                                    master_df['CompanyName'].astype(str).str.contains('ETF|REIT|ファンド|投資法人', case=False, na=False)
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
+
+                # 🚨 第1.5関門：市場セグメント・オートフィルター（爆速化）
+                if 'master_df' in globals() and not master_df.empty:
+                    # サイドバーの選択肢からキーワードを判定
+                    target_preset = st.session_state.preset_target
+                    
+                    if "大型株" in target_preset:
+                        # プライム市場のみに限定
+                        m_mask = master_df['Market'].astype(str).str.contains('プライム', na=False)
+                    else:
+                        # スタンダード・グロースに限定
+                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース', na=False)
+                    
+                    v_codes = master_df[m_mask]['Code'].unique()
+                    df = df[df['Code'].isin(v_codes)]
 
                 # 🚨 第2関門: バイオ排除（インデントを独立）
                 if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
