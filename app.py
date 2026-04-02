@@ -1261,6 +1261,9 @@ with tab2:
                     v_codes = master_df[m_mask]['Code'].unique()
                     df = df[df['Code'].isin(v_codes)]
 
+                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
+                df = add_global_technicals(df)
+
                 results = []
                 for code, group in df.groupby('Code'):
                     if exclude_ipo_flag and len(group) < 20: continue
@@ -1268,11 +1271,25 @@ with tab2:
                     
                     lc = group.iloc[-1]['AdjC']
                     
-                    # ⚡ 爆速化：計算済みの出来高を参照
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < vol_limit: continue
+                    
+                    # 🗑️ 激重な calc_technicals を排除し、一括計算データを参照
+                    rsi = group.iloc[-1]['RSI']
+                    if rsi > rsi_limit: continue
 
-                    # 🚨 論理バグ修正：Tab2でも「高機動センサー」用の高値・安値を算出して保存する
+                    hist_vals = group['MACD_Hist'].tail(5).values
+                    gc_days = 0
+                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
+                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
+                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
+
+                    if gc_days == 0: continue
+
+                    macd_hist = hist_vals[-1]
+                    prev_hist = hist_vals[-2]
+
+                    # Tab2用 高値・安値の算出（高機動バッジ用）
                     group_reset = group.reset_index(drop=True)
                     recent_4d = group_reset.tail(4)
                     if len(recent_4d) > 0:
@@ -1282,29 +1299,9 @@ with tab2:
                         low_10d_val = group_reset.iloc[start_idx : high_idx + 1]['AdjL'].min()
                     else:
                         high_4d_val = lc; low_10d_val = lc
-                    
-                    g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 5: continue
-                    
-                    latest = g_tech.iloc[-1]
-                    rsi = latest.get('RSI', 50)
-                    if rsi > rsi_limit: continue
-
-                    hist_vals = g_tech['MACD_Hist'].tail(5).values
-                    gc_days = 0
-                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
-                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
-                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
-
-                    if gc_days == 0: continue
-
-                    # 🚨 座標修正：計算に必要な2日分のMACDヒストグラムをここで抽出
-                    macd_hist = hist_vals[-1]
-                    prev_hist = hist_vals[-2]
 
                     t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲", gc_days=gc_days)
 
-                    # 🚨 修正6&7: 企業規模と社名の正確な抽出
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == code]
@@ -1319,7 +1316,7 @@ with tab2:
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                         'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol,
-                        'high_val': high_4d_val, 'low_val': low_10d_val, # 🚨 欠落していた変数を装填
+                        'high_val': high_4d_val, 'low_val': low_10d_val,
                         'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score,
                         'GC_Days': gc_days
                     })
