@@ -905,6 +905,7 @@ with tab1:
                         df = df[df['Code'].isin(v_codes)]
         
                     # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
+                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
                 df = add_global_technicals(df)
 
                 # ⚡ 真・爆速化パッチ第2弾：マスターデータの辞書化
@@ -951,6 +952,7 @@ with tab1:
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
                     
+                    # 🗑️ 重い calc_technicals をループ内から完全排除！
                     rsi = group.iloc[-1]['RSI']
                     macd_h = group.iloc[-1]['MACD_Hist']
                     macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group)>1 else 0
