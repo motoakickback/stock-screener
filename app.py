@@ -1156,83 +1156,27 @@ with tab2:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1.5関門：市場セグメント ＆ 規模感フィルター（完全パージ版）
+                # ⚡ 爆速化: マスターデータを辞書化して検索時間をゼロ（O(1)）にする
+                master_dict = {}
                 if 'master_df' in globals() and not master_df.empty:
-                    target_preset = st.session_state.preset_target
-                    
-                    # 市場名だけでなく、時価総額（MarketCap）を考慮したフィルタリング
-                    # ※ master_df に MarketCap または 時価総額 カラムがあることを前提とします
-                    if "大型株" in target_preset:
-                        # 1. プライム市場であること
-                        # 2. かつ、バッジ表示ロジックで「新興」と誤認されない規模感を持つこと
-                        m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
-                                 (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False))
-                        
-                        # 【追加】時価総額による足切り（もしデータがあれば）
-                        if 'MarketCap' in master_df.columns:
-                            m_mask = m_mask & (master_df['MarketCap'] >= 100000000000) # 1000億円以上
-                    else:
-                        # スタンダード・グロース、またはプライム内の小型案件
-                        m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
-
-                    v_codes = master_df[m_mask]['Code'].unique()
-                    df = df[df['Code'].isin(v_codes)]
-
-                # 🚨 第2関門: バイオ排除（インデントを独立）
-                if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                    invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                    valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                    df = df[df['Code'].isin(valid_codes_bio)]
-
-                # 🚨 第3関門: 掟⑥ ブラックリスト（インデント独立 ＆ 小数点ステルス無効化）
-                if gigi_input:
-                    import re
-                    # 入力欄から「4桁の数字」をリスト化
-                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
-                    if target_blacklist:
-                        # 株価データ側のCodeが「9212.0」等になっていても「9212」として強制抽出して照合
-                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
-                        df = df[~df['Temp_Code'].isin(target_blacklist)]
-                        df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
-
-                # （中略：バイオ除外コードの直後）
-                    if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                        df = df[df['Code'].isin(valid_codes_bio)]
-
-                    # 🚨 第1.5関門：市場区分フィルター（プライム vs その他）
-                if 'master_df' in globals() and not master_df.empty:
-                    target_preset = st.session_state.preset_target
-                    
-                    if "大型株" in target_preset:
-                        # プライム市場（一部含む）をすべて「大型・中型」として扱う
-                        m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
-                    else:
-                        # スタンダード・グロース（二部・マザーズ含む）を「中小型」とする
-                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
-                    
-                    v_codes = master_df[m_mask]['Code'].unique()
-                    df = df[df['Code'].isin(v_codes)]
-
-                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
-                df = add_global_technicals(df)
+                    master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
 
                 results = []
                 for code, group in df.groupby('Code'):
                     if exclude_ipo_flag and len(group) < 20: continue
                     if len(group) < 15: continue
                     
-                    lc = group.iloc[-1]['AdjC']
-                    
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < vol_limit: continue
                     
-                    # 🗑️ 激重な calc_technicals を排除し、一括計算データを参照
-                    rsi = group.iloc[-1]['RSI']
+                    # Tab 2はGC判定にMACDが必須なため、ここで計算
+                    g_tech = calc_technicals(group.copy())
+                    if len(g_tech) < 5: continue
+                    
+                    rsi = g_tech.iloc[-1].get('RSI', 50)
                     if rsi > rsi_limit: continue
 
-                    hist_vals = group['MACD_Hist'].tail(5).values
+                    hist_vals = g_tech['MACD_Hist'].tail(5).values
                     gc_days = 0
                     if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
                     elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
@@ -1242,30 +1186,34 @@ with tab2:
 
                     macd_hist = hist_vals[-1]
                     prev_hist = hist_vals[-2]
+                    lc = group.iloc[-1]['AdjC']
 
-                    # Tab2用 高値・安値の算出（高機動バッジ用）
-                    group_reset = group.reset_index(drop=True)
-                    recent_4d = group_reset.tail(4)
-                    if len(recent_4d) > 0:
-                        high_idx = recent_4d['AdjH'].idxmax()
-                        high_4d_val = recent_4d.loc[high_idx, 'AdjH']
-                        start_idx = max(0, high_idx - 10)
-                        low_10d_val = group_reset.iloc[start_idx : high_idx + 1]['AdjL'].min()
+                    # Tab2用 高値・安値の算出（高機動バッジ用・NumPy高速化）
+                    adjh_vals = group['AdjH'].values
+                    adjl_vals = group['AdjL'].values
+                    if len(adjh_vals) >= 4:
+                        recent_4d_h = adjh_vals[-4:]
+                        local_max_idx = recent_4d_h.argmax()
+                        high_4d_val = recent_4d_h[local_max_idx]
+                        
+                        global_max_idx = len(adjh_vals) - 4 + local_max_idx
+                        start_idx = max(0, global_max_idx - 10)
+                        low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
                     else:
                         high_4d_val = lc; low_10d_val = lc
 
                     t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲", gc_days=gc_days)
 
+                    # ⚡ 辞書からのO(1)アクセス
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
-                    if not master_df.empty:
-                        m_row = master_df[master_df['Code'] == code]
-                        if not m_row.empty:
-                            c_name = m_row.iloc[0].get('CompanyName', c_name)
-                            c_market = m_row.iloc[0].get('Market', '不明')
-                            c_sector = m_row.iloc[0].get('Sector', '不明')
-                            scale_val = str(m_row.iloc[0].get('Scale', ''))
-                            if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]): c_scale = "🏢 大型/中型"
-                            elif scale_val and scale_val != 'nan' and scale_val != '-': c_scale = "🚀 小型/新興"
+                    if code in master_dict:
+                        m_info = master_dict[code]
+                        c_name = m_info.get('CompanyName', c_name)
+                        c_market = m_info.get('Market', '不明')
+                        c_sector = m_info.get('Sector', '不明')
+                        scale_val = str(m_info.get('Scale', ''))
+                        if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]): c_scale = "🏢 大型/中型"
+                        elif scale_val and scale_val != 'nan' and scale_val != '-': c_scale = "🚀 小型/新興"
 
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
