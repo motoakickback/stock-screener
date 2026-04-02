@@ -289,29 +289,42 @@ def get_old_codes():
     return []
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=3):
+    import time
     base = datetime.utcnow() + timedelta(hours=9)
     f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
     t_d = base.strftime('%Y%m%d')
     
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    c = str(code)[:4]
     
     try:
-        # 🚨 パッチ1：J-Quants APIの仕様に合わせ、確実に5桁(末尾0等)でリクエストする
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
 
-        # 1. 既存の株価取得
-        # 【修正】 code={c} を code={api_code} に変更して5桁でリクエスト
-        r_bars = requests.get(f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}", headers=headers, timeout=15)
-        if r_bars.status_code == 200:
-            result["bars"] = r_bars.json().get("data", [])
+        # 🚨 真の防弾パッチ：ページネーション（分割データ）を全て回収する自動ループ
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        while url:
+            r_bars = requests.get(url, headers=headers, timeout=15)
+            if r_bars.status_code == 200:
+                data = r_bars.json()
+                # J-Quantsの仕様変更に備え、"daily_quotes" と "data" の両方を狙い撃つ
+                quotes = data.get("daily_quotes", data.get("data", []))
+                result["bars"].extend(quotes)
+                
+                # 次のページの鍵（pagination_key）があればURLを更新して再突入
+                p_key = data.get("pagination_key")
+                if p_key:
+                    url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}&pagination_key={p_key}"
+                    time.sleep(0.1) # サーバー負荷軽減のためのインターバル
+                else:
+                    url = None # 全データ回収完了
+            else:
+                break
         
-        # 2. 配当情報の取得
-        # 【念のため修正】 こちらも code={api_code} に統一し、エラーの余地を完全に排除
-        r_div = requests.get(f"https://api.jquants.com/v2/fins/dividend?code={api_code}", headers=headers, timeout=10)
+        # 配当情報の取得
+        r_div = requests.get(f"{BASE_URL}/fins/dividend?code={api_code}", headers=headers, timeout=10)
         if r_div.status_code == 200:
-            result["events"]["dividend"] = r_div.json().get("data", [])
+            result["events"]["dividend"] = r_div.json().get("dividend", r_div.json().get("data", []))
 
     except Exception as e:
         print(f"API Error: {e}")
