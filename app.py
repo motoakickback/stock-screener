@@ -755,6 +755,7 @@ with tab1:
                 valid_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
                 df = df[df['Code'].isin(valid_codes)]
                 # --------------------------------------------------
+                # 🚨 第1関門: ETF/REITの完全排除
                 if exclude_etf_flag_t1 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
@@ -762,21 +763,23 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                    if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                        df = df[df['Code'].isin(valid_codes_bio)]
+                # 🚨 第2関門: バイオ排除（インデントを独立）
+                if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
+                    invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
+                    valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
+                    df = df[df['Code'].isin(valid_codes_bio)]
 
-                    # 🔻🔻🔻 掟⑥：除外ブラックリスト検問所（最終防弾版） 🔻🔻🔻
-                    if gigi_input:
-                        import re
-                        # コピペされたテキストから「4桁の数字」だけを強制抽出（カンマや改行は自動無視）
-                        target_blacklist = re.findall(r'\d{4}', str(gigi_input))
-                    
-                        if target_blacklist:
-                            # DataFrameのCodeを文字列型に強制変換し、型不一致によるすり抜けを完全遮断
-                            df = df[~df['Code'].astype(str).isin(target_blacklist)]
-                
+                # 🚨 第3関門: 掟⑥ ブラックリスト（インデント独立 ＆ 小数点ステルス無効化）
+                if gigi_input:
+                    import re
+                    # 入力欄から「4桁の数字」をリスト化
+                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
+                    if target_blacklist:
+                        # 株価データ側のCodeが「9212.0」等になっていても「9212」として強制抽出して照合
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)]
+                        df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
+
                 results = []
                 for code, group in df.groupby('Code'):
                     # 🚨 案A：API取得仕様に合わせた足切り
@@ -950,7 +953,7 @@ with tab2:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 # （中略：爆速化パッチのコード）
 
-                # 🚨 修正1: ETF/REITの完全排除
+                # 🚨 第1関門: ETF/REITの完全排除
                 if exclude_etf_flag_t2 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
@@ -958,20 +961,22 @@ with tab2:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
+                # 🚨 第2関門: バイオ排除（インデントを独立）
                 if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
                     invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
                     valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes_bio)]
 
-                # 🔻🔻🔻 掟⑥：除外ブラックリスト検問所（最終防弾版） 🔻🔻🔻
+                # 🚨 第3関門: 掟⑥ ブラックリスト（インデント独立 ＆ 小数点ステルス無効化）
                 if gigi_input:
                     import re
-                    # コピペされたテキストから「4桁の数字」だけを強制抽出（カンマや改行は自動無視）
+                    # 入力欄から「4桁の数字」をリスト化
                     target_blacklist = re.findall(r'\d{4}', str(gigi_input))
-                    
                     if target_blacklist:
-                        # DataFrameのCodeを文字列型に強制変換し、型不一致によるすり抜けを完全遮断
-                        df = df[~df['Code'].astype(str).isin(target_blacklist)]
+                        # 株価データ側のCodeが「9212.0」等になっていても「9212」として強制抽出して照合
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)]
+                        df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
 
                 results = []
                 for code, group in df.groupby('Code'):
