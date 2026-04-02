@@ -1832,6 +1832,15 @@ with tab5:
             
             for r in results:
                 st.divider()
+                # 🚨 修正：市場名に基づく正確なバッジ表示
+                m_lower = r['market'].lower()
+                if 'プライム' in m_lower or '一部' in m_lower:
+                    badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                    badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                else:
+                    badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
+
                 st.markdown(f"""
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; margin: 0 0 0.3rem 0;">({r['code'][:4]}) {r['name']}</h3>
