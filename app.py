@@ -765,15 +765,24 @@ with tab1:
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                
                 # --------------------------------------------------
-                # ⚡ 爆速化パッチ：ループ前の一括足切り（プレフィルタ）
+                # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
                 # --------------------------------------------------
+                # 重い「文字列→数値変換」をループに入る前に全データに対して1回で終わらせる
+                df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
-                # 終値200円未満の銘柄を一瞬で全削除
-                valid_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                
+                # 直近5日分の平均出来高を一括計算（ループ内の重い処理を全廃止）
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')['Volume'].mean()
+                valid_vol_codes = avg_vols[avg_vols >= 10000].index
+                
+                # 株価200円以上 ＆ 出来高1万株以上のコードだけを抽出
+                valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
-                # --------------------------------------------------
+
                 # 🚨 第1関門: ETF/REITの完全排除
                 if exclude_etf_flag_t1 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
@@ -837,9 +846,8 @@ with tab1:
                     
                     lc = group.iloc[-1]['AdjC']
                     
-                    # 出来高の足切り
-                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
+                    # ⚡ 爆速化：計算済みの出来高を辞書から呼び出すだけ（0.001秒で完了）
+                    avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
                     # 波形の計算（10営業日固定・鉄の掟フィルタ）
