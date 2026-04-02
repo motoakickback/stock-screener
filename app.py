@@ -1498,14 +1498,14 @@ with tab3:
                         <div style="background: rgba(255, 215, 0, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); display: flex; flex-direction: column; justify-content: center; height: 100%;">
                             <div style="font-size: 14px; color: rgba(250, 250, 250, 0.8); margin-bottom: 4px; text-align: center;">🎯 トリガー (終値+1%)</div>
                             <div style="font-size: 2.2rem; font-weight: bold; color: #FFD700; text-align: center; line-height: 1.1;">{int(c_target):,}<span style="font-size: 16px; margin-left:4px;">円</span></div>
-                            <div style="margin: 8px 0; border-top: 1px dashed rgba(255, 215, 0, 0.4);"></div>
-                            <div style="display: flex; justify-content: space-between; font-size: 14px; padding: 0 8px; margin-bottom: 4px;">
-                                <span style="color: #ccc;">⚔️ 執行(+2%)</span>
-                                <span style="font-weight: bold; color: #FFD700;">{exec_price:,}円</span>
+                            <div style="margin: 12px 0 8px 0; border-top: 1px dashed rgba(255, 215, 0, 0.4);"></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 8px; margin-bottom: 8px;">
+                                <span style="font-size: 16px; color: #ccc;">⚔️ 執行(+2%)</span>
+                                <span style="font-size: 20px; font-weight: bold; color: #FFD700;">{exec_price:,}円</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 14px; padding: 0 8px;">
-                                <span style="color: #ccc;">🛡️ 防衛(-5%)</span>
-                                <span style="font-weight: bold; color: #ef5350;">{defense_line:,}円</span>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 8px;">
+                                <span style="font-size: 16px; color: #ccc;">🛡️ 防衛(-5%)</span>
+                                <span style="font-size: 20px; font-weight: bold; color: #ef5350;">{defense_line:,}円</span>
                             </div>
                         </div>
                         """
