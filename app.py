@@ -1434,7 +1434,7 @@ with tab3:
                 </div>
             """, unsafe_allow_html=True)
                     
-                    for alert in r['alerts']: st.warning(alert)
+            for alert in r['alerts']: st.warning(alert)
                     
                     if r['sector'] == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
                     if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r['name']), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
