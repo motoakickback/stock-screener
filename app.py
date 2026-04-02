@@ -1575,29 +1575,30 @@ with tab4:
         optimize_bt = st.button("🚀 戦術の黄金比率を抽出 (最適化)", use_container_width=True, help="現在のモードに応じた最強のパラメーター組み合わせを全自動で探索します。")
         
     with col_b2:
-        st.markdown("#### ⚙️ シミュレーション微調整")
-        c_p1, c_p2 = st.columns(2)
-        sim_tp = c_p1.number_input("🎯 利確目標 (+%)", value=float(st.session_state.bt_tp), step=1.0, key="sim_tp_sim_v2")
-        sim_sl_i = c_p2.number_input("🛡️ 損切目安 (-%)", value=float(st.session_state.bt_sl_i), step=1.0, key="sim_sl_i_sim_v2")
+        st.markdown("#### ⚙️ サイドバー連動パラメーター")
+        st.info("※ 以下の基本設定は、画面左側の「サイドバー」の設定値が自動適用されます。")
         
-        c_p3, c_p4 = st.columns(2)
-        sim_limit_d = c_p3.number_input("⏳ 買い期限 (営業日)", value=int(st.session_state.limit_d), step=1, key="sim_limit_d_sim_v2")
-        sim_sell_d = c_p4.number_input("⏳ 強制撤退 (営業日)", value=int(st.session_state.bt_sell_d), step=1, key="sim_sell_d_sim_v2")
+        # ⚡ 爆速化・連動パッチ：サイドバーの数値を直接読み取って表示（重複入力を排除）
+        c_p1, c_p2, c_p3 = st.columns(3)
+        c_p1.metric("🎯 利確目標", f"+{st.session_state.get('bt_tp', 10)}%")
+        c_p2.metric("🛡️ 損切目安", f"-{st.session_state.get('bt_sl_i', 8)}%")
+        c_p3.metric("⏳ 買い期限", f"{st.session_state.get('limit_d', 4)}日")
         
         st.divider()
         if "待伏" in test_mode:
-            st.markdown("##### 🌐 【待伏】固有パラメーター")
+            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             c_t1_1, c_t1_2 = st.columns(2)
-            sim_push_r = c_t1_1.number_input("押し目待ち (%落とし)", value=float(st.session_state.push_r), step=1.0, key="sim_push_r_sim_v2")
+            # 押し目率もサイドバーと完全連動して表示
+            c_t1_1.metric("📉 押し目待ち", f"{st.session_state.get('push_r', 50.0)}% 落とし")
             sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2")
         else:
-            st.markdown("##### ⚡ 【強襲】固有パラメーター")
+            st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             c_t2_1, c_t2_2 = st.columns(2)
             sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=45, step=5, key="sim_rsi_lim_sim_v2")
             sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
 
     # ==========================================
-    # 🚀 ここから下が実行ブロック（高速化・防弾パッチ適用済み）
+    # 🚀 ここから下が実行ブロック（高速化・防弾・連動パッチ適用済み）
     # ==========================================
     if (run_bt or optimize_bt) and bt_c_in:
         import pandas as pd
@@ -1608,9 +1609,17 @@ with tab4:
         if not t_codes:
             st.warning("有効なコードが見つかりません。")
         else:
+            # 🚨 実行時にサイドバーの最新値を直接回収
+            sim_tp = float(st.session_state.get('bt_tp', 10))
+            sim_sl_i = float(st.session_state.get('bt_sl_i', 8))
+            sim_limit_d = int(st.session_state.get('limit_d', 4))
+            sim_sell_d = int(st.session_state.get('bt_sell_d', 10))
+            sim_push_r = float(st.session_state.get('push_r', 50.0))
+
             is_ambush = "待伏" in test_mode
             if is_ambush:
-                p1_range = range(5, 26, 2) if optimize_bt else [int(sim_push_r)]
+                # 🚨 最適化(Optimize)時の探索範囲も、現実的な押し目率(25%〜65%)に修正
+                p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
                 p2_range = range(5, 10, 1) if optimize_bt else [int(sim_pass_req)]
                 p1_name, p2_name = "Push率(%)", "要求Score"
             else:
