@@ -768,23 +768,18 @@ with tab1:
                 # --------------------------------------------------
                 # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
                 # --------------------------------------------------
-                # カラム名の揺れ（API仕様変更）を自動吸収する防弾処理
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 
                 if v_col:
                     df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else:
-                    avg_vols = pd.Series(0, index=df['Code'].unique()) # 取得失敗時のフェイルセーフ
+                    avg_vols = pd.Series(0, index=df['Code'].unique())
 
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
                 valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
-                
-                # 直近5日分の平均出来高が1万株以上のコードだけを抽出
                 valid_vol_codes = avg_vols[avg_vols >= 10000].index
-                
-                # 株価200円以上 ＆ 出来高条件クリアのコードを抽出
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
@@ -796,23 +791,58 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # ⚡ 爆速化: マスターデータを辞書化して検索時間をゼロ（O(1)）にする
+                # 🚨 第1.5関門：市場区分フィルター
+                if 'master_df' in globals() and not master_df.empty:
+                    target_preset = st.session_state.preset_target
+                    if "大型株" in target_preset:
+                        m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
+                    else:
+                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
+                    v_codes = master_df[m_mask]['Code'].unique()
+                    df = df[df['Code'].isin(v_codes)]
+
+                # 🚨 第2関門: バイオ排除
+                if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
+                    invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
+                    valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
+                    df = df[df['Code'].isin(valid_codes_bio)]
+
+                # 🚨 第3関門: 掟⑥ ブラックリスト
+                if gigi_input:
+                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
+                    if target_blacklist:
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)]
+                        df = df.drop(columns=['Temp_Code'])
+
+                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
+                df = add_global_technicals(df)
+
+                # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
                 master_dict = {}
                 if 'master_df' in globals() and not master_df.empty:
                     master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
+
+                # ⚡ 爆速化：激重な session_state へのアクセスをループ外で一回だけ行う
+                target_preset = st.session_state.get('preset_target', '50%')
+                if "50%" in target_preset: push_ratio = 0.500
+                elif "61.8%" in target_preset: push_ratio = 0.618
+                elif "25%" in target_preset: push_ratio = 0.250
+                else: push_ratio = 0.500
 
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
                     
-                    # 出来高の足切り
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    # ⚡ 超高速な NumPy 配列 (.values) を用いた波形計算
-                    # 激重な pandas の reset_index() は絶対に使わない
+                    # ⚡ 爆速化：Pandasの激重な行アクセスを全て排除し、NumPy配列で瞬殺する
+                    adjc_vals = group['AdjC'].values
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
+                    
+                    lc = adjc_vals[-1]
                     
                     recent_4d_h = adjh_vals[-4:]
                     local_max_idx = recent_4d_h.argmax()
@@ -822,7 +852,6 @@ with tab1:
                     start_idx = max(0, global_max_idx - 10)
                     low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
-                    # 🚨 ここで95%以上の銘柄を足切りし、重いテクニカル計算を回避する
                     rise_ratio = high_4d_val / low_10d_val
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
@@ -830,20 +859,18 @@ with tab1:
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
-                    # ↓ ここまで生き残った数十銘柄にだけ、初めて重いテクニカル計算を実行！
-                    g_tech = calc_technicals(group.copy())
-                    rsi = g_tech.iloc[-1].get('RSI', 50)
-                    macd_h = g_tech.iloc[-1].get('MACD_Hist', 0)
-                    macd_h_prev = g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech) > 1 else 0
-                    lc = adjh_vals[-1]
-
-                    target_preset = st.session_state.get('preset_target', '50%')
-                    push_ratio = 0.618 if "61.8%" in target_preset else 0.250 if "25%" in target_preset else 0.500
-                    
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # ⚡ 辞書からのO(1)アクセス（マスター検索の遅延ゼロ）
+                    # ⚡ 爆速化：ilocを排除しNumPy配列から直接取得
+                    rsi_vals = group['RSI'].values
+                    macd_h_vals = group['MACD_Hist'].values
+                    
+                    rsi = rsi_vals[-1]
+                    macd_h = macd_h_vals[-1]
+                    macd_h_prev = macd_h_vals[-2] if len(macd_h_vals) > 1 else 0
+                    
+                    # ⚡ 爆速化：辞書からの検索なしO(1)アクセス
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
                     if code in master_dict:
                         m_info = master_dict[code]
@@ -852,7 +879,9 @@ with tab1:
                         c_sector = m_info.get('Sector', '不明')
                         c_scale = m_info.get('Scale', '不明')
 
-                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
+                    rank, bg, t_score, _ = get_triage_info(
+                        macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
+                    )
 
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
@@ -861,85 +890,11 @@ with tab1:
                         'target_buy': target_buy, 'reach_rate': reach_rate, 
                         'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
                     })
-                    
-                    lc = group.iloc[-1]['AdjC']
-                    
-                    # ⚡ 爆速化：計算済みの出来高を辞書から呼び出すだけ（0.001秒で完了）
-                    avg_vol = int(avg_vols.get(code, 0))
-                    if avg_vol < 10000: continue
-                    
-                    # 波形の計算（10営業日固定・鉄の掟フィルタ）
-                    group_reset = group.reset_index(drop=True)
-                    recent_4d = group_reset.tail(4)
-                    high_idx = recent_4d['AdjH'].idxmax()
-                    high_4d_val = recent_4d.loc[high_idx, 'AdjH']
-                    
-                    # 🚨 10営業日（2週間）の安値を正確に取得
-                    start_idx = max(0, high_idx - 10)
-                    window_10d = group_reset.iloc[start_idx : high_idx + 1]
-                    low_10d_val = window_10d['AdjL'].min()
-
-                    # 🚨 【鉄の掟 第九条】サイドバーの設定値（下限・上限）を反映
-                    rise_ratio = high_4d_val / low_10d_val
-                    if not (f9_min14 <= rise_ratio <= f9_max14):
-                        continue
-
-                    # 🚨 修正：サイドバー連動型の「ターゲット価格」と「到達度」の動的計算
-                    wave_len = high_4d_val - low_10d_val
-                    if wave_len <= 0: continue
-                    
-                    # サイドバーの選択肢から「押し目率（フィボナッチ比率）」を自動判定
-                    target_preset = st.session_state.get('preset_target', '50%')
-                    if "50%" in target_preset:
-                        push_ratio = 0.500
-                    elif "61.8%" in target_preset:
-                        push_ratio = 0.618
-                    elif "25%" in target_preset:
-                        push_ratio = 0.250
-                    else:
-                        push_ratio = 0.500  # デフォルト（フェイルセーフ）
-                    
-                    # ターゲット価格（買値目安）の計算：高値 - (値幅 × 押し目率)
-                    target_buy = high_4d_val - (wave_len * push_ratio)
-                    
-                    # 到達度の計算（既存ロジックを継承）
-                    reach_rate = (target_buy / lc) * 100
-                    
-                    # テクニカル計算
-                    g_tech = calc_technicals(group.copy())
-                    rsi = g_tech.iloc[-1].get('RSI', 50)
-                    
-                    # 🚨 【修正：変数定義】ここで c_scale を含め、全てのマスター情報を定義します
-                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
-                    if not master_df.empty:
-                        m_row = master_df[master_df['Code'] == code]
-                        if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']
-                            c_market = m_row.iloc[0]['Market']
-                            c_sector = m_row.iloc[0].get('Sector', '不明')
-                            c_scale = m_row.iloc[0].get('Scale', '不明') # ← これが漏れていました
-
-                    # 🎯 トリアージ判定（SABC）
-                    rank, bg, t_score, _ = get_triage_info(
-                        g_tech.iloc[-1].get('MACD_Hist', 0), 
-                        g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech)>1 else 0, 
-                        rsi, lc, target_buy, mode="待伏"
-                    )
-
-                    # 🚀 データの格納（変数名を最新の 10d 版に同期）
-                    results.append({
-                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
-                        'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
-                        'high_4d': high_4d_val, 'low_14d': low_10d_val, # ← ここを修正
-                        'target_buy': target_buy, 'reach_rate': reach_rate, 
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
-                    })
                         
                 if not results:
                     st.warning("現在、掟を満たすターゲットは存在しません。")
                     st.session_state.tab1_scan_results = []
                 else:
-                    # 🚨 到達度とRSIの総合スコアでソートし、上位30件だけを抽出（UIの激重化を防ぐ）
                     sorted_results = sorted(results, key=lambda x: x['t_score'], reverse=True)
                     st.session_state.tab1_scan_results = sorted_results[:30]
                 
