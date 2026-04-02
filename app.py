@@ -793,8 +793,8 @@ with tab1:
 
                 # 🚨 第1.5関門：市場区分フィルター
                 if 'master_df' in globals() and not master_df.empty:
-                    target_preset = st.session_state.preset_target
-                    if "大型株" in target_preset:
+                    target_preset_val = st.session_state.preset_target
+                    if "大型株" in target_preset_val:
                         m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
                     else:
                         m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
@@ -815,20 +815,14 @@ with tab1:
                         df = df[~df['Temp_Code'].isin(target_blacklist)]
                         df = df.drop(columns=['Temp_Code'])
 
-                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
-                df = add_global_technicals(df)
-
                 # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
                 master_dict = {}
                 if 'master_df' in globals() and not master_df.empty:
                     master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
 
-                # ⚡ 爆速化：激重な session_state へのアクセスをループ外で一回だけ行う
-                target_preset = st.session_state.get('preset_target', '50%')
-                if "50%" in target_preset: push_ratio = 0.500
-                elif "61.8%" in target_preset: push_ratio = 0.618
-                elif "25%" in target_preset: push_ratio = 0.250
-                else: push_ratio = 0.500
+                # ⚡ 爆速化：session_state へのアクセスをループ外で一回だけ行う
+                target_preset_val = st.session_state.get('preset_target', '50%')
+                push_ratio = 0.618 if "61.8%" in target_preset_val else 0.250 if "25%" in target_preset_val else 0.500
 
                 results = []
                 for code, group in df.groupby('Code'):
@@ -837,11 +831,10 @@ with tab1:
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    # ⚡ 爆速化：Pandasの激重な行アクセスを全て排除し、NumPy配列で瞬殺する
+                    # ⚡ 爆速化：NumPy配列で瞬殺
                     adjc_vals = group['AdjC'].values
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
-                    
                     lc = adjc_vals[-1]
                     
                     recent_4d_h = adjh_vals[-4:]
@@ -852,7 +845,8 @@ with tab1:
                     start_idx = max(0, global_max_idx - 10)
                     low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
-                    rise_ratio = high_4d_val / low_10d_val
+                    # 🚨 ここで95%以上の銘柄を足切り
+                    rise_ratio = high_4d_val / (low_10d_val if low_10d_val > 0 else 1)
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
 
@@ -862,15 +856,12 @@ with tab1:
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # ⚡ 爆速化：ilocを排除しNumPy配列から直接取得
-                    rsi_vals = group['RSI'].values
-                    macd_h_vals = group['MACD_Hist'].values
+                    # 🛡️ 安全装置：生き残った銘柄にだけ個別計算（これが最も速い）
+                    g_tech = calc_technicals(group.copy())
+                    rsi = g_tech.iloc[-1].get('RSI', 50)
+                    macd_h = g_tech.iloc[-1].get('MACD_Hist', 0)
+                    macd_h_prev = g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech) > 1 else 0
                     
-                    rsi = rsi_vals[-1]
-                    macd_h = macd_h_vals[-1]
-                    macd_h_prev = macd_h_vals[-2] if len(macd_h_vals) > 1 else 0
-                    
-                    # ⚡ 爆速化：辞書からの検索なしO(1)アクセス
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
                     if code in master_dict:
                         m_info = master_dict[code]
