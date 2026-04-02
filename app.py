@@ -813,6 +813,23 @@ with tab1:
                         df = df[~df['Temp_Code'].isin(target_blacklist)]
                         df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
 
+                # （中略：バイオ除外コードの直後）
+                    if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
+                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
+                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
+                        df = df[df['Code'].isin(valid_codes_bio)]
+
+                    # 🚨 ここに「第1.5関門：市場セグメント・精密フィルター」をペースト
+                    if 'master_df' in globals() and not master_df.empty:
+                        target_preset = st.session_state.preset_target
+                        if "大型株" in target_preset:
+                            m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
+                                     (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興|名証|札証', na=False))
+                        else:
+                            m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
+                        v_codes = master_df[m_mask]['Code'].unique()
+                        df = df[df['Code'].isin(v_codes)]
+
                 results = []
                 for code, group in df.groupby('Code'):
                     # 🚨 案A：API取得仕様に合わせた足切り
@@ -1025,6 +1042,23 @@ with tab2:
                         df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
                         df = df[~df['Temp_Code'].isin(target_blacklist)]
                         df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
+
+                # （中略：バイオ除外コードの直後）
+                    if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
+                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
+                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
+                        df = df[df['Code'].isin(valid_codes_bio)]
+
+                    # 🚨 ここに「第1.5関門：市場セグメント・精密フィルター」をペースト
+                    if 'master_df' in globals() and not master_df.empty:
+                        target_preset = st.session_state.preset_target
+                        if "大型株" in target_preset:
+                            m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
+                                     (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興|名証|札証', na=False))
+                        else:
+                            m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
+                        v_codes = master_df[m_mask]['Code'].unique()
+                        df = df[df['Code'].isin(v_codes)]
 
                 results = []
                 for code, group in df.groupby('Code'):
