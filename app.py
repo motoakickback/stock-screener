@@ -908,66 +908,65 @@ with tab1:
                     df = add_global_technicals(df)
     
                     results = []
-                    for code, group in df.groupby('Code'):
-                        if len(group) < 15: continue
-                        
-                        lc = group.iloc[-1]['AdjC']
-                        
-                        avg_vol = int(avg_vols.get(code, 0))
-                        if avg_vol < 10000: continue
-                        
-                        group_reset = group.reset_index(drop=True)
-                        recent_4d = group_reset.tail(4)
-                        high_idx = recent_4d['AdjH'].idxmax()
-                        high_4d_val = recent_4d.loc[high_idx, 'AdjH']
-                        
-                        start_idx = max(0, high_idx - 10)
-                        window_10d = group_reset.iloc[start_idx : high_idx + 1]
-                        low_10d_val = window_10d['AdjL'].min()
-    
-                        rise_ratio = high_4d_val / low_10d_val
-                        if not (f9_min14 <= rise_ratio <= f9_max14):
-                            continue
-    
-                        wave_len = high_4d_val - low_10d_val
-                        if wave_len <= 0: continue
-                        
-                        target_preset = st.session_state.get('preset_target', '50%')
-                        if "50%" in target_preset: push_ratio = 0.500
-                        elif "61.8%" in target_preset: push_ratio = 0.618
-                        elif "25%" in target_preset: push_ratio = 0.250
-                        else: push_ratio = 0.500
-                        
-                        target_buy = high_4d_val - (wave_len * push_ratio)
-                        reach_rate = (target_buy / lc) * 100
-                        
-                        # 🗑️ 重い calc_technicals をループ内から完全排除！
-                        # 事前計算済みの値を瞬時に読み取るだけ
-                        rsi = group.iloc[-1]['RSI']
-                        macd_h = group.iloc[-1]['MACD_Hist']
-                        macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group)>1 else 0
-                        
-                        c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
-                        if not master_df.empty:
-                            m_row = master_df[master_df['Code'] == code]
-                            if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']
-                                c_market = m_row.iloc[0]['Market']
-                                c_sector = m_row.iloc[0].get('Sector', '不明')
-                                c_scale = m_row.iloc[0].get('Scale', '不明')
-    
-                        rank, bg, t_score, _ = get_triage_info(
-                            macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
-                        )
-    
-                        results.append({
-                            'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
-                            'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
-                            'high_4d': high_4d_val, 'low_14d': low_10d_val,
-                            'target_buy': target_buy, 'reach_rate': reach_rate, 
-                            'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
-                        })
+                for code, group in df.groupby('Code'):
+                    if len(group) < 15: continue
+                    
+                    lc = group.iloc[-1]['AdjC']
+                    
+                    avg_vol = int(avg_vols.get(code, 0))
+                    if avg_vol < 10000: continue
+                    
+                    group_reset = group.reset_index(drop=True)
+                    recent_4d = group_reset.tail(4)
+                    high_idx = recent_4d['AdjH'].idxmax()
+                    high_4d_val = recent_4d.loc[high_idx, 'AdjH']
+                    
+                    start_idx = max(0, high_idx - 10)
+                    window_10d = group_reset.iloc[start_idx : high_idx + 1]
+                    low_10d_val = window_10d['AdjL'].min()
 
+                    rise_ratio = high_4d_val / low_10d_val
+                    if not (f9_min14 <= rise_ratio <= f9_max14):
+                        continue
+
+                    wave_len = high_4d_val - low_10d_val
+                    if wave_len <= 0: continue
+                    
+                    target_preset = st.session_state.get('preset_target', '50%')
+                    if "50%" in target_preset: push_ratio = 0.500
+                    elif "61.8%" in target_preset: push_ratio = 0.618
+                    elif "25%" in target_preset: push_ratio = 0.250
+                    else: push_ratio = 0.500
+                    
+                    target_buy = high_4d_val - (wave_len * push_ratio)
+                    reach_rate = (target_buy / lc) * 100
+                    
+                    # 🗑️ 重い calc_technicals をループ内から完全排除！
+                    rsi = group.iloc[-1]['RSI']
+                    macd_h = group.iloc[-1]['MACD_Hist']
+                    macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group)>1 else 0
+                    
+                    c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
+                    if not master_df.empty:
+                        m_row = master_df[master_df['Code'] == code]
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_market = m_row.iloc[0]['Market']
+                            c_sector = m_row.iloc[0].get('Sector', '不明')
+                            c_scale = m_row.iloc[0].get('Scale', '不明')
+
+                    rank, bg, t_score, _ = get_triage_info(
+                        macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
+                    )
+
+                    results.append({
+                        'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
+                        'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 
+                        'high_4d': high_4d_val, 'low_14d': low_10d_val,
+                        'target_buy': target_buy, 'reach_rate': reach_rate, 
+                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score
+                    })
+                    
                     lc = group.iloc[-1]['AdjC']
                     
                     # ⚡ 爆速化：計算済みの出来高を辞書から呼び出すだけ（0.001秒で完了）
