@@ -953,6 +953,10 @@ with tab2:
                     valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes_bio)]
 
+                if 'blacklist_codes' in st.session_state and st.session_state.blacklist_codes:
+                    # リストにあるコードをスキャン対象から即座に抹消
+                    df = df[~df['Code'].isin(st.session_state.blacklist_codes)]
+
                 results = []
                 for code, group in df.groupby('Code'):
                     if exclude_ipo_flag and len(group) < 20: continue
