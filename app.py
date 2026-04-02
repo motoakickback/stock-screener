@@ -861,6 +861,14 @@ with tab1:
                 target_preset_val = st.session_state.get('preset_target', '50%')
                 push_ratio = 0.618 if "61.8%" in target_preset_val else 0.250 if "25%" in target_preset_val else 0.500
 
+                # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
+                master_dict = {}
+                if 'master_df' in globals() and not master_df.empty:
+                    master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
+
+                target_preset_val = st.session_state.get('preset_target', '50%')
+                push_ratio = 0.618 if "61.8%" in target_preset_val else 0.250 if "25%" in target_preset_val else 0.500
+
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
@@ -868,7 +876,6 @@ with tab1:
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    # ⚡ 爆速化：NumPy配列で瞬殺
                     adjc_vals = group['AdjC'].values
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
@@ -882,7 +889,6 @@ with tab1:
                     start_idx = max(0, global_max_idx - 10)
                     low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
-                    # 🚨 ここで95%以上の銘柄を足切り
                     rise_ratio = high_4d_val / (low_10d_val if low_10d_val > 0 else 1)
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
@@ -890,14 +896,11 @@ with tab1:
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
+                    # ⚡ Pandasを排除し、NumPyエンジンで0.00001秒で計算
+                    rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
+                    
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
-                    
-                    # 🛡️ 安全装置：生き残った銘柄にだけ個別計算（これが最も速い）
-                    g_tech = calc_technicals(group.copy())
-                    rsi = g_tech.iloc[-1].get('RSI', 50)
-                    macd_h = g_tech.iloc[-1].get('MACD_Hist', 0)
-                    macd_h_prev = g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech) > 1 else 0
                     
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
                     if code in master_dict:
@@ -907,9 +910,7 @@ with tab1:
                         c_sector = m_info.get('Sector', '不明')
                         c_scale = m_info.get('Scale', '不明')
 
-                    rank, bg, t_score, _ = get_triage_info(
-                        macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
-                    )
+                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
 
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
@@ -1084,6 +1085,11 @@ with tab2:
                 if 'master_df' in globals() and not master_df.empty:
                     master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
 
+                # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
+                master_dict = {}
+                if 'master_df' in globals() and not master_df.empty:
+                    master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
+
                 results = []
                 for code, group in df.groupby('Code'):
                     if exclude_ipo_flag and len(group) < 20: continue
@@ -1092,42 +1098,36 @@ with tab2:
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < vol_limit: continue
                     
-                    # Tab 2はGC判定にMACDが必須なため、ここで計算
-                    g_tech = calc_technicals(group.copy())
-                    if len(g_tech) < 5: continue
+                    adjc_vals = group['AdjC'].values
                     
-                    rsi = g_tech.iloc[-1].get('RSI', 50)
+                    # ⚡ Pandasを排除し、NumPyエンジンで0.00001秒で計算
+                    rsi, macd_h, macd_h_prev, hist_5d = get_fast_indicators(adjc_vals)
+                    
                     if rsi > rsi_limit: continue
 
-                    hist_vals = g_tech['MACD_Hist'].tail(5).values
                     gc_days = 0
-                    if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
-                    elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
-                    elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
+                    if hist_5d[-2] < 0 and hist_5d[-1] >= 0: gc_days = 1
+                    elif hist_5d[-3] < 0 and hist_5d[-2] >= 0 and hist_5d[-1] >= 0: gc_days = 2
+                    elif hist_5d[-4] < 0 and hist_5d[-3] >= 0 and hist_5d[-2] >= 0 and hist_5d[-1] >= 0: gc_days = 3
 
                     if gc_days == 0: continue
 
-                    macd_hist = hist_vals[-1]
-                    prev_hist = hist_vals[-2]
-                    lc = group.iloc[-1]['AdjC']
-
-                    # Tab2用 高値・安値の算出（高機動バッジ用・NumPy高速化）
+                    lc = adjc_vals[-1]
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
+                    
                     if len(adjh_vals) >= 4:
                         recent_4d_h = adjh_vals[-4:]
                         local_max_idx = recent_4d_h.argmax()
                         high_4d_val = recent_4d_h[local_max_idx]
-                        
                         global_max_idx = len(adjh_vals) - 4 + local_max_idx
                         start_idx = max(0, global_max_idx - 10)
                         low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
                     else:
                         high_4d_val = lc; low_10d_val = lc
 
-                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_hist, prev_hist, rsi, mode="強襲", gc_days=gc_days)
+                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_h, macd_h_prev, rsi, mode="強襲", gc_days=gc_days)
 
-                    # ⚡ 辞書からのO(1)アクセス
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
                     if code in master_dict:
                         m_info = master_dict[code]
@@ -1150,7 +1150,6 @@ with tab2:
                     st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
-                    # 🚨 修正8: 上位30件に絞り込み（スコア降順 ＞ 日数が若い順 ＞ RSI低い順）
                     sorted_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))
                     st.session_state.tab2_scan_results = sorted_results[:30]
                 
