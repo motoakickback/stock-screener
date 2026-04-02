@@ -1612,59 +1612,66 @@ with tab4:
                     st.dataframe(tdf.drop(columns=['累積損益(円)']).style.format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'}), use_container_width=True, hide_index=True)
                 
 # ------------------------------------------
-# Tab 5: IFD-OCO 10日ルール監視（JPXカレンダー準拠）
+# Tab 5: 建玉管理（ポジション・トラッカー）
 # ------------------------------------------
 with tab5:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⛺ IFD潜伏カウント（指値・逆指値の接近アラート）</h3>', unsafe_allow_html=True)
-    st.caption("※証券会社に仕掛けた指値（待伏）や逆指値（強襲）のコードと価格を入力し、現在値との距離や「注文の賞味期限」を監視します。")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 追撃・防衛レーダー（建玉管理）</h3>', unsafe_allow_html=True)
+    st.caption("※約定済みの建玉（ポジション）のコード、買値、利確値、損切値を入力し、現在地と含み損益をリアルタイム監視します。")
     
-    if 'tab5_ifd_results' not in st.session_state:
-        st.session_state.tab5_ifd_results = None
+    if 'tab5_pos_results' not in st.session_state:
+        st.session_state.tab5_pos_results = None
 
     col_i1, col_i2 = st.columns([1, 2])
     
-    T5_FILE = f"saved_t5_ifd_{user_id}.txt"
-    default_ifd = "6614, 2500\n4427, 1200" # コード, 指値
+    T5_FILE = f"saved_t5_pos_{user_id}.txt"
+    # デフォルト値を「コード, 買値, 利確, 損切」の4パラメーターに変更
+    default_pos = "3137, 230, 260, 215\n6047, 750, 850, 700" 
     if os.path.exists(T5_FILE):
         with open(T5_FILE, "r", encoding="utf-8") as f:
-            default_ifd = f.read()
+            default_pos = f.read()
 
     with col_i1:
-        st.markdown("📝 **監視リスト入力**")
-        st.caption("書式: `銘柄コード, 設定した指値` (改行で複数入力)")
-        ifd_in = st.text_area("IFD注文リスト", value=default_ifd, height=150, label_visibility="collapsed", key="ifd_in_t5")
+        st.markdown("📝 **保有ポジション入力**")
+        st.caption("書式: `コード, 買値, 利確, 損切` (改行で複数)")
+        pos_in = st.text_area("ポジションリスト", value=default_pos, height=150, label_visibility="collapsed", key="pos_in_t5")
         
-        c_exp1, c_exp2 = st.columns(2)
-        expire_d = c_exp1.number_input("⏳ 注文の有効期限 (日)", value=int(st.session_state.limit_d), step=1, key="expire_d_t5")
-        run_ifd = st.button("📡 潜伏レーダー更新", use_container_width=True, key="btn_run_ifd_t5")
+        run_pos = st.button("📡 建玉レーダー更新", use_container_width=True, key="btn_run_pos_t5")
         
     with col_i2:
-        st.markdown("#### 🛡️ 参謀の監視プロトコル")
-        st.info("・現在値が指値に接近（±2%以内）すると激熱アラートが点灯します。\n・強襲（逆指値）の場合は上に抜けたら、待伏（指値）の場合は下に落ちたら約定とみなします。\n・相場環境は日々変化します。有効期限を過ぎた注文は、速やかに取り消す（パージする）ことを推奨します。")
+        st.markdown("#### 🛡️ 参謀の管理プロトコル")
+        st.info("・入力した4つのデータから、現在の「生存圏」と「出口までの距離」を可視化します。\n・中央の白い縦線が「買値」です。現在値のバーがこれを上回っていれば含み益（緑）、下回っていれば含み損（赤）です。\n・利確/損切に到達して決済された銘柄は、リストから削除してください。")
 
     # ==========================================
-    # 💥 フェーズ1：計算とデータ抽出（ボタンが押された時のみ実行）
+    # 💥 フェーズ1：計算とデータ抽出
     # ==========================================
-    if run_ifd and ifd_in:
+    if run_pos and pos_in:
         with open(T5_FILE, "w", encoding="utf-8") as f:
-            f.write(ifd_in)
+            f.write(pos_in)
             
-        lines = ifd_in.strip().split('\n')
+        lines = pos_in.strip().split('\n')
         targets = []
         for line in lines:
             parts = [p.strip() for p in line.split(',')]
-            if len(parts) >= 2 and parts[0].isdigit():
-                targets.append({'code': parts[0], 'price': int(parts[1])})
+            # 4つの要素（コード, 買値, 利確, 損切）があるかチェック
+            if len(parts) >= 4 and parts[0].isdigit():
+                targets.append({
+                    'code': parts[0], 
+                    'buy_p': float(parts[1]), 
+                    'tp_p': float(parts[2]), 
+                    'sl_p': float(parts[3])
+                })
                 
         if not targets:
-            st.warning("有効な形式（コード, 指値）で見つかりません。")
-            st.session_state.tab5_ifd_results = []
+            st.warning("有効な形式（コード, 買値, 利確, 損切）で見つかりません。")
+            st.session_state.tab5_pos_results = []
         else:
-            with st.spinner("前線に展開中の各部隊（注文）の現在地を照会中..."):
+            with st.spinner("戦線に展開中の各部隊の損益状況を照会中..."):
                 processed_results = []
                 for t in targets:
                     c = t['code']
-                    order_p = t['price']
+                    buy_p = t['buy_p']
+                    tp_p = t['tp_p']
+                    sl_p = t['sl_p']
                     
                     api_code = c if len(c) == 5 else c + "0"
                     raw_s = get_single_data(api_code, 1)
@@ -1673,7 +1680,6 @@ with tab5:
                         st.error(f"銘柄 {c} の通信に失敗しました。")
                         continue
                         
-                    # 🚨 防衛パッチ：APIのカラム重複エラーを排除しつつデータを構築
                     if raw_s and "bars" in raw_s and len(raw_s["bars"]) > 0:
                         temp_df = pd.DataFrame(raw_s["bars"])
                         rename_map = {}
@@ -1705,41 +1711,33 @@ with tab5:
                         if not m_row.empty:
                             c_name = m_row.iloc[0]['CompanyName']; c_market = m_row.iloc[0]['Market']; c_sector = m_row.iloc[0].get('Sector', '不明')
                     
-                    diff_yen = lc - order_p
-                    diff_pct = (diff_yen / lc) * 100 if lc > 0 else 0
-                    
-                    alert_html = ""
-                    if abs(diff_pct) <= 2.0:
-                        alert_html = '<span style="background-color: #ef5350; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🔥 約定目前（交戦距離）</span>'
-                    elif diff_yen > 0:
-                        alert_html = '<span style="background-color: #0288d1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">📡 高度待機中（上空）</span>'
-                    else:
-                        alert_html = '<span style="background-color: #ed6c02; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">📉 買値割れ（既に通過）</span>'
+                    # 💰 損益計算ロジック
+                    pl_yen = lc - buy_p
+                    pl_pct = (pl_yen / buy_p) * 100 if buy_p > 0 else 0
                     
                     processed_results.append({
                         'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector,
-                        'lc': lc, 'order_p': order_p, 'daily_pct': daily_pct, 'daily_sign': daily_sign,
-                        'diff_yen': diff_yen, 'diff_pct': diff_pct, 'alert_html': alert_html
+                        'lc': lc, 'buy_p': buy_p, 'tp_p': tp_p, 'sl_p': sl_p, 
+                        'daily_pct': daily_pct, 'daily_sign': daily_sign,
+                        'pl_yen': pl_yen, 'pl_pct': pl_pct
                     })
                     
-                    # 🚨 極限最適化：1銘柄の計算が終わるたびに一時データを完全に破棄
                     del temp_df, renamed_df, dedup_df, df_s, df_chart
                 
-                # フェーズ1の完了：セッション変数へロックオン
-                st.session_state.tab5_ifd_results = processed_results
+                st.session_state.tab5_pos_results = processed_results
                 import gc
                 gc.collect()
 
     # ==========================================
-    # 🖼️ フェーズ2：UI描画（セッションから読み出し）
+    # 🖼️ フェーズ2：UI描画（トラッカー表示）
     # ==========================================
-    if st.session_state.tab5_ifd_results is not None:
-        results = st.session_state.tab5_ifd_results
+    if st.session_state.tab5_pos_results is not None:
+        results = st.session_state.tab5_pos_results
         
         if not results:
-            pass # エラー時はPhase1で警告済み
+            pass 
         else:
-            st.success(f"📡 潜伏レーダー展開中: {len(results)} 部隊を捕捉。（データ保持中）")
+            st.success(f"📡 建玉レーダー展開中: {len(results)} 部隊の生存圏を監視中。")
             
             for r in results:
                 st.divider()
@@ -1747,37 +1745,60 @@ with tab5:
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: clamp(16px, 5vw, 24px); font-weight: bold; margin: 0 0 0.3rem 0;">({r['code'][:4]}) {r['name']}</h3>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            {r['alert_html']}
-                            <span style="font-size: 13px; color: #aaa;">| 🏢 {r['market']} | 🏭 {r['sector']}</span>
+                            <span style="font-size: 13px; color: #aaa;">🏢 {r['market']} | 🏭 {r['sector']} | 前日比: {r['daily_sign']}{r['daily_pct']*100:.1f}%</span>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                sc1, sc2, sc3 = st.columns([1, 1, 1.5])
+                # トラッカー用の変数抽出
+                tp = r['tp_p']
+                sl = r['sl_p']
+                buy = r['buy_p']
+                lc = r['lc']
                 
-                sc1.metric("最新終値", f"{r['lc']:,}円", f"{r['daily_sign']}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                pl_pct = r['pl_pct']
+                pl_yen = r['pl_yen']
+                to_tp = (tp - lc) / lc * 100 if lc > 0 else 0
+                to_sl = (lc - sl) / lc * 100 if lc > 0 else 0
                 
-                html_order = f"""
-                <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                    <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">🎯 設置済み 指値/逆指値</div>
-                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{r['order_p']:,}円</div>
-                </div>
-                """
-                sc2.markdown(html_order, unsafe_allow_html=True)
+                total_range = tp - sl
+                if total_range <= 0: total_range = 1 # ゼロ除算回避
                 
-                dist_color = "#ef5350" if abs(r['diff_pct']) <= 2.0 else "#26a69a"
-                html_dist = f"""
-                <div style="font-family: sans-serif; padding-top: 0.2rem;">
-                    <div style="font-size: 14px; color: rgba(250, 250, 250, 0.6); padding-bottom: 0.1rem;">📏 現在値との乖離（距離）</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: {dist_color};">
-                        {"+" if r['diff_yen'] > 0 else ""}{r['diff_yen']:,}円 ({"+" if r['diff_pct'] > 0 else ""}{r['diff_pct']:.1f}%)
+                current_pos = (lc - sl) / total_range * 100
+                buy_pos = (buy - sl) / total_range * 100
+                
+                color = "#26a69a" if pl_pct >= 0 else "#ef5350"
+                
+                html_tracker = f"""
+                <div style="background: rgba(255, 255, 255, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 5px solid {color}; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 24px; font-weight: bold; color: #fff;">現在値: {int(lc):,}円</span>
+                        <div style="text-align: right;">
+                            <div style="font-size: 12px; color: #aaa;">含み損益</div>
+                            <span style="font-size: 22px; font-weight: bold; color: {color};">{"+" if pl_yen > 0 else ""}{int(pl_yen):,}円 ({pl_pct:+.2f}%)</span>
+                        </div>
+                    </div>
+                    
+                    <div style="position: relative; margin: 25px 0;">
+                        <div style="background: #333; height: 16px; border-radius: 8px; width: 100%;"></div>
+                        <div style="position: absolute; top: 0; left: 0; background: {color}; width: {max(0, min(100, current_pos))}%; height: 16px; border-radius: 8px;"></div>
+                        <div style="position: absolute; left: {max(0, min(100, buy_pos))}%; top: -4px; width: 3px; height: 24px; background: #fff; box-shadow: 0 0 5px rgba(0,0,0,0.8);"></div>
+                        <div style="position: absolute; left: {max(0, min(100, buy_pos))}%; top: -22px; color: #fff; font-size: 11px; transform: translateX(-50%);">⚓ 買値</div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                        <div style="color: #ef5350;">
+                            <div style="font-weight: bold;">🛡️ 損切: {int(sl):,}円</div>
+                            <div style="font-size: 11px; color: #aaa;">残り -{to_sl:.1f}%</div>
+                        </div>
+                        <div style="color: #26a69a; text-align: right;">
+                            <div style="font-weight: bold;">🎯 利確: {int(tp):,}円</div>
+                            <div style="font-size: 11px; color: #aaa;">残り +{to_tp:.1f}%</div>
+                        </div>
                     </div>
                 </div>
                 """
-                sc3.markdown(html_dist, unsafe_allow_html=True)
-
-    import gc
-    gc.collect()  # 処理済みの不要なメモリを強制排出
+                st.markdown(html_tracker, unsafe_allow_html=True)
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
