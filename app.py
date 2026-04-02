@@ -769,17 +769,23 @@ with tab1:
                 # --------------------------------------------------
                 # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
                 # --------------------------------------------------
-                # 重い「文字列→数値変換」をループに入る前に全データに対して1回で終わらせる
-                df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+                # カラム名の揺れ（API仕様変更）を自動吸収する防弾処理
+                v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
+                
+                if v_col:
+                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
+                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
+                else:
+                    avg_vols = pd.Series(0, index=df['Code'].unique()) # 取得失敗時のフェイルセーフ
+
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
                 valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
                 
-                # 直近5日分の平均出来高を一括計算（ループ内の重い処理を全廃止）
-                avg_vols = df.groupby('Code').tail(5).groupby('Code')['Volume'].mean()
+                # 直近5日分の平均出来高が1万株以上のコードだけを抽出
                 valid_vol_codes = avg_vols[avg_vols >= 10000].index
                 
-                # 株価200円以上 ＆ 出来高1万株以上のコードだけを抽出
+                # 株価200円以上 ＆ 出来高条件クリアのコードを抽出
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
@@ -1051,12 +1057,20 @@ with tab2:
                 # --------------------------------------------------
                 # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
                 # --------------------------------------------------
-                df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+                # カラム名の揺れ（API仕様変更）を自動吸収する防弾処理
+                v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
+                
+                if v_col:
+                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
+                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
+                else:
+                    avg_vols = pd.Series(0, index=df['Code'].unique())
+
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
                 valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
                 
-                avg_vols = df.groupby('Code').tail(5).groupby('Code')['Volume'].mean()
+                # Tab2はサイドバーの可変変数「vol_limit」を使用
                 valid_vol_codes = avg_vols[avg_vols >= vol_limit].index
                 
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
