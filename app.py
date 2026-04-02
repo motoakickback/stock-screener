@@ -1769,31 +1769,30 @@ with tab5:
                 
                 color = "#26a69a" if pl_pct >= 0 else "#ef5350"
                 
+                # 🚨 修正：UI描画エンジンの誤認防止（空白行とコメントの排除）＆ 符号バグ修正
                 html_tracker = f"""
                 <div style="background: rgba(255, 255, 255, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 5px solid {color}; margin-bottom: 1rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                         <span style="font-size: 24px; font-weight: bold; color: #fff;">現在値: {int(lc):,}円</span>
                         <div style="text-align: right;">
                             <div style="font-size: 12px; color: #aaa;">含み損益</div>
                             <span style="font-size: 22px; font-weight: bold; color: {color};">{"+" if pl_yen > 0 else ""}{int(pl_yen):,}円 ({pl_pct:+.2f}%)</span>
                         </div>
                     </div>
-                    
-                    <div style="position: relative; margin: 25px 0;">
+                    <div style="position: relative; margin: 30px 0;">
                         <div style="background: #333; height: 16px; border-radius: 8px; width: 100%;"></div>
                         <div style="position: absolute; top: 0; left: 0; background: {color}; width: {max(0, min(100, current_pos))}%; height: 16px; border-radius: 8px;"></div>
                         <div style="position: absolute; left: {max(0, min(100, buy_pos))}%; top: -4px; width: 3px; height: 24px; background: #fff; box-shadow: 0 0 5px rgba(0,0,0,0.8);"></div>
                         <div style="position: absolute; left: {max(0, min(100, buy_pos))}%; top: -22px; color: #fff; font-size: 11px; transform: translateX(-50%);">⚓ 買値</div>
                     </div>
-                    
                     <div style="display: flex; justify-content: space-between; font-size: 13px;">
                         <div style="color: #ef5350;">
                             <div style="font-weight: bold;">🛡️ 損切: {int(sl):,}円</div>
-                            <div style="font-size: 11px; color: #aaa;">残り -{to_sl:.1f}%</div>
+                            <div style="font-size: 11px; color: #aaa;">残り {to_sl:+.1f}%</div>
                         </div>
                         <div style="color: #26a69a; text-align: right;">
                             <div style="font-weight: bold;">🎯 利確: {int(tp):,}円</div>
-                            <div style="font-size: 11px; color: #aaa;">残り +{to_tp:.1f}%</div>
+                            <div style="font-size: 11px; color: #aaa;">残り {to_tp:+.1f}%</div>
                         </div>
                     </div>
                 </div>
