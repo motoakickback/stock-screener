@@ -452,14 +452,6 @@ def calc_technicals(df):
     # 🚨 最終防衛：計算終了後に残ったすべてのNaNを0で埋め尽くし、Plotlyのクラッシュを完全に防ぐ
     df.fillna(0, inplace=True)
     
-    return df
-
-def add_global_technicals(df):
-    """ ⚡ 爆速化エンジン: ループに入る前に全銘柄のMACDとRSIを一瞬で一括計算する """
-    df = df.copy()
-    df = df.sort_values(['Code', 'Date'])
-    g = df.groupby('Code')
-
     # MACDの一括計算
     ema12 = g['AdjC'].transform(lambda x: x.ewm(span=12, adjust=False).mean())
     ema26 = g['AdjC'].transform(lambda x: x.ewm(span=26, adjust=False).mean())
