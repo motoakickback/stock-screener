@@ -766,6 +766,16 @@ with tab1:
                         invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
                         valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
                         df = df[df['Code'].isin(valid_codes_bio)]
+
+                    # 🔻🔻🔻 掟⑥：除外ブラックリスト検問所（最終防弾版） 🔻🔻🔻
+                    if gigi_input:
+                        import re
+                        # コピペされたテキストから「4桁の数字」だけを強制抽出（カンマや改行は自動無視）
+                        target_blacklist = re.findall(r'\d{4}', str(gigi_input))
+                    
+                        if target_blacklist:
+                            # DataFrameのCodeを文字列型に強制変換し、型不一致によるすり抜けを完全遮断
+                            df = df[~df['Code'].astype(str).isin(target_blacklist)]
                 
                 results = []
                 for code, group in df.groupby('Code'):
@@ -953,9 +963,15 @@ with tab2:
                     valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes_bio)]
 
-                if 'blacklist_codes' in st.session_state and st.session_state.blacklist_codes:
-                    # リストにあるコードをスキャン対象から即座に抹消
-                    df = df[~df['Code'].isin(st.session_state.blacklist_codes)]
+                # 🔻🔻🔻 掟⑥：除外ブラックリスト検問所（最終防弾版） 🔻🔻🔻
+                if gigi_input:
+                    import re
+                    # コピペされたテキストから「4桁の数字」だけを強制抽出（カンマや改行は自動無視）
+                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
+                    
+                    if target_blacklist:
+                        # DataFrameのCodeを文字列型に強制変換し、型不一致によるすり抜けを完全遮断
+                        df = df[~df['Code'].astype(str).isin(target_blacklist)]
 
                 results = []
                 for code, group in df.groupby('Code'):
