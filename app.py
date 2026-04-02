@@ -1047,7 +1047,20 @@ with tab2:
                 st.error("データの取得に失敗しました。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
-                # （中略：爆速化パッチのコード）
+                
+                # --------------------------------------------------
+                # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
+                # --------------------------------------------------
+                df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+                latest_date = df['Date'].max()
+                latest_df = df[df['Date'] == latest_date]
+                valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')['Volume'].mean()
+                valid_vol_codes = avg_vols[avg_vols >= vol_limit].index
+                
+                valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
+                df = df[df['Code'].isin(valid_codes)]
 
                 # 🚨 第1関門: ETF/REITの完全排除
                 if exclude_etf_flag_t2 and 'master_df' in globals() and not master_df.empty:
@@ -1123,9 +1136,20 @@ with tab2:
                     
                     lc = group.iloc[-1]['AdjC']
                     
-                    v_col = next((col for col in group.columns if col in ['AdjVo', 'Vo', 'AdjVo_x', 'AdjVo_y']), None)
-                    avg_vol = int(pd.to_numeric(group[v_col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).tail(5).mean()) if v_col else 0
+                    # ⚡ 爆速化：計算済みの出来高を参照
+                    avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < vol_limit: continue
+
+                    # 🚨 論理バグ修正：Tab2でも「高機動センサー」用の高値・安値を算出して保存する
+                    group_reset = group.reset_index(drop=True)
+                    recent_4d = group_reset.tail(4)
+                    if len(recent_4d) > 0:
+                        high_idx = recent_4d['AdjH'].idxmax()
+                        high_4d_val = recent_4d.loc[high_idx, 'AdjH']
+                        start_idx = max(0, high_idx - 10)
+                        low_10d_val = group_reset.iloc[start_idx : high_idx + 1]['AdjL'].min()
+                    else:
+                        high_4d_val = lc; low_10d_val = lc
                     
                     g_tech = calc_technicals(group.copy())
                     if len(g_tech) < 5: continue
@@ -1163,6 +1187,7 @@ with tab2:
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale,
                         'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol,
+                        'high_val': high_4d_val, 'low_val': low_10d_val, # 🚨 欠落していた変数を装填
                         'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score,
                         'GC_Days': gc_days
                     })
@@ -1205,6 +1230,10 @@ with tab2:
             lc_val = r.get('lc', 0)
             rsi_val = r.get('RSI', 50)
             vol_val = r.get('avg_vol', 0)
+            high_val = r.get('high_val', 0) # 🚨 復旧
+            low_val = r.get('low_val', 0)   # 🚨 復旧
+            
+            t_rank = r.get('T_Rank', '判定不能')
             
             t_rank = r.get('T_Rank', '判定不能')
             t_color = r.get('T_Color', '#616161')
