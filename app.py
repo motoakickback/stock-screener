@@ -794,7 +794,7 @@ with tab1:
     # ==========================================
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
-        with st.spinner("全銘柄から「鉄の掟（半値押し）」適合ターゲットを索敵中..."):
+        with st.spinner("全銘柄から「鉄の掟（半値押し）」適合ターゲットを索敵中... (初回は通信に約20秒かかります)"):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗しました。")
@@ -802,11 +802,7 @@ with tab1:
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 
-                # --------------------------------------------------
-                # ⚡ 真・爆速化パッチ：ループ前の「出来高一括計算＆足切り」
-                # --------------------------------------------------
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
-                
                 if v_col:
                     df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
@@ -820,7 +816,6 @@ with tab1:
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1関門: ETF/REITの完全排除
                 if exclude_etf_flag_t1 and 'master_df' in globals() and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | \
                                    master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False) | \
@@ -828,7 +823,6 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1.5関門：市場区分フィルター
                 if 'master_df' in globals() and not master_df.empty:
                     target_preset_val = st.session_state.preset_target
                     if "大型株" in target_preset_val:
@@ -838,13 +832,11 @@ with tab1:
                     v_codes = master_df[m_mask]['Code'].unique()
                     df = df[df['Code'].isin(v_codes)]
 
-                # 🚨 第2関門: バイオ排除
                 if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
                     invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
                     valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes_bio)]
 
-                # 🚨 第3関門: 掟⑥ ブラックリスト
                 if gigi_input:
                     target_blacklist = re.findall(r'\d{4}', str(gigi_input))
                     if target_blacklist:
@@ -852,22 +844,15 @@ with tab1:
                         df = df[~df['Temp_Code'].isin(target_blacklist)]
                         df = df.drop(columns=['Temp_Code'])
 
-                # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
-                master_dict = {}
-                if 'master_df' in globals() and not master_df.empty:
-                    master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
-
-                # ⚡ 爆速化：session_state へのアクセスをループ外で一回だけ行う
-                target_preset_val = st.session_state.get('preset_target', '50%')
-                push_ratio = 0.618 if "61.8%" in target_preset_val else 0.250 if "25%" in target_preset_val else 0.500
-
-                # ⚡ 爆速化：マスターデータの辞書化 (O(1)アクセス用)
                 master_dict = {}
                 if 'master_df' in globals() and not master_df.empty:
                     master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
 
                 target_preset_val = st.session_state.get('preset_target', '50%')
                 push_ratio = 0.618 if "61.8%" in target_preset_val else 0.250 if "25%" in target_preset_val else 0.500
+
+                min14 = float(f9_min14)
+                max14 = float(f9_max14)
 
                 results = []
                 for code, group in df.groupby('Code'):
@@ -889,14 +874,14 @@ with tab1:
                     start_idx = max(0, global_max_idx - 10)
                     low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
-                    rise_ratio = high_4d_val / (low_10d_val if low_10d_val > 0 else 1)
-                    if not (f9_min14 <= rise_ratio <= f9_max14):
+                    if low_10d_val <= 0: continue
+                    rise_ratio = high_4d_val / low_10d_val
+                    if not (min14 <= rise_ratio <= max14):
                         continue
 
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
-                    # ⚡ Pandasを排除し、NumPyエンジンで0.00001秒で計算
                     rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
                     
                     target_buy = high_4d_val - (wave_len * push_ratio)
@@ -951,7 +936,6 @@ with tab1:
         for r in light_results:
             st.divider()
             c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
-            # 大文字・小文字どちらのキーでも取得できるように.getを使用
             raw_market = str(r.get('Market', r.get('market', '不明')))
             m_lower = raw_market.lower()
             
@@ -962,7 +946,6 @@ with tab1:
             else:
                 badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
             
-            # 変数一括抽出（安全装置）
             target_buy_val = int(r.get('target_buy', 0))
             reach_val = r.get('reach_rate', 0)
             high_val = int(r.get('high_4d', 0))
@@ -971,27 +954,13 @@ with tab1:
             avg_vol_val = int(r.get('avg_vol', 0))
             t_rank = r.get('triage_rank', '不明')
             t_bg = r.get('triage_bg', '#616161')
-            scale_val = str(r.get('Scale', ''))
             
-            # 🎯 古い badge は削除し、triage_badge だけ定義
             triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
-            # 4. ⚡ ボラティリティ（高機動）センサー：市場別・自動感度調整（Tab1）
-            swing_pct = 0
-            if low_val > 0:
-                swing_pct = ((high_val - low_val) / low_val) * 100
-            
-            # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
-            if 'プライム' in m_lower or '一部' in m_lower:
-                vol_threshold = 40.0  # 🏢 修正：大型株で18%以上は完全に「暴れ馬」
-            else:
-                vol_threshold = 60.0  # 🚀 修正：中小型株で25%以上を「高ボラ」と認定
-            
-            volatility_badge = ""
-            if swing_pct >= vol_threshold:
-                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+            swing_pct = ((high_val - low_val) / low_val) * 100 if low_val > 0 else 0
+            vol_threshold = 40.0 if ('プライム' in m_lower or '一部' in m_lower) else 60.0 
+            volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>' if swing_pct >= vol_threshold else ""
 
-            # 🚨 修正：{badge_html}、{triage_badge}、{volatility_badge} を直列装填
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
@@ -1003,15 +972,12 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
             
-            # 📊 メトリクスエリア：平均出来高を独立させて復活
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
             m_cols[0].metric("直近高値", f"{high_val:,}円")
             m_cols[1].metric("起点安値", f"{low_val:,}円")
             m_cols[2].metric("最新終値", f"{lc_val:,}円")
-            # 🔥 復活：平均出来高
             m_cols[3].metric("平均出来高(5日)", f"{avg_vol_val:,}株")
             
-            # 🎯 買値目標（右端に配置）
             html_buy = f"""
             <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
                 <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 半値押し 買値目標</div>
@@ -1019,10 +985,7 @@ with tab1:
             </div>
             """
             m_cols[4].markdown(html_buy, unsafe_allow_html=True)
-            
-            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')} ｜ ⏱️ 高値経過: {int(r.get('d_high', 0))}日")
-
-        import gc; gc.collect()
+            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
