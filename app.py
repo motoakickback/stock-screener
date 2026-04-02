@@ -300,21 +300,20 @@ def get_single_data(code, yrs=3):
     try:
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
 
-        # 🚨 真の防弾パッチ：ページネーション（分割データ）を全て回収する自動ループ
         url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
         while url:
             r_bars = requests.get(url, headers=headers, timeout=15)
             if r_bars.status_code == 200:
                 data = r_bars.json()
-                # J-Quantsの仕様変更に備え、"daily_quotes" と "data" の両方を狙い撃つ
-                quotes = data.get("daily_quotes", data.get("data", []))
+                # 🚨 防弾パッチ: "daily_quotes" または "data" を確実にリストとして取得
+                quotes = data.get("daily_quotes") or data.get("data") or []
                 result["bars"].extend(quotes)
                 
-                # 次のページの鍵（pagination_key）があればURLを更新して再突入
+                # 🚨 ページネーション対応：次のページがあればURLを更新して再突入
                 p_key = data.get("pagination_key")
                 if p_key:
                     url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}&pagination_key={p_key}"
-                    time.sleep(0.1) # サーバー負荷軽減のためのインターバル
+                    time.sleep(0.1) # サーバー負荷軽減のインターバル
                 else:
                     url = None # 全データ回収完了
             else:
@@ -323,7 +322,7 @@ def get_single_data(code, yrs=3):
         # 配当情報の取得
         r_div = requests.get(f"{BASE_URL}/fins/dividend?code={api_code}", headers=headers, timeout=10)
         if r_div.status_code == 200:
-            result["events"]["dividend"] = r_div.json().get("dividend", r_div.json().get("data", []))
+            result["events"]["dividend"] = r_div.json().get("dividend") or r_div.json().get("data") or []
 
     except Exception as e:
         print(f"API Error: {e}")
@@ -1622,33 +1621,28 @@ with tab4:
                 preloaded_data = {}
                 for c in t_codes:
                     raw = get_single_data(c + "0", 2)
-                    if not raw: continue
-                    if isinstance(raw, dict) and 'bars' in raw: temp_df = pd.json_normalize(raw['bars'])
-                    else: temp_df = pd.json_normalize(raw)
+                    if not raw or not raw.get('bars'): continue
+                    
+                    temp_df = pd.DataFrame(raw['bars'])
                     if temp_df.empty: continue
                     
-                    rename_map = {}
-                    for col in temp_df.columns:
-                        c_up = col.upper()
-                        if c_up.endswith('ADJO') or c_up.endswith('OPEN') or c_up == 'O': rename_map[col] = 'AdjO'
-                        if c_up.endswith('ADJH') or c_up.endswith('HIGH') or c_up == 'H': rename_map[col] = 'AdjH'
-                        if c_up.endswith('ADJL') or c_up.endswith('LOW') or c_up == 'L': rename_map[col] = 'AdjL'
-                        if c_up.endswith('ADJC') or c_up.endswith('CLOSE') or c_up == 'C': rename_map[col] = 'AdjC'
-                    
-                    temp_df = temp_df.rename(columns=rename_map).loc[:, ~temp_df.rename(columns=rename_map).columns.duplicated()]
+                    # 🚨 致命的なバグ修正：Adjusted（調整後）価格を破壊する悪性コードをパージ
+                    # V2 APIは最初から 'AdjO', 'AdjC' 等を返すため、そのまま透過させるのが正解
                     target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                     if not all(col in temp_df.columns for col in target_cols): continue
                     
                     try: 
                         clean_data = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
-                        processed_df = calc_technicals(clean_data) # テクニカル指標を1回だけ計算
-                        # 🚨 防弾パッチ：データがNoneや空っぽの場合は絶対にリストに入れない
-                        if processed_df is not None and not processed_df.empty and len(processed_df) >= 35:
+                        processed_df = calc_technicals(clean_data)
+                        
+                        # 🚨 最終防弾パッチ：データが35日以上存在する場合のみ検証リストへ追加
+                        import pandas as pd
+                        if processed_df is not None and isinstance(processed_df, pd.DataFrame) and len(processed_df) >= 35:
                             preloaded_data[c] = processed_df
                     except: continue
 
             if not preloaded_data:
-                st.error("解析可能なデータが取得できませんでした（上場直後などでデータが足りない可能性があります）。")
+                st.error("解析可能なデータが取得できませんでした（通信エラー、または上場直後でデータが足りない可能性があります）。")
                 st.stop()
 
             # --- 2. 超高速最適化ループ ---
