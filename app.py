@@ -1198,16 +1198,28 @@ with tab2:
             else:
                 badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
 
-            # 🚨 修正2: Tab 1に合わせた企業規模バッジの描画
-            badge_color = "#0d47a1" if "大型" in c_size else "#b71c1c"
-            scale_badge = f'<span style="background-color: {badge_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">{c_size}</span>'
+            # 🚨 破棄：古い scale_badge 等の定義は削除し、優先度バッジのみ維持
             triage_badge = f'<span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
+            # ⚡ ボラティリティ（高機動）センサーの追加
+            # 辞書 r から高値・安値を安全に抽出（Tab2の仕様に合わせて low_14d / low_10d 両対応）
+            high_val = r.get('high_4d', 0)
+            low_val = r.get('low_14d', r.get('low_10d', 0)) 
+            
+            swing_pct = 0
+            if low_val > 0:
+                swing_pct = ((high_val - low_val) / low_val) * 100
+            
+            volatility_badge = ""
+            if swing_pct >= 15.0:
+                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+
+            # 🚨 UI描画：{scale_badge} を排除し、{badge_html} と {volatility_badge} を直列装填
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        {scale_badge}{triage_badge}
+                        {badge_html}{triage_badge}{volatility_badge}
                         <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">GC後 {gc_d}日目</span>
                     </div>
                 </div>
@@ -1377,15 +1389,50 @@ with tab3:
                     st.divider()
                     
                     scale_val = str(r['scale'])
-                    badge = '<span style="background-color: #0d47a1; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🏢 大型/中型</span>' if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else '<span style="background-color: #b71c1c; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; display: inline-block;">🚀 小型/新興</span>'
-                    triage_badge = f'<span style="background-color: {r["bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["rank"]}</span>'
+                    # 🔻🔻🔻 ここから：Tab 3 (照準) 用バッジ換装パッチ 🔻🔻🔻
+            
+            # 1. 市場区分バッジの生成
+            raw_market = str(r.get('Market', r.get('market', '不明')))
+            m_lower = raw_market.lower()
+            if 'プライム' in m_lower or '一部' in m_lower:
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else:
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
 
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(16px, 5vw, 26px); font-weight: bold; margin: 0 0 0.3rem 0;">({r['code'][:4]}) {r['name']}</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">{badge}{triage_badge}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            # 2. 変数一括抽出（※Tab 3の現状のキー名に合わせて適宜調整してください）
+            target_buy_val = int(r.get('target_buy', 0))
+            reach_val = r.get('reach_rate', 0)
+            high_val = int(r.get('high_4d', 0))
+            low_val = int(r.get('low_14d', 0)) # Tab3が low_10d の場合は変更してください
+            lc_val = int(r.get('lc', 0))
+            t_rank = r.get('triage_rank', '不明')
+            t_bg = r.get('triage_bg', '#616161')
+            
+            # 3. 🎯 優先度バッジ
+            triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
+
+            # 4. ⚡ ボラティリティ（高機動）センサー
+            swing_pct = 0
+            if low_val > 0:
+                swing_pct = ((high_val - low_val) / low_val) * 100
+            
+            volatility_badge = ""
+            if swing_pct >= 15.0:
+                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+
+            # 5. 🚨 UI描画（3種のバッジを完全同期装填）
+            st.markdown(f"""
+                <div style="margin-bottom: 0.8rem;">
+                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        {badge_html}{triage_badge}{volatility_badge}
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
+                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
                     
                     for alert in r['alerts']: st.warning(alert)
                     
