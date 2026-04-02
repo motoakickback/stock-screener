@@ -1217,19 +1217,19 @@ with tab2:
             triage_badge = f'<span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
             # 4. ⚡ ボラティリティ（高機動）センサー：市場別・自動感度調整
-                    swing_pct = 0
-                    if low_val > 0:
-                        swing_pct = ((high_val - low_val) / low_val) * 100
-                    
-                    # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
-                    if 'プライム' in m_lower or '一部' in m_lower:
-                        vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
-                    else:
-                        vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
-                    
-                    volatility_badge = ""
-                    if swing_pct >= vol_threshold:
-                        volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+            swing_pct = 0
+            if low_val > 0:
+                swing_pct = ((high_val - low_val) / low_val) * 100
+            
+            # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
+            if 'プライム' in m_lower or '一部' in m_lower:
+                vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
+            else:
+                vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
+            
+            volatility_badge = ""
+            if swing_pct >= vol_threshold:
+                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
 
             # 🚨 UI描画：{scale_badge} を排除し、{badge_html} と {volatility_badge} を直列装填
             st.markdown(f"""
