@@ -1510,7 +1510,7 @@ with tab3:
                         </div>
                         """
         
-                    # マトリクスの生成（フォントと余白をさらに拡大）
+                    # マトリクスの生成（フォント拡大 ＆ リーダー線追加）
                     tp_list = [5, 8, 10, 15, 20]
                     sl_list = [3, 5, 8]
                     
@@ -1520,11 +1520,11 @@ with tab3:
                         <div style="display: flex; justify-content: space-between; gap: 30px;">
                             <div style="flex: 1;">
                                 <div style="font-size: 14px; color: #26a69a; border-bottom: 2px solid #26a69a; margin-bottom: 10px; padding-bottom: 2px;">【 利確目標 】</div>
-                                {" ".join([f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee;">+{p}%</span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1+p/100)):,}</span></div>' for p in tp_list])}
+                                {" ".join([f'<div style="display: flex; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee; width: 45px;">+{p}%</span><span style="flex-grow: 1; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); margin: 0 10px; transform: translateY(4px);"></span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1+p/100)):,}</span></div>' for p in tp_list])}
                             </div>
                             <div style="flex: 1;">
                                 <div style="font-size: 14px; color: #ef5350; border-bottom: 2px solid #ef5350; margin-bottom: 10px; padding-bottom: 2px;">【 損切目安 】</div>
-                                {" ".join([f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee;">-{l}%</span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1-l/100)):,}</span></div>' for l in sl_list])}
+                                {" ".join([f'<div style="display: flex; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee; width: 45px;">-{l}%</span><span style="flex-grow: 1; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); margin: 0 10px; transform: translateY(4px);"></span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1-l/100)):,}</span></div>' for l in sl_list])}
                             </div>
                         </div>
                     </div>
