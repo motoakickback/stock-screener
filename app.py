@@ -966,12 +966,27 @@ with tab1:
             # 🎯 古い badge は削除し、triage_badge だけ定義
             triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
-            # 🚨 修正：{badge} を {badge_html} に換装
+            # 4. ⚡ ボラティリティ（高機動）センサー：市場別・自動感度調整（Tab1）
+            swing_pct = 0
+            if low_val > 0:
+                swing_pct = ((high_val - low_val) / low_val) * 100
+            
+            # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
+            if 'プライム' in m_lower or '一部' in m_lower:
+                vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
+            else:
+                vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
+            
+            volatility_badge = ""
+            if swing_pct >= vol_threshold:
+                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+
+            # 🚨 修正：{badge_html}、{triage_badge}、{volatility_badge} を直列装填
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{triage_badge}
+                        {badge_html}{triage_badge}{volatility_badge}
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
                         <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
                     </div>
@@ -1201,18 +1216,20 @@ with tab2:
             # 🚨 破棄：古い scale_badge 等の定義は削除し、優先度バッジのみ維持
             triage_badge = f'<span style="background-color: {t_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
-            # ⚡ ボラティリティ（高機動）センサーの追加
-            # 辞書 r から高値・安値を安全に抽出（Tab2の仕様に合わせて low_14d / low_10d 両対応）
-            high_val = r.get('high_4d', 0)
-            low_val = r.get('low_14d', r.get('low_10d', 0)) 
-            
-            swing_pct = 0
-            if low_val > 0:
-                swing_pct = ((high_val - low_val) / low_val) * 100
-            
-            volatility_badge = ""
-            if swing_pct >= 15.0:
-                volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
+            # 4. ⚡ ボラティリティ（高機動）センサー：市場別・自動感度調整
+                    swing_pct = 0
+                    if low_val > 0:
+                        swing_pct = ((high_val - low_val) / low_val) * 100
+                    
+                    # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
+                    if 'プライム' in m_lower or '一部' in m_lower:
+                        vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
+                    else:
+                        vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
+                    
+                    volatility_badge = ""
+                    if swing_pct >= vol_threshold:
+                        volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
 
             # 🚨 UI描画：{scale_badge} を排除し、{badge_html} と {volatility_badge} を直列装填
             st.markdown(f"""
