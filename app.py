@@ -454,6 +454,65 @@ def calc_technicals(df):
     
     return df
 
+def add_global_technicals(df):
+    """ ⚡ 爆速化エンジン: ループに入る前に全銘柄のMACDとRSIを一瞬で一括計算する """
+    df = df.copy()
+    df = df.sort_values(['Code', 'Date'])
+    g = df.groupby('Code')
+
+    # MACDの一括計算
+    ema12 = g['AdjC'].transform(lambda x: x.ewm(span=12, adjust=False).mean())
+    ema26 = g['AdjC'].transform(lambda x: x.ewm(span=26, adjust=False).mean())
+    macd = ema12 - ema26
+    macd_signal = macd.groupby(df['Code']).transform(lambda x: x.ewm(span=9, adjust=False).mean())
+    df['MACD_Hist'] = macd - macd_signal
+
+    # RSIの一括計算
+    delta = g['AdjC'].diff()
+    delta[g.cumcount() == 0] = 0
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.groupby(df['Code']).transform(lambda x: x.ewm(alpha=1/14, adjust=False).mean())
+    avg_loss = loss.groupby(df['Code']).transform(lambda x: x.ewm(alpha=1/14, adjust=False).mean()).replace(0, 0.0001)
+    df['RSI'] = (100 - (100 / (1 + (avg_gain / avg_loss)))).fillna(50)
+
+    df.fillna(0, inplace=True)
+    return df
+    
+    # 🚨 防衛パッチ：計算前の生データの欠損（NaNやInf）を強制補間
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df.fillna(method='ffill', inplace=True)
+    df.fillna(0, inplace=True)
+
+    delta = df['AdjC'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    # RSIの計算（ゼロ割りやNaNを徹底排除）
+    loss_ewm = loss.ewm(alpha=1/14, adjust=False).mean()
+    loss_ewm = loss_ewm.replace(0, 0.0001) # ゼロ割りを防ぐための微小値
+    rs = gain.ewm(alpha=1/14, adjust=False).mean() / loss_ewm
+    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = df['RSI'].fillna(50) # RSIのNaNは中立(50)として扱う
+    
+    macd = df['AdjC'].ewm(span=12, adjust=False).mean() - df['AdjC'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = macd
+    df['MACD_Signal'] = macd.ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+    
+    temp_close = df['AdjC'].ffill()
+    df['MA5'] = temp_close.rolling(window=5).mean()
+    df['MA25'] = temp_close.rolling(window=25).mean()
+    df['MA75'] = temp_close.rolling(window=75).mean()
+    
+    tr = pd.concat([df['AdjH'] - df['AdjL'], (df['AdjH'] - df['AdjC'].shift(1)).abs(), (df['AdjL'] - df['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(window=14).mean()
+    
+    # 🚨 最終防衛：計算終了後に残ったすべてのNaNを0で埋め尽くし、Plotlyのクラッシュを完全に防ぐ
+    df.fillna(0, inplace=True)
+    
+    return df
+
 # 🚨 置き換え対象：def get_triage_info(macd_hist, macd_hist_prev, rsi): ～ のブロック全て
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     # 1. MACDの基本状態（共通処理）
