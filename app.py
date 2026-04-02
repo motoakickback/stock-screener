@@ -1223,9 +1223,9 @@ with tab2:
             
             # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
             if 'プライム' in m_lower or '一部' in m_lower:
-                vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
+                vol_threshold = 18.0  # 🏢 修正：大型株で18%以上は完全に「暴れ馬」
             else:
-                vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
+                vol_threshold = 25.0  # 🚀 修正：中小型株で25%以上を「高ボラ」と認定
             
             volatility_badge = ""
             if swing_pct >= vol_threshold:
@@ -1438,9 +1438,9 @@ with tab3:
                     
                     # 🎯 市場規模によってセンサーの点灯ハードル（閾値）を変更
                     if 'プライム' in m_lower or '一部' in m_lower:
-                        vol_threshold = 8.0   # 🏢 大型株は「8%」動けば高ボラ判定
+                        vol_threshold = 18.0  # 🏢 修正：大型株で18%以上は完全に「暴れ馬」
                     else:
-                        vol_threshold = 15.0  # 🚀 中小型株は「15%」動いて初めて高ボラ判定
+                        vol_threshold = 25.0  # 🚀 修正：中小型株で25%以上を「高ボラ」と認定
                     
                     volatility_badge = ""
                     if swing_pct >= vol_threshold:
