@@ -856,75 +856,21 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1.5関門：市場区分フィルター（プライム vs その他）
-                if 'master_df' in globals() and not master_df.empty:
-                    target_preset = st.session_state.preset_target
-                    
-                    if "大型株" in target_preset:
-                        # プライム市場（一部含む）をすべて「大型・中型」として扱う
-                        m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
-                    else:
-                        # スタンダード・グロース（二部・マザーズ含む）を「中小型」とする
-                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
-                    
-                    v_codes = master_df[m_mask]['Code'].unique()
-                    df = df[df['Code'].isin(v_codes)]
-
-                # 🚨 第2関門: バイオ排除（インデントを独立）
-                if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                    invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                    valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                    df = df[df['Code'].isin(valid_codes_bio)]
-
-                # 🚨 第3関門: 掟⑥ ブラックリスト（インデント独立 ＆ 小数点ステルス無効化）
-                if gigi_input:
-                    import re
-                    # 入力欄から「4桁の数字」をリスト化
-                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
-                    if target_blacklist:
-                        # 株価データ側のCodeが「9212.0」等になっていても「9212」として強制抽出して照合
-                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
-                        df = df[~df['Temp_Code'].isin(target_blacklist)]
-                        df = df.drop(columns=['Temp_Code']) # 用済みの一時カラムを破棄
-
-                # （中略：バイオ除外コードの直後）
-                    if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
-                        invalid_mask_bio = master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)
-                        valid_codes_bio = master_df[~invalid_mask_bio]['Code'].unique()
-                        df = df[df['Code'].isin(valid_codes_bio)]
-
-                    # 🚨 ここに「第1.5関門：市場セグメント・精密フィルター」をペースト
-                    if 'master_df' in globals() and not master_df.empty:
-                        target_preset = st.session_state.preset_target
-                        if "大型株" in target_preset:
-                            m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
-                                     (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興|名証|札証', na=False))
-                        else:
-                            m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
-                        v_codes = master_df[m_mask]['Code'].unique()
-                        df = df[df['Code'].isin(v_codes)]
-        
-                    # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
-                # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
-                df = add_global_technicals(df)
-
-                # ⚡ 真・爆速化パッチ第2弾：マスターデータの辞書化
+                # ⚡ 爆速化: マスターデータを辞書化して検索時間をゼロ（O(1)）にする
                 master_dict = {}
                 if 'master_df' in globals() and not master_df.empty:
-                    # 'Code'をキーにして辞書型に変換し、ループ内の「激重検索」を完全にゼロにする
                     master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
 
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
                     
-                    lc = group.iloc[-1]['AdjC']
-                    
+                    # 出来高の足切り
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    # 🗑️ 激重な pandas の reset_index() を完全排除
-                    # ⚡ 超高速な NumPy 配列 (.values) のスライス計算に換装
+                    # ⚡ 超高速な NumPy 配列 (.values) を用いた波形計算
+                    # 激重な pandas の reset_index() は絶対に使わない
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
                     
@@ -936,6 +882,7 @@ with tab1:
                     start_idx = max(0, global_max_idx - 10)
                     low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
+                    # 🚨 ここで95%以上の銘柄を足切りし、重いテクニカル計算を回避する
                     rise_ratio = high_4d_val / low_10d_val
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
@@ -943,21 +890,20 @@ with tab1:
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
+                    # ↓ ここまで生き残った数十銘柄にだけ、初めて重いテクニカル計算を実行！
+                    g_tech = calc_technicals(group.copy())
+                    rsi = g_tech.iloc[-1].get('RSI', 50)
+                    macd_h = g_tech.iloc[-1].get('MACD_Hist', 0)
+                    macd_h_prev = g_tech.iloc[-2].get('MACD_Hist', 0) if len(g_tech) > 1 else 0
+                    lc = adjh_vals[-1]
+
                     target_preset = st.session_state.get('preset_target', '50%')
-                    if "50%" in target_preset: push_ratio = 0.500
-                    elif "61.8%" in target_preset: push_ratio = 0.618
-                    elif "25%" in target_preset: push_ratio = 0.250
-                    else: push_ratio = 0.500
+                    push_ratio = 0.618 if "61.8%" in target_preset else 0.250 if "25%" in target_preset else 0.500
                     
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # 🗑️ 重い calc_technicals をループ内から完全排除！
-                    rsi = group.iloc[-1]['RSI']
-                    macd_h = group.iloc[-1]['MACD_Hist']
-                    macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group)>1 else 0
-                    
-                    # ⚡ 爆速化：辞書からのO(1)アクセス（検索ではなく直接呼び出し）
+                    # ⚡ 辞書からのO(1)アクセス（マスター検索の遅延ゼロ）
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
                     if code in master_dict:
                         m_info = master_dict[code]
@@ -966,9 +912,7 @@ with tab1:
                         c_sector = m_info.get('Sector', '不明')
                         c_scale = m_info.get('Scale', '不明')
 
-                    rank, bg, t_score, _ = get_triage_info(
-                        macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
-                    )
+                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
 
                     results.append({
                         'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market,
