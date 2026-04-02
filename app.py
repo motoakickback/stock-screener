@@ -1425,8 +1425,10 @@ with tab3:
                     high_val = int(r.get('high_4d', 0))
                     low_val = int(r.get('low_14d', r.get('low_10d', 0)))
                     lc_val = int(r.get('lc', 0))
-                    t_rank = r.get('triage_rank', r.get('t_rank', '不明'))
-                    t_bg = r.get('triage_bg', r.get('t_color', '#616161'))
+                    
+                    # 🚨 修正：Tab3のデータ構造（キー名 'rank', 'bg'）を正確に捕捉できるように連結
+                    t_rank = r.get('triage_rank', r.get('t_rank', r.get('rank', '不明')))
+                    t_bg = r.get('triage_bg', r.get('t_color', r.get('bg', '#616161')))
                     
                     # 3. 🎯 優先度バッジ
                     triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
