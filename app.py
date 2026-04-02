@@ -858,11 +858,25 @@ with tab1:
                     if not (f9_min14 <= rise_ratio <= f9_max14):
                         continue
 
-                    # 🚨 変数名を low_10d_val に統一して計算
+                    # 🚨 修正：サイドバー連動型の「ターゲット価格」と「到達度」の動的計算
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
                     
-                    target_buy = high_4d_val - (wave_len / 2.0)
+                    # サイドバーの選択肢から「押し目率（フィボナッチ比率）」を自動判定
+                    target_preset = st.session_state.get('preset_target', '50%')
+                    if "50%" in target_preset:
+                        push_ratio = 0.500
+                    elif "61.8%" in target_preset:
+                        push_ratio = 0.618
+                    elif "25%" in target_preset:
+                        push_ratio = 0.250
+                    else:
+                        push_ratio = 0.500  # デフォルト（フェイルセーフ）
+                    
+                    # ターゲット価格（買値目安）の計算：高値 - (値幅 × 押し目率)
+                    target_buy = high_4d_val - (wave_len * push_ratio)
+                    
+                    # 到達度の計算（既存ロジックを継承）
                     reach_rate = (target_buy / lc) * 100
                     
                     # テクニカル計算
