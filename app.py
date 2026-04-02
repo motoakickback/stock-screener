@@ -1437,7 +1437,6 @@ with tab3:
                             
                     for alert in r.get('alerts', []): st.warning(alert)
                     
-                    # 🚨 修正：ここもループ内に収容（字下げ）し、エラー回避仕様にしました
                     if r.get('sector') == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
                     if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r.get('name', '')), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
                     if r.get('is_dt') or r.get('is_hs'): st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
@@ -1448,15 +1447,15 @@ with tab3:
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
                         if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
                     else:
-                        if r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過しています。")
+                        if r.get('gc_days', 0) > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過しています。")
                     
-                    # --- 🚨 ここから上書き（計器盤描画ブロック全体） ---
-                    daily_sign = "+" if r['daily_pct'] >= 0 else ""
+                    # 🚨 修正ポイント：このブロック全体の段差を「左に1段」戻し、if/elseループの外に解放しました
+                    daily_sign = "+" if r.get('daily_pct', 0) >= 0 else ""
                         
                     # 1. 各種パネルのHTML事前生成（フォントサイズを巨大化）
                     if "待伏" in scope_mode:
                         reach_display = f"到達度: {r['reach_val']:.1f}%"
-                        c_target = r['bt_val']
+                        c_target = r.get('bt_val', 0)
                             
                         html_buy_scope = f"""
                         <div style="background: rgba(255, 215, 0, 0.05); padding: 1.2rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
@@ -1465,10 +1464,10 @@ with tab3:
                         </div>
                         """
                     else:
-                        reach_display = f"RSI: {r['rsi']:.1f}%"
-                        c_target = int(r['lc'] * 1.01)       # トリガー価格
-                        exec_price = int(r['lc'] * 1.02)     # 執行価格
-                        defense_line = int(r['lc'] * 0.95)   # 絶対防衛ライン
+                        reach_display = f"RSI: {r.get('rsi', 50):.1f}%"
+                        c_target = int(r.get('lc', 0) * 1.01)        # トリガー価格
+                        exec_price = int(r.get('lc', 0) * 1.02)      # 執行価格
+                        defense_line = int(r.get('lc', 0) * 0.95)    # 絶対防衛ライン
                             
                         html_buy_scope = f"""
                         <div style="background: rgba(255, 215, 0, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); display: flex; flex-direction: column; justify-content: center; height: 100%;">
@@ -1485,76 +1484,79 @@ with tab3:
                             </div>
                         </div>
                         """
-    
-                        # マトリクスの生成（フォントと余白を拡大）
-                        tp_list = [5, 8, 10, 15, 20]
-                        sl_list = [3, 5, 8]
-                        
-                        html_matrix_scope = f"""
-                        <div style="background: rgba(255, 255, 255, 0.05); padding: 1.2rem; border-radius: 8px; border-left: 5px solid #FFD700; height: 100%;">
-                            <div style="font-size: 15px; color: #aaa; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 4px;">📊 期待値マトリクス (基準: {int(c_target):,}円)</div>
-                            <div style="display: flex; justify-content: space-between; gap: 30px;">
-                                <div style="flex: 1;">
-                                    <div style="font-size: 13px; color: #26a69a; border-bottom: 2px solid #26a69a; margin-bottom: 8px; padding-bottom: 2px;">【 利確目標 】</div>
-                                    {" ".join([f'<div style="font-size: 16px; color: #eee; display: flex; justify-content: space-between; margin-bottom: 6px;"><span>+{p}%</span><span style="font-weight:bold;">{int(c_target*(1+p/100)):,}</span></div>' for p in tp_list])}
-                                </div>
-                                <div style="flex: 1;">
-                                    <div style="font-size: 13px; color: #ef5350; border-bottom: 2px solid #ef5350; margin-bottom: 8px; padding-bottom: 2px;">【 損切目安 】</div>
-                                    {" ".join([f'<div style="font-size: 16px; color: #eee; display: flex; justify-content: space-between; margin-bottom: 6px;"><span>-{l}%</span><span style="font-weight:bold;">{int(c_target*(1-l/100)):,}</span></div>' for l in sl_list])}
-                                </div>
+        
+                    # マトリクスの生成（フォントと余白を拡大）
+                    tp_list = [5, 8, 10, 15, 20]
+                    sl_list = [3, 5, 8]
+                    
+                    html_matrix_scope = f"""
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 1.2rem; border-radius: 8px; border-left: 5px solid #FFD700; height: 100%;">
+                        <div style="font-size: 15px; color: #aaa; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 4px;">📊 期待値マトリクス (基準: {int(c_target):,}円)</div>
+                        <div style="display: flex; justify-content: space-between; gap: 30px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 13px; color: #26a69a; border-bottom: 2px solid #26a69a; margin-bottom: 8px; padding-bottom: 2px;">【 利確目標 】</div>
+                                {" ".join([f'<div style="font-size: 16px; color: #eee; display: flex; justify-content: space-between; margin-bottom: 6px;"><span>+{p}%</span><span style="font-weight:bold;">{int(c_target*(1+p/100)):,}</span></div>' for p in tp_list])}
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 13px; color: #ef5350; border-bottom: 2px solid #ef5350; margin-bottom: 8px; padding-bottom: 2px;">【 損切目安 】</div>
+                                {" ".join([f'<div style="font-size: 16px; color: #eee; display: flex; justify-content: space-between; margin-bottom: 6px;"><span>-{l}%</span><span style="font-weight:bold;">{int(c_target*(1-l/100)):,}</span></div>' for l in sl_list])}
                             </div>
                         </div>
-                        """
-    
-                        html_stats = f"""
-                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 1rem;">
-                            <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 6px 10px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">ステータス:</span> <strong style="font-size: 15px; color: #fff;">{reach_display}</strong>
-                            </div>
-                            <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 6px 10px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{r['atr_val']:,}円 / {r['d_high']}日</strong>
-                            </div>
-                            <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 6px 10px; border-radius: 4px;">
-                                <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{r['avg_vol']:,} 株</strong>
-                            </div>
+                    </div>
+                    """
+        
+                    html_stats = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 1rem;">
+                        <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">ステータス:</span> <strong style="font-size: 15px; color: #fff;">{reach_display}</strong>
                         </div>
-                        """
-    
-                        # 2. 新生 UIレイアウト展開（左寄せ＆巨大化）
-                        # 割合を [2.5 : 3.5 : 5.0] に設定し、右側のマトリクスを最も広くする
-                        sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                        <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{r.get('atr_val', 0):,}円 / {r.get('d_high', 0)}日</strong>
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{r.get('avg_vol', 0):,} 株</strong>
+                        </div>
+                    </div>
+                    """
+        
+                    # 2. 新生 UIレイアウト展開（左寄せ＆巨大化）
+                    # 割合を [2.5 : 3.5 : 5.0] に設定し、右側のマトリクスを最も広くする
+                    sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                    
+                    with sc_left:
+                        # 指標を2行×2列に密集させる
+                        c_m1, c_m2 = st.columns(2)
+                        c_m1.metric("直近高値", f"{int(r.get('h14', 0)):,}円")
+                        c_m2.metric("直近安値", f"{int(r.get('l14', 0)):,}円")
                         
-                        with sc_left:
-                            # 指標を2行×2列に密集させる
-                            c_m1, c_m2 = st.columns(2)
-                            c_m1.metric("直近高値", f"{int(r['h14']):,}円")
-                            c_m2.metric("直近安値", f"{int(r['l14']):,}円")
-                            
-                            c_m3, c_m4 = st.columns(2)
-                            c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
-                            c_m4.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="normal")
-                            
-                            # 補助ステータスも左下にスッキリ格納
-                            st.markdown(html_stats, unsafe_allow_html=True)
-                            
-                        with sc_mid:
-                            # 巨大化したトリガーボックス
-                            st.markdown(html_buy_scope, unsafe_allow_html=True)
-                            
-                        with sc_right:
-                            # 巨大化した期待値マトリクス
-                            st.markdown(html_matrix_scope, unsafe_allow_html=True)
-    
-                        st.caption(f"🏢 {r['market']} ｜ 🏭 {r['sector']}")
+                        c_m3, c_m4 = st.columns(2)
+                        c_m3.metric("上昇幅", f"{int(r.get('ur', 0)):,}円")
+                        c_m4.metric("最新終値", f"{int(r.get('lc', 0)):,}円", f"{daily_sign}{r.get('daily_pct', 0)*100:.1f}%", delta_color="normal")
                         
-                        from datetime import timedelta
-                        cutoff_chart = r['df_chart']['Date'].max() - timedelta(days=60)
-                        df_chart_filtered = r['df_chart'][r['df_chart']['Date'] >= cutoff_chart]
+                        # 補助ステータスも左下にスッキリ格納
+                        st.markdown(html_stats, unsafe_allow_html=True)
                         
-                        # チャートの基準線をモードによって切り替え
-                        c_base = r['bt_val'] if "待伏" in scope_mode else r['lc']
-                        st.markdown(render_technical_radar(df_chart_filtered, c_base, st.session_state.bt_tp), unsafe_allow_html=True)
-                        draw_chart(df_chart_filtered, c_base, tp10=int(c_base*1.10), chart_key=f"t3_chart_{r['code']}")
+                    with sc_mid:
+                        # 巨大化したトリガーボックス
+                        st.markdown(html_buy_scope, unsafe_allow_html=True)
+                        
+                    with sc_right:
+                        # 巨大化した期待値マトリクス
+                        st.markdown(html_matrix_scope, unsafe_allow_html=True)
+        
+                    st.caption(f"🏢 {r.get('market', '不明')} ｜ 🏭 {r.get('sector', '不明')}")
+                    
+                    from datetime import timedelta
+                    cutoff_chart = r['df_chart']['Date'].max() - timedelta(days=60)
+                    df_chart_filtered = r['df_chart'][r['df_chart']['Date'] >= cutoff_chart]
+                    
+                    # チャートの基準線をモードによって切り替え
+                    c_base = r.get('bt_val', 0) if "待伏" in scope_mode else r.get('lc', 0)
+                    
+                    # session_state.bt_tp が存在しない場合のエラー回避
+                    tp_val = st.session_state.get('bt_tp', 10) 
+                    st.markdown(render_technical_radar(df_chart_filtered, c_base, tp_val), unsafe_allow_html=True)
+                    draw_chart(df_chart_filtered, c_base, tp10=int(c_base*1.10), chart_key=f"t3_chart_{r.get('code', '0000')}")
                         
 # ------------------------------------------
 # Tab 4: 戦術シミュレータ（デュアル・バックテスト）
