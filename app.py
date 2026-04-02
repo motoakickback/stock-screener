@@ -542,13 +542,14 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     df = df.copy()
     fig = go.Figure()
     
-    # ローソク足
+    # ローソク足（グローバル・スタンダード仕様に換装）
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'],
         low=df['AdjL'], close=df['AdjC'], name='株価',
-        increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
+        increasing_line_color='#26a69a',  # 🟩 上昇（陽線）を緑に
+        decreasing_line_color='#ef5350'   # 🟥 下落（陰線）を赤に
     ))
-
+    
     # 移動平均線
     if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
     if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
