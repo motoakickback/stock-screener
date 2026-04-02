@@ -924,9 +924,18 @@ with tab1:
                 st.code(other_codes, language="text")
         
         for r in light_results:
-            # --- 以下、既存の銘柄別表示ロジック（そのまま継続） ---
             st.divider()
             c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
+            # 大文字・小文字どちらのキーでも取得できるように.getを使用
+            raw_market = str(r.get('Market', r.get('market', '不明')))
+            m_lower = raw_market.lower()
+            
+            if 'プライム' in m_lower or '一部' in m_lower:
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else:
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
             
             # 変数一括抽出（安全装置）
             target_buy_val = int(r.get('target_buy', 0))
@@ -1163,6 +1172,16 @@ with tab2:
             t_color = r.get('T_Color', '#616161')
             c_size = r.get('Scale', '不明')
             gc_d = r.get('GC_Days', 1)
+            # 🔻🔻🔻 ここから挿入：市場名に基づく正確なバッジ表示 🔻🔻🔻
+            raw_market = str(r.get('Market', r.get('market', '不明')))
+            m_lower = raw_market.lower()
+            
+            if 'プライム' in m_lower or '一部' in m_lower:
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else:
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{raw_market}</span>'
 
             # 🚨 修正2: Tab 1に合わせた企業規模バッジの描画
             badge_color = "#0d47a1" if "大型" in c_size else "#b71c1c"
