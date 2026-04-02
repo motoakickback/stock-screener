@@ -905,9 +905,15 @@ with tab1:
                         df = df[df['Code'].isin(v_codes)]
         
                     # 🚀 ここで全銘柄のテクニカルを0.1秒で一括計算！
-                    df = add_global_technicals(df)
-    
-                    results = []
+                df = add_global_technicals(df)
+
+                # ⚡ 真・爆速化パッチ第2弾：マスターデータの辞書化
+                master_dict = {}
+                if 'master_df' in globals() and not master_df.empty:
+                    # 'Code'をキーにして辞書型に変換し、ループ内の「激重検索」を完全にゼロにする
+                    master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index')
+
+                results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
                     
@@ -916,14 +922,18 @@ with tab1:
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    group_reset = group.reset_index(drop=True)
-                    recent_4d = group_reset.tail(4)
-                    high_idx = recent_4d['AdjH'].idxmax()
-                    high_4d_val = recent_4d.loc[high_idx, 'AdjH']
+                    # 🗑️ 激重な pandas の reset_index() を完全排除
+                    # ⚡ 超高速な NumPy 配列 (.values) のスライス計算に換装
+                    adjh_vals = group['AdjH'].values
+                    adjl_vals = group['AdjL'].values
                     
-                    start_idx = max(0, high_idx - 10)
-                    window_10d = group_reset.iloc[start_idx : high_idx + 1]
-                    low_10d_val = window_10d['AdjL'].min()
+                    recent_4d_h = adjh_vals[-4:]
+                    local_max_idx = recent_4d_h.argmax()
+                    high_4d_val = recent_4d_h[local_max_idx]
+                    
+                    global_max_idx = len(adjh_vals) - 4 + local_max_idx
+                    start_idx = max(0, global_max_idx - 10)
+                    low_10d_val = adjl_vals[start_idx : global_max_idx + 1].min()
 
                     rise_ratio = high_4d_val / low_10d_val
                     if not (f9_min14 <= rise_ratio <= f9_max14):
@@ -941,19 +951,18 @@ with tab1:
                     target_buy = high_4d_val - (wave_len * push_ratio)
                     reach_rate = (target_buy / lc) * 100
                     
-                    # 🗑️ 重い calc_technicals をループ内から完全排除！
                     rsi = group.iloc[-1]['RSI']
                     macd_h = group.iloc[-1]['MACD_Hist']
                     macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group)>1 else 0
                     
+                    # ⚡ 爆速化：辞書からのO(1)アクセス（検索ではなく直接呼び出し）
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "不明"
-                    if not master_df.empty:
-                        m_row = master_df[master_df['Code'] == code]
-                        if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']
-                            c_market = m_row.iloc[0]['Market']
-                            c_sector = m_row.iloc[0].get('Sector', '不明')
-                            c_scale = m_row.iloc[0].get('Scale', '不明')
+                    if code in master_dict:
+                        m_info = master_dict[code]
+                        c_name = m_info.get('CompanyName', c_name)
+                        c_market = m_info.get('Market', '不明')
+                        c_sector = m_info.get('Sector', '不明')
+                        c_scale = m_info.get('Scale', '不明')
 
                     rank, bg, t_score, _ = get_triage_info(
                         macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏"
