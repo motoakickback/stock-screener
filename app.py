@@ -426,12 +426,7 @@ def check_sakata_patterns(df_sub):
     elif b3c and c['AdjC'] < sma25: return "🔥 陰の極み（セリクラ反発待ち）"
     return None
 
-def calc_technicals(df):
-    df = df.copy()
-    if len(df) < 16:
-        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA5'] = df['AdjC']; df['MA25'] = df['AdjC']; df['MA75'] = df['AdjC']; return df
-
-    # --- ⚡ 究極爆速化エンジン（NumPyネイティブ） ---
+# --- ⚡ 究極爆速化エンジン（NumPyネイティブ: Tab1/Tab2/Tab4用） ---
 def get_fast_indicators(prices):
     """ Pandasのオーバーヘッドを完全に排除し、0.00001秒でMACDとRSIを弾き出す関数 """
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
@@ -467,6 +462,13 @@ def get_fast_indicators(prices):
     
     # 戻り値: 最新RSI, 最新MACDヒストグラム, 1日前のMACDヒストグラム, 直近5日間のMACDヒストグラム配列
     return rsi, hist_arr[-1], hist_arr[-2], hist_arr[-5:]
+
+
+# --- 📊 通常のテクニカル計算（Tab3 チャート描画用） ---
+def calc_technicals(df):
+    df = df.copy()
+    if len(df) < 16:
+        df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA5'] = df['AdjC']; df['MA25'] = df['AdjC']; df['MA75'] = df['AdjC']; return df
     
     # 🚨 防衛パッチ：計算前の生データの欠損（NaNやInf）を強制補間
     df = df.replace([np.inf, -np.inf], np.nan)
