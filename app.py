@@ -652,9 +652,27 @@ def apply_market_preset():
     else: st.session_state.push_r = 50.0
 
 st.sidebar.header("🎯 対象市場 (一括換装)")
-st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
-st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
+# 既存のラジオボタンを利用
+st.sidebar.radio(
+    "プリセット選択", 
+    ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], 
+    key="preset_target", 
+    on_change=apply_market_preset
+)
 
+# 🚨 内部処理用の判定ロジック（スキャンエンジンが参照する変数）
+# ラジオボタンの選択肢から「大型」か「中小型」かを自動判別
+if "大型株" in st.session_state.preset_target:
+    market_filter_mode = "大型"
+else:
+    market_filter_mode = "中小型"
+
+st.sidebar.radio(
+    "🕹️ 戦術モード切替", 
+    ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], 
+    key="sidebar_tactics", 
+    on_change=apply_market_preset
+)
 st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
