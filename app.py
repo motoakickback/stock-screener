@@ -781,18 +781,25 @@ with tab1:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1.5関門：市場セグメント・オートフィルター（爆速化）
+                # 🚨 第1.5関門：市場セグメント ＆ 規模感フィルター（完全パージ版）
                 if 'master_df' in globals() and not master_df.empty:
-                    # サイドバーの選択肢からキーワードを判定
                     target_preset = st.session_state.preset_target
                     
+                    # 市場名だけでなく、時価総額（MarketCap）を考慮したフィルタリング
+                    # ※ master_df に MarketCap または 時価総額 カラムがあることを前提とします
                     if "大型株" in target_preset:
-                        # プライム市場のみに限定
-                        m_mask = master_df['Market'].astype(str).str.contains('プライム', na=False)
+                        # 1. プライム市場であること
+                        # 2. かつ、バッジ表示ロジックで「新興」と誤認されない規模感を持つこと
+                        m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
+                                 (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False))
+                        
+                        # 【追加】時価総額による足切り（もしデータがあれば）
+                        if 'MarketCap' in master_df.columns:
+                            m_mask = m_mask & (master_df['MarketCap'] >= 100000000000) # 1000億円以上
                     else:
-                        # スタンダード・グロースに限定
-                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース', na=False)
-                    
+                        # スタンダード・グロース、またはプライム内の小型案件
+                        m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
+
                     v_codes = master_df[m_mask]['Code'].unique()
                     df = df[df['Code'].isin(v_codes)]
 
@@ -1011,18 +1018,25 @@ with tab2:
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 第1.5関門：市場セグメント・オートフィルター（爆速化）
+                # 🚨 第1.5関門：市場セグメント ＆ 規模感フィルター（完全パージ版）
                 if 'master_df' in globals() and not master_df.empty:
-                    # サイドバーの選択肢からキーワードを判定
                     target_preset = st.session_state.preset_target
                     
+                    # 市場名だけでなく、時価総額（MarketCap）を考慮したフィルタリング
+                    # ※ master_df に MarketCap または 時価総額 カラムがあることを前提とします
                     if "大型株" in target_preset:
-                        # プライム市場のみに限定
-                        m_mask = master_df['Market'].astype(str).str.contains('プライム', na=False)
+                        # 1. プライム市場であること
+                        # 2. かつ、バッジ表示ロジックで「新興」と誤認されない規模感を持つこと
+                        m_mask = (master_df['Market'].astype(str).str.contains('プライム', na=False)) & \
+                                 (~master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False))
+                        
+                        # 【追加】時価総額による足切り（もしデータがあれば）
+                        if 'MarketCap' in master_df.columns:
+                            m_mask = m_mask & (master_df['MarketCap'] >= 100000000000) # 1000億円以上
                     else:
-                        # スタンダード・グロースに限定
-                        m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース', na=False)
-                    
+                        # スタンダード・グロース、またはプライム内の小型案件
+                        m_mask = master_df['Market'].astype(str).str.contains('グロース|スタンダード|新興', na=False)
+
                     v_codes = master_df[m_mask]['Code'].unique()
                     df = df[df['Code'].isin(v_codes)]
 
