@@ -1584,7 +1584,7 @@ with tab4:
             sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
 
     # ==========================================
-    # 🚀 ここから下が実行ブロック（高速化適用済み）
+    # 🚀 ここから下が実行ブロック（高速化・防弾パッチ適用済み）
     # ==========================================
     if (run_bt or optimize_bt) and bt_c_in:
         import pandas as pd
@@ -1628,13 +1628,15 @@ with tab4:
                     if not all(col in temp_df.columns for col in target_cols): continue
                     
                     try: 
-                        df = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
-                        df = calc_technicals(df) # テクニカル指標を1回だけ計算
-                        preloaded_data[c] = df
+                        clean_data = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                        processed_df = calc_technicals(clean_data) # テクニカル指標を1回だけ計算
+                        # 🚨 防弾パッチ：データがNoneや空っぽの場合は絶対にリストに入れない
+                        if processed_df is not None and not processed_df.empty and len(processed_df) >= 35:
+                            preloaded_data[c] = processed_df
                     except: continue
 
             if not preloaded_data:
-                st.error("解析可能なデータが取得できませんでした。")
+                st.error("解析可能なデータが取得できませんでした（上場直後などでデータが足りない可能性があります）。")
                 st.stop()
 
             # --- 2. 超高速最適化ループ ---
@@ -1650,6 +1652,9 @@ with tab4:
                     all_t = []
                     
                     for c, df in preloaded_data.items():
+                        # 🚨 最終防衛線：念のためループ直前にもNoneチェックを行う
+                        if df is None or len(df) < 35: continue
+                        
                         pos = None
                         for i in range(35, len(df)):
                             td = df.iloc[i]; prev = df.iloc[i-1]
