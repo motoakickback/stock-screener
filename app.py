@@ -1468,7 +1468,7 @@ with tab3:
                         
                         c_m3, c_m4 = st.columns(2)
                         c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
-                        c_m4.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="inverse")
+                        c_m4.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="normal")
                         
                         # 補助ステータスも左下にスッキリ格納
                         st.markdown(html_stats, unsafe_allow_html=True)
