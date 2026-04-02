@@ -1626,16 +1626,18 @@ with tab4:
                     temp_df = pd.DataFrame(raw['bars'])
                     if temp_df.empty: continue
                     
-                    # 🚨 致命的なバグ修正：Adjusted（調整後）価格を破壊する悪性コードをパージ
-                    # V2 APIは最初から 'AdjO', 'AdjC' 等を返すため、そのまま透過させるのが正解
-                    target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                    if not all(col in temp_df.columns for col in target_cols): continue
-                    
                     try: 
-                        clean_data = clean_df(temp_df).dropna(subset=target_cols).reset_index(drop=True)
+                        # 🚨 致命的バグの完全修正：APIの生データを「先に」変換関数(clean_df)に通す
+                        clean_data = clean_df(temp_df)
+                        
+                        # 変換後に、必要なカラムが揃っているかチェックする（正しい順序）
+                        target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
+                        if not all(col in clean_data.columns for col in target_cols): continue
+                        
+                        clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
                         processed_df = calc_technicals(clean_data)
                         
-                        # 🚨 最終防弾パッチ：データが35日以上存在する場合のみ検証リストへ追加
+                        # 🚨 データが35日以上存在する場合のみ検証リストへ追加
                         import pandas as pd
                         if processed_df is not None and isinstance(processed_df, pd.DataFrame) and len(processed_df) >= 35:
                             preloaded_data[c] = processed_df
@@ -1644,7 +1646,7 @@ with tab4:
             if not preloaded_data:
                 st.error("解析可能なデータが取得できませんでした（通信エラー、または上場直後でデータが足りない可能性があります）。")
                 st.stop()
-
+                
             # --- 2. 超高速最適化ループ ---
             opt_results = []
             total_iterations = len(p1_range) * len(p2_range)
