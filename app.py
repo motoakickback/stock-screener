@@ -1388,6 +1388,9 @@ with tab3:
                 for r in scope_results:
                     st.divider()
                     
+                    c = str(r.get('Code', '0000'))
+                    n = r.get('Name', f"銘柄 {c[:4]}")
+                    
                     scale_val = str(r['scale'])
                     # 🔻🔻🔻 ここから：Tab 3 (照準) 用バッジ換装パッチ 🔻🔻🔻
             
@@ -1422,19 +1425,20 @@ with tab3:
             if swing_pct >= 15.0:
                 volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>'
 
-            # 5. 🚨 UI描画（3種のバッジを完全同期装填）
-            st.markdown(f"""
-                <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{triage_badge}{volatility_badge}
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
-                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-                    
-            for alert in r['alerts']: st.warning(alert)
+                    # 5. 🚨 UI描画（3種のバッジを完全同期装填）
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                                {badge_html}{triage_badge}{volatility_badge}
+                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
+                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {reach_val:.1f}%</span>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            
+            # 警告アラートもすべて同じ縦のラインです
+            for alert in r.get('alerts', []): st.warning(alert)
             if r['sector'] == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
             if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r['name']), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
             if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
