@@ -1857,8 +1857,7 @@ with tab5:
                     
                     lc = int(latest['AdjC'])
                     daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
-                    daily_sign = "+" if daily_pct >= 0 else ""
-                    
+                    daily_sign = "+" if daily_pct >= 0 else ""                    
                     c_name = f"銘柄 {c[:4]}"; c_market = "不明"; c_sector = "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == api_code]
