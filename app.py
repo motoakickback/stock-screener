@@ -963,10 +963,10 @@ with tab1:
             t_bg = r.get('triage_bg', '#616161')
             scale_val = str(r.get('Scale', ''))
             
-            # 🏢 規模・優先度バッジ（重装甲レイアウト）
-            
+            # 🎯 古い badge は削除し、triage_badge だけ定義
             triage_badge = f'<span style="background-color: {t_bg}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {t_rank}</span>'
 
+            # 🚨 修正：{badge} を {badge_html} に換装
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
