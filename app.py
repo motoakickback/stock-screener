@@ -1851,13 +1851,17 @@ with tab5:
                         
                     if df_s.empty: continue
                     
-                    df_chart = calc_technicals(df_s)
-                    latest = df_chart.iloc[-1]
-                    prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
+                    # ⚡ 究極の軽量化＆エラー回避パッチ
+                    # Tab 5ではMACDやRSIは不要なため、重い計算をスキップして終値(NumPy配列)だけを直接取得します
+                    adjc_vals = df_s['AdjC'].values
+                    if len(adjc_vals) == 0: continue
                     
-                    lc = int(latest['AdjC'])
-                    daily_pct = (lc / prev['AdjC']) - 1 if prev['AdjC'] > 0 else 0
-                    daily_sign = "+" if daily_pct >= 0 else ""                    
+                    lc = int(adjc_vals[-1])
+                    prev_lc = int(adjc_vals[-2]) if len(adjc_vals) > 1 else lc
+                    
+                    daily_pct = (lc / prev_lc) - 1 if prev_lc > 0 else 0
+                    daily_sign = "+" if daily_pct >= 0 else ""
+                    
                     c_name = f"銘柄 {c[:4]}"; c_market = "不明"; c_sector = "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'] == api_code]
@@ -1875,7 +1879,7 @@ with tab5:
                         'pl_yen': pl_yen, 'pl_pct': pl_pct
                     })
                     
-                    del temp_df, renamed_df, dedup_df, df_s, df_chart
+                    del temp_df, renamed_df, dedup_df, df_s
                 
                 st.session_state.tab5_pos_results = processed_results
                 import gc
