@@ -1777,7 +1777,10 @@ with tab4:
                     st.plotly_chart(fig_eq, use_container_width=True)
                     
                     n_prof = tdf['損益額(円)'].sum()
-                    st.markdown(f'<h3 style="color: {"#ef5350" if n_prof > 0 else "#26a69a"};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                    
+                    # 🚨 修正：利益(>0)を緑(#26a69a)、損失(<=0)を赤(#ef5350)に変更
+                    prof_color = "#26a69a" if n_prof > 0 else "#ef5350"
+                    st.markdown(f'<h3 style="color: {prof_color};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                     
                     m1, m2, m3, m4 = st.columns(4)
                     tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
@@ -1787,7 +1790,15 @@ with tab4:
                     sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
                     m4.metric("PF", round(tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum() / sloss, 2) if sloss > 0 else 'inf')
                     
-                    st.dataframe(tdf.drop(columns=['累積損益(円)']).style.format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'}), use_container_width=True, hide_index=True)
+                    # 🚨 追加：データフレーム内の利益と損失も視覚的に色分けする関数
+                    def color_pnl_tab4(val):
+                        if isinstance(val, (int, float)):
+                            color = '#26a69a' if val > 0 else '#ef5350' if val < 0 else 'white'
+                            return f'color: {color}; font-weight: bold;'
+                        return ''
+                    
+                    styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
+                    st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
                 
 # ------------------------------------------
 # Tab 5: 建玉管理（ポジション・トラッカー）
@@ -2209,10 +2220,10 @@ with tab6:
             )
             st.plotly_chart(fig_real_eq, use_container_width=True)
             
-            # 🚨 利益は赤、損失は緑のカラーリング関数
+            # 🚨 修正：利益(>0)を緑(#26a69a)、損失(<0)を赤(#ef5350)に変更
             def color_pnl(val):
                 if isinstance(val, (int, float)):
-                    color = '#ef5350' if val > 0 else '#26a69a' if val < 0 else 'white'
+                    color = '#26a69a' if val > 0 else '#ef5350' if val < 0 else 'white'
                     return f'color: {color}; font-weight: bold;'
                 return ''
                 
