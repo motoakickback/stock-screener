@@ -1104,6 +1104,52 @@ with tab2:
 
                     t_rank, t_color, t_score, t_macd = get_triage_info(macd_h, macd_h_prev, rsi, mode="強襲", gc_days=gc_days)
 
+                    # 🔻🔻🔻 スナイパー・スコアリング（強制上書き） 🔻🔻🔻
+                    if len(adjc_vals) >= 75:
+                        # 0.001秒で移動平均を計算
+                        ma5 = adjc_vals[-5:].mean()
+                        ma25 = adjc_vals[-25:].mean()
+                        ma75 = adjc_vals[-75:].mean()
+                        
+                        strict_score = 0
+                        
+                        # ① 燃料（出来高急増）：前日ではなく「直近のボリューム」が平均の何倍か
+                        current_vol = group[v_col].values[-1] if v_col in group.columns else 0
+                        if current_vol > (avg_vol * 1.5): strict_score += 3
+                        elif current_vol > (avg_vol * 1.2): strict_score += 1
+                        
+                        # ② 軌道（パーフェクトオーダー）：MA5 > MA25 > MA75
+                        if lc > ma5 and ma5 > ma25 and ma25 > ma75: strict_score += 3
+                        
+                        # ③ 加速力（MACDのヒストグラム拡大）
+                        if macd_h > 0 and macd_h > macd_h_prev: strict_score += 2
+                        
+                        # ④ 余力（RSIのスイートスポット）
+                        if 55 <= rsi <= 70: strict_score += 2
+                        elif 70 < rsi <= 80: strict_score += 1
+
+                        # ☠️ ランクとスコアを冷徹に再設定（スコア9以上しかSになれない）
+                        if strict_score >= 9:
+                            t_rank = "S"
+                            t_color = "#e53935" # 変更なし（赤）
+                        elif strict_score >= 7:
+                            t_rank = "A"
+                            t_color = "#fb8c00" # 変更なし（オレンジ）
+                        elif strict_score >= 5:
+                            t_rank = "B"
+                            t_color = "#fdd835" # 変更なし（黄）
+                        else:
+                            t_rank = "C"
+                            t_color = "#616161" # 降格（グレー）
+                            
+                        # ソート順を正しくするためスコアも上書き
+                        t_score = strict_score 
+                    else:
+                        # 上場したて等でデータが足りない場合は問答無用でC判定（弾く）
+                        t_rank = "C"
+                        t_color = "#616161"
+                        t_score = 0
+
                     c_name = f"銘柄 {code[:4]}"; c_market = "不明"; c_sector = "不明"; c_scale = "🐣 グロース/新興"
                     if code in master_dict:
                         m_info = master_dict[code]
