@@ -786,9 +786,9 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
     "🎯 【照準】精密スコープ", 
-    "⚙️ 戦術シミュレータ", 
-    "⛺ IFD潜伏カウント", 
-    "📁 事後任務報告 (AAR)"
+    "⚙️ 【演習】戦術シミュレータ", 
+    "⛺ 【戦線】交戦モニター", 
+    "📁 【軍歴】戦歴データベース"
 ])
 master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
