@@ -2164,20 +2164,24 @@ with tab6:
                                         
                             if records:
                                 new_df = pd.DataFrame(records)
-                                aar_df = pd.concat([new_df, aar_df], ignore_index=True)
                                 
-                                # 🚨 迎撃パッチ：Pandasの型推論による「数値と文字の不一致」を強制的に統一
+                                # 🚨 鉄の掟：結合順序を逆転（既存 aar_df を先頭、新 new_df を末尾に）
+                                # これにより、重複した際に「先に並んでいる既存データ」が保護される
+                                aar_df = pd.concat([aar_df, new_df], ignore_index=True)
+                                
+                                # 型の統一（重複判定の精度向上）
                                 aar_df['決済日'] = aar_df['決済日'].astype(str)
                                 aar_df['銘柄'] = aar_df['銘柄'].astype(str)
                                 aar_df['買値'] = aar_df['買値'].astype(float).round(1)
                                 aar_df['売値'] = aar_df['売値'].astype(float).round(1)
                                 aar_df['株数'] = aar_df['株数'].astype(int)
                                 
-                                # 型を統一した上で、完全に一致するデータを排除（古い方を残す）
+                                # 🚨 重複排除の核心：'keep=first' で、先頭にある「ボスの編集済みデータ」を死守する
                                 aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"], keep='first').reset_index(drop=True)
+                                
                                 aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
-                                st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
+                                st.success(f"🎯 新規の戦果のみを抽出し、既存の編集内容は維持したまま統合しました！")
                                 st.rerun()
                             else:
                                 st.warning("解析可能な決済済みペア（買いと売りのセット）が見つかりませんでした。")
