@@ -1821,14 +1821,15 @@ with tab5:
 
     with col_i1:
         st.markdown("📝 **保有ポジション入力**")
-        st.caption("書式: `コード, 買値, 利確, 損切` (改行で複数)")
+        # 🚨 修正：5つ目のオプションパラメーター [現在値] を追加
+        st.caption("書式: `コード, 買値, 利確, 損切, [現在値(任意)]`")
         pos_in = st.text_area("ポジションリスト", value=default_pos, height=150, label_visibility="collapsed", key="pos_in_t5")
         
         run_pos = st.button("📡 建玉レーダー更新", use_container_width=True, key="btn_run_pos_t5")
         
     with col_i2:
         st.markdown("#### 🛡️ 参謀の管理プロトコル")
-        st.info("・入力した4つのデータから、現在の「生存圏」と「出口までの距離」を可視化します。\n・中央の白い縦線が「買値」です。現在値のバーがこれを上回っていれば含み益（緑）、下回っていれば含み損（赤）です。\n・利確/損切に到達して決済された銘柄は、リストから削除してください。")
+        st.info("・入力したデータから「生存圏」と「出口までの距離」を可視化します。\n・一番右に「現在の株価」を入力すると、APIの古いデータを無視してその価格でリアルタイムに計算を強制上書きします。")
 
     # ==========================================
     # 💥 フェーズ1：計算とデータ抽出
@@ -1841,17 +1842,18 @@ with tab5:
         targets = []
         for line in lines:
             parts = [p.strip() for p in line.split(',')]
-            # 4つの要素（コード, 買値, 利確, 損切）があるかチェック
+            # 🚨 修正：5つ目の要素（マニュアル現在値）の読み込みを追加
             if len(parts) >= 4 and parts[0].isdigit():
                 targets.append({
                     'code': parts[0], 
                     'buy_p': float(parts[1]), 
                     'tp_p': float(parts[2]), 
-                    'sl_p': float(parts[3])
+                    'sl_p': float(parts[3]),
+                    'manual_lc': float(parts[4]) if len(parts) >= 5 and parts[4] else None
                 })
                 
         if not targets:
-            st.warning("有効な形式（コード, 買値, 利確, 損切）で見つかりません。")
+            st.warning("有効な形式で見つかりません。")
             st.session_state.tab5_pos_results = []
         else:
             with st.spinner("戦線に展開中の各部隊の損益状況を照会中..."):
@@ -1886,12 +1888,14 @@ with tab5:
                         
                     if df_s.empty: continue
                     
-                    # ⚡ 究極の軽量化＆エラー回避パッチ
-                    # Tab 5ではMACDやRSIは不要なため、重い計算をスキップして終値(NumPy配列)だけを直接取得します
                     adjc_vals = df_s['AdjC'].values
                     if len(adjc_vals) == 0: continue
                     
+                    # 🚨 修正の核心：マニュアル入力があればそれを最優先（オーバーライド）する
                     lc = int(adjc_vals[-1])
+                    if t.get('manual_lc'):
+                        lc = int(t['manual_lc'])
+                        
                     prev_lc = int(adjc_vals[-2]) if len(adjc_vals) > 1 else lc
                     
                     daily_pct = (lc / prev_lc) - 1 if prev_lc > 0 else 0
