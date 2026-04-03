@@ -788,7 +788,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🎯 【照準】精密スコープ", 
     "⚙️ 【演習】戦術シミュレータ", 
     "⛺ 【戦線】交戦モニター", 
-    "📁 【軍歴】戦歴データベース"
+    "📁 【戦歴】交戦データベース"
 ])
 master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
