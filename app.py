@@ -2165,7 +2165,16 @@ with tab6:
                             if records:
                                 new_df = pd.DataFrame(records)
                                 aar_df = pd.concat([new_df, aar_df], ignore_index=True)
-                                aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
+                                
+                                # 🚨 迎撃パッチ：Pandasの型推論による「数値と文字の不一致」を強制的に統一
+                                aar_df['決済日'] = aar_df['決済日'].astype(str)
+                                aar_df['銘柄'] = aar_df['銘柄'].astype(str)
+                                aar_df['買値'] = aar_df['買値'].astype(float).round(1)
+                                aar_df['売値'] = aar_df['売値'].astype(float).round(1)
+                                aar_df['株数'] = aar_df['株数'].astype(int)
+                                
+                                # 型を統一した上で、完全に一致するデータを排除（古い方を残す）
+                                aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"], keep='first').reset_index(drop=True)
                                 aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
                                 st.success(f"🎯 {len(records)} 件の戦果を解析し、データベースに自動追加しました！")
