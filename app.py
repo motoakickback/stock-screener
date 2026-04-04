@@ -689,7 +689,8 @@ with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=60, step=5)
+    # 🚨 致命的バグ修正：旧仕様の「60」をパージし、スイートスポット(55-70)を通すため「75」へ上限解放
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=75, step=5)
     vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=15000, step=5000)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
