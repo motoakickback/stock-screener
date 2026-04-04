@@ -1956,13 +1956,13 @@ for index, row in edited_df.iterrows():
         name="ターゲット"
     ))
 
-    # レーダーデザイン (高さを極限まで圧縮し、連続配置に最適化)
+    # レーダーデザイン (見切れを防止するため高さを拡張)
     fig.update_layout(
-        height=140, # 複数を並べるため高さをスリム化
+        height=180, # 拡張
         showlegend=False,
         yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]),
         xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")),
-        margin=dict(l=10, r=10, t=30, b=30),
+        margin=dict(l=10, r=10, t=30, b=50), # 下部余白(b)を拡張
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         dragmode=False
