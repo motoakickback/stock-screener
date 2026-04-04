@@ -833,13 +833,22 @@ with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（個別銘柄・深堀りスキャン）</h3>', unsafe_allow_html=True)
     col_s1, col_s2 = st.columns([1, 2])
     T3_SCOPE_FILE = f"saved_t3_scope_{user_id}.txt"
-    default_scope = "6614\n4427"
-    if os.path.exists(T3_SCOPE_FILE):
-        with open(T3_SCOPE_FILE, "r", encoding="utf-8") as f: default_scope = f.read()
+    
+    # 🔻🔻🔻 修正の核心：セッションステートによる入力保持機構 🔻🔻🔻
+    # 初回起動時のみファイルを読み込み、以後はメモリ上で入力を保持してチラつきを防ぐ
+    if "t3_saved_codes" not in st.session_state:
+        default_scope = "6614\n4427"
+        if os.path.exists(T3_SCOPE_FILE):
+            with open(T3_SCOPE_FILE, "r", encoding="utf-8") as f: 
+                default_scope = f.read()
+        st.session_state.t3_saved_codes = default_scope
             
     with col_s1:
         scope_mode = st.radio("🎯 解析モード（戦術）を選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
-        target_codes_str = st.text_area("標的コード（複数可、改行区切り）", value=default_scope, height=100)
+        
+        # 🚨 パッチ適用： key="t3_codes_input" を付与し、valueにはセッションステートを割り当てる
+        target_codes_str = st.text_area("標的コード（複数可、改行区切り）", value=st.session_state.t3_saved_codes, height=100, key="t3_codes_input")
+        
         run_scope = st.button("🔫 精密スキャン実行", use_container_width=True)
         
     with col_s2:
@@ -848,7 +857,10 @@ with tab3:
         else: st.warning("・MACDクロス（GC）からの経過日数とRSIの過熱感\n・順張り用の逆指値（ロスカット）と上値ターゲットの算出\n・強襲ロジックに基づくSABC優先度判定")
 
     if run_scope and target_codes_str:
+        # 🚨 実行ボタンが押された瞬間に、メモリの記憶を更新しつつ物理ファイルにも保存する
+        st.session_state.t3_saved_codes = target_codes_str
         with open(T3_SCOPE_FILE, "w", encoding="utf-8") as f: f.write(target_codes_str)
+        
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
         
         if not t_codes: st.warning("有効な4桁の銘柄コードが見つかりません。")
