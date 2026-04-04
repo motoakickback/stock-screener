@@ -93,7 +93,7 @@ now = datetime.now(jst)
 if 'last_auto_purge_date' not in st.session_state:
     st.session_state.last_auto_purge_date = None
 
-if now.hour >= 18:
+if now.hour >= 19:
     today_str = now.strftime('%Y-%m-%d')
     if st.session_state.last_auto_purge_date != today_str:
         st.cache_data.clear()
