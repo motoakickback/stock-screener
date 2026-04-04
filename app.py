@@ -1846,99 +1846,88 @@ with tab4:
                     styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
                 
+import plotly.graph_objects as go
+
 # ==========================================
 # 🛡️ TAB 5: 【戦線】交戦モニター (HUD・視覚化ウィジェット)
 # ==========================================
 st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (生存圏レーダー)</h3>', unsafe_allow_html=True)
-st.caption("※ 現在の株価が防衛線（損切・利確）に対してどの位置にいるかを視覚的にロックオンします。")
+st.caption("※ 現在の株価が防衛線に対してどの位置にいるかを視覚的にロックオンします。")
 
 # --- 1. 計器盤（パラメーター入力） ---
 hud_c1, hud_c2, hud_c3, hud_c4, hud_c5 = st.columns(5)
 hud_buy = hud_c1.number_input("買値 (建値)", value=1000, step=1, key="hud_buy")
-hud_tp1 = hud_c2.number_input("第1利確 (先遣隊)", value=1030, step=1, key="hud_tp1")
-hud_tp2 = hud_c3.number_input("第2利確 (本隊)", value=1070, step=1, key="hud_tp2")
-hud_sl  = hud_c4.number_input("損切 (絶対防衛線)", value=950, step=1, key="hud_sl")
-hud_cur = hud_c5.number_input("🔴 現在値 (ターゲット)", value=1010, step=1, key="hud_cur")
+hud_tp1 = hud_c2.number_input("第1利確", value=1030, step=1, key="hud_tp1")
+hud_tp2 = hud_c3.number_input("第2利確", value=1070, step=1, key="hud_tp2")
+hud_sl  = hud_c4.number_input("損切", value=950, step=1, key="hud_sl")
+hud_cur = hud_c5.number_input("🔴 現在値", value=1010, step=1, key="hud_cur")
 
 # --- 2. 戦況解析エンジン（ステータス判定） ---
-status_text = ""
-status_color = ""
 if hud_cur <= hud_sl:
-    status_text = "💀 被弾（防衛線突破・即時撤退せよ）"
-    status_color = "#ef5350" # 赤
+    st_text, st_color = "💀 被弾（防衛線突破・即時撤退せよ）", "#ef5350"
 elif hud_cur < hud_buy:
-    status_text = "⚠️ 警戒空域（含み損・損切ラインへ後退中）"
-    status_color = "#ff9800" # オレンジ
+    st_text, st_color = "⚠️ 警戒空域（含み損・損切ラインへ後退中）", "#ff9800"
 elif hud_cur < hud_tp1:
-    status_text = "🟢 巡航中（含み益・第1目標へ接近中）"
-    status_color = "#26a69a" # 緑
+    st_text, st_color = "🟢 巡航中（含み益・第1目標へ接近中）", "#26a69a"
 elif hud_cur < hud_tp2:
-    status_text = "🛡️ 第1目標到達（半分利確 ＆ 無敵化シールド展開推奨）"
-    status_color = "#42a5f5" # 青
+    st_text, st_color = "🛡️ 第1目標到達（半分利確 ＆ 無敵化シールド展開推奨）", "#42a5f5"
 else:
-    status_text = "🏆 最終目標到達（全軍撤収・任務完了）"
-    status_color = "#ab47bc" # 紫
+    st_text, st_color = "🏆 最終目標到達（全軍撤収・任務完了）", "#ab47bc"
 
-st.markdown(f"""
-<div style="background-color: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; border-left: 5px solid {status_color}; margin-bottom: 15px;">
-    <span style="color: #aaaaaa; font-size: 12px;">現在の戦況判定:</span><br>
-    <span style="color: {status_color}; font-size: 18px; font-weight: bold;">{status_text}</span>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(f"**現在の戦況:** <span style='color:{st_color}; font-size:18px; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
 
-# --- 3. HUD描画エンジン（数直線レーダー） ---
-# 描画幅を決定（損切より少し下 〜 第2利確より少し上）
-min_val = min(hud_sl, hud_cur) * 0.98
-max_val = max(hud_tp2, hud_cur) * 1.02
-val_range = max_val - min_val if max_val != min_val else 1
+# --- 3. PlotlyネイティブHUD描画 ---
+fig = go.Figure()
 
-# 位置計算関数 (0% 〜 100%)
-def get_pct(val):
-    return max(0, min(100, ((val - min_val) / val_range) * 100))
+# 水平のベースライン（スコープの軸）
+min_x = min(hud_sl, hud_cur) * 0.98
+max_x = max(hud_tp2, hud_cur) * 1.02
+fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
 
-p_buy = get_pct(hud_buy)
-p_tp1 = get_pct(hud_tp1)
-p_tp2 = get_pct(hud_tp2)
-p_sl  = get_pct(hud_sl)
-p_cur = get_pct(hud_cur)
+# 各防衛線のプロット (点とラベル)
+fig.add_trace(go.Scatter(
+    x=[hud_sl, hud_buy, hud_tp1, hud_tp2],
+    y=[0, 0, 0, 0],
+    mode="markers+text",
+    text=["損切", "買値", "第1利確", "第2利確"],
+    textposition="top center",
+    textfont=dict(size=12, color="white"),
+    marker=dict(size=12, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]),
+    hoverinfo="x+text",
+    name="防衛線"
+))
 
-# マーカー生成ヘルパー
-def make_marker(pct, label, color, is_current=False):
-    if is_current:
-        return f"""
-        <div style="position: absolute; top: 5px; left: {pct}%; transform: translateX(-50%); text-align: center; z-index: 10;">
-            <div style="color: #fff; font-weight: bold; font-size: 13px; background: {color}; padding: 2px 8px; border-radius: 12px; box-shadow: 0 0 10px {color}; border: 1px solid #fff;">現在値 {hud_cur}</div>
-            <div style="width: 2px; height: 45px; background-color: {color}; margin: 0 auto; box-shadow: 0 0 5px {color};"></div>
-            <div style="width: 10px; height: 10px; background-color: #fff; border: 3px solid {color}; border-radius: 50%; margin: -5px auto 0 auto;"></div>
-        </div>
-        """
-    else:
-        return f"""
-        <div style="position: absolute; top: 40px; left: {pct}%; transform: translateX(-50%); text-align: center; z-index: 1;">
-            <div style="width: 2px; height: 15px; background-color: {color}; margin: 0 auto;"></div>
-            <div style="color: {color}; font-size: 11px; font-weight: bold; margin-top: 2px; white-space: nowrap;">{label}</div>
-        </div>
-        """
+# 現在値のプロット (照準器/クロスヘア)
+fig.add_trace(go.Scatter(
+    x=[hud_cur],
+    y=[0],
+    mode="markers+text",
+    text=[f"現在値<br>{hud_cur}"],
+    textposition="bottom center",
+    textfont=dict(size=14, color=st_color),
+    marker=dict(
+        size=24, 
+        symbol="cross-thin", 
+        line=dict(width=3, color=st_color)
+    ),
+    hoverinfo="x",
+    name="ターゲット"
+))
 
-# レーダーUI構築
-radar_html = f"""
-<div style="position: relative; width: 100%; height: 100px; background-color: #1e1e1e; border-radius: 8px; padding: 20px 0; margin-top: 10px; border: 1px solid #333; overflow: hidden;">
-    
-    <div style="position: absolute; top: 50px; left: 0; right: 0; height: 2px; background-color: #444;"></div>
-    
-    <div style="position: absolute; top: 48px; left: 0%; width: {p_sl}%; height: 6px; background-color: rgba(239, 83, 80, 0.2);"></div>
-    
-    <div style="position: absolute; top: 48px; left: {p_buy}%; width: {100 - p_buy}%; height: 6px; background-color: rgba(38, 166, 154, 0.2);"></div>
+# レーダーデザインの適用
+fig.update_layout(
+    height=250,
+    showlegend=False,
+    yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]),
+    xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")),
+    margin=dict(l=20, r=20, t=40, b=40),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    dragmode=False # 誤操作によるズームを防止
+)
 
-    {make_marker(p_sl, f"損切 {hud_sl}", "#ef5350")}
-    {make_marker(p_buy, f"買値 {hud_buy}", "#ffca28")}
-    {make_marker(p_tp1, f"第1利確 {hud_tp1}", "#26a69a")}
-    {make_marker(p_tp2, f"第2利確 {hud_tp2}", "#42a5f5")}
-
-    {make_marker(p_cur, "", status_color, is_current=True)}
-</div>
-"""
-st.markdown(radar_html, unsafe_allow_html=True)
+# Streamlitのネイティブ描画コマンド
+st.plotly_chart(fig, use_container_width=True)
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
