@@ -786,13 +786,17 @@ with tab2:
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
-        sa_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A'))])
-        other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('T_Rank', '')).startswith(('S', 'A'))])
+        # 🚨 B判定も主力標的リストへ格上げ抽出するパッチ (TAB 2用)
+        sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
+        other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能です。")
-        if sa_codes: st.markdown("**🎯 優先度 S・A (主力標的)**"); st.code(sa_codes, language="text")
+        if sab_codes:
+            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
+            st.code(sab_codes, language="text")
         if other_codes:
-            with st.expander("👀 優先度 B・C・圏外 (監視対象)"): st.code(other_codes, language="text")
+            with st.expander("👀 優先度 C・圏外 (監視対象)"):
+                st.code(other_codes, language="text")
         
         for r in light_results:
             st.divider()
