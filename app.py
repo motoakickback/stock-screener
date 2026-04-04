@@ -1846,88 +1846,132 @@ with tab4:
                     styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
                 
+import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 
 # ==========================================
-# 🛡️ TAB 5: 【戦線】交戦モニター (HUD・視覚化ウィジェット)
+# 🛡️ TAB 5: 【戦線】交戦モニター (全軍生存圏レーダー)
 # ==========================================
-st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (生存圏レーダー)</h3>', unsafe_allow_html=True)
-st.caption("※ 現在の株価が防衛線に対してどの位置にいるかを視覚的にロックオンします。")
+st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
+st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
 
-# --- 1. 計器盤（パラメーター入力） ---
-hud_c1, hud_c2, hud_c3, hud_c4, hud_c5 = st.columns(5)
-hud_buy = hud_c1.number_input("買値 (建値)", value=1000, step=1, key="hud_buy")
-hud_tp1 = hud_c2.number_input("第1利確", value=1030, step=1, key="hud_tp1")
-hud_tp2 = hud_c3.number_input("第2利確", value=1070, step=1, key="hud_tp2")
-hud_sl  = hud_c4.number_input("損切", value=950, step=1, key="hud_sl")
-hud_cur = hud_c5.number_input("🔴 現在値", value=1010, step=1, key="hud_cur")
+# --- 1. 部隊データ・セッション管理 ---
+if 'frontline_df' not in st.session_state:
+    # ボスの現在の配備状況を初期値としてセット（適宜書き換え可能）
+    st.session_state.frontline_df = pd.DataFrame([
+        {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
+        {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
+        {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
+    ])
 
-# --- 2. 戦況解析エンジン（ステータス判定） ---
-if hud_cur <= hud_sl:
-    st_text, st_color = "💀 被弾（防衛線突破・即時撤退せよ）", "#ef5350"
-elif hud_cur < hud_buy:
-    st_text, st_color = "⚠️ 警戒空域（含み損・損切ラインへ後退中）", "#ff9800"
-elif hud_cur < hud_tp1:
-    st_text, st_color = "🟢 巡航中（含み益・第1目標へ接近中）", "#26a69a"
-elif hud_cur < hud_tp2:
-    st_text, st_color = "🛡️ 第1目標到達（半分利確 ＆ 無敵化シールド展開推奨）", "#42a5f5"
-else:
-    st_text, st_color = "🏆 最終目標到達（全軍撤収・任務完了）", "#ab47bc"
+st.markdown("#### ⚙️ 部隊パラメーター入力 (コントロールパネル)")
+st.caption("※ 直接数値を書き換えてください。下部の「行を追加」で新しい銘柄を無限に追加可能です。")
 
-st.markdown(f"**現在の戦況:** <span style='color:{st_color}; font-size:18px; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
-
-# --- 3. PlotlyネイティブHUD描画 ---
-fig = go.Figure()
-
-# 水平のベースライン（スコープの軸）
-min_x = min(hud_sl, hud_cur) * 0.98
-max_x = max(hud_tp2, hud_cur) * 1.02
-fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
-
-# 各防衛線のプロット (点とラベル)
-fig.add_trace(go.Scatter(
-    x=[hud_sl, hud_buy, hud_tp1, hud_tp2],
-    y=[0, 0, 0, 0],
-    mode="markers+text",
-    text=["損切", "買値", "第1利確", "第2利確"],
-    textposition="top center",
-    textfont=dict(size=12, color="white"),
-    marker=dict(size=12, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]),
-    hoverinfo="x+text",
-    name="防衛線"
-))
-
-# 現在値のプロット (照準器/クロスヘア)
-fig.add_trace(go.Scatter(
-    x=[hud_cur],
-    y=[0],
-    mode="markers+text",
-    text=[f"現在値<br>{hud_cur}"],
-    textposition="bottom center",
-    textfont=dict(size=14, color=st_color),
-    marker=dict(
-        size=24, 
-        symbol="cross-thin", 
-        line=dict(width=3, color=st_color)
-    ),
-    hoverinfo="x",
-    name="ターゲット"
-))
-
-# レーダーデザインの適用
-fig.update_layout(
-    height=250,
-    showlegend=False,
-    yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]),
-    xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")),
-    margin=dict(l=20, r=20, t=40, b=40),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    dragmode=False # 誤操作によるズームを防止
+# --- 2. データボード（一括入力パネル） ---
+edited_df = st.data_editor(
+    st.session_state.frontline_df,
+    num_rows="dynamic", # 行の追加・削除を許可
+    column_config={
+        "銘柄": st.column_config.TextColumn("銘柄", required=True),
+        "買値": st.column_config.NumberColumn("買値", format="%.1f", required=True),
+        "第1利確": st.column_config.NumberColumn("第1利確", format="%.1f", required=True),
+        "第2利確": st.column_config.NumberColumn("第2利確", format="%.1f", required=True),
+        "損切": st.column_config.NumberColumn("損切", format="%.1f", required=True),
+        "現在値": st.column_config.NumberColumn("🔴 現在値", format="%.1f", required=True),
+    },
+    use_container_width=True,
+    key="frontline_editor"
 )
 
-# Streamlitのネイティブ描画コマンド
-st.plotly_chart(fig, use_container_width=True)
+st.session_state.frontline_df = edited_df # 状態を保存
+
+st.markdown("---")
+st.markdown("#### 🔭 全軍レーダー展開状況")
+
+# --- 3. 全軍レーダー描画エンジン（ループ処理） ---
+active_squads = 0
+
+for index, row in edited_df.iterrows():
+    ticker = str(row.get('銘柄', ''))
+    
+    # 必須データが欠落している行はスキップ
+    if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']):
+        continue
+        
+    buy = float(row['買値'])
+    tp1 = float(row['第1利確'])
+    tp2 = float(row['第2利確'])
+    sl  = float(row['損切'])
+    cur = float(row['現在値'])
+    
+    active_squads += 1
+
+    # --- 戦況解析エンジン ---
+    if cur <= sl:
+        st_text, st_color = "💀 被弾（防衛線突破・即時撤退）", "#ef5350"
+    elif cur < buy:
+        st_text, st_color = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800"
+    elif cur < tp1:
+        st_text, st_color = "🟢 巡航中（第1目標へ接近中）", "#26a69a"
+    elif cur < tp2:
+        st_text, st_color = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5"
+    else:
+        st_text, st_color = "🏆 最終目標到達（任務完了）", "#ab47bc"
+
+    # レーダーごとのヘッダー
+    st.markdown(f"**部隊 [{ticker}]** ｜ 戦況: <span style='color:{st_color}; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
+
+    # --- PlotlyネイティブHUD描画 ---
+    fig = go.Figure()
+
+    # 水平のベースライン
+    min_x = min(sl, cur) * 0.98
+    max_x = max(tp2, cur) * 1.02
+    fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
+
+    # 各防衛線のプロット
+    fig.add_trace(go.Scatter(
+        x=[sl, buy, tp1, tp2],
+        y=[0, 0, 0, 0],
+        mode="markers+text",
+        text=["損切", "買値", "第1利確", "第2利確"],
+        textposition="top center",
+        textfont=dict(size=11, color="white"),
+        marker=dict(size=10, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]),
+        hoverinfo="x+text",
+        name="防衛線"
+    ))
+
+    # 現在値のプロット (クロスヘア)
+    fig.add_trace(go.Scatter(
+        x=[cur],
+        y=[0],
+        mode="markers+text",
+        text=[f"現在値<br>{cur}"],
+        textposition="bottom center",
+        textfont=dict(size=12, color=st_color),
+        marker=dict(size=20, symbol="cross-thin", line=dict(width=3, color=st_color)),
+        hoverinfo="x",
+        name="ターゲット"
+    ))
+
+    # レーダーデザイン (高さを極限まで圧縮し、連続配置に最適化)
+    fig.update_layout(
+        height=140, # 複数を並べるため高さをスリム化
+        showlegend=False,
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]),
+        xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")),
+        margin=dict(l=10, r=10, t=30, b=30),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        dragmode=False
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+if active_squads == 0:
+    st.info("現在、展開中の部隊はありません。上の表にデータを入力してください。")
                     
 # ------------------------------------------
 # Tab 6: 事後任務報告（AAR）
