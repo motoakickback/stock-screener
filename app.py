@@ -646,8 +646,6 @@ with tab1:
         if other_codes:
             with st.expander("👀 優先度 C・圏外 (監視対象)"):
                 st.code(other_codes, language="text")
-        if other_codes:
-            with st.expander("👀 優先度 B・C・圏外 (監視対象)"): st.code(other_codes, language="text")
         
         for r in light_results:
             st.divider()
