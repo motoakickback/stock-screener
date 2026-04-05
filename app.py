@@ -635,7 +635,6 @@ with tab1:
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
-        # 🚨 B判定も主力標的リストへ格上げ抽出するパッチ (TAB 1用)
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         
@@ -687,7 +686,6 @@ with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     col_t2_1, col_t2_2 = st.columns(2)
-    # 🚨 致命的バグ修正：旧仕様の「60」をパージし、スイートスポット(55-70)を通すため「75」へ上限解放
     rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=75, step=5)
     vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=15000, step=5000)
     
@@ -720,7 +718,6 @@ with tab2:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
 
-                # 🚨 重複していた辞書化処理を片方パージ
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
 
                 results = []
@@ -785,7 +782,6 @@ with tab2:
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
-        # 🚨 B判定も主力標的リストへ格上げ抽出するパッチ (TAB 2用)
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
@@ -841,8 +837,6 @@ with tab3:
     col_s1, col_s2 = st.columns([1, 2])
     T3_SCOPE_FILE = f"saved_t3_scope_{user_id}.txt"
     
-    # 🔻🔻🔻 修正の核心：セッションステートによる入力保持機構 🔻🔻🔻
-    # 初回起動時のみファイルを読み込み、以後はメモリ上で入力を保持してチラつきを防ぐ
     if "t3_saved_codes" not in st.session_state:
         default_scope = "6614\n4427"
         if os.path.exists(T3_SCOPE_FILE):
@@ -852,10 +846,7 @@ with tab3:
             
     with col_s1:
         scope_mode = st.radio("🎯 解析モード（戦術）を選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
-        
-        # 🚨 パッチ適用： key="t3_codes_input" を付与し、valueにはセッションステートを割り当てる
         target_codes_str = st.text_area("標的コード（複数可、改行区切り）", value=st.session_state.t3_saved_codes, height=100, key="t3_codes_input")
-        
         run_scope = st.button("🔫 精密スキャン実行", use_container_width=True)
         
     with col_s2:
@@ -864,7 +855,6 @@ with tab3:
         else: st.warning("・MACDクロス（GC）からの経過日数とRSIの過熱感\n・順張り用の逆指値（ロスカット）と上値ターゲットの算出\n・強襲ロジックに基づくSABC優先度判定")
 
     if run_scope and target_codes_str:
-        # 🚨 実行ボタンが押された瞬間に、メモリの記憶を更新しつつ物理ファイルにも保存する
         st.session_state.t3_saved_codes = target_codes_str
         with open(T3_SCOPE_FILE, "w", encoding="utf-8") as f: f.write(target_codes_str)
         
@@ -927,7 +917,6 @@ with tab3:
                     idxmax = df_14['AdjH'].idxmax()
                     d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
                     
-                    # 🚨 致命的バグの完全修正：地雷探知APIの直接リクエスト換装
                     target_event_data = {"dividend": [], "earnings": []}
                     try:
                         r_div = requests.get(f"{BASE_URL}/fins/dividend?code={api_code}", headers=headers, timeout=5)
@@ -1263,12 +1252,18 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
 
+    # 🔻🔻🔻 修正の核心：ファイル永続化（物理保存）機構の追加 🔻🔻🔻
+    FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
+
     if 'frontline_df' not in st.session_state:
-        st.session_state.frontline_df = pd.DataFrame([
-            {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
-            {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
-            {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
-        ])
+        if os.path.exists(FRONTLINE_FILE):
+            st.session_state.frontline_df = pd.read_csv(FRONTLINE_FILE)
+        else:
+            st.session_state.frontline_df = pd.DataFrame([
+                {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
+                {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
+                {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
+            ])
 
     st.markdown("#### ⚙️ 部隊パラメーター入力 (コントロールパネル)")
     st.caption("※ 直接数値を書き換えてください。下部の「行を追加」で新しい銘柄を無限に追加可能です。")
@@ -1287,6 +1282,12 @@ with tab5:
         use_container_width=True,
         key="frontline_editor"
     )
+
+    # 🚨 変更を検知して物理ファイルに保存する（放置リセット防止）
+    if not edited_df.equals(st.session_state.frontline_df):
+        st.session_state.frontline_df = edited_df.copy()
+        edited_df.to_csv(FRONTLINE_FILE, index=False)
+        st.rerun()
 
     st.markdown("---")
     st.markdown("#### 🔭 全軍レーダー展開状況")
@@ -1314,7 +1315,7 @@ with tab5:
         # ① 基本のベースライン
         fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
         
-        # 🔻🔻🔻 ② 買値を起点とした「現在値への色付きバー（ゲージ）」【今回追加したコード】 🔻🔻🔻
+        # ② 買値を起点とした「現在値への色付きバー（ゲージ）」
         bar_color = "rgba(38, 166, 154, 0.7)" if cur >= buy else "rgba(239, 83, 80, 0.7)"
         fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color=bar_color, width=12))
 
