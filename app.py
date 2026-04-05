@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import os
 import re
+import json
 from datetime import datetime, timedelta
 from io import BytesIO
 import plotly.graph_objects as go
@@ -45,7 +46,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- 🚁 司令部へ帰還ボタン (真・完全版) ---
+# --- 🚁 司令部へ帰還ボタン ---
 import streamlit.components.v1 as components
 components.html(
     """
@@ -85,7 +86,7 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- ⏱️ 19:00 完全自動パージ機構（第一防衛線） ---
+# --- ⏱️ 19:00 完全自動パージ機構 ---
 import pytz
 jst = pytz.timezone('Asia/Tokyo')
 now = datetime.now(jst)
@@ -101,6 +102,46 @@ if now.hour >= 19:
         st.session_state.tab2_scan_results = None
         st.session_state.tab5_ifd_results = None
         st.session_state.last_auto_purge_date = today_str
+
+# --- ⚙️ システム全体設定の永続化（完全防衛線） ---
+SETTINGS_FILE = f"saved_settings_{user_id}.json"
+
+def load_settings():
+    default_settings = {
+        "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -30, "f4_mlong": 3.0,
+        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
+        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
+        "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", "sim_pass_req_sim_v2": 8, 
+        "sim_rsi_lim_sim_v2": 45, "sim_time_risk_sim_v2": 5
+    }
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                default_settings.update(json.load(f))
+        except: pass
+    for k, v in default_settings.items():
+        if k not in st.session_state: st.session_state[k] = v
+
+def save_settings():
+    keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", "f9_min14", "f9_max14", "f10_ex_knife", "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", "sim_pass_req_sim_v2", "sim_rsi_lim_sim_v2", "sim_time_risk_sim_v2"]
+    current = {k: st.session_state[k] for k in keys if k in st.session_state}
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
+
+# 初期設定のロード
+load_settings()
+
+def apply_market_preset():
+    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
+    elif "61.8%" in preset: st.session_state.push_r = 61.8
+    else: st.session_state.push_r = 50.0
+    save_settings()
+
 
 # --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
 @st.cache_data(ttl=900, show_spinner=False)
@@ -361,7 +402,7 @@ def calc_technicals(df):
     if len(df) < 16:
         df['RSI'] = 50; df['MACD'] = 0; df['MACD_Signal'] = 0; df['MACD_Hist'] = 0; df['ATR'] = 0; df['MA5'] = df['AdjC']; df['MA25'] = df['AdjC']; df['MA75'] = df['AdjC']; return df
     df = df.replace([np.inf, -np.inf], np.nan)
-    df.ffill(inplace=True) # 🚨 非推奨メソッド(method='ffill')を安全なffill()へ換装
+    df.ffill(inplace=True)
     df.fillna(0, inplace=True)
     delta = df['AdjC'].diff()
     gain = delta.where(delta > 0, 0)
@@ -459,24 +500,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
 # --- 4. サイドバー UI ---
-if 'preset_target' not in st.session_state: st.session_state.preset_target = "🚀 中小型株 (50%押し・標準)"
-if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
-if 'push_r' not in st.session_state: st.session_state.push_r = 50.0 
-
-if 'bt_tp' not in st.session_state: st.session_state.bt_tp = 10
-if 'bt_sl_i' not in st.session_state: st.session_state.bt_sl_i = 8
-if 'bt_sl_c' not in st.session_state: st.session_state.bt_sl_c = 8
-if 'limit_d' not in st.session_state: st.session_state.limit_d = 4
-if 'bt_sell_d' not in st.session_state: st.session_state.bt_sell_d = 10
-if 'bt_lot' not in st.session_state: st.session_state.bt_lot = 100
-
-def apply_market_preset():
-    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
-    elif "61.8%" in preset: st.session_state.push_r = 61.8
-    else: st.session_state.push_r = 50.0
-
 st.sidebar.header("🎯 対象市場 (一括換装)")
 st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
 market_filter_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
@@ -485,30 +508,30 @@ st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達�
 
 st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
-f1_min = c_f1_1.number_input("① 下限(円)", value=200, step=100)
-f1_max = c_f1_2.number_input("① 上限(円)", value=3000, step=100) 
-f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=2.0, step=0.1)
-f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=-30, step=5)
-f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=3.0, step=0.5)
-f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=True)
-f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=True)
-f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=True)
-f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=True)
+f1_min = c_f1_1.number_input("① 下限(円)", value=st.session_state.f1_min, step=100, key="f1_min", on_change=save_settings)
+f1_max = c_f1_2.number_input("① 上限(円)", value=st.session_state.f1_max, step=100, key="f1_max", on_change=save_settings) 
+f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", value=st.session_state.f2_m30, step=0.1, key="f2_m30", on_change=save_settings)
+f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", value=st.session_state.f3_drop, step=5, key="f3_drop", on_change=save_settings)
+f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", value=st.session_state.f4_mlong, step=0.5, key="f4_mlong", on_change=save_settings)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", value=st.session_state.f5_ipo, key="f5_ipo", on_change=save_settings)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", value=st.session_state.f6_risk, key="f6_risk", on_change=save_settings)
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", value=st.session_state.f7_ex_etf, key="f7_ex_etf", on_change=save_settings)
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", value=st.session_state.f8_ex_bio, key="f8_ex_bio", on_change=save_settings)
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
-f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=1.3, step=0.1)
-f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=2.0, step=0.1)
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=True)
+f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", value=st.session_state.f9_min14, step=0.1, key="f9_min14", on_change=save_settings)
+f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", value=st.session_state.f9_max14, step=0.1, key="f9_max14", on_change=save_settings)
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", value=st.session_state.f10_ex_knife, key="f10_ex_knife", on_change=save_settings)
 
 st.sidebar.header("🎯 買いルール")
-push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r")
-limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d")
-st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot")
+push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
+limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot", on_change=save_settings)
 
 st.sidebar.header("🛡️ 売りルール（鉄の掟）")
-st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp")
-st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i")
-st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c")
-st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d")
+st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp", on_change=save_settings)
+st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i", on_change=save_settings)
+st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c", on_change=save_settings)
+st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d", on_change=save_settings)
 
 st.sidebar.markdown("#### 🚨 掟⑥：除外ブラックリスト")
 GIGI_FILE = f"saved_gigi_mines_{user_id}.txt"
@@ -548,7 +571,7 @@ with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
-    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外 (待伏)", value=True, key="tab1_etf_filter")
+    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外 (待伏)", value=st.session_state.tab1_etf_filter, key="tab1_etf_filter", on_change=save_settings)
 
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
@@ -582,7 +605,7 @@ with tab1:
                     else: m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
                     df = df[df['Code'].isin(master_df[m_mask]['Code'].unique())]
 
-                if f8_ex_bio and 'master_df' in globals() and not master_df.empty:
+                if st.session_state.f8_ex_bio and 'master_df' in globals() and not master_df.empty:
                     df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)]['Code'].unique())]
 
                 if gigi_input:
@@ -593,7 +616,7 @@ with tab1:
 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
                 push_ratio = 0.618 if "61.8%" in st.session_state.preset_target else 0.250 if "25%" in st.session_state.preset_target else 0.500
-                min14 = float(f9_min14); max14 = float(f9_max14)
+                min14 = float(st.session_state.f9_min14); max14 = float(st.session_state.f9_max14)
 
                 results = []
                 for code, group in df.groupby('Code'):
@@ -686,12 +709,12 @@ with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=75, step=5)
-    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=15000, step=5000)
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=st.session_state.tab2_rsi_limit, step=5, key="tab2_rsi_limit", on_change=save_settings)
+    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", value=st.session_state.tab2_vol_limit, step=5000, key="tab2_vol_limit", on_change=save_settings)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
-    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外 (強襲)", value=True, key="tab2_ipo_filter")
-    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF・REITを除外 (強襲)", value=True, key="tab2_etf_filter")
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外 (強襲)", value=st.session_state.tab2_ipo_filter, key="tab2_ipo_filter", on_change=save_settings)
+    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF・REITを除外 (強襲)", value=st.session_state.tab2_etf_filter, key="tab2_etf_filter", on_change=save_settings)
 
     if run_scan_t2:
         st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
@@ -773,7 +796,7 @@ with tab2:
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_val': high_4d_val, 'low_val': low_10d_val, 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days})
                         
                 if not results:
-                    st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
+                    st.warning("現在、GC初初条件を満たすターゲットは存在しません。")
                     st.session_state.tab2_scan_results = []
                 else:
                     st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))[:30]
@@ -845,7 +868,7 @@ with tab3:
         st.session_state.t3_saved_codes = default_scope
             
     with col_s1:
-        scope_mode = st.radio("🎯 解析モード（戦術）を選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
+        scope_mode = st.radio("🎯 解析モード（戦術）を選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         target_codes_str = st.text_area("標的コード（複数可、改行区切り）", value=st.session_state.t3_saved_codes, height=100, key="t3_codes_input")
         run_scope = st.button("🔫 精密スキャン実行", use_container_width=True)
         
@@ -1062,7 +1085,7 @@ with tab4:
 
     with col_b1: 
         st.markdown("🔍 **検証する戦術を選択してください**")
-        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_sim_v2")
+        test_mode = st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], label_visibility="collapsed", key="bt_mode_sim_v2", on_change=save_settings)
         st.markdown("検証コード (複数可)")
         bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, label_visibility="collapsed", key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, key="btn_run_bt_sim_v2")
@@ -1081,12 +1104,12 @@ with tab4:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             c_t1_1, c_t1_2 = st.columns(2)
             c_t1_1.metric("📉 押し目待ち", f"{st.session_state.get('push_r', 50.0)}% 落とし")
-            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=8, step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2")
+            sim_pass_req = c_t1_2.number_input("掟クリア要求数", value=st.session_state.sim_pass_req_sim_v2, step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2", on_change=save_settings)
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             c_t2_1, c_t2_2 = st.columns(2)
-            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=45, step=5, key="sim_rsi_lim_sim_v2")
-            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=5, step=1, key="sim_time_risk_sim_v2")
+            sim_rsi_lim = c_t2_1.number_input("RSI上限 (過熱感)", value=st.session_state.sim_rsi_lim_sim_v2, step=5, key="sim_rsi_lim_sim_v2", on_change=save_settings)
+            sim_time_risk = c_t2_2.number_input("時間リスク上限 (到達日数)", value=st.session_state.sim_time_risk_sim_v2, step=1, key="sim_time_risk_sim_v2", on_change=save_settings)
 
     if (run_bt or optimize_bt) and bt_c_in:
         import time
@@ -1252,7 +1275,6 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
 
-    # 🔻🔻🔻 修正の核心：ファイル永続化（物理保存）機構の追加 🔻🔻🔻
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
     if 'frontline_df' not in st.session_state:
@@ -1283,7 +1305,6 @@ with tab5:
         key="frontline_editor"
     )
 
-    # 🚨 変更を検知して物理ファイルに保存する（放置リセット防止）
     if not edited_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_df.copy()
         edited_df.to_csv(FRONTLINE_FILE, index=False)
@@ -1312,19 +1333,11 @@ with tab5:
         fig = go.Figure()
         min_x = min(sl, cur) * 0.98; max_x = max(tp2, cur) * 1.02
         
-        # ① 基本のベースライン
         fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
-        
-        # ② 買値を起点とした「現在値への色付きバー（ゲージ）」
         bar_color = "rgba(38, 166, 154, 0.7)" if cur >= buy else "rgba(239, 83, 80, 0.7)"
         fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color=bar_color, width=12))
-
-        # ③ 各防衛線のプロット
         fig.add_trace(go.Scatter(x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode="markers+text", text=["損切", "買値", "第1利確", "第2利確"], textposition="top center", textfont=dict(size=11, color="white"), marker=dict(size=10, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]), hoverinfo="x+text", name="防衛線"))
-        
-        # ④ 現在値のクロスヘア
         fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers+text", text=[f"現在値<br>{cur}"], textposition="bottom center", textfont=dict(size=12, color=st_color), marker=dict(size=20, symbol="cross-thin", line=dict(width=3, color=st_color)), hoverinfo="x", name="ターゲット"))
-        
         fig.update_layout(height=180, showlegend=False, yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]), xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")), margin=dict(l=10, r=10, t=30, b=50), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
         st.plotly_chart(fig, use_container_width=True)
 
