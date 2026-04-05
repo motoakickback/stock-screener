@@ -144,6 +144,7 @@ def apply_market_preset():
     if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
     elif "61.8%" in preset: st.session_state.push_r = 61.8
     else: st.session_state.push_r = 50.0
+    # 演習タブの初期値にも同期させる
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
@@ -492,29 +493,31 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
 # --- 4. サイドバー UI ---
-st.sidebar.header("🎯 対象市場")
+st.sidebar.header("🎯 対象市場 (一括換装)")
 st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
+market_filter_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
+
 st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
 
 st.sidebar.header("🔍 ピックアップルール")
-c1, c2 = st.sidebar.columns(2)
-c1.number_input("① 下限(円)", step=100, key="f1_min", on_change=save_settings)
-c2.number_input("① 上限(円)", step=100, key="f1_max", on_change=save_settings) 
-st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("③ 半年〜1年下落除外(%)", step=5, key="f3_drop", on_change=save_settings)
-st.sidebar.number_input("④ 上げ切り除外(倍)", step=0.5, key="f4_mlong", on_change=save_settings)
-st.sidebar.checkbox("⑤ IPO除外", key="f5_ipo", on_change=save_settings)
-st.sidebar.checkbox("⑥ 疑義注記銘柄除外", key="f6_risk", on_change=save_settings)
-st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
-st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
-c3, c4 = st.sidebar.columns(2)
-c3.number_input("⑨ 下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-c4.number_input("⑨ 上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
-st.sidebar.checkbox("⑩ 落ちるナイフ除外", key="f10_ex_knife", on_change=save_settings)
+c_f1_1, c_f1_2 = st.sidebar.columns(2)
+f1_min = c_f1_1.number_input("① 下限(円)", step=100, key="f1_min", on_change=save_settings)
+f1_max = c_f1_2.number_input("① 上限(円)", step=100, key="f1_max", on_change=save_settings) 
+f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
+f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", step=5, key="f3_drop", on_change=save_settings)
+f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", step=0.5, key="f4_mlong", on_change=save_settings)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", key="f5_ipo", on_change=save_settings)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", key="f6_risk", on_change=save_settings)
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
+c_f9_1, c_f9_2 = st.sidebar.columns(2)
+f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", key="f10_ex_knife", on_change=save_settings)
 
 st.sidebar.header("🎯 買いルール")
-st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
-st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d", on_change=save_settings)
+push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
+limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d", on_change=save_settings)
 st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot", on_change=save_settings)
 
 st.sidebar.header("🛡️ 売りルール（鉄の掟）")
@@ -527,10 +530,15 @@ st.sidebar.markdown("#### 🚨 掟⑥：除外ブラックリスト")
 GIGI_FILE = f"saved_gigi_mines_{user_id}.txt"
 default_gigi = "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
 if os.path.exists(GIGI_FILE):
-    with open(GIGI_FILE, "r", encoding="utf-8") as f: default_gigi = f.read()
+    with open(GIGI_FILE, "r", encoding="utf-8") as f:
+        default_gigi = f.read()
 
 gigi_input = st.sidebar.text_area("疑義注記・ボロ株コード (カンマ区切り)", value=default_gigi, height=100)
-with open(GIGI_FILE, "w", encoding="utf-8") as f: f.write(gigi_input)
+with open(GIGI_FILE, "w", encoding="utf-8") as f:
+    f.write(gigi_input)
+
+extracted_codes = re.findall(r'\b\d{4}\b(?!\s*[/年-])', gigi_input)
+gigi_mines_list = list(dict.fromkeys(extracted_codes))
 
 st.sidebar.divider()
 st.sidebar.markdown("### 🛠️ システム管理")
@@ -550,6 +558,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"
 ])
 master_df = load_master()
+tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
@@ -606,7 +615,9 @@ with tab1:
                     if len(group) < 15: continue
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
-                    adjc_vals = group['AdjC'].values; adjh_vals = group['AdjH'].values; adjl_vals = group['AdjL'].values
+                    adjc_vals = group['AdjC'].values
+                    adjh_vals = group['AdjH'].values
+                    adjl_vals = group['AdjL'].values
                     lc = adjc_vals[-1]
                     recent_4d_h = adjh_vals[-4:]
                     local_max_idx = recent_4d_h.argmax()
@@ -623,7 +634,8 @@ with tab1:
                     reach_rate = (target_buy / lc) * 100
                     
                     m_info = master_dict.get(code, {})
-                    c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}"); c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明'); c_scale = m_info.get('Scale', '不明')
+                    c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}")
+                    c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明'); c_scale = m_info.get('Scale', '不明')
                     rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
 
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': high_4d_val, 'low_14d': low_10d_val, 'target_buy': target_buy, 'reach_rate': reach_rate, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score})
@@ -640,7 +652,7 @@ with tab1:
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能です。")
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         if sab_codes: st.markdown("**🎯 優先度 S・A・B (主力標的)**\n```text\n" + sab_codes + "\n```")
         if other_codes:
             with st.expander("👀 優先度 C・圏外 (監視対象)"): st.code(other_codes, language="text")
@@ -782,7 +794,7 @@ with tab2:
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能です。")
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         if sab_codes: st.markdown("**🎯 優先度 S・A・B (主力標的)**\n```text\n" + sab_codes + "\n```")
         if other_codes:
             with st.expander("👀 優先度 C・圏外 (監視対象)"): st.code(other_codes, language="text")
@@ -852,7 +864,7 @@ with tab3:
         with open(T3_SCOPE_FILE, "w", encoding="utf-8") as f: f.write(target_codes_str)
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', target_codes_str)]))
         
-        if not t_codes: st.warning("有効な4桁の銘柄コードが見つかりません。")
+        if not t_codes: st.warning("有効な4桁の銘柄コードが見つからない。")
         else:
             with st.spinner(f"指定された {len(t_codes)} 銘柄を精密計算中..."):
                 scope_results = []
@@ -954,17 +966,17 @@ with tab3:
                     """, unsafe_allow_html=True)
                             
                     for alert in r.get('alerts', []): st.warning(alert)
-                    if r.get('sector') == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）です。思惑だけで動く完全なギャンブルです。")
-                    if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r.get('name', '')), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等です。個別株のテクニカルは通用しません。")
-                    if r.get('is_dt') or r.get('is_hs'): st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知！ 撤退推奨。")
+                    if r.get('sector') == '医薬品': st.error("🚨 【警告】この銘柄は医薬品（バイオ株）だ。思惑だけで動く完全なギャンブルに過ぎない。")
+                    if bool(re.search("ETF|投信|ブル|ベア|REIT|ﾘｰﾄ", str(r.get('name', '')), re.IGNORECASE)): st.error("🚨 【警告】この銘柄はETF/REIT等だ。個別株のテクニカルは通用しない。")
+                    if r.get('is_dt') or r.get('is_hs'): st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨する。")
             
                     if "待伏" in scope_mode:
-                        if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けています。迎撃非推奨（後学・分析用データ）")
-                        elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトしました。")
+                        if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けている。迎撃非推奨（後学・分析用データ）")
+                        elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線（黄金比等）へ自動シフトした。")
                         if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
-                        if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏です。")
+                        if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏だ。")
                     else:
-                        if r.get('gc_days', 0) > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過しています。")
+                        if r.get('gc_days', 0) > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過。")
                     
                     daily_sign = "+" if r.get('daily_pct', 0) >= 0 else ""
                         
@@ -1061,7 +1073,7 @@ with tab4:
         
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※初期値はサイドバーが反映されるわ。ここで変更しても『本番の掟』には影響しないシミュレーション専用よ。")
+        st.info("※ 初期値はサイドバーの設定が同期される。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しない。")
         cp1, cp2, cp3 = st.columns(3)
         cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp", on_change=save_settings)
         cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl", on_change=save_settings)
@@ -1082,7 +1094,7 @@ with tab4:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
-        if not t_codes: st.warning("有効なコードが見つかりません。")
+        if not t_codes: st.warning("有効なコードが見つからない。")
         else:
             sim_tp = float(st.session_state.sim_tp)
             sim_sl_i = float(st.session_state.sim_sl)
@@ -1121,7 +1133,7 @@ with tab4:
                     except: continue
 
             if not preloaded_data:
-                st.error("解析可能なデータが取得できませんでした。")
+                st.error("解析可能なデータが取得できない。")
                 st.stop()
                 
             opt_results = []
@@ -1207,13 +1219,13 @@ with tab4:
                 c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
                 st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
                 st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
-                if is_ambush: st.info(f"💡 ボス、現在の地合いでは高値から {int(best[p1_name])}% 落ちた位置に指値を置き、掟スコア {int(best[p2_name])}点 以上でエントリーするのが最も効率的です。")
+                if is_ambush: st.info(f"💡 【推奨戦術】現在の地合いでは、高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高い。")
             elif run_bt:
-                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）はありませんでした。")
+                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できなかった。")
                 else:
                     tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
                     tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
-                    st.success("🎯 バックテスト完了")
+                    st.success("🎯 バックテスト完了。")
                     import plotly.express as px
                     fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, title="💰 仮想資産推移 (Equity Curve)", color_discrete_sequence=["#FFD700"])
                     fig_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=40, b=20))
@@ -1393,9 +1405,9 @@ with tab6:
                 }])
                 aar_df = pd.concat([new_data, aar_df], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                 aar_df.to_csv(AAR_FILE, index=False)
-                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録しました。")
+                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録完了。")
                 st.rerun()
-            else: st.error("銘柄コード、買値、売値を正しく入力してください。")
+            else: st.error("銘柄コード、買値、売値を正しく入力せよ。")
         
         with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
             st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。（※重複データは自動排除されます）")
@@ -1452,10 +1464,10 @@ with tab6:
                                 aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"], keep='first').reset_index(drop=True)
                                 aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
-                                st.success(f"🎯 新規の戦果のみを抽出し、既存の編集内容は維持したまま統合しました！")
+                                st.success(f"🎯 新規の戦果のみを抽出し、既存の記録と統合完了。")
                                 st.rerun()
-                            else: st.warning("解析可能な決済済みペア（買いと売りのセット）が見つかりませんでした。")
-                        else: st.error("CSVフォーマットが認識できませんでした。「約定日」「銘柄」を含むヘッダ行が必要です。")
+                            else: st.warning("解析可能な決済済みペア（買いと売りのセット）が確認できなかった。")
+                        else: st.error("CSVフォーマットが認識不能。「約定日」「銘柄」を含むヘッダ行が必須だ。")
                     except Exception as e: st.error(f"解析エラー: {e}")
 
         if not aar_df.empty:
@@ -1465,7 +1477,7 @@ with tab6:
 
     with col_a2:
         st.markdown("#### 📊 司令部 総合戦績ダッシュボード")
-        if aar_df.empty: st.warning("現在、交戦記録（データ）がありません。左のフォームから入力するか、CSVをアップロードしてください。")
+        if aar_df.empty: st.warning("現在、交戦記録（データ）がない。左のフォームから入力するか、CSVをアップロードせよ。")
         else:
             tot_trades = len(aar_df)
             wins = len(aar_df[aar_df['損益額(円)'] > 0])
@@ -1506,7 +1518,7 @@ with tab6:
                 return 'color: #26a69a;'
 
             st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
-            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）できます。")
+            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）可能。")
 
             styled_df = aar_df.style.map(color_pnl, subset=['損益額(円)', '損益(%)']).map(color_rule, subset=['規律'])
 
