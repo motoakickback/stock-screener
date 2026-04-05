@@ -115,7 +115,7 @@ def load_settings():
         "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
-        "sim_tp": 10, "sim_sl": 8, "sim_limit_d": 4, "sim_push_r": 50.0,
+        "sim_tp": 10, "sim_sl": 8, "sim_limit_d": 4, "sim_sell_d": 10, "sim_push_r": 50.0,
         "sim_pass_req_sim_v2": 8, "sim_rsi_lim_sim_v2": 45, "sim_time_risk_sim_v2": 5
     }
     if os.path.exists(SETTINGS_FILE):
@@ -131,7 +131,7 @@ def save_settings():
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
             "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
-            "sim_tp", "sim_sl", "sim_limit_d", "sim_push_r",
+            "sim_tp", "sim_sl", "sim_limit_d", "sim_sell_d", "sim_push_r",
             "sim_pass_req_sim_v2", "sim_rsi_lim_sim_v2", "sim_time_risk_sim_v2"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
@@ -144,7 +144,6 @@ def apply_market_preset():
     if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
     elif "61.8%" in preset: st.session_state.push_r = 61.8
     else: st.session_state.push_r = 50.0
-    # 演習タブの初期値にも同期させる
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
@@ -425,27 +424,27 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     else: macd_t = "減衰"
 
     if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: return "圏外（手出し無用）🚫", "#d32f2f", 0, macd_t
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
         if gc_days == 1:
-            if rsi <= 50: return "S（即時狙撃）🔥", "#2e7d32", 5, "GC直後(1日目)"
-            else: return "A（強襲追撃）⚡", "#ed6c02", 4, "GC直後(1日目)"
+            if rsi <= 50: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
+            else: return "A⚡", "#ed6c02", 4, "GC直後(1日目)"
         elif gc_days == 2:
-            if rsi <= 55: return "A（強襲追撃）⚡", "#ed6c02", 4, "GC継続(2日目)"
-            else: return "B（順張り警戒）📈", "#0288d1", 3, "GC継続(2日目)"
+            if rsi <= 55: return "A⚡", "#ed6c02", 4, "GC継続(2日目)"
+            else: return "B📈", "#0288d1", 3, "GC継続(2日目)"
         elif gc_days >= 3:
-            return "B（順張り警戒）📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
-        else: return "C（条件外・監視）👁️", "#616161", 1, macd_t
+            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+        else: return "C👁️", "#616161", 1, macd_t
     else:
-        if bt == 0 or lc == 0: return "C（計算不能）👁️", "#616161", 1, macd_t
+        if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
         dist_pct = ((lc / bt) - 1) * 100 
-        if dist_pct < -2.0: return "圏外（防衛線突破）💀", "#d32f2f", 0, macd_t
+        if dist_pct < -2.0: return "圏外💀", "#d32f2f", 0, macd_t
         elif dist_pct <= 2.0:
-            if rsi <= 45: return "S（迎撃態勢）🔥", "#2e7d32", 5, macd_t
-            else: return "A（接近中）⚡", "#ed6c02", 4.5, macd_t 
+            if rsi <= 45: return "S🔥", "#2e7d32", 5, macd_t
+            else: return "A⚡", "#ed6c02", 4.5, macd_t 
         elif dist_pct <= 5.0:
-            if rsi <= 50: return "A（罠の設置）🪤", "#0288d1", 4.0, macd_t 
-            else: return "B（高高度）📈", "#0288d1", 3, macd_t
-        else: return "C（射程外・監視）👁️", "#616161", 1, macd_t
+            if rsi <= 50: return "A🪤", "#0288d1", 4.0, macd_t 
+            else: return "B📈", "#0288d1", 3, macd_t
+        else: return "C👁️", "#616161", 1, macd_t
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
@@ -547,7 +546,7 @@ if st.sidebar.button("🔴 キャッシュ強制パージ (API遅延時用)", us
     st.session_state.tab1_scan_results = None
     st.session_state.tab2_scan_results = None
     st.session_state.tab5_ifd_results = None
-    st.sidebar.success("全記憶を強制パージしました。最新データを再取得します。")
+    st.sidebar.success("全記憶を強制パージした。最新データを再取得する。")
     st.rerun()
 
 # ==========================================
@@ -571,7 +570,7 @@ with tab1:
         with st.spinner("全銘柄から適合ターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("データの取得に失敗しました。")
+                st.error("データの取得に失敗した。")
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
@@ -590,7 +589,8 @@ with tab1:
 
                 if exclude_etf_flag_t1 and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
-                    df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
+                    valid_codes = master_df[~invalid_mask]['Code'].unique()
+                    df = df[df['Code'].isin(valid_codes)]
 
                 if not master_df.empty:
                     if "大型株" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
@@ -641,10 +641,11 @@ with tab1:
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': high_4d_val, 'low_14d': low_10d_val, 'target_buy': target_buy, 'reach_rate': reach_rate, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score})
                         
                 if not results:
-                    st.warning("現在、掟を満たすターゲットは存在しません。")
+                    st.warning("現在、掟を満たすターゲットは存在しない。")
                     st.session_state.tab1_scan_results = []
                 else:
                     st.session_state.tab1_scan_results = sorted(results, key=lambda x: x['t_score'], reverse=True)[:30]
+                import gc; gc.collect()
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
@@ -653,9 +654,12 @@ with tab1:
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        if sab_codes: st.markdown("**🎯 優先度 S・A・B (主力標的)**\n```text\n" + sab_codes + "\n```")
+        if sab_codes:
+            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
+            st.code(sab_codes, language="text")
         if other_codes:
-            with st.expander("👀 優先度 C・圏外 (監視対象)"): st.code(other_codes, language="text")
+            with st.expander("👀 優先度 C・圏外 (監視対象)"):
+                st.code(other_codes, language="text")
         
         for r in light_results:
             st.divider()
@@ -708,7 +712,8 @@ with tab2:
         st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
         with st.spinner("全銘柄の波形からGC初動候補を抽出中..."):
             raw = get_hist_data_cached()
-            if not raw: st.error("データの取得に失敗しました。")
+            if not raw:
+                st.error("データの取得に失敗した。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
@@ -783,10 +788,11 @@ with tab2:
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_val': high_4d_val, 'low_val': low_10d_val, 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days})
                         
                 if not results:
-                    st.warning("現在、GC初動条件を満たすターゲットは存在しません。")
+                    st.warning("現在、GC初動条件を満たすターゲットは存在しない。")
                     st.session_state.tab2_scan_results = []
                 else:
                     st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))[:30]
+                import gc; gc.collect()
 
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
@@ -795,9 +801,12 @@ with tab2:
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        if sab_codes: st.markdown("**🎯 優先度 S・A・B (主力標的)**\n```text\n" + sab_codes + "\n```")
+        if sab_codes:
+            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
+            st.code(sab_codes, language="text")
         if other_codes:
-            with st.expander("👀 優先度 C・圏外 (監視対象)"): st.code(other_codes, language="text")
+            with st.expander("👀 優先度 C・圏外 (監視対象)"):
+                st.code(other_codes, language="text")
         
         for r in light_results:
             st.divider()
@@ -1074,10 +1083,11 @@ with tab4:
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
         st.info("※ 初期値はサイドバーの設定が同期される。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しない。")
-        cp1, cp2, cp3 = st.columns(3)
+        cp1, cp2, cp3, cp4 = st.columns(4)
         cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp", on_change=save_settings)
         cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl", on_change=save_settings)
         cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d", on_change=save_settings)
+        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d", on_change=save_settings)
         st.divider()
         if "待伏" in test_mode:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
@@ -1099,7 +1109,7 @@ with tab4:
             sim_tp = float(st.session_state.sim_tp)
             sim_sl_i = float(st.session_state.sim_sl)
             sim_limit_d = int(st.session_state.sim_limit_d)
-            sim_sell_d = int(st.session_state.bt_sell_d)
+            sim_sell_d = int(st.session_state.sim_sell_d)
             sim_push_r = float(st.session_state.sim_push_r)
 
             is_ambush = "待伏" in test_mode
