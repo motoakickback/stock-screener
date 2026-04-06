@@ -1068,15 +1068,22 @@ with tab3:
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
-    # --- 🚨 メモリ強制パージ(ウィジェット消失)対策のセーフティ・ガード ---
-    if "sim_tp" not in st.session_state: st.session_state.sim_tp = 10
-    if "sim_sl" not in st.session_state: st.session_state.sim_sl = 8
-    if "sim_limit_d" not in st.session_state: st.session_state.sim_limit_d = 4
-    if "sim_sell_d" not in st.session_state: st.session_state.sim_sell_d = 10
-    if "sim_push_r" not in st.session_state: st.session_state.sim_push_r = st.session_state.get("push_r", 50.0)
-    if "sim_pass_req_sim_v2" not in st.session_state: st.session_state.sim_pass_req_sim_v2 = 9
-    if "sim_rsi_lim_sim_v2" not in st.session_state: st.session_state.sim_rsi_lim_sim_v2 = 70
-    if "sim_time_risk_sim_v2" not in st.session_state: st.session_state.sim_time_risk_sim_v2 = 5
+    # --- 🚨 メモリ強制パージ対策（競合回避型セーフティ・ガード） ---
+    if "sim_tp_val" not in st.session_state: st.session_state.sim_tp_val = 10
+    if "sim_sl_val" not in st.session_state: st.session_state.sim_sl_val = 8
+    if "sim_limit_d_val" not in st.session_state: st.session_state.sim_limit_d_val = 4
+    if "sim_sell_d_val" not in st.session_state: st.session_state.sim_sell_d_val = 10
+    if "sim_push_r_val" not in st.session_state: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
+    if "sim_pass_req_val" not in st.session_state: st.session_state.sim_pass_req_val = 9
+    if "sim_rsi_lim_ambush_val" not in st.session_state: st.session_state.sim_rsi_lim_ambush_val = 45 # 待伏用RSI追加
+    if "sim_rsi_lim_assault_val" not in st.session_state: st.session_state.sim_rsi_lim_assault_val = 70
+    if "sim_time_risk_val" not in st.session_state: st.session_state.sim_time_risk_val = 5
+    
+    # サイドバーの「押し目待ち」が変更されたら、演習タブ側も同期させる（待伏モード時のみ）
+    current_sidebar_push_r = st.session_state.get("push_r", 50.0)
+    if "last_sidebar_push_r" not in st.session_state or st.session_state.last_sidebar_push_r != current_sidebar_push_r:
+        st.session_state.sim_push_r_val = current_sidebar_push_r
+        st.session_state.last_sidebar_push_r = current_sidebar_push_r
     # -------------------------------------------------------------------
 
     col_b1, col_b2 = st.columns([1, 1.8])
@@ -1096,21 +1103,25 @@ with tab4:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
         st.info("※ 初期値はサイドバーの設定が同期されます。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しません。")
         cp1, cp2, cp3, cp4 = st.columns(4)
-        cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp", on_change=save_settings)
-        cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl", on_change=save_settings)
-        cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d", on_change=save_settings)
-        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d", on_change=save_settings)
+        
+        # 入力値を変数に直結
+        st.session_state.sim_tp_val = cp1.number_input("🎯 利確目標(%)", value=st.session_state.sim_tp_val, step=1)
+        st.session_state.sim_sl_val = cp2.number_input("🛡️ 損切目安(%)", value=st.session_state.sim_sl_val, step=1)
+        st.session_state.sim_limit_d_val = cp3.number_input("⏳ 買い期限(日)", value=st.session_state.sim_limit_d_val, step=1)
+        st.session_state.sim_sell_d_val = cp4.number_input("⏳ 売り期限(日)", value=st.session_state.sim_sell_d_val, step=1)
+        
         st.divider()
         if "待伏" in test_mode:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
-            ct1, ct2 = st.columns(2)
-            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="sim_push_r", on_change=save_settings)
-            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="sim_pass_req_sim_v2", on_change=save_settings)
+            ct1, ct2, ct3 = st.columns(3)
+            st.session_state.sim_push_r_val = ct1.number_input("📉 押し目待ち(%)", value=st.session_state.sim_push_r_val, step=0.1, format="%.1f")
+            st.session_state.sim_pass_req_val = ct2.number_input("掟クリア要求数", value=st.session_state.sim_pass_req_val, step=1, max_value=9, min_value=1)
+            st.session_state.sim_rsi_lim_ambush_val = ct3.number_input("RSI上限 (過熱感)", value=st.session_state.sim_rsi_lim_ambush_val, step=5)
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
-            ct3, ct4 = st.columns(2)
-            ct3.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_sim_v2", on_change=save_settings)
-            ct4.number_input("時間リスク上限 (到達日数)", step=1, key="sim_time_risk_sim_v2", on_change=save_settings)
+            ct1, ct2 = st.columns(2)
+            st.session_state.sim_rsi_lim_assault_val = ct1.number_input("RSI上限 (過熱感)", value=st.session_state.sim_rsi_lim_assault_val, step=5)
+            st.session_state.sim_time_risk_val = ct2.number_input("時間リスク上限 (到達日数)", value=st.session_state.sim_time_risk_val, step=1)
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
@@ -1118,22 +1129,24 @@ with tab4:
         
         if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
-            sim_tp = float(st.session_state.sim_tp)
-            sim_sl_i = float(st.session_state.sim_sl)
-            sim_limit_d = int(st.session_state.sim_limit_d)
-            sim_sell_d = int(st.session_state.sim_sell_d)
-            sim_push_r = float(st.session_state.sim_push_r)
+            # セッションステートから値を取得
+            sim_tp = float(st.session_state.sim_tp_val)
+            sim_sl_i = float(st.session_state.sim_sl_val)
+            sim_limit_d = int(st.session_state.sim_limit_d_val)
+            sim_sell_d = int(st.session_state.sim_sell_d_val)
+            sim_push_r = float(st.session_state.sim_push_r_val)
 
             is_ambush = "待伏" in test_mode
             if is_ambush:
-                sim_pass_req = int(st.session_state.sim_pass_req_sim_v2)
+                sim_pass_req = int(st.session_state.sim_pass_req_val)
+                sim_rsi_lim_ambush = int(st.session_state.sim_rsi_lim_ambush_val)
                 p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
                 p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
                 p1_name, p2_name = "Push率(%)", "要求Score"
             else:
-                sim_rsi_lim = int(st.session_state.sim_rsi_lim_sim_v2)
-                sim_time_risk = int(st.session_state.sim_time_risk_sim_v2)
-                p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim]
+                sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
+                sim_time_risk = int(st.session_state.sim_time_risk_val)
+                p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim_assault]
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
@@ -1181,11 +1194,16 @@ with tab4:
                                 
                                 if is_ambush:
                                     r14 = h14 / l14
+                                    rsi_prev = prev.get('RSI', 50)
                                     idxmax = win_14['AdjH'].idxmax()
                                     d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
                                     is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
                                     bt_val = int(h14 - ((h14 - l14) * (t_p1 / 100.0)))
                                     
+                                    # RSI上限の判定を追加
+                                    if rsi_prev > sim_rsi_lim_ambush:
+                                        continue
+
                                     score = 0
                                     if 1.3 <= r14 <= 2.0: score += 1
                                     if d_high <= sim_limit_d: score += 1 
