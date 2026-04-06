@@ -621,7 +621,7 @@ with tab1:
                     
                     # 🚨 RSIによる絶対条件（ハードリミット）
                     rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
-                    if rsi > 45: continue
+                    if rsi > 55: continue
 
                     df_14 = group.tail(15).iloc[:-1] # 前日までの14日
                     df_30 = group.tail(31).iloc[:-1] # 前日までの30日
