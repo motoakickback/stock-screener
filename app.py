@@ -567,7 +567,7 @@ with tab1:
 
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
-        with st.spinner("全銘柄から適合ターゲットを索敵中..."):
+        with st.spinner("全銘柄から掟スコア7点以上の適合ターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗した。")
@@ -607,49 +607,72 @@ with tab1:
                         df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
-                push_ratio = 0.618 if "61.8%" in st.session_state.preset_target else 0.250 if "25%" in st.session_state.preset_target else 0.500
-                min14 = float(st.session_state.f9_min14); max14 = float(st.session_state.f9_max14)
+                push_ratio = st.session_state.push_r / 100.0
+                limit_d = int(st.session_state.limit_d)
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 15: continue
+                    if len(group) < 35: continue # 波形チェックのために35日以上確保
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
-                    adjc_vals = group['AdjC'].values
-                    adjh_vals = group['AdjH'].values
-                    adjl_vals = group['AdjL'].values
-                    lc = adjc_vals[-1]
-                    recent_4d_h = adjh_vals[-4:]
-                    local_max_idx = recent_4d_h.argmax()
-                    high_4d_val = recent_4d_h[local_max_idx]
-                    global_max_idx = len(adjh_vals) - 4 + local_max_idx
-                    low_10d_val = adjl_vals[max(0, global_max_idx - 10) : global_max_idx + 1].min()
-
-                    if low_10d_val <= 0: continue
-                    if not (min14 <= high_4d_val / low_10d_val <= max14): continue
-                    wave_len = high_4d_val - low_10d_val
-                    if wave_len <= 0: continue
-                    rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
-                    target_buy = high_4d_val - (wave_len * push_ratio)
-                    reach_rate = (target_buy / lc) * 100
                     
+                    adjc_vals = group['AdjC'].values
+                    lc = adjc_vals[-1]
+                    
+                    # 🚨 RSIによる絶対条件（ハードリミット）
+                    rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
+                    if rsi > 45: continue
+
+                    df_14 = group.tail(15).iloc[:-1] # 前日までの14日
+                    df_30 = group.tail(31).iloc[:-1] # 前日までの30日
+                    
+                    h14 = df_14['AdjH'].max()
+                    l14 = df_14['AdjL'].min()
+                    if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
+
+                    # 🚨 鮮度（買い期限）による絶対条件（ハードリミット）
+                    idxmax = df_14['AdjH'].idxmax()
+                    d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                    if d_high > limit_d: continue
+
+                    # --- 掟スコア計算エンジン ---
+                    wave_len = h14 - l14
+                    if wave_len <= 0: continue
+                    target_buy = h14 - (wave_len * push_ratio)
+                    
+                    r14 = h14 / l14
+                    is_dt = check_double_top(df_30)
+                    is_hs = check_head_shoulders(df_30)
+
+                    score = 0
+                    if 1.3 <= r14 <= 2.0: score += 1
+                    if d_high <= limit_d: score += 1 # 必須通過済なので確実に加点
+                    if not is_dt: score += 1
+                    if not is_hs: score += 1
+                    if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+                    score += 4 # ベース点
+                    
+                    # 🚨 スコア7点未満はパージ
+                    if score < 7: continue
+
+                    reach_rate = (target_buy / lc) * 100
                     m_info = master_dict.get(code, {})
                     c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}")
                     c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明'); c_scale = m_info.get('Scale', '不明')
                     rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
 
-                    results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': high_4d_val, 'low_14d': low_10d_val, 'target_buy': target_buy, 'reach_rate': reach_rate, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score})
+                    results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': h14, 'low_14d': l14, 'target_buy': target_buy, 'reach_rate': reach_rate, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score})
                         
                 if not results:
-                    st.warning("現在、掟を満たすターゲットは存在しない。")
+                    st.warning("現在、掟スコア7点以上のターゲットは存在しない。")
                     st.session_state.tab1_scan_results = []
                 else:
-                    st.session_state.tab1_scan_results = sorted(results, key=lambda x: x['t_score'], reverse=True)[:30]
+                    st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['score'], x['t_score']), reverse=True)[:30]
                 import gc; gc.collect()
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
+        st.success(f"🎯 待伏ロックオン: 掟スコア7点以上 {len(light_results)} 銘柄を確認。")
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         
@@ -670,6 +693,7 @@ with tab1:
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("Market")}</span>'
             
             triage_badge = f'<span style="background-color: {r.get("triage_bg")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
+            score_badge = f'<span style="background-color: rgba(255, 87, 34, 0.15); border: 1px solid #ff5722; color: #ff5722; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {r.get("score")}/9</span>'
             swing_pct = ((r.get('high_4d', 0) - r.get('low_14d', 0)) / r.get('low_14d', 1)) * 100
             volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>' if swing_pct >= (40.0 if ('プライム' in m_lower or '一部' in m_lower) else 60.0) else ""
 
@@ -677,8 +701,8 @@ with tab1:
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{triage_badge}{volatility_badge}
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get("RSI", 50):.1f}%</span>
+                        {badge_html}{triage_badge}{score_badge}{volatility_badge}
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">RSI: {r.get("RSI", 50):.1f}%</span>
                         <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r.get('reach_rate'):.1f}%</span>
                     </div>
                 </div>
