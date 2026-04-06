@@ -1067,6 +1067,18 @@ with tab3:
 
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
+    
+    # --- 🚨 メモリ強制パージ(ウィジェット消失)対策のセーフティ・ガード ---
+    if "sim_tp" not in st.session_state: st.session_state.sim_tp = 10
+    if "sim_sl" not in st.session_state: st.session_state.sim_sl = 8
+    if "sim_limit_d" not in st.session_state: st.session_state.sim_limit_d = 4
+    if "sim_sell_d" not in st.session_state: st.session_state.sim_sell_d = 10
+    if "sim_push_r" not in st.session_state: st.session_state.sim_push_r = st.session_state.get("push_r", 50.0)
+    if "sim_pass_req_sim_v2" not in st.session_state: st.session_state.sim_pass_req_sim_v2 = 9
+    if "sim_rsi_lim_sim_v2" not in st.session_state: st.session_state.sim_rsi_lim_sim_v2 = 70
+    if "sim_time_risk_sim_v2" not in st.session_state: st.session_state.sim_time_risk_sim_v2 = 5
+    # -------------------------------------------------------------------
+
     col_b1, col_b2 = st.columns([1, 1.8])
     T4_FILE = f"saved_t4_codes_{user_id}.txt"
     default_t4 = "7839\n6614"
@@ -1082,7 +1094,7 @@ with tab4:
         
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※ 初期値はサイドバーの設定が同期される。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しない。")
+        st.info("※ 初期値はサイドバーの設定が同期されます。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しません。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp", on_change=save_settings)
         cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl", on_change=save_settings)
@@ -1104,7 +1116,7 @@ with tab4:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
-        if not t_codes: st.warning("有効なコードが見つからない。")
+        if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
             sim_tp = float(st.session_state.sim_tp)
             sim_sl_i = float(st.session_state.sim_sl)
@@ -1121,7 +1133,7 @@ with tab4:
             else:
                 sim_rsi_lim = int(st.session_state.sim_rsi_lim_sim_v2)
                 sim_time_risk = int(st.session_state.sim_time_risk_sim_v2)
-                p1_range = range(30, 65, 5) if optimize_bt else [sim_rsi_lim]
+                p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim]
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
@@ -1143,7 +1155,7 @@ with tab4:
                     except: continue
 
             if not preloaded_data:
-                st.error("解析可能なデータが取得できない。")
+                st.error("解析可能なデータが取得できませんでした。")
                 st.stop()
                 
             opt_results = []
@@ -1229,9 +1241,9 @@ with tab4:
                 c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
                 st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
                 st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
-                if is_ambush: st.info(f"💡 【推奨戦術】現在の地合いでは、高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高い。")
+                if is_ambush: st.info(f"💡 【推奨戦術】現在の地合いでは、高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高いと解析されます。")
             elif run_bt:
-                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できなかった。")
+                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できませんでした。")
                 else:
                     tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
                     tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
