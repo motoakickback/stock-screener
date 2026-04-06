@@ -1112,7 +1112,7 @@ with tab4:
     if "sim_limit_d_val" not in st.session_state: st.session_state.sim_limit_d_val = 4
     if "sim_sell_d_val" not in st.session_state: st.session_state.sim_sell_d_val = 10
     if "sim_push_r_val" not in st.session_state: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
-    if "sim_pass_req_val" not in st.session_state: st.session_state.sim_pass_req_val = 9
+    if "sim_pass_req_val" not in st.session_state: st.session_state.sim_pass_req_val = 7
     if "sim_rsi_lim_ambush_val" not in st.session_state: st.session_state.sim_rsi_lim_ambush_val = 45
     if "sim_rsi_lim_assault_val" not in st.session_state: st.session_state.sim_rsi_lim_assault_val = 70
     if "sim_time_risk_val" not in st.session_state: st.session_state.sim_time_risk_val = 5
