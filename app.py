@@ -1075,15 +1075,27 @@ with tab4:
     if "sim_sell_d_val" not in st.session_state: st.session_state.sim_sell_d_val = 10
     if "sim_push_r_val" not in st.session_state: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
     if "sim_pass_req_val" not in st.session_state: st.session_state.sim_pass_req_val = 9
-    if "sim_rsi_lim_ambush_val" not in st.session_state: st.session_state.sim_rsi_lim_ambush_val = 45 # 待伏用RSI追加
+    if "sim_rsi_lim_ambush_val" not in st.session_state: st.session_state.sim_rsi_lim_ambush_val = 45
     if "sim_rsi_lim_assault_val" not in st.session_state: st.session_state.sim_rsi_lim_assault_val = 70
     if "sim_time_risk_val" not in st.session_state: st.session_state.sim_time_risk_val = 5
     
-    # サイドバーの「押し目待ち」が変更されたら、演習タブ側も同期させる（待伏モード時のみ）
+    # --- 💡 サイドバー同期（押し目待ち） ---
     current_sidebar_push_r = st.session_state.get("push_r", 50.0)
     if "last_sidebar_push_r" not in st.session_state or st.session_state.last_sidebar_push_r != current_sidebar_push_r:
         st.session_state.sim_push_r_val = current_sidebar_push_r
         st.session_state.last_sidebar_push_r = current_sidebar_push_r
+
+    # --- 💡 戦術モード切替時のデフォルト値自動スイッチ機構（売り期限） ---
+    current_mode = st.session_state.get("bt_mode_sim_v2", "🌐 【待伏】鉄の掟 (押し目狙撃)")
+    if "last_sim_mode" not in st.session_state:
+        st.session_state.last_sim_mode = current_mode
+
+    if st.session_state.last_sim_mode != current_mode:
+        if "待伏" in current_mode:
+            st.session_state.sim_sell_d_val = 10 # 待伏は10日
+        else:
+            st.session_state.sim_sell_d_val = 5  # 強襲は5日
+        st.session_state.last_sim_mode = current_mode
     # -------------------------------------------------------------------
 
     col_b1, col_b2 = st.columns([1, 1.8])
@@ -1104,7 +1116,6 @@ with tab4:
         st.info("※ 初期値はサイドバーの設定が同期されます。本タブでの変更はシミュレーション（仮想実弾テスト）専用であり、「本番の掟」には干渉しません。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         
-        # 入力値を変数に直結
         st.session_state.sim_tp_val = cp1.number_input("🎯 利確目標(%)", value=st.session_state.sim_tp_val, step=1)
         st.session_state.sim_sl_val = cp2.number_input("🛡️ 損切目安(%)", value=st.session_state.sim_sl_val, step=1)
         st.session_state.sim_limit_d_val = cp3.number_input("⏳ 買い期限(日)", value=st.session_state.sim_limit_d_val, step=1)
@@ -1129,7 +1140,6 @@ with tab4:
         
         if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
-            # セッションステートから値を取得
             sim_tp = float(st.session_state.sim_tp_val)
             sim_sl_i = float(st.session_state.sim_sl_val)
             sim_limit_d = int(st.session_state.sim_limit_d_val)
@@ -1200,7 +1210,6 @@ with tab4:
                                     is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
                                     bt_val = int(h14 - ((h14 - l14) * (t_p1 / 100.0)))
                                     
-                                    # RSI上限の判定を追加
                                     if rsi_prev > sim_rsi_lim_ambush:
                                         continue
 
