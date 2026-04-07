@@ -863,13 +863,13 @@ with tab2:
                     else: high_4d_val = lc; low_10d_val = lc
 
                     # 🚨 追加：中間フィルター（25日線基準の足切り）
-                    latest_ma25 = df_chart.iloc[-1].get('MA25', 0)
+                    latest_ma25 = df_s.iloc[-1].get('MA25', 0)
                     if latest_ma25 > 0 and lc < (latest_ma25 * 0.95):
                         continue # 25日線から-5%未満の「深すぎる沼」は無条件でパージ
                         
                     # 🚨 変更：新エンジンの呼び出し（is_strict=False で中間採点）
-                    t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, df_chart, is_strict=False)
-
+                    t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, df_s, is_strict=False)
+                        
                     if len(adjc_vals) >= 75:
                         ma5 = adjc_vals[-5:].mean(); ma25 = adjc_vals[-25:].mean(); ma75 = adjc_vals[-75:].mean()
                         strict_score = 0
