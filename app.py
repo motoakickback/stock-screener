@@ -989,8 +989,6 @@ with tab3:
                         
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50); atr_val = int(latest.get('ATR', 0))
-                    
-                    # 🚨 致命的エラー回避パッチ: 出来高カラムの安全取得
                     v_col = next((col for col in df_s.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                     avg_vol = int(df_s[v_col].tail(5).mean()) if v_col else 0
                     
@@ -1027,7 +1025,6 @@ with tab3:
                     except: pass
                     
                     alerts = check_event_mines(c, target_event_data)
-                    
                     source_label = "🛡️ 監視中" if c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in) else "🚀 新規"
 
                     scope_results.append({
@@ -1067,11 +1064,73 @@ with tab3:
                     """, unsafe_allow_html=True)
                     
                     for alert in r['alerts']: st.warning(alert)
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨する。")
+                    if "待伏" in scope_mode:
+                        if r['is_trend_broken']: st.error("💀 【トレンド崩壊】黄金比(61.8%)を完全に下抜けている。迎撃非推奨。")
+                        elif r['is_bt_broken']: st.error("⚠️ 【第一防衛線突破】想定以上の売り圧力を検知。買値を第二防衛線へ自動シフトした。")
+                        if r['is_db']: st.success("🔥 【激熱(攻め)】三川（ダブルボトム）底打ち反転波形を検知！")
+                        if r['is_defense']: st.info("🛡️ 【鉄壁(守り)】下値支持線(サポート)に極接近。損切りリスクが極小の安全圏だ。")
+                    else:
+                        if r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日経過。")
             
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
-                    c_base = r['bt_val'] if "待伏" in scope_mode else r['lc']
                     
+                    # 🚨 UI完全復元用ロジック
+                    if "待伏" in scope_mode:
+                        reach_display = f"到達度: {r['reach_val']:.1f}%"
+                        c_target = r['bt_val']
+                        html_buy_scope = f"""
+                        <div style="background: rgba(255, 215, 0, 0.05); padding: 1.2rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                            <div style="font-size: 15px; color: rgba(250, 250, 250, 0.8); margin-bottom: 8px;">🎯 半値押し 買値目標</div>
+                            <div style="font-size: 2.6rem; font-weight: bold; color: #FFD700; line-height: 1.1;">{int(c_target):,}<span style="font-size: 18px; margin-left:4px;">円</span></div>
+                        </div>"""
+                    else:
+                        reach_display = f"RSI: {r['rsi']:.1f}%"
+                        c_target = int(r['lc'] * 1.01)
+                        exec_price = int(r['lc'] * 1.02)
+                        defense_line = int(r['lc'] * 0.95)
+                        html_buy_scope = f"""
+                        <div style="background: rgba(255, 215, 0, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                            <div style="font-size: 14px; color: rgba(250, 250, 250, 0.8); margin-bottom: 4px; text-align: center;">🎯 トリガー (終値+1%)</div>
+                            <div style="font-size: 2.2rem; font-weight: bold; color: #FFD700; text-align: center; line-height: 1.1;">{int(c_target):,}<span style="font-size: 16px; margin-left:4px;">円</span></div>
+                            <div style="margin: 12px 0 8px 0; border-top: 1px dashed rgba(255, 215, 0, 0.4);"></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 8px; margin-bottom: 8px;">
+                                <span style="font-size: 16px; color: #ccc;">⚔️ 執行(+2%)</span><span style="font-size: 20px; font-weight: bold; color: #FFD700;">{exec_price:,}円</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 8px;">
+                                <span style="font-size: 16px; color: #ccc;">🛡️ 防衛(-5%)</span><span style="font-size: 20px; font-weight: bold; color: #ef5350;">{defense_line:,}円</span>
+                            </div>
+                        </div>"""
+
+                    tp_list = [5, 8, 10, 15, 20]; sl_list = [3, 5, 8]
+                    html_matrix_scope = f"""
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 1.2rem; border-radius: 8px; border-left: 5px solid #FFD700; height: 100%;">
+                        <div style="font-size: 15px; color: #aaa; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 4px;">📊 期待値マトリクス (基準: {int(c_target):,}円)</div>
+                        <div style="display: flex; justify-content: space-between; gap: 30px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 14px; color: #26a69a; border-bottom: 2px solid #26a69a; margin-bottom: 10px; padding-bottom: 2px;">【 利確目標 】</div>
+                                {" ".join([f'<div style="display: flex; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee; width: 45px;">+{p}%</span><span style="flex-grow: 1; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); margin: 0 10px; transform: translateY(4px);"></span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1+p/100)):,}</span></div>' for p in tp_list])}
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 14px; color: #ef5350; border-bottom: 2px solid #ef5350; margin-bottom: 10px; padding-bottom: 2px;">【 損切目安 】</div>
+                                {" ".join([f'<div style="display: flex; align-items: center; margin-bottom: 8px;"><span style="font-size: 16px; color: #eee; width: 45px;">-{l}%</span><span style="flex-grow: 1; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); margin: 0 10px; transform: translateY(4px);"></span><span style="font-size: 20px; font-weight:bold; color: #ffffff;">{int(c_target*(1-l/100)):,}</span></div>' for l in sl_list])}
+                            </div>
+                        </div>
+                    </div>"""
+
+                    html_stats = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 1rem;">
+                        <div style="background: rgba(38, 166, 154, 0.1); border-left: 3px solid #26a69a; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">ステータス:</span> <strong style="font-size: 15px; color: #fff;">{reach_display}</strong>
+                        </div>
+                        <div style="background: rgba(156, 39, 176, 0.1); border-left: 3px solid #ab47bc; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">ATR / 高値経過:</span> <strong style="font-size: 15px; color: #ce93d8;">{r.get('atr_val', 0):,}円 / {r.get('d_high', 0)}日</strong>
+                        </div>
+                        <div style="background: rgba(255, 215, 0, 0.1); border-left: 3px solid #FFD700; padding: 6px 10px; border-radius: 4px;">
+                            <span style="font-size: 12px; color: #aaa;">出来高(5日):</span> <strong style="font-size: 15px; color: #fff;">{r.get('avg_vol', 0):,} 株</strong>
+                        </div>
+                    </div>"""
+
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
                         c_m1, c_m2 = st.columns(2)
@@ -1079,24 +1138,14 @@ with tab3:
                         c_m2.metric("直近安値", f"{int(r['l14']):,}円")
                         c_m3, c_m4 = st.columns(2)
                         c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
-                        c_m4.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%")
+                        c_m4.metric("最新終値", f"{int(r['lc']):,}円", f"{daily_sign}{r['daily_pct']*100:.1f}%", delta_color="normal")
+                        st.markdown(html_stats, unsafe_allow_html=True)
                     
                     with sc_mid:
-                        if "待伏" in scope_mode:
-                            st.markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 1.2rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); text-align: center;">
-                                <div style="font-size: 15px; color: rgba(250, 250, 250, 0.8); margin-bottom: 8px;">🎯 買値目標</div>
-                                <div style="font-size: 2.6rem; font-weight: bold; color: #FFD700;">{int(r['bt_val']):,}<span style="font-size: 18px;">円</span></div></div>""", unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); text-align: center;">
-                                <div style="font-size: 14px; color: rgba(250, 250, 250, 0.8); margin-bottom: 4px;">🎯 終値+1% トリガー</div>
-                                <div style="font-size: 2.2rem; font-weight: bold; color: #FFD700;">{int(r['lc']*1.01):,}<span style="font-size: 16px;">円</span></div></div>""", unsafe_allow_html=True)
+                        st.markdown(html_buy_scope, unsafe_allow_html=True)
 
                     with sc_right:
-                        tp_list = [5, 8, 10, 15, 20]
-                        st.markdown(f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 8px; border-left: 5px solid #FFD700;">
-                            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                            {" ".join([f'<div><span style="font-size: 12px; color: #aaa;">+{p}%</span><br><b style="font-size: 16px;">{int(c_base*(1+p/100)):,}</b></div>' for p in tp_list])}
-                            </div></div>""", unsafe_allow_html=True)
+                        st.markdown(html_matrix_scope, unsafe_allow_html=True)
                     
                     st.markdown(render_technical_radar(r['df_chart'], c_base, st.session_state.bt_tp), unsafe_allow_html=True)
                     draw_chart(r['df_chart'], c_base, chart_key=f"t3_chart_{c}")
