@@ -1058,7 +1058,8 @@ with tab3:
                         if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
                         elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
                         elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
-                        rank, bg, score, macd_t = get_triage_info(macd_h, macd_h_prev, rsi_v, mode="強襲", gc_days=gc_days)
+                        # 🚨 変更：新エンジンの呼び出し（is_strict=True で処刑採点）
+                        rank, bg, score, macd_t = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_val = 100 - rsi_v
 
                     idxmax = df_14['AdjH'].idxmax()
