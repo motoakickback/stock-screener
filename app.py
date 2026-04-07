@@ -593,10 +593,16 @@ with tab1:
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
-                # 🚨 同期パッチ：⑤ IPO（英字コード）除外フィルターの適用
-                if f5_ipo:
-                    valid_codes = [c for c in valid_codes if not re.search(r'[A-Za-z]', str(c))]
-                    df = df[df['Code'].isin(valid_codes)]
+                # 🚨 同期パッチ：⑤ IPO（上場1年未満）除外フィルターのスマート適用
+                if f5_ipo and not df.empty:
+                    # APIが取得した最も古い日付（約1年前のピンポイント日）を基準とする
+                    oldest_global_date = df['Date'].min()
+                    # 各銘柄が持つ最古のデータ日付を算出
+                    stock_min_dates = df.groupby('Code')['Date'].min()
+                    # 基準日から +15日 以内にデータが存在していれば「1年前から上場している」と判定
+                    threshold_date = oldest_global_date + pd.Timedelta(days=15)
+                    valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
+                    df = df[df['Code'].isin(valid_seasoned_codes)]
 
                 if exclude_etf_flag_t1 and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
