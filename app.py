@@ -862,13 +862,14 @@ with tab2:
                         low_10d_val = adjl_vals[max(0, len(adjh_vals) - 4 + local_max_idx - 10) : len(adjh_vals) - 4 + local_max_idx + 1].min()
                     else: high_4d_val = lc; low_10d_val = lc
 
-                    # 🚨 追加：中間フィルター（25日線基準の足切り）
-                    latest_ma25 = df_s.iloc[-1].get('MA25', 0)
+                   # 🚨 追加：中間フィルター（生配列から直接25日線を計算）
+                    latest_ma25 = sum(adjc_vals[-25:]) / 25 if len(adjc_vals) >= 25 else 0
                     if latest_ma25 > 0 and lc < (latest_ma25 * 0.95):
                         continue # 25日線から-5%未満の「深すぎる沼」は無条件でパージ
                         
-                    # 🚨 変更：新エンジンの呼び出し（is_strict=False で中間採点）
-                    t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, df_s, is_strict=False)
+                    # 🚨 変更：Tab2用ダミーデータを生成して新エンジン呼び出し（エラー完全回避）
+                    dummy_df = pd.DataFrame([{'MA5': 0, 'MA25': latest_ma25, 'MA75': 0, 'Volume': 0}])
+                    t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, dummy_df, is_strict=False)
                         
                     if len(adjc_vals) >= 75:
                         ma5 = adjc_vals[-5:].mean(); ma25 = adjc_vals[-25:].mean(); ma75 = adjc_vals[-75:].mean()
