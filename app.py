@@ -616,7 +616,8 @@ with tab1:
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 35: continue 
+                    # 🚨 致命的バグ修正：35日→15日にロールバック（APIが32日分しか取得しないため）
+                    if len(group) < 15: continue 
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
