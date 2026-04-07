@@ -871,25 +871,6 @@ with tab2:
                     dummy_df = pd.DataFrame([{'MA5': 0, 'MA25': latest_ma25, 'MA75': 0, 'Volume': 0}])
                     t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, dummy_df, is_strict=False)
                         
-                    if len(adjc_vals) >= 75:
-                        ma5 = adjc_vals[-5:].mean(); ma25 = adjc_vals[-25:].mean(); ma75 = adjc_vals[-75:].mean()
-                        strict_score = 0
-                        current_vol = group[v_col].values[-1] if v_col in group.columns else 0
-                        if current_vol > (avg_vol * 1.5): strict_score += 3
-                        elif current_vol > (avg_vol * 1.2): strict_score += 1
-                        if lc > ma5 and ma5 > ma25 and ma25 > ma75: strict_score += 3
-                        if macd_h > 0 and macd_h > macd_h_prev: strict_score += 2
-                        if 55 <= rsi <= 70: strict_score += 2
-                        elif 70 < rsi <= 80: strict_score += 1
-
-                        if strict_score >= 9: t_rank = "S"; t_color = "#e53935"
-                        elif strict_score >= 7: t_rank = "A"; t_color = "#fb8c00"
-                        elif strict_score >= 5: t_rank = "B"; t_color = "#fdd835"
-                        else: t_rank = "C"; t_color = "#616161"
-                        t_score = strict_score 
-                    else:
-                        t_rank = "C"; t_color = "#616161"; t_score = 0
-
                     m_info = master_dict.get(code, {})
                     c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}")
                     c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明')
