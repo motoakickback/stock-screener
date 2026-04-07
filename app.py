@@ -989,6 +989,7 @@ with tab3:
                         
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50); atr_val = int(latest.get('ATR', 0))
+                    
                     v_col = next((col for col in df_s.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                     avg_vol = int(df_s[v_col].tail(5).mean()) if v_col else 0
                     
@@ -1025,6 +1026,7 @@ with tab3:
                     except: pass
                     
                     alerts = check_event_mines(c, target_event_data)
+                    
                     source_label = "🛡️ 監視中" if c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in) else "🚀 新規"
 
                     scope_results.append({
@@ -1075,7 +1077,9 @@ with tab3:
             
                     daily_sign = "+" if r['daily_pct'] >= 0 else ""
                     
-                    # 🚨 UI完全復元用ロジック
+                    # 🚨 修正箇所：c_base 変数の復活（ここで確実に定義）
+                    c_base = r['bt_val'] if "待伏" in scope_mode else r['lc']
+                    
                     if "待伏" in scope_mode:
                         reach_display = f"到達度: {r['reach_val']:.1f}%"
                         c_target = r['bt_val']
@@ -1147,6 +1151,7 @@ with tab3:
                     with sc_right:
                         st.markdown(html_matrix_scope, unsafe_allow_html=True)
                     
+                    # c_base は上で復元済みのため、正常に渡されます
                     st.markdown(render_technical_radar(r['df_chart'], c_base, st.session_state.bt_tp), unsafe_allow_html=True)
                     draw_chart(r['df_chart'], c_base, chart_key=f"t3_chart_{c}")
 
