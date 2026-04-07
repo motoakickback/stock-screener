@@ -934,9 +934,7 @@ with tab3:
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         
         st.markdown("---")
-        # 枠1：継続監視部隊
         watch_in = st.text_area("🛡️ 主力監視部隊 (Watchlist)", value=st.session_state.t3_watch_codes, height=120, key="t3_watch_input", help="継続して追跡する銘柄をここに保存します。")
-        # 枠2：本日新規部隊
         daily_in = st.text_area("🚀 本日新規部隊 (New Recon)", value=st.session_state.t3_daily_codes, height=120, key="t3_daily_input", help="レーダーで新規捕捉した銘柄をここに貼り付けます。")
         
         run_scope = st.button("🔫 両部隊を一括精密スキャン", use_container_width=True, type="primary")
@@ -949,13 +947,11 @@ with tab3:
             st.warning("・MACD GC後の経過日数とRSIの過熱感を両リストから抽出。\n・順張り用の損切りラインと上値ターゲットを自動計算します。")
 
     if run_scope:
-        # データの保存
         with open(T3_WATCH_FILE, "w", encoding="utf-8") as f: f.write(watch_in)
         with open(T3_DAILY_FILE, "w", encoding="utf-8") as f: f.write(daily_in)
         st.session_state.t3_watch_codes = watch_in
         st.session_state.t3_daily_codes = daily_in
 
-        # コードの抽出と統合
         all_text = watch_in + " " + daily_in
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', all_text)]))
         
@@ -973,7 +969,7 @@ with tab3:
                     if len(df_s) < 30: continue
                         
                     df_chart = calc_technicals(df_s.copy())
-                    df_14 = df_s.tail(15).iloc[:-1] # スコア計算と合わせる
+                    df_14 = df_s.tail(15).iloc[:-1]
                     df_30 = df_s.tail(31).iloc[:-1]
                     latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
                     
@@ -993,7 +989,10 @@ with tab3:
                         
                     macd_h = latest.get('MACD_Hist', 0); macd_h_prev = prev.get('MACD_Hist', 0)
                     rsi_v = latest.get('RSI', 50); atr_val = int(latest.get('ATR', 0))
-                    avg_vol = int(df_s['Volume'].tail(5).mean())
+                    
+                    # 🚨 致命的エラー回避パッチ: 出来高カラムの安全取得
+                    v_col = next((col for col in df_s.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
+                    avg_vol = int(df_s[v_col].tail(5).mean()) if v_col else 0
                     
                     bt_val = 0; reach_val = 0; sl_val = 0; tp_val = 0; gc_days = 0; is_bt_broken = False; is_trend_broken = False
                     
@@ -1029,8 +1028,7 @@ with tab3:
                     
                     alerts = check_event_mines(c, target_event_data)
                     
-                    # リストの出所を特定
-                    source_label = "🛡️ 監視中" if c in re.findall(r'\d{4}', watch_in) else "🚀 新規"
+                    source_label = "🛡️ 監視中" if c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in) else "🚀 新規"
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector, 'scale': c_scale,
@@ -1047,7 +1045,6 @@ with tab3:
                     st.divider()
                     c = str(r['code']); n = str(r['name'])
                     
-                    # UI: 出所バッジの表示
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     source_badge = f'<span style="background-color: {source_color}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-right: 0.5rem;">{r["source"]}</span>'
                     
