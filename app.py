@@ -105,6 +105,9 @@ if now.hour >= 19:
 # --- ⚙️ システム全体設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
+# --- ⚙️ システム全体設定の永続化 ---
+SETTINGS_FILE = f"saved_settings_{user_id}.json"
+
 def load_settings():
     defaults = {
         "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
@@ -115,8 +118,9 @@ def load_settings():
         "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
-        "sim_tp": 10, "sim_sl": 8, "sim_limit_d": 4, "sim_sell_d": 10, "sim_push_r": 50.0,
-        "sim_pass_req_sim_v2": 8, "sim_rsi_lim_sim_v2": 45, "sim_time_risk_sim_v2": 5
+        # 新しく設定したTab4用の永続化キー
+        "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
+        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -131,8 +135,9 @@ def save_settings():
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
             "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
-            "sim_tp", "sim_sl", "sim_limit_d", "sim_sell_d", "sim_push_r",
-            "sim_pass_req_sim_v2", "sim_rsi_lim_sim_v2", "sim_time_risk_sim_v2"]
+            # 新しく設定したTab4用の永続化キーを保存対象に追加
+            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
+            "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
 
@@ -1174,23 +1179,24 @@ with tab4:
         st.info("※ 戦術切替時、売り期限は自動で「待伏:10日 / 強襲:5日」に再装填されます。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         
-        st.session_state.sim_tp_val = cp1.number_input("🎯 利確目標(%)", value=st.session_state.sim_tp_val, step=1)
-        st.session_state.sim_sl_val = cp2.number_input("🛡️ 損切目安(%)", value=st.session_state.sim_sl_val, step=1)
-        st.session_state.sim_limit_d_val = cp3.number_input("⏳ 買い期限(日)", value=st.session_state.sim_limit_d_val, step=1)
-        st.session_state.sim_sell_d_val = cp4.number_input("⏳ 売り期限(日)", value=st.session_state.sim_sell_d_val, step=1)
+        # 🚨 同期パッチ：valueによる強制押し込みを廃止し、keyによる完全直結へ変更
+        cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp_val", on_change=save_settings)
+        cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl_val", on_change=save_settings)
+        cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d_val", on_change=save_settings)
+        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d_val", on_change=save_settings)
         
         st.divider()
         if "待伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            st.session_state.sim_push_r_val = ct1.number_input("📉 押し目待ち(%)", value=st.session_state.sim_push_r_val, step=0.1, format="%.1f")
-            st.session_state.sim_pass_req_val = ct2.number_input("掟クリア要求数", value=st.session_state.sim_pass_req_val, step=1, max_value=9, min_value=1)
-            st.session_state.sim_rsi_lim_ambush_val = ct3.number_input("RSI上限 (過熱感)", value=st.session_state.sim_rsi_lim_ambush_val, step=5)
+            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="sim_push_r_val", on_change=save_settings)
+            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="sim_pass_req_val", on_change=save_settings)
+            ct3.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_ambush_val", on_change=save_settings)
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            st.session_state.sim_rsi_lim_assault_val = ct1.number_input("RSI上限 (過熱感)", value=st.session_state.sim_rsi_lim_assault_val, step=5)
-            st.session_state.sim_time_risk_val = ct2.number_input("時間リスク上限（到達予想日数）", value=st.session_state.sim_time_risk_val, step=1)
+            ct1.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_assault_val", on_change=save_settings)
+            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="sim_time_risk_val", on_change=save_settings)
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
