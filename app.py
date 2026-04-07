@@ -940,46 +940,61 @@ with tab2:
             st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
 
 with tab3:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（2系統・独立索敵）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
-    # --- 📂 ストレージパスの設定 ---
-    T3_WATCH_FILE = f"saved_t3_watch_{user_id}.txt"  # 継続監視用
-    T3_DAILY_FILE = f"saved_t3_daily_{user_id}.txt"  # 本日新規用
+    # --- 📂 ストレージパスの設定（4系統独立） ---
+    T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"  # 待伏: 監視
+    T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"  # 待伏: 新規
+    T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"  # 強襲: 監視
+    T3_AS_DAILY_FILE = f"saved_t3_as_daily_{user_id}.txt"  # 強襲: 新規
 
     # --- 📥 データのロード処理 ---
-    if "t3_watch_codes" not in st.session_state:
-        st.session_state.t3_watch_codes = ""
-        if os.path.exists(T3_WATCH_FILE):
-            with open(T3_WATCH_FILE, "r", encoding="utf-8") as f: st.session_state.t3_watch_codes = f.read()
+    def load_t3_text(file_path):
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f: return f.read()
+        return ""
 
-    if "t3_daily_codes" not in st.session_state:
-        st.session_state.t3_daily_codes = ""
-        if os.path.exists(T3_DAILY_FILE):
-            with open(T3_DAILY_FILE, "r", encoding="utf-8") as f: st.session_state.t3_daily_codes = f.read()
+    if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
+    if "t3_am_daily" not in st.session_state: st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
+    if "t3_as_watch" not in st.session_state: st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
+    if "t3_as_daily" not in st.session_state: st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     
     with col_s1:
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
+        is_ambush = "待伏" in scope_mode
         
         st.markdown("---")
-        watch_in = st.text_area("🛡️ 主力監視部隊 (Watchlist)", value=st.session_state.t3_watch_codes, height=120, key="t3_watch_input", help="継続して追跡する銘柄をここに保存します。")
-        daily_in = st.text_area("🚀 本日新規部隊 (New Recon)", value=st.session_state.t3_daily_codes, height=120, key="t3_daily_input", help="レーダーで新規捕捉した銘柄をここに貼り付けます。")
+        # 🚨 ラジオボタンの選択に応じて、表示する入力枠を動的に切り替える
+        if is_ambush:
+            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120, help="待伏（押し目）狙いの継続監視銘柄")
+            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120, help="待伏レーダーで本日捕捉した新規銘柄")
+        else:
+            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120, help="強襲（順張り）狙いの継続監視銘柄")
+            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120, help="強襲レーダーで本日捕捉した新規銘柄")
         
-        run_scope = st.button("🔫 両部隊を一括精密スキャン", use_container_width=True, type="primary")
+        run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
-        if "待伏" in scope_mode:
-            st.info("・主力と新規、両方のリストから『鉄の掟』適合度を同時算出します。\n・波形（三尊・Wトップ）の検知を行い、最終的な撃墜判定を下します。")
+        if is_ambush:
+            st.info("・【待伏専用】主力と新規、両リストから『鉄の掟』適合度を同時算出します。\n・波形（三尊・Wトップ）の検知を行い、最終的な撃墜判定を下します。")
         else:
-            st.warning("・MACD GC後の経過日数とRSIの過熱感を両リストから抽出。\n・順張り用の損切りラインと上値ターゲットを自動計算します。")
+            st.warning("・【強襲専用】主力と新規、両リストからMACD GC後の経過日数とRSIを抽出。\n・順張り用の損切りラインと上値ターゲットを自動計算します。")
 
     if run_scope:
-        with open(T3_WATCH_FILE, "w", encoding="utf-8") as f: f.write(watch_in)
-        with open(T3_DAILY_FILE, "w", encoding="utf-8") as f: f.write(daily_in)
-        st.session_state.t3_watch_codes = watch_in
-        st.session_state.t3_daily_codes = daily_in
+        # 🚨 選択中のモードのファイルにのみ保存処理を行う
+        if is_ambush:
+            with open(T3_AM_WATCH_FILE, "w", encoding="utf-8") as f: f.write(watch_in)
+            with open(T3_AM_DAILY_FILE, "w", encoding="utf-8") as f: f.write(daily_in)
+            st.session_state.t3_am_watch = watch_in
+            st.session_state.t3_am_daily = daily_in
+        else:
+            with open(T3_AS_WATCH_FILE, "w", encoding="utf-8") as f: f.write(watch_in)
+            with open(T3_AS_DAILY_FILE, "w", encoding="utf-8") as f: f.write(daily_in)
+            st.session_state.t3_as_watch = watch_in
+            st.session_state.t3_as_daily = daily_in
 
         all_text = watch_in + " " + daily_in
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', all_text)]))
@@ -987,6 +1002,7 @@ with tab3:
         if not t_codes: 
             st.warning("有効な銘柄コードが確認できません。両方の入力枠を確認してください。")
         else:
+            # 👇 （この下から `with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):` の処理が続きます）
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 scope_results = []
                 for c in t_codes:
