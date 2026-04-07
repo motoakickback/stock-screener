@@ -567,7 +567,7 @@ with tab1:
 
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
-        with st.spinner("全銘柄からサイドバー条件に合致するターゲットを索敵中..."):
+        with st.spinner("全銘柄からサイドバー条件（全フィルター同期）に合致するターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
                 st.error("データの取得に失敗した。")
@@ -580,12 +580,23 @@ with tab1:
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
+                # 🚨 同期パッチ：① 価格上下限フィルターの適用
+                f1_min = float(st.session_state.f1_min)
+                f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo
+                f10_ex_knife = st.session_state.f10_ex_knife
+
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
-                valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                valid_price_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
                 valid_vol_codes = avg_vols[avg_vols >= 10000].index
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
+
+                # 🚨 同期パッチ：⑤ IPO（英字コード）除外フィルターの適用
+                if f5_ipo:
+                    valid_codes = [c for c in valid_codes if not re.search(r'[A-Za-z]', str(c))]
+                    df = df[df['Code'].isin(valid_codes)]
 
                 if exclude_etf_flag_t1 and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
@@ -608,7 +619,6 @@ with tab1:
 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
                 
-                # サイドバーの設定値を取得
                 push_ratio = st.session_state.push_r / 100.0
                 min14 = float(st.session_state.f9_min14)
                 max14 = float(st.session_state.f9_max14)
@@ -616,17 +626,21 @@ with tab1:
 
                 results = []
                 for code, group in df.groupby('Code'):
-                    # 🚨 致命的バグ修正：35日→15日にロールバック（APIが32日分しか取得しないため）
                     if len(group) < 15: continue 
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
+                    
+                    # 🚨 同期パッチ：⑩ 落ちるナイフ除外（直近3日間で15%以上の致命的暴落をパージ）
+                    if f10_ex_knife:
+                        recent_4d = group['AdjC'].values[-4:]
+                        if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85):
+                            continue
                     
                     adjc_vals = group['AdjC'].values
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
                     lc = adjc_vals[-1]
                     
-                    # 以前の「広域スキャン」ロジック（直近4日間の高値と、その前10日間の安値の比率）
                     recent_4d_h = adjh_vals[-4:]
                     local_max_idx = recent_4d_h.argmax()
                     high_4d_val = recent_4d_h[local_max_idx]
@@ -634,7 +648,7 @@ with tab1:
                     low_10d_val = adjl_vals[max(0, global_max_idx - 10) : global_max_idx + 1].min()
 
                     if low_10d_val <= 0: continue
-                    # 🚨 唯一の絶対条件：サイドバーの波高フィルター（1.3〜2.0倍等）のみで足切り
+                    # ⑨ 波高フィルター
                     if not (min14 <= high_4d_val / low_10d_val <= max14): continue
                     
                     wave_len = high_4d_val - low_10d_val
@@ -644,7 +658,7 @@ with tab1:
 
                     rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
                     
-                    # --- 🎖️ 掟スコアの計算（表示用。パージには使わない） ---
+                    # --- 🎖️ 掟スコアの計算 ---
                     df_14 = group.tail(15).iloc[:-1]
                     df_30 = group.tail(31).iloc[:-1]
                     h14_real = df_14['AdjH'].max()
@@ -676,7 +690,6 @@ with tab1:
                     st.warning("現在、掟を満たすターゲットは存在しない。")
                     st.session_state.tab1_scan_results = []
                 else:
-                    # Tリアージのスコアと、掟スコアの両方を加味してソート
                     st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
                 import gc; gc.collect()
 
@@ -704,7 +717,6 @@ with tab1:
             
             triage_badge = f'<span style="background-color: {r.get("triage_bg")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
             
-            # 🎖️ スコアバッジ（7以上なら緑、それ未満なら警告色）
             score_val = r.get("score", 0)
             score_color = "#2e7d32" if score_val >= 7 else "#ff5722"
             score_bg = "rgba(46, 125, 50, 0.15)" if score_val >= 7 else "rgba(255, 87, 34, 0.15)"
