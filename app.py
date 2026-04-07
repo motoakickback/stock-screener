@@ -451,6 +451,47 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
             else: return "B📈", "#0288d1", 3, macd_t
         else: return "C👁️", "#616161", 1, macd_t
 
+def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
+    """ 強襲(順張り)専用のスコアリングエンジン """
+    if gc_days <= 0 or df_chart is None or df_chart.empty:
+        return "圏外 💀", "#424242", 0, ""
+        
+    latest = df_chart.iloc[-1]
+    ma5 = latest.get('MA5', 0)
+    ma25 = latest.get('MA25', 0)
+    ma75 = latest.get('MA75', 0)
+    
+    # 出来高の安全な取得
+    v_col = next((col for col in df_chart.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
+    vol_latest = latest[v_col] if v_col else 0
+    vol_avg = df_chart[v_col].tail(5).mean() if v_col else 0
+
+    score = 50  # GC発動の基礎点
+
+    # ⚖️ 【中間加点】Tab2/Tab3共通の基礎評価
+    if ma25 > 0:
+        if lc >= ma25 * 0.95: score += 10  # 沼からの脱出初動（+10点）
+        if lc >= ma25: score += 10         # 25日線上抜け（+10点）
+    if vol_avg > 0 and vol_latest > vol_avg * 1.5: score += 10 # 出来高の爆発（+10点）
+    if 50 <= rsi_v <= 70: score += 10      # 強い上昇モメンタム（+10点）
+
+    # 💀 【超厳格減点】Tab3（精密スコープ）専用の処刑ロジック
+    if is_strict:
+        # パーフェクトオーダーの崩壊は大幅減点（騙しの可能性大）
+        if not (lc > ma5 > ma25 > ma75): score -= 40
+        # 出来高が伴っていないGCはフェイクとみなす
+        if vol_avg > 0 and vol_latest <= vol_avg * 1.2: score -= 20
+        # RSI過熱(75超)は高値掴みのリスク大
+        if rsi_v > 75: score -= 20
+
+    # 🎯 最終ランク判定
+    if score >= 80: rank = "S"; bg = "#d32f2f"
+    elif score >= 60: rank = "A"; bg = "#f57c00"
+    elif score >= 40: rank = "B"; bg = "#fbc02d"
+    else: rank = "C 💀"; bg = "#424242"
+    
+    return rank, bg, score, "GC発動中"
+
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
     latest = df.iloc[-1]; prev = df.iloc[-2]
@@ -821,7 +862,13 @@ with tab2:
                         low_10d_val = adjl_vals[max(0, len(adjh_vals) - 4 + local_max_idx - 10) : len(adjh_vals) - 4 + local_max_idx + 1].min()
                     else: high_4d_val = lc; low_10d_val = lc
 
-                    t_rank, t_color, t_score, t_macd = get_triage_info(macd_h, macd_h_prev, rsi, mode="強襲", gc_days=gc_days)
+                    # 🚨 追加：中間フィルター（25日線基準の足切り）
+                    latest_ma25 = df_chart.iloc[-1].get('MA25', 0)
+                    if latest_ma25 > 0 and lc < (latest_ma25 * 0.95):
+                        continue # 25日線から-5%未満の「深すぎる沼」は無条件でパージ
+                        
+                    # 🚨 変更：新エンジンの呼び出し（is_strict=False で中間採点）
+                    t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, df_chart, is_strict=False)
 
                     if len(adjc_vals) >= 75:
                         ma5 = adjc_vals[-5:].mean(); ma25 = adjc_vals[-25:].mean(); ma75 = adjc_vals[-75:].mean()
