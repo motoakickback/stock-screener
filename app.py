@@ -1155,15 +1155,32 @@ with tab3:
                         st.markdown(html_box, unsafe_allow_html=True)
 
                     with sc_right:
+                        # 🚨 追加：判定の属性（攻め/守り）に応じた推奨利確％の自動算出
+                        is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
+                        rec_tps = [10, 15] if is_aggressive else [5]
+
                         tp_list = [5, 10, 15, 20]; sl_list = [5, 8, 10]
                         html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:15px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444;'>📊 期待値マトリクス (基準:{int(r['bt_val']):,}円)</div><div style='display:flex; gap:30px;'>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1+p/100)):,}</b></div>" for p in tp_list]) + "</div>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1-l/100)):,}</b></div>" for l in sl_list]) + "</div></div></div>"
-                        st.markdown(html_matrix, unsafe_allow_html=True)
-                    
-                    st.markdown(render_technical_radar(r['df_chart'], c_base, 10), unsafe_allow_html=True)
-                    draw_chart(r['df_chart'], c_base, chart_key=f"t3_chart_{r['code']}")
+                        
+                        # 利確列の生成（推奨値のハイライト処理）
+                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>"
+                        for p in tp_list:
+                            if p in rec_tps:
+                                # 🎯 推奨値のハイライトUI
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{p}% <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:4px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{int(r['bt_val']*(1+p/100)):,}</b></div>"
+                            else:
+                                # 通常UI
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1+p/100)):,}</b></div>"
+                        html_matrix += "</div>"
 
+                        # 損切列の生成
+                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>"
+                        for l in sl_list:
+                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1-l/100)):,}</b></div>"
+                        html_matrix += "</div></div></div>"
+                        
+                        st.markdown(html_matrix, unsafe_allow_html=True)
+                        
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
