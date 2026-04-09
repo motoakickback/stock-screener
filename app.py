@@ -1437,23 +1437,41 @@ with tab4:
                                         if idx_eval >= 1:
                                             if df.iloc[idx_eval].get('MACD_Hist', 0) > 0 and df.iloc[idx_eval-1].get('MACD_Hist', 0) <= 0:
                                                 gc_triggered = True
-                                                trigger_price = df.iloc[idx_eval]['AdjC'] * 1.01; break
+                                                # 🚨 新ロジック：固定1%を廃止し、14日高値 or ATR基準の動的ブレイクに変更
+                                                eval_h14 = df.iloc[max(0, idx_eval-14):idx_eval]['AdjH'].max()
+                                                eval_atr = df.iloc[idx_eval].get('ATR', 0)
+                                                eval_c = df.iloc[idx_eval]['AdjC']
+                                                # 高値を抜けるか、既に高値圏ならATRの半分を上抜けた位置をトリガーとする
+                                                trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
+                                                break
+                                    
                                     if gc_triggered and rsi_prev <= t_p1 and exp_days < sim_time_risk:
                                         if td['AdjH'] >= trigger_price:
-                                            exec_p = max(td['AdjO'], trigger_price)
-                                            pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
+                                            # 🚨 新ロジック：執行値の上限を Trigger + (ATR * 0.2) とする
+                                            exec_limit = trigger_price + (atr_prev * 0.2)
+                                            exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
+                                            pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
+                                            
                             else:
                                 bp = pos['b_p']; held = i - pos['b_i']; sp = 0
                                 current_tp = sim_tp if is_ambush else t_p2
-                                sl_val = bp * (1 - (sim_sl_i / 100.0)); tp_val = bp * (1 + (current_tp / 100.0))
+                                e_atr = pos.get('entry_atr', prev.get('ATR', 0))
+                                t_price = pos.get('trigger', bp)
+                                
+                                # 🚨 新ロジック：防衛線(損切)をATRベース（トリガーから -1.0 ATR）に換装
+                                sl_val = t_price - (e_atr * 1.0)
+                                tp_val = bp * (1 + (current_tp / 100.0)) # 利確は従来の%最適化目標を維持
+                                
                                 if td['AdjL'] <= sl_val: sp = min(td['AdjO'], sl_val)
                                 elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
                                 elif held >= sim_sell_d: sp = td['AdjC']
+                                
                                 if sp > 0:
                                     sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
                                     p_amt = int((sp - bp) * st.session_state.bt_lot)
                                     all_t.append({'銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt})
                                     pos = None
+                                    
                     if all_t:
                         p_df = pd.DataFrame(all_t)
                         total_p = p_df['損益額(円)'].sum()
