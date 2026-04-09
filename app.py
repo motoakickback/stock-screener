@@ -1133,14 +1133,25 @@ with tab3:
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
                     with sc_left:
+                        # 🚨 追加：ATR値の計算とボラティリティの算出
+                        atr_v = r.get('atr_val', 0)
+                        # 万が一ATRが取得できない場合の安全装置（終値の5%）
+                        if atr_v == 0: atr_v = r.get('lc', 0) * 0.05 
+                        atr_pct = (atr_v / r.get('lc', 1)) * 100 if r.get('lc', 0) > 0 else 0
+
+                        # 既存の計器群（維持）
                         c_m1, c_m2 = st.columns(2)
                         c_m1.metric("直近高値", f"{int(r['h14']):,}円")
                         c_m2.metric("直近安値", f"{int(r['l14']):,}円")
+                        
                         c_m3, c_m4 = st.columns(2)
                         c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
                         c_m4.metric("最新終値", f"{int(r['lc']):,}円")
+                        
+                        # 🚨 追加：ATR（風速計）を独立した大きな計器として配置
+                        st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
+                        
                         st.caption(f"🏭 業種: {r.get('sector','不明')}")
-
                     with sc_mid:
                         if is_ambush:
                             html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
