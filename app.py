@@ -153,23 +153,15 @@ def apply_market_preset():
     save_settings()
 
 # --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
-# 【修正】キャッシュ保持時間を1分(60秒)へ短縮し、yfinanceの内部キャッシュを強制突破
+# 【修正】不要なヘッダー偽装を排除し、標準通信のままTTL（キャッシュ保持）のみ60秒へ短縮
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        import requests
+        import pandas as pd
         
-        # 🔥 キャッシュ無効化ヘッダーを持たせた強制フェッチセッション
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-        })
-        
-        # セッションをyfinanceに渡し、常に最新のデータを要求
-        tk_ni = yf.Ticker("^N225", session=session)
+        # セッション偽装を行わず、標準のまま呼び出す
+        tk_ni = yf.Ticker("^N225")
         hist_ni = tk_ni.history(period="3mo")
         
         if len(hist_ni) >= 2:
@@ -179,7 +171,8 @@ def get_macro_weather():
             if 'Date' in df_ni.columns:
                 df_ni['Date'] = pd.to_datetime(df_ni['Date'], utc=True).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni, "df": df_ni}}
-    except: return None
+    except: 
+        return None
 
 def render_macro_board():
     data = get_macro_weather()
