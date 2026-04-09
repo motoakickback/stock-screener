@@ -1029,9 +1029,10 @@ with tab3:
         all_text = watch_in + " " + daily_in
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', all_text)]))
         
-        if not t_codes: st.warning("コードが確認できません。")
+        if not t_codes:
+            st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"精密計算中..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 scope_results = []
                 for c in t_codes:
                     api_code = c if len(c) == 5 else c + "0"
@@ -1040,6 +1041,17 @@ with tab3:
                     df_s = clean_df(pd.DataFrame(raw_s.get("bars", [])))
                     if len(df_s) < 30: continue
                         
+                    # 🚨 事実確認：銘柄台帳(master_df)から属性情報を取得
+                    c_short = c[:4]
+                    m_row = master_df[master_df['Code'].astype(str).str.contains(c_short)] if not master_df.empty else pd.DataFrame()
+                    
+                    if not m_row.empty:
+                        c_name = m_row.iloc[0]['CompanyName']
+                        c_market = m_row.iloc[0]['Market']
+                        c_sector = m_row.iloc[0].get('Sector', '不明')
+                    else:
+                        c_name = f"銘柄 {c_short}"; c_market = "不明"; c_sector = "不明"
+
                     df_chart = calc_technicals(df_s.copy())
                     df_14 = df_s.tail(15).iloc[:-1]
                     latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
@@ -1061,9 +1073,7 @@ with tab3:
                         rank, bg, score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev.get('MACD_Hist', 0), rsi_v, lc, bt_val, mode="待伏")
                         reach_val = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
-                        # 🚨 修正：強襲モードの動的パラメーター算出
-                        bt_val = int(max(h14, lc + (atr_val * 0.5))) # トリガー
-                        tp_val = int(lc * 1.10)
+                        bt_val = int(max(h14, lc + (atr_val * 0.5)))
                         hist_vals = df_chart['MACD_Hist'].tail(5).values
                         if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
                         elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
@@ -1072,7 +1082,8 @@ with tab3:
                         reach_val = 100 - rsi_v
 
                     scope_results.append({
-                        'code': c, 'name': df_chart.iloc[0].get('Name', f"銘柄 {c[:4]}"), 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 
+                        'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector,
+                        'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 
                         'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'is_trend_broken': is_trend_broken, 
                         'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'gc_days': gc_days, 'rank': rank, 'bg': bg, 'score': score, 
                         'reach_val': reach_val, 'atr_val': atr_val, 'rsi': rsi_v, 'df_chart': df_chart,
@@ -1080,41 +1091,37 @@ with tab3:
                     })
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
+                
+                # --- 表示ループ ---
                 for r in scope_results:
                     st.divider()
-                    
-                    # 🚨 1. 背景情報の再構築（消えていた情報を全て変数化）
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
-                    m_lower = str(r.get('market', '不明')).lower()
+                    m_lower = str(r['market']).lower()
                     
                     if 'プライム' in m_lower or '一部' in m_lower: 
                         badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
                         badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
                     else: 
-                        badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("market")}</span>'
+                        badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
 
-                    # 🚨 2. 各種バッジの生成
-                    source_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
-                    triage_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
+                    s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+                    t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
-                    # 🚨 3. タイトル・ヘッダー情報の出力（企業名を復活）
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{source_badge} ({r['code'][:4]}) {r['name']}</h3>
+                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3>
                             <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                {badge_html}{triage_badge}
+                                {badge_html}{t_badge}
                                 <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
                                 <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 警告表示
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
                     if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
                     
-                    # 待伏/強襲のロジック分岐
                     c_base = r['bt_val'] if is_ambush else r['lc']
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
@@ -1129,26 +1136,24 @@ with tab3:
 
                     with sc_mid:
                         if is_ambush:
-                            html_content = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
+                            html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
                         else:
                             t_p = r['bt_val']; e_p = int(t_p + (r['atr_val'] * 0.2)); d_p = int(t_p - r['atr_val'])
-                            html_content = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
-                                <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値/ATR基準)</div>
+                            html_box = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
+                                <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値基準)</div>
                                 <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
                                 <div style='border-top:1px dashed #444; margin:8px 0;'></div>
                                 <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
                                 <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}円</span></div></div>"""
-                        st.markdown(html_content, unsafe_allow_html=True)
+                        st.markdown(html_box, unsafe_allow_html=True)
 
                     with sc_right:
-                        c_target = r['bt_val'] if is_ambush else r['bt_val']
                         tp_list = [5, 10, 15, 20]; sl_list = [5, 8, 10]
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:15px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444;'>📊 期待値マトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(c_target*(1+p/100)):,}</b></div>" for p in tp_list]) + "</div>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(c_target*(1-l/100)):,}</b></div>" for l in sl_list]) + "</div></div></div>"
+                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:15px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444;'>📊 期待値マトリクス (基準:{int(r['bt_val']):,}円)</div><div style='display:flex; gap:30px;'>"
+                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1+p/100)):,}</b></div>" for p in tp_list]) + "</div>"
+                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1-l/100)):,}</b></div>" for l in sl_list]) + "</div></div></div>"
                         st.markdown(html_matrix, unsafe_allow_html=True)
                     
-                    # 計器フライト（テクニカルレーダー）
                     st.markdown(render_technical_radar(r['df_chart'], c_base, 10), unsafe_allow_html=True)
                     draw_chart(r['df_chart'], c_base, chart_key=f"t3_chart_{r['code']}")
 
