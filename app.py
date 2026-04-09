@@ -1187,7 +1187,12 @@ with tab3:
                         for m in sl_multipliers:
                             l_val = int(c_target - (atr_v * m))
                             pct_val = (1 - (l_val / c_target)) * 100 if c_target > 0 else 0
-                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
+                            
+                            if m == 1.0:
+                                # 🛡️ 絶対防衛線（-1.0 ATR）の固定ハイライトUI
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span></span><b style='font-size:1.1rem; color:#fff;'>{l_val:,}</b></div>"
+                            else:
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
                         html_matrix += "</div></div></div>"
                         
                         st.markdown(html_matrix, unsafe_allow_html=True)
