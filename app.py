@@ -1082,8 +1082,10 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 for r in scope_results:
                     st.divider()
-                    st.markdown(f"### <span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span> ({r['code'][:4]}) {r['name']} {f'<span style=\"background-color:{r[\"bg\"]}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px;\">🎯 {r[\"rank\"]}</span>'}", unsafe_allow_html=True)
-                    
+                    # 🚨 修正：複雑なf-stringを分割し、構文エラーを完全排除
+                    html_source = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+                    html_rank = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px;'>🎯 {r['rank']}</span>"
+                    st.markdown(f"### {html_source} ({r['code'][:4]}) {r['name']} {html_rank}", unsafe_allow_html=True)                    
                     if r['is_dt'] or r['is_hs']: st.error("🚨 危険波形検知（三尊/Wトップ）")
                     if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 MACD GC後 {r['gc_days']}日目")
                     
