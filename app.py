@@ -1473,6 +1473,33 @@ with tab5:
                 {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
             ])
 
+    # --- 🛰️ 衛星通信：現在値の一括同期ボタン ---
+    if st.button("🔄 全軍の現在値を自動取得 (yfinance同期)", use_container_width=True):
+        with st.spinner("衛星通信中... 各部隊の現在地を再取得しています"):
+            import yfinance as yf
+            updated = False
+            for idx, row in st.session_state.frontline_df.iterrows():
+                code = str(row['銘柄']).strip()
+                if len(code) >= 4:
+                    api_code = code[:4] + ".T"  # 日本株のティッカー形式に変換
+                    try:
+                        tk = yf.Ticker(api_code)
+                        hist = tk.history(period="1d")
+                        if not hist.empty:
+                            latest_price = hist['Close'].iloc[-1]
+                            st.session_state.frontline_df.at[idx, '現在値'] = round(latest_price, 1)
+                            updated = True
+                    except:
+                        pass
+            
+            if updated:
+                st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
+                st.success("🎯 現在値の同期が完了しました。（※yfinanceの仕様上、最大20分の遅延が含まれます）")
+                st.rerun()
+            else:
+                st.warning("データの取得に失敗しました。")
+    # ---------------------------------------------
+
     st.markdown("#### ⚙️ 部隊パラメーター入力 (コントロールパネル)")
     st.caption("※ 直接数値を書き換えてください。下部の「行を追加」で新しい銘柄を無限に追加可能です。")
 
