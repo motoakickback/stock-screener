@@ -1501,8 +1501,7 @@ with tab4:
                     styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
 
-with tab5:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
+st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
@@ -1519,15 +1518,15 @@ with tab5:
                 st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame([
-                    {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
-                    {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
-                    {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
+                    {"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0},
+                    {"銘柄": "3696", "買値": 1515.0, "第1利確": 0.0, "第2利確": 1680.0, "損切": 1395.0, "現在値": 1510.0},
+                    {"銘柄": "6769", "買値": 957.0, "第1利確": 0.0, "第2利確": 1042.0, "損切": 892.0, "現在値": 939.0}
                 ])
         else:
             st.session_state.frontline_df = pd.DataFrame([
-                {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
-                {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
-                {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
+                {"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0},
+                {"銘柄": "3696", "買値": 1515.0, "第1利確": 0.0, "第2利確": 1680.0, "損切": 1395.0, "現在値": 1510.0},
+                {"銘柄": "6769", "買値": 957.0, "第1利確": 0.0, "第2利確": 1042.0, "損切": 892.0, "現在値": 939.0}
             ])
 
     # --- 🛰️ 衛星通信：現在値の一括同期ボタン ---
@@ -1592,24 +1591,78 @@ with tab5:
         buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
         active_squads += 1
 
-        if cur <= sl: st_text, st_color = "💀 被弾（防衛線突破・即時撤退）", "#ef5350"
-        elif cur < buy: st_text, st_color = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800"
-        elif cur < tp1: st_text, st_color = "🟢 巡航中（第1目標へ接近中）", "#26a69a"
-        elif cur < tp2: st_text, st_color = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5"
-        else: st_text, st_color = "🏆 最終目標到達（任務完了）", "#ab47bc"
+        # 戦況ステータスの判定と色設定
+        if cur <= sl: 
+            st_text, st_color, bg_rgba = "💀 被弾（防衛線突破・即時撤退）", "#ef5350", "rgba(239, 83, 80, 0.15)"
+        elif cur < buy: 
+            st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
+        elif tp1 > 0 and cur < tp1: 
+            st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
+        elif tp2 > 0 and cur < tp2: 
+            st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
+        else: 
+            st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
-        st.markdown(f"**部隊 [{ticker}]** ｜ 戦況: <span style='color:{st_color}; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
-
-        fig = go.Figure()
-        min_x = min(sl, cur) * 0.98; max_x = max(tp2, cur) * 1.02
+        # 🚨 UI改修コア：HTMLによる大型HUDパネル（カンマ区切り対応、0はハイフン表示）
+        fmt = lambda x: f"¥{x:,.1f}" if x > 0 else "未設定"
         
-        fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
-        bar_color = "rgba(38, 166, 154, 0.7)" if cur >= buy else "rgba(239, 83, 80, 0.7)"
+        hud_html = f"""
+        <div style="margin-bottom: 5px;">
+            <span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span>
+            <span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color}; margin-bottom: 0px;">
+            <div style="flex: 1; text-align: left;">
+                <div style="font-size: 12px; color: #ef5350;">損切</div>
+                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div>
+            </div>
+            <div style="flex: 1; text-align: left;">
+                <div style="font-size: 12px; color: #ffca28;">買値</div>
+                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div>
+            </div>
+            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};">
+                <div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div>
+                <div style="font-size: 24px; color: #fff; font-weight: bold; letter-spacing: 1px;">{fmt(cur)}</div>
+            </div>
+            <div style="flex: 1; text-align: right;">
+                <div style="font-size: 12px; color: #26a69a;">第1利確</div>
+                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div>
+            </div>
+            <div style="flex: 1; text-align: right;">
+                <div style="font-size: 12px; color: #42a5f5;">第2利確</div>
+                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div>
+            </div>
+        </div>
+        """
+        st.markdown(hud_html, unsafe_allow_html=True)
+
+        # グラフ用のデータ構築（0.0の未設定値を除外してスケール崩れを防ぐ）
+        x_vals = []; t_vals = []; c_vals = []
+        if sl > 0: x_vals.append(sl); t_vals.append("損切"); c_vals.append("#ef5350")
+        if buy > 0: x_vals.append(buy); t_vals.append("買値"); c_vals.append("#ffca28")
+        if tp1 > 0: x_vals.append(tp1); t_vals.append("第1利確"); c_vals.append("#26a69a")
+        if tp2 > 0: x_vals.append(tp2); t_vals.append("第2利確"); c_vals.append("#42a5f5")
+        
+        valid_x = x_vals + [cur]
+        min_x = min(valid_x) * 0.98 if valid_x else 0
+        max_x = max(valid_x) * 1.02 if valid_x else 100
+
+        # スリム化されたPlotlyバーグラフ（文字を取り除き、視覚インジケーターに特化）
+        fig = go.Figure()
+        fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#444", width=2))
+        
+        bar_color = "rgba(38, 166, 154, 0.6)" if cur >= buy else "rgba(239, 83, 80, 0.6)"
         fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color=bar_color, width=12))
-        fig.add_trace(go.Scatter(x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode="markers+text", text=["損切", "買値", "第1利確", "第2利確"], textposition="top center", textfont=dict(size=11, color="white"), marker=dict(size=10, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]), hoverinfo="x+text", name="防衛線"))
-        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers+text", text=[f"現在値<br>{cur}"], textposition="bottom center", textfont=dict(size=12, color=st_color), marker=dict(size=20, symbol="cross-thin", line=dict(width=3, color=st_color)), hoverinfo="x", name="ターゲット"))
-        fig.update_layout(height=180, showlegend=False, yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]), xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")), margin=dict(l=10, r=10, t=30, b=50), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
+        
+        # 目標ポイントのドットのみ表示（文字はホバー時のみ）
+        fig.add_trace(go.Scatter(x=x_vals, y=[0]*len(x_vals), mode="markers", text=t_vals, hoverinfo="x+text", marker=dict(size=12, color=c_vals), name="防衛線"))
+        # 現在値のターゲットマーク
+        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", text=[f"現在値: {cur}"], hoverinfo="text", marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)), name="ターゲット"))
+        
+        # グラフの高さを大幅に圧縮
+        fig.update_layout(height=80, showlegend=False, yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]), xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")), margin=dict(l=10, r=10, t=10, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
         st.plotly_chart(fig, use_container_width=True)
+        st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True) # 余白
 
     if active_squads == 0: st.info("現在、展開中の部隊はありません。上の表にデータを入力してください。")
 
