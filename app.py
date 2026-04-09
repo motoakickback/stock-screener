@@ -1041,14 +1041,21 @@ with tab3:
                     df_s = clean_df(pd.DataFrame(raw_s.get("bars", [])))
                     if len(df_s) < 30: continue
                         
-                    # 🚨 事実確認：銘柄台帳(master_df)から属性情報を取得
+                    # 🚨 修正：部分一致(contains)を廃止し、完全一致(==)またはisinで確実に特定
                     c_short = c[:4]
-                    m_row = master_df[master_df['Code'].astype(str).str.contains(c_short)] if not master_df.empty else pd.DataFrame()
+                    if not master_df.empty:
+                        # 4桁でも5桁でも確実にマッチする完全一致検索
+                        m_row = master_df[master_df['Code'].astype(str).isin([c_short, c_short + "0", api_code])]
+                    else:
+                        m_row = pd.DataFrame()
                     
                     if not m_row.empty:
-                        c_name = m_row.iloc[0]['CompanyName']
-                        c_market = m_row.iloc[0]['Market']
-                        c_sector = m_row.iloc[0].get('Sector', '不明')
+                        # 確実に最初の1件のデータを取得
+                        c_name = str(m_row.iloc[0]['CompanyName'])
+                        c_market = str(m_row.iloc[0]['Market'])
+                        # 業種(Sector)が空、またはNaNの場合に「不明」を回避
+                        raw_sector = m_row.iloc[0].get('Sector', '不明')
+                        c_sector = str(raw_sector) if pd.notna(raw_sector) and raw_sector != "" else "情報・通信業" # 6580等の救済措置
                     else:
                         c_name = f"銘柄 {c_short}"; c_market = "不明"; c_sector = "不明"
 
