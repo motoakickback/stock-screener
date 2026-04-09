@@ -1267,25 +1267,51 @@ with tab4:
         st.info("※ 戦術切替時、売り期限は自動で「待伏:10日 / 強襲:5日」に再装填されます。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         
-        # 🚨 同期パッチ：valueによる強制押し込みを廃止し、keyによる完全直結へ変更
-        cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp_val", on_change=save_settings)
-        cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl_val", on_change=save_settings)
-        cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d_val", on_change=save_settings)
-        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d_val", on_change=save_settings)
+        # 🚨 修正：key依存を完全廃止し、value明示＋st.rerunによる絶対保持機構へ移行
+        v_tp = cp1.number_input("🎯 利確目標(%)", value=int(st.session_state.sim_tp_val), step=1)
+        if v_tp != st.session_state.sim_tp_val:
+            st.session_state.sim_tp_val = v_tp; save_settings(); st.rerun()
+            
+        v_sl = cp2.number_input("🛡️ 損切目安(%)", value=int(st.session_state.sim_sl_val), step=1)
+        if v_sl != st.session_state.sim_sl_val:
+            st.session_state.sim_sl_val = v_sl; save_settings(); st.rerun()
+            
+        v_lim = cp3.number_input("⏳ 買い期限(日)", value=int(st.session_state.sim_limit_d_val), step=1)
+        if v_lim != st.session_state.sim_limit_d_val:
+            st.session_state.sim_limit_d_val = v_lim; save_settings(); st.rerun()
+            
+        v_sell = cp4.number_input("⏳ 売り期限(日)", value=int(st.session_state.sim_sell_d_val), step=1)
+        if v_sell != st.session_state.sim_sell_d_val:
+            st.session_state.sim_sell_d_val = v_sell; save_settings(); st.rerun()
         
         st.divider()
         if "待伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="sim_push_r_val", on_change=save_settings)
-            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="sim_pass_req_val", on_change=save_settings)
-            ct3.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_ambush_val", on_change=save_settings)
+            
+            v_push = ct1.number_input("📉 押し目待ち(%)", value=float(st.session_state.sim_push_r_val), step=0.1, format="%.1f")
+            if v_push != st.session_state.sim_push_r_val:
+                st.session_state.sim_push_r_val = v_push; save_settings(); st.rerun()
+                
+            v_req = ct2.number_input("掟クリア要求数", value=int(st.session_state.sim_pass_req_val), step=1, max_value=9, min_value=1)
+            if v_req != st.session_state.sim_pass_req_val:
+                st.session_state.sim_pass_req_val = v_req; save_settings(); st.rerun()
+                
+            v_rsi_am = ct3.number_input("RSI上限 (過熱感)", value=int(st.session_state.sim_rsi_lim_ambush_val), step=5)
+            if v_rsi_am != st.session_state.sim_rsi_lim_ambush_val:
+                st.session_state.sim_rsi_lim_ambush_val = v_rsi_am; save_settings(); st.rerun()
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_assault_val", on_change=save_settings)
-            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="sim_time_risk_val", on_change=save_settings)
-
+            
+            v_rsi_as = ct1.number_input("RSI上限 (過熱感)", value=int(st.session_state.sim_rsi_lim_assault_val), step=5)
+            if v_rsi_as != st.session_state.sim_rsi_lim_assault_val:
+                st.session_state.sim_rsi_lim_assault_val = v_rsi_as; save_settings(); st.rerun()
+                
+            v_risk = ct2.number_input("時間リスク上限（到達予想日数）", value=int(st.session_state.sim_time_risk_val), step=1)
+            if v_risk != st.session_state.sim_time_risk_val:
+                st.session_state.sim_time_risk_val = v_risk; save_settings(); st.rerun()
+                
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
