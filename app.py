@@ -1082,7 +1082,9 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 for r in scope_results:
                     st.divider()
-                    # 🚨 修正：複雑なf-stringを分割し、構文エラーを完全排除
+                    # 🚨 修正：消滅していた source_color の定義を復活
+                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
+                    
                     html_source = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     html_rank = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px;'>🎯 {r['rank']}</span>"
                     st.markdown(f"### {html_source} ({r['code'][:4]}) {r['name']} {html_rank}", unsafe_allow_html=True)                    
