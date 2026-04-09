@@ -1155,28 +1155,39 @@ with tab3:
                         st.markdown(html_box, unsafe_allow_html=True)
 
                     with sc_right:
-                        # 🚨 追加：判定の属性（攻め/守り）に応じた推奨利確％の自動算出
-                        is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
-                        rec_tps = [10, 15] if is_aggressive else [5]
-
-                        tp_list = [5, 10, 15, 20]; sl_list = [5, 8, 10]
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:15px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444;'>📊 期待値マトリクス (基準:{int(r['bt_val']):,}円)</div><div style='display:flex; gap:30px;'>"
+                        c_target = r['bt_val'] if is_ambush else r['bt_val']
+                        atr_v = r.get('atr_val', 0)
+                        if atr_v == 0: atr_v = c_target * 0.05 # 予備計算
                         
-                        # 利確列の生成（推奨値のハイライト処理）
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>"
-                        for p in tp_list:
-                            if p in rec_tps:
+                        # 🚨 新ロジック：固定％を廃止し、ATRの倍数（マルチプル）でターゲットを生成
+                        tp_multipliers = [0.5, 1.0, 2.0, 3.0]
+                        sl_multipliers = [0.5, 1.0, 2.0]
+
+                        # 判定に応じた推奨ターゲットの自動選択
+                        is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
+                        rec_tps = [2.0, 3.0] if is_aggressive else [0.5, 1.0]
+
+                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'>"
+                        
+                        # 【利確列】
+                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
+                        for m in tp_multipliers:
+                            p_val = int(c_target + (atr_v * m))
+                            pct_val = ((p_val / c_target) - 1) * 100 if c_target > 0 else 0
+                            
+                            if m in rec_tps:
                                 # 🎯 推奨値のハイライトUI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{p}% <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:4px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{int(r['bt_val']*(1+p/100)):,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{p_val:,}</b></div>"
                             else:
-                                # 通常UI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1+p/100)):,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{p_val:,}</b></div>"
                         html_matrix += "</div>"
 
-                        # 損切列の生成
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>"
-                        for l in sl_list:
-                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(r['bt_val']*(1-l/100)):,}</b></div>"
+                        # 【損切列】
+                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
+                        for m in sl_multipliers:
+                            l_val = int(c_target - (atr_v * m))
+                            pct_val = (1 - (l_val / c_target)) * 100 if c_target > 0 else 0
+                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
                         html_matrix += "</div></div></div>"
                         
                         st.markdown(html_matrix, unsafe_allow_html=True)
