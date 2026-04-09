@@ -1082,40 +1082,73 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 for r in scope_results:
                     st.divider()
-                    # 🚨 修正：消滅していた source_color の定義を復活
+                    
+                    # 🚨 1. 背景情報の再構築（消えていた情報を全て変数化）
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
+                    m_lower = str(r.get('market', '不明')).lower()
                     
-                    html_source = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
-                    html_rank = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px;'>🎯 {r['rank']}</span>"
-                    st.markdown(f"### {html_source} ({r['code'][:4]}) {r['name']} {html_rank}", unsafe_allow_html=True)                    
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 危険波形検知（三尊/Wトップ）")
-                    if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 MACD GC後 {r['gc_days']}日目")
+                    if 'プライム' in m_lower or '一部' in m_lower: 
+                        badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                        badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                    else: 
+                        badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("market")}</span>'
+
+                    # 🚨 2. 各種バッジの生成
+                    source_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+                    triage_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
+                    # 🚨 3. タイトル・ヘッダー情報の出力（企業名を復活）
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{source_badge} ({r['code'][:4]}) {r['name']}</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                                {badge_html}{triage_badge}
+                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
+                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 警告表示
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
+                    if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
+                    
+                    # 待伏/強襲のロジック分岐
                     c_base = r['bt_val'] if is_ambush else r['lc']
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
+                    with sc_left:
+                        c_m1, c_m2 = st.columns(2)
+                        c_m1.metric("直近高値", f"{int(r['h14']):,}円")
+                        c_m2.metric("直近安値", f"{int(r['l14']):,}円")
+                        c_m3, c_m4 = st.columns(2)
+                        c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
+                        c_m4.metric("最新終値", f"{int(r['lc']):,}円")
+                        st.caption(f"🏭 業種: {r.get('sector','不明')}")
+
                     with sc_mid:
                         if is_ambush:
-                            html_buy_scope = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
+                            html_content = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
                         else:
-                            # 🚨 修正：強襲モードの表示（動的）
                             t_p = r['bt_val']; e_p = int(t_p + (r['atr_val'] * 0.2)); d_p = int(t_p - r['atr_val'])
-                            html_buy_scope = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
+                            html_content = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
                                 <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値/ATR基準)</div>
-                                <div style='font-size:2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
+                                <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
                                 <div style='border-top:1px dashed #444; margin:8px 0;'></div>
-                                <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700;'>{int(e_p):,}円</span></div>
-                                <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350;'>{int(d_p):,}円</span></div></div>"""
-                        st.markdown(html_buy_scope, unsafe_allow_html=True)
+                                <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
+                                <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}円</span></div></div>"""
+                        st.markdown(html_content, unsafe_allow_html=True)
 
                     with sc_right:
-                        c_target = r['bt_val']
+                        c_target = r['bt_val'] if is_ambush else r['bt_val']
                         tp_list = [5, 10, 15, 20]; sl_list = [5, 8, 10]
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:13px; color:#aaa; margin-bottom:8px;'>📊 期待値マトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:20px;'>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:1px solid #26a69a;'>利確</div>" + "".join([f"<div style='display:flex; justify-content:space-between;'><span>+{p}%</span><b>{int(c_target*(1+p/100)):,}</b></div>" for p in tp_list]) + "</div>"
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:1px solid #ef5350;'>損切</div>" + "".join([f"<div style='display:flex; justify-content:space-between;'><span>-{l}%</span><b>{int(c_target*(1-l/100)):,}</b></div>" for l in sl_list]) + "</div></div></div>"
+                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:15px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444;'>📊 期待値マトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'>"
+                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{p}%</span><b style='font-size:1.1rem;'>{int(c_target*(1+p/100)):,}</b></div>" for p in tp_list]) + "</div>"
+                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【損切】</div>" + "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{l}%</span><b style='font-size:1.1rem;'>{int(c_target*(1-l/100)):,}</b></div>" for l in sl_list]) + "</div></div></div>"
                         st.markdown(html_matrix, unsafe_allow_html=True)
                     
+                    # 計器フライト（テクニカルレーダー）
                     st.markdown(render_technical_radar(r['df_chart'], c_base, 10), unsafe_allow_html=True)
                     draw_chart(r['df_chart'], c_base, chart_key=f"t3_chart_{r['code']}")
 
