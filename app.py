@@ -841,16 +841,48 @@ with tab2:
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
+                # 🚨 同期パッチ：① 価格上下限フィルターの適用
+                f1_min = float(st.session_state.f1_min)
+                f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo
+                f8_ex_bio = st.session_state.f8_ex_bio
+
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
-                valid_price_codes = latest_df[latest_df['AdjC'] >= 200]['Code'].unique()
+                valid_price_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
                 valid_vol_codes = avg_vols[avg_vols >= vol_limit].index
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
+                # 🚨 同期パッチ：⑤ IPO（上場1年未満）除外フィルター
+                if f5_ipo and not df.empty:
+                    oldest_global_date = df['Date'].min()
+                    stock_min_dates = df.groupby('Code')['Date'].min()
+                    threshold_date = oldest_global_date + pd.Timedelta(days=15)
+                    valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
+                    df = df[df['Code'].isin(valid_seasoned_codes)]
+
+                # 🚨 同期パッチ：⑦ ETF・REIT等を除外
                 if exclude_etf_flag_t2 and not master_df.empty:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
+
+                # 🚨 同期パッチ：⑧ 医薬品(バイオ)を除外
+                if f8_ex_bio and not master_df.empty:
+                    df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)]['Code'].unique())]
+
+                # 🚨 同期パッチ：対象市場（大型/中小型）の適用
+                if not master_df.empty:
+                    if "大型株" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
+                    else: m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
+                    df = df[df['Code'].isin(master_df[m_mask]['Code'].unique())]
+
+                # 🚨 同期パッチ：⑥ 疑義注記銘柄除外（ブラックリスト適用）
+                if gigi_input:
+                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
+                    if target_blacklist:
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
 
