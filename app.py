@@ -1227,22 +1227,28 @@ with tab4:
     if "prev_mode_for_defaults" not in st.session_state:
         st.session_state.prev_mode_for_defaults = current_mode
 
+    # 🚨 修正1：モード切替時の「買い期限」連動（強襲=3日 / 待伏=4日）を追加
     if st.session_state.prev_mode_for_defaults != current_mode:
         if "待伏" in current_mode:
             st.session_state.sim_sell_d_val = 10
+            st.session_state.sim_limit_d_val = 4
         else:
             st.session_state.sim_sell_d_val = 5
+            st.session_state.sim_limit_d_val = 3
         st.session_state.prev_mode_for_defaults = current_mode
 
-    if "sim_tp_val" not in st.session_state: st.session_state.sim_tp_val = 10
-    if "sim_sl_val" not in st.session_state: st.session_state.sim_sl_val = 8
-    if "sim_limit_d_val" not in st.session_state: st.session_state.sim_limit_d_val = 4
-    if "sim_sell_d_val" not in st.session_state: st.session_state.sim_sell_d_val = 10
-    if "sim_push_r_val" not in st.session_state: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
-    if "sim_pass_req_val" not in st.session_state: st.session_state.sim_pass_req_val = 7
-    if "sim_rsi_lim_ambush_val" not in st.session_state: st.session_state.sim_rsi_lim_ambush_val = 45
-    if "sim_rsi_lim_assault_val" not in st.session_state: st.session_state.sim_rsi_lim_assault_val = 70
-    if "sim_time_risk_val" not in st.session_state: st.session_state.sim_time_risk_val = 5
+    # 🚨 修正2：過去のバグでJSONに「0」が保存されてしまった場合の自動修復（リカバリー）
+    if st.session_state.get("sim_tp_val", 0) == 0: st.session_state.sim_tp_val = 10
+    if st.session_state.get("sim_sl_val", 0) == 0: st.session_state.sim_sl_val = 8
+    if st.session_state.get("sim_limit_d_val", 0) == 0: st.session_state.sim_limit_d_val = 4
+    if st.session_state.get("sim_sell_d_val", 0) == 0: st.session_state.sim_sell_d_val = 10
+    if st.session_state.get("sim_push_r_val", 0) == 0: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
+    if st.session_state.get("sim_pass_req_val", 0) == 0: st.session_state.sim_pass_req_val = 7
+    
+    # ここが0病の特効薬（強制リストア）
+    if st.session_state.get("sim_rsi_lim_ambush_val", 0) == 0: st.session_state.sim_rsi_lim_ambush_val = 45
+    if st.session_state.get("sim_rsi_lim_assault_val", 0) == 0: st.session_state.sim_rsi_lim_assault_val = 70
+    if st.session_state.get("sim_time_risk_val", 0) == 0: st.session_state.sim_time_risk_val = 5
     
     current_sidebar_push_r = st.session_state.get("push_r", 50.0)
     if "last_sidebar_push_r" not in st.session_state or st.session_state.last_sidebar_push_r != current_sidebar_push_r:
