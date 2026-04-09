@@ -135,10 +135,19 @@ def save_settings():
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
             "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
-            # 新しく設定したTab4用の永続化キーを保存対象に追加
             "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
             "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
+    
+    # 🚨 修正：既存の設定をロードしてマージする（非表示要素の消失を防ぐ防衛網）
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+                existing.update(current)
+                current = existing
+        except: pass
+        
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
 
 load_settings()
