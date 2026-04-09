@@ -1192,6 +1192,22 @@ with tab3:
                         
                         st.markdown(html_matrix, unsafe_allow_html=True)
                         
+                        # 🚨 追加：マトリクスの直下に開閉式の凡例（ガイド）を設置
+                        with st.expander("ℹ️ ATRマトリクス 凡例（各目安の戦術的意味）"):
+                            st.markdown("""
+                            <div style="font-size: 13px; color: #ccc;">
+                            <strong>【利確の目安】</strong><br>
+                            <span style="color: #80cbc4;">+0.5ATR：</span> 超短期スキャルピング。ノイズや小反発で確実にもぎ取る。<br>
+                            <span style="color: #80cbc4;">+1.0ATR：</span> デイトレ〜1泊。1日分の標準的な波を捉える堅実なライン。<br>
+                            <span style="color: #80cbc4;">+2.0ATR：</span> スイング（数日）。トレンド継続時の標準。勝率と利益の黄金比。<br>
+                            <span style="color: #80cbc4;">+3.0ATR：</span> 強トレンドの極み。短期的な「過熱（買われすぎ）」の限界点。<br><br>
+                            <strong>【防衛の目安】</strong><br>
+                            <span style="color: #ef9a9a;">-0.5ATR：</span> 極小リスク。ただし日中のノイズで狩られる（誤発火）確率が高い。<br>
+                            <span style="color: #ef9a9a;">-1.0ATR：</span> <strong>標準防衛線。</strong>ブレイクアウトが明確に失敗したと判断する撤退点。<br>
+                            <span style="color: #ef9a9a;">-2.0ATR：</span> スイング用。深めの押し目を許容するが、割れればトレンド完全崩壊。
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
