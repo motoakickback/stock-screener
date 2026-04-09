@@ -153,12 +153,25 @@ def apply_market_preset():
     save_settings()
 
 # --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
-@st.cache_data(ttl=900, show_spinner=False)
+# 【修正】キャッシュ保持時間を1分(60秒)へ短縮し、yfinanceの内部キャッシュを強制突破
+@st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        tk_ni = yf.Ticker("^N225")
+        import requests
+        
+        # 🔥 キャッシュ無効化ヘッダーを持たせた強制フェッチセッション
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        })
+        
+        # セッションをyfinanceに渡し、常に最新のデータを要求
+        tk_ni = yf.Ticker("^N225", session=session)
         hist_ni = tk_ni.history(period="3mo")
+        
         if len(hist_ni) >= 2:
             lc_ni = hist_ni['Close'].iloc[-1]; prev_ni = hist_ni['Close'].iloc[-2]
             diff_ni = lc_ni - prev_ni; pct_ni = (diff_ni / prev_ni) * 100
