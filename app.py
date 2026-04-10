@@ -1100,12 +1100,14 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # ---------------------------------------------------------------------
-                # 🚨 【修正版】ここから下を、tab3の最後まで丸ごと上書き 🚨
+                # 🚨 【フルワイド・レイアウト版】ここから下を最後まで丸ごと上書き 🚨
                 # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
                         st.markdown(f"---")
-                        sc_left, sc_right = st.columns([1.2, 1])
+                        
+                        # --- 上段：情報パネル（左右分割） ---
+                        sc_left, sc_right = st.columns([1, 1.2])
                         
                         with sc_left:
                             st.subheader(f"🎯 {r['name']} ({r['code']})")
@@ -1120,38 +1122,6 @@ with tab3:
                             atr_v = r['atr_val']
                             atr_pct = (atr_v / r['lc'] * 100) if r['lc'] > 0 else 0
                             st.metric("🌪️ 1ATR (平均値幅)", f"{int(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
-                            
-                            st.markdown("---")
-                            st.caption("📊 直近の弾道軌道（ローソク足）")
-                            import plotly.graph_objects as go
-                            
-                            # 🚨 列名エラー回避ロジック 🚨
-                            d_p = r['df_chart'].tail(20) 
-                            # AdjO/H/L/C があればそれを使用、なければ標準の Open/High/Low/Close を探す
-                            c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
-                            c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
-                            c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
-                            c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
-
-                            try:
-                                fig_chart = go.Figure(data=[go.Candlestick(
-                                    x=d_p.index, open=d_p[c_o], high=d_p[c_h],
-                                    low=d_p[c_l], close=d_p[c_c],
-                                    name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-                                )])
-                                # 5日線も同様に AdjC または Close を参照
-                                ma5 = r['df_chart'][c_c].rolling(window=5).mean().tail(20)
-                                fig_chart.add_trace(go.Scatter(x=d_p.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
-                                
-                                fig_chart.update_layout(
-                                    height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, xaxis_rangeslider_visible=False,
-                                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                    yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
-                                    xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
-                                )
-                                st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
-                            except Exception as e:
-                                st.warning(f"チャート描画不可: データ形式が一致しません。")
 
                         with sc_right:
                             st.markdown(f"#### 📐 動的ATRマトリクス <small>(1ATR: {int(atr_v)}円)</small>", unsafe_allow_html=True)
@@ -1179,11 +1149,45 @@ with tab3:
                                 else:
                                     html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                             html_matrix += "</div></div>"
-                            
                             st.markdown(html_matrix, unsafe_allow_html=True)
                             
                             with st.expander("ℹ️ マトリクスの戦術的意味"):
-                                st.markdown("""<div style="font-size: 11px; color: #aaa;"><strong>利確:</strong> +1.0(堅実), +2.0(標準), +3.0(過熱)<br><strong>防衛:</strong> -1.0(<b>絶対撤退線</b>)</div>""", unsafe_allow_html=True)
+                                st.markdown("""<div style="font-size: 11px; color: #aaa;"><strong>利確:</strong> +1.0(堅実), +2.0(標準), +3.0(過熱) | <strong>防衛:</strong> -1.0(<b>絶対撤退線</b>)</div>""", unsafe_allow_html=True)
+
+                        # --- 下段：大型ローソク足チャート（フルワイド） ---
+                        st.markdown("---")
+                        st.caption(f"📊 {r['name']} 精密弾道チャート（直近20日間）")
+                        import plotly.graph_objects as go
+                        
+                        d_p = r['df_chart'].tail(30) # 少し長めに取得
+                        c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
+                        c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
+                        c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
+                        c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
+
+                        try:
+                            fig_chart = go.Figure(data=[go.Candlestick(
+                                x=d_p.index, open=d_p[c_o], high=d_p[c_h],
+                                low=d_p[c_l], close=d_p[c_c],
+                                name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+                            )])
+                            # 5日線
+                            ma5 = r['df_chart'][c_c].rolling(window=5).mean().tail(30)
+                            fig_chart.add_trace(go.Scatter(x=d_p.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
+                            
+                            fig_chart.update_layout(
+                                height=350, # 高さを出して視認性アップ
+                                margin=dict(l=0, r=0, t=10, b=0),
+                                showlegend=False,
+                                xaxis_rangeslider_visible=False,
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
+                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
+                            )
+                            st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
+                        except Exception as e:
+                            st.warning("チャート表示エリアの生成に失敗しました。")
 
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
