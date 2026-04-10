@@ -1089,9 +1089,7 @@ with tab3:
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
-                # ---------------------------------------------------------------------
                 # 🚨 【完全修復版・Tab3 UI】
-                # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
                         st.markdown(f"---")
@@ -1130,8 +1128,7 @@ with tab3:
                         import plotly.graph_objects as go
                         d_p = r['df_chart'].tail(30).copy()
                         d_p['display_date'] = d_p.index.strftime('%Y/%m/%d')
-                        c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'; c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
-                        c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'; c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
+                        c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'; c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'; c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'; c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
                         try:
                             fig_chart = go.Figure()
                             fig_chart.add_trace(go.Candlestick(x=d_p['display_date'], open=d_p[c_o], high=d_p[c_h], low=d_p[c_l], close=d_p[c_c], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350', hovertemplate="<b>%{x}</b><br>始: ¥%{open:,.1f}<br>高: ¥%{high:,.1f}<br>安: ¥%{low:,.1f}<br>終: ¥%{close:,.1f}<extra></extra>"))
@@ -1459,7 +1456,7 @@ with tab5:
         elif cur<buy: st_t, st_c, bg = "⚠️ 警戒", "#ff9800", "rgba(255,152,0,0.15)"
         elif tp1>0 and cur<tp1: st_t, st_c, bg = "🟢 巡航中", "#26a69a", "rgba(38,166,154,0.15)"
         elif tp2>0 and cur<tp2: st_t, st_c, bg = "🛡️ 目標到達", "#42a5f5", "rgba(66,165,245,0.15)"
-        else: st_t, st_c, bg = "🏆 任務完了", "#ab47bc", "rgba(171,71,188,0.15)"
+        else: st_t, st_c, bg = "🏆 任務完了", "#ab47bc", "rgba(171, 71, 188, 0.15)"
         fmt = lambda x: f"¥{x:,.1f}" if x > 0 else "未設定"
         st.markdown(f"""<div style="margin-bottom:5px;"><span style="font-size:18px; font-weight:bold;">部隊 [{ticker}]</span><span style="font-size:14px; font-weight:bold; color:{st_c}; margin-left:15px;">{st_t}</span></div><div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:12px 15px; border-radius:8px; border-left:5px solid {st_c};"><div style="flex:1;"><div style="font-size:12px; color:#ef5350;">損切</div><div style="font-size:16px; font-weight:bold;">{fmt(sl)}</div></div><div style="flex:1;"><div style="font-size:12px; color:#ffca28;">買値</div><div style="font-size:16px; font-weight:bold;">{fmt(buy)}</div></div><div style="flex:1.5; text-align:center; background:{bg}; padding:8px; border-radius:6px; border:1px solid {st_c};"><div style="font-size:13px; color:{st_c}; font-weight:bold;">現在値</div><div style="font-size:24px; font-weight:bold;">{fmt(cur)}</div></div><div style="flex:1; text-align:right;"><div style="font-size:12px; color:#26a69a;">利確1</div><div style="font-size:16px; font-weight:bold;">{fmt(tp1)}</div></div><div style="flex:1; text-align:right;"><div style="font-size:12px; color:#42a5f5;">利確2</div><div style="font-size:16px; font-weight:bold;">{fmt(tp2)}</div></div></div>""", unsafe_allow_html=True)
         fig=go.Figure(); m_x=min(sl,cur,buy)*0.98; mx_x=max(tp2,cur,buy)*1.02
