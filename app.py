@@ -1100,7 +1100,7 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # ---------------------------------------------------------------------
-                # 🚨 【フルワイド・レイアウト版】ここから下を最後まで丸ごと上書き 🚨
+                # 🚨 【SABC判定復元・最終版】ここから下を最後まで丸ごと上書き 🚨
                 # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
@@ -1110,6 +1110,16 @@ with tab3:
                         sc_left, sc_right = st.columns([1, 1.2])
                         
                         with sc_left:
+                            # 🚨 復元：SABC判定バッジ
+                            st.markdown(f"""
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                                    <span style="background:{r['bg']}; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:1.1rem; border:1px solid rgba(255,255,255,0.2);">
+                                        RANK {r['rank']}
+                                    </span>
+                                    <span style="color:#aaa; font-size:0.9rem;">スコア: {r['score']}pts</span>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            
                             st.subheader(f"🎯 {r['name']} ({r['code']})")
                             st.caption(f"市場: {r['market']} | 業種: {r['sector']}")
                             
@@ -1159,7 +1169,7 @@ with tab3:
                         st.caption(f"📊 {r['name']} 精密弾道チャート（直近20日間）")
                         import plotly.graph_objects as go
                         
-                        d_p = r['df_chart'].tail(30) # 少し長めに取得
+                        d_p = r['df_chart'].tail(30)
                         c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
                         c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
                         c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
@@ -1171,17 +1181,13 @@ with tab3:
                                 low=d_p[c_l], close=d_p[c_c],
                                 name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
                             )])
-                            # 5日線
                             ma5 = r['df_chart'][c_c].rolling(window=5).mean().tail(30)
                             fig_chart.add_trace(go.Scatter(x=d_p.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
                             
                             fig_chart.update_layout(
-                                height=350, # 高さを出して視認性アップ
-                                margin=dict(l=0, r=0, t=10, b=0),
-                                showlegend=False,
-                                xaxis_rangeslider_visible=False,
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
+                                height=350, margin=dict(l=0, r=0, t=10, b=0),
+                                showlegend=False, xaxis_rangeslider_visible=False,
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                                 yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
                                 xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
                             )
