@@ -1127,7 +1127,8 @@ with tab3:
                         st.caption(f"📊 {r['name']} 精密弾道チャート")
                         import plotly.graph_objects as go
                         d_p = r['df_chart'].tail(30).copy()
-                        d_p['display_date'] = d_p.index.strftime('%Y/%m/%d')
+                        # 🚨 修正：AttributeErrorを物理的に回避する安全な日付処理
+                        d_p['display_date'] = pd.to_datetime(d_p.index).strftime('%Y/%m/%d')
                         c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'; c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'; c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'; c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
                         try:
                             fig_chart = go.Figure()
