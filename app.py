@@ -1100,20 +1100,17 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # ---------------------------------------------------------------------
-                # 🚨 ここから下を、tab3の最後まで丸ごと上書き 🚨
+                # 🚨 【修正版】ここから下を、tab3の最後まで丸ごと上書き 🚨
                 # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
                         st.markdown(f"---")
-                        # 左右2カラムに分割（左：基本情報とチャート、右：ATRマトリクス）
                         sc_left, sc_right = st.columns([1.2, 1])
                         
                         with sc_left:
-                            # 1. 銘柄基本情報
                             st.subheader(f"🎯 {r['name']} ({r['code']})")
                             st.caption(f"市場: {r['market']} | 業種: {r['sector']}")
                             
-                            # 2. 価格メトリクスとATR計器
                             c_m1, c_m2 = st.columns(2)
                             c_m1.metric("直近高値", f"{int(r['h14']):,}円")
                             c_m2.metric("直近安値", f"{int(r['l14']):,}円")
@@ -1124,42 +1121,45 @@ with tab3:
                             atr_pct = (atr_v / r['lc'] * 100) if r['lc'] > 0 else 0
                             st.metric("🌪️ 1ATR (平均値幅)", f"{int(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
                             
-                            # 3. 精密弾道チャート (ローソク足)
                             st.markdown("---")
                             st.caption("📊 直近の弾道軌道（ローソク足）")
                             import plotly.graph_objects as go
                             
-                            # データは計算済みの r['df_chart'] を活用
-                            df_plot = r['df_chart'].tail(20) 
-                            fig_chart = go.Figure(data=[go.Candlestick(
-                                x=df_plot.index, open=df_plot['Open'], high=df_plot['High'],
-                                low=df_plot['Low'], close=df_plot['Close'],
-                                name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-                            )])
-                            # 5日移動平均線
-                            ma5 = r['df_chart']['Close'].rolling(window=5).mean().tail(20)
-                            fig_chart.add_trace(go.Scatter(x=df_plot.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
-                            
-                            fig_chart.update_layout(
-                                height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, xaxis_rangeslider_visible=False,
-                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
-                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
-                            )
-                            st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
+                            # 🚨 列名エラー回避ロジック 🚨
+                            d_p = r['df_chart'].tail(20) 
+                            # AdjO/H/L/C があればそれを使用、なければ標準の Open/High/Low/Close を探す
+                            c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
+                            c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
+                            c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
+                            c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
+
+                            try:
+                                fig_chart = go.Figure(data=[go.Candlestick(
+                                    x=d_p.index, open=d_p[c_o], high=d_p[c_h],
+                                    low=d_p[c_l], close=d_p[c_c],
+                                    name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+                                )])
+                                # 5日線も同様に AdjC または Close を参照
+                                ma5 = r['df_chart'][c_c].rolling(window=5).mean().tail(20)
+                                fig_chart.add_trace(go.Scatter(x=d_p.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
+                                
+                                fig_chart.update_layout(
+                                    height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, xaxis_rangeslider_visible=False,
+                                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                    yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
+                                    xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
+                                )
+                                st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
+                            except Exception as e:
+                                st.warning(f"チャート描画不可: データ形式が一致しません。")
 
                         with sc_right:
-                            # 4. 動的ATRマトリクス (期待値計算パネル)
                             st.markdown(f"#### 📐 動的ATRマトリクス <small>(1ATR: {int(atr_v)}円)</small>", unsafe_allow_html=True)
-                            
-                            c_target = r['bt_val'] # 解析モードに応じた基準値
+                            c_target = r['bt_val']
                             tp_multipliers = [0.5, 1.0, 2.0, 3.0]
                             sl_multipliers = [0.5, 1.0, 2.0]
                             
-                            # HTML生成
                             html_matrix = "<div style='display:flex; gap:10px; font-family:monospace;'>"
-                            
-                            # 【利確列】
                             border_color = "#4db6ac" if r['bg'] == "rgba(38,166,154,0.1)" else "#81c784"
                             html_matrix += f"<div style='flex:1; border:1px solid {border_color}; padding:8px; border-radius:5px; background:{r['bg']};'>"
                             html_matrix += "<div style='color:#80cbc4; border-bottom:1px solid #80cbc4; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"
@@ -1169,13 +1169,11 @@ with tab3:
                                 html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                             html_matrix += "</div>"
                             
-                            # 【損切列】
                             html_matrix += "<div style='flex:1; border:1px solid #ef5350; padding:8px; border-radius:5px;'>"
                             html_matrix += "<div style='color:#ef9a9a; border-bottom:1px solid #ef9a9a; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"
                             for m in sl_multipliers:
                                 val = int(c_target - (atr_v * m))
                                 pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
-                                # 1.0ATRを「鉄則」としてハイライト
                                 if m == 1.0:
                                     html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.2); padding:2px; border-radius:3px;'><span style='color:#ff8a80; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
                                 else:
@@ -1184,14 +1182,8 @@ with tab3:
                             
                             st.markdown(html_matrix, unsafe_allow_html=True)
                             
-                            # 5. 凡例ガイド
                             with st.expander("ℹ️ マトリクスの戦術的意味"):
-                                st.markdown("""
-                                <div style="font-size: 11px; color: #aaa;">
-                                <strong>利確:</strong> +1.0(デイトレ堅実), +2.0(スイング標準), +3.0(過熱限界)<br>
-                                <strong>防衛:</strong> -1.0(<b>絶対撤退線</b>: トレンド崩壊確定ポイント)
-                                </div>
-                                """, unsafe_allow_html=True)
+                                st.markdown("""<div style="font-size: 11px; color: #aaa;"><strong>利確:</strong> +1.0(堅実), +2.0(標準), +3.0(過熱)<br><strong>防衛:</strong> -1.0(<b>絶対撤退線</b>)</div>""", unsafe_allow_html=True)
 
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
