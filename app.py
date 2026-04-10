@@ -1099,170 +1099,100 @@ with tab3:
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
-                # --- 表示ループ ---
+                # ---------------------------------------------------------------------
+                # 🚨 ここから下を、tab3の最後まで丸ごと上書き 🚨
+                # ---------------------------------------------------------------------
                 for r in scope_results:
-                    st.divider()
-                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
-                    m_lower = str(r['market']).lower()
-                    
-                    if 'プライム' in m_lower or '一部' in m_lower: 
-                        badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
-                        badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                    else: 
-                        badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
-
-                    s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
-                    t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                {badge_html}{t_badge}
-                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
-                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
-                    if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
-                    
-                    c_base = r['bt_val'] if is_ambush else r['lc']
-                    sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
-                    
-                    with sc_left:
-                        # 🚨 追加：ATR値の計算とボラティリティの算出
-                        atr_v = r.get('atr_val', 0)
-                        # 万が一ATRが取得できない場合の安全装置（終値の5%）
-                        if atr_v == 0: atr_v = r.get('lc', 0) * 0.05 
-                        atr_pct = (atr_v / r.get('lc', 1)) * 100 if r.get('lc', 0) > 0 else 0
-
-                        # 既存の計器群（維持）
-                        c_m1, c_m2 = st.columns(2)
-                        c_m1.metric("直近高値", f"{int(r['h14']):,}円")
-                        c_m2.metric("直近安値", f"{int(r['l14']):,}円")
+                    with st.container():
+                        st.markdown(f"---")
+                        # 左右2カラムに分割（左：基本情報とチャート、右：ATRマトリクス）
+                        sc_left, sc_right = st.columns([1.2, 1])
                         
-                        c_m3, c_m4 = st.columns(2)
-                        c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
-                        c_m4.metric("最新終値", f"{int(r['lc']):,}円")
-                        
-                        # 🚨 追加：ATR（風速計）を独立した大きな計器として配置
-                        st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
-                        
-                        st.caption(f"🏭 業種: {r.get('sector','不明')}")
-                        # 📈 追記：精密弾道チャート（ローソク足）の実装
-                        st.markdown("---")
-                        st.caption("📊 直近14日間の弾道軌道（ローソク足）")
-                        
-                        # yfinanceから直近データを取得（精密分析用）
-                        import plotly.graph_objects as go
-                        
-                        # api_codeとhistデータはTab3冒頭で取得済みのものを流用
-                        # もし未取得の場合はここで再度 history(period="1mo") などを実行
-                        chart_hist = tk.history(period="1mo") # 余裕を持って1ヶ月分
-                        
-                        if not chart_hist.empty:
-                            fig_chart = go.Figure(data=[go.Candlestick(
-                                x=chart_hist.index,
-                                open=chart_hist['Open'],
-                                high=chart_hist['High'],
-                                low=chart_hist['Low'],
-                                close=chart_hist['Close'],
-                                name="価格",
-                                increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-                            )])
+                        with sc_left:
+                            # 1. 銘柄基本情報
+                            st.subheader(f"🎯 {r['name']} ({r['code']})")
+                            st.caption(f"市場: {r['market']} | 業種: {r['sector']}")
                             
-                            # 5日移動平均線（短期トレンド）をオーバーレイ
-                            ma5 = chart_hist['Close'].rolling(window=5).mean()
-                            fig_chart.add_trace(go.Scatter(x=chart_hist.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1)))
-
+                            # 2. 価格メトリクスとATR計器
+                            c_m1, c_m2 = st.columns(2)
+                            c_m1.metric("直近高値", f"{int(r['h14']):,}円")
+                            c_m2.metric("直近安値", f"{int(r['l14']):,}円")
+                            
+                            c_m3, c_m4 = st.columns(2)
+                            c_m3.metric("現在値", f"{int(r['lc']):,}円")
+                            atr_v = r['atr_val']
+                            atr_pct = (atr_v / r['lc'] * 100) if r['lc'] > 0 else 0
+                            st.metric("🌪️ 1ATR (平均値幅)", f"{int(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
+                            
+                            # 3. 精密弾道チャート (ローソク足)
+                            st.markdown("---")
+                            st.caption("📊 直近の弾道軌道（ローソク足）")
+                            import plotly.graph_objects as go
+                            
+                            # データは計算済みの r['df_chart'] を活用
+                            df_plot = r['df_chart'].tail(20) 
+                            fig_chart = go.Figure(data=[go.Candlestick(
+                                x=df_plot.index, open=df_plot['Open'], high=df_plot['High'],
+                                low=df_plot['Low'], close=df_plot['Close'],
+                                name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+                            )])
+                            # 5日移動平均線
+                            ma5 = r['df_chart']['Close'].rolling(window=5).mean().tail(20)
+                            fig_chart.add_trace(go.Scatter(x=df_plot.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5)))
+                            
                             fig_chart.update_layout(
-                                height=300, 
-                                margin=dict(l=0, r=0, t=0, b=0),
-                                showlegend=False,
-                                xaxis_rangeslider_visible=False,
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888')),
+                                height=250, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, xaxis_rangeslider_visible=False,
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
                                 xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
                             )
                             st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
-                        else:
-                            st.warning("チャートデータの取得に失敗しました。")
-                    with sc_mid:
-                        if is_ambush:
-                            html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
-                        else:
-                            t_p = r['bt_val']; e_p = int(t_p + (r['atr_val'] * 0.2)); d_p = int(t_p - r['atr_val'])
-                            html_box = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
-                                <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値基準)</div>
-                                <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
-                                <div style='border-top:1px dashed #444; margin:8px 0;'></div>
-                                <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
-                                <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}円</span></div></div>"""
-                        st.markdown(html_box, unsafe_allow_html=True)
 
-                    with sc_right:
-                        c_target = r['bt_val'] if is_ambush else r['bt_val']
-                        atr_v = r.get('atr_val', 0)
-                        if atr_v == 0: atr_v = c_target * 0.05 # 予備計算
-                        
-                        # 🚨 新ロジック：固定％を廃止し、ATRの倍数（マルチプル）でターゲットを生成
-                        tp_multipliers = [0.5, 1.0, 2.0, 3.0]
-                        sl_multipliers = [0.5, 1.0, 2.0]
-
-                        # 判定に応じた推奨ターゲットの自動選択
-                        is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
-                        rec_tps = [2.0, 3.0] if is_aggressive else [0.5, 1.0]
-
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'>"
-                        
-                        # 【利確列】
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
-                        for m in tp_multipliers:
-                            p_val = int(c_target + (atr_v * m))
-                            pct_val = ((p_val / c_target) - 1) * 100 if c_target > 0 else 0
+                        with sc_right:
+                            # 4. 動的ATRマトリクス (期待値計算パネル)
+                            st.markdown(f"#### 📐 動的ATRマトリクス <small>(1ATR: {int(atr_v)}円)</small>", unsafe_allow_html=True)
                             
-                            if m in rec_tps:
-                                # 🎯 推奨値のハイライトUI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{p_val:,}</b></div>"
-                            else:
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{p_val:,}</b></div>"
-                        html_matrix += "</div>"
-
-                        # 【損切列】
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
-                        for m in sl_multipliers:
-                            l_val = int(c_target - (atr_v * m))
-                            pct_val = (1 - (l_val / c_target)) * 100 if c_target > 0 else 0
+                            c_target = r['bt_val'] # 解析モードに応じた基準値
+                            tp_multipliers = [0.5, 1.0, 2.0, 3.0]
+                            sl_multipliers = [0.5, 1.0, 2.0]
                             
-                            if m == 1.0:
-                                # 🛡️ 絶対防衛線（-1.0 ATR）の固定ハイライトUI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span></span><b style='font-size:1.1rem; color:#fff;'>{l_val:,}</b></div>"
-                            else:
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
-                        html_matrix += "</div></div></div>"
-                        
-                        st.markdown(html_matrix, unsafe_allow_html=True)
-                        
-                        # 🚨 追加：マトリクスの直下に開閉式の凡例（ガイド）を設置
-                        with st.expander("ℹ️ ATRマトリクス 凡例（各目安の戦術的意味）"):
-                            st.markdown("""
-                            <div style="font-size: 13px; color: #ccc;">
-                            <strong>【利確の目安】</strong><br>
-                            <span style="color: #80cbc4;">+0.5ATR：</span> 超短期スキャルピング。ノイズや小反発で確実にもぎ取る。<br>
-                            <span style="color: #80cbc4;">+1.0ATR：</span> デイトレ〜1泊。1日分の標準的な波を捉える堅実なライン。<br>
-                            <span style="color: #80cbc4;">+2.0ATR：</span> スイング（数日）。トレンド継続時の標準。勝率と利益の黄金比。<br>
-                            <span style="color: #80cbc4;">+3.0ATR：</span> 強トレンドの極み。短期的な「過熱（買われすぎ）」の限界点。<br><br>
-                            <strong>【防衛の目安】</strong><br>
-                            <span style="color: #ef9a9a;">-0.5ATR：</span> 極小リスク。ただし日中のノイズで狩られる（誤発火）確率が高い。<br>
-                            <span style="color: #ef9a9a;">-1.0ATR：</span> <strong>標準防衛線。</strong>ブレイクアウトが明確に失敗したと判断する撤退点。<br>
-                            <span style="color: #ef9a9a;">-2.0ATR：</span> スイング用。深めの押し目を許容するが、割れればトレンド完全崩壊。
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
+                            # HTML生成
+                            html_matrix = "<div style='display:flex; gap:10px; font-family:monospace;'>"
+                            
+                            # 【利確列】
+                            border_color = "#4db6ac" if r['bg'] == "rgba(38,166,154,0.1)" else "#81c784"
+                            html_matrix += f"<div style='flex:1; border:1px solid {border_color}; padding:8px; border-radius:5px; background:{r['bg']};'>"
+                            html_matrix += "<div style='color:#80cbc4; border-bottom:1px solid #80cbc4; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"
+                            for m in tp_multipliers:
+                                val = int(c_target + (atr_v * m))
+                                pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                            html_matrix += "</div>"
+                            
+                            # 【損切列】
+                            html_matrix += "<div style='flex:1; border:1px solid #ef5350; padding:8px; border-radius:5px;'>"
+                            html_matrix += "<div style='color:#ef9a9a; border-bottom:1px solid #ef9a9a; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"
+                            for m in sl_multipliers:
+                                val = int(c_target - (atr_v * m))
+                                pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
+                                # 1.0ATRを「鉄則」としてハイライト
+                                if m == 1.0:
+                                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.2); padding:2px; border-radius:3px;'><span style='color:#ff8a80; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
+                                else:
+                                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                            html_matrix += "</div></div>"
+                            
+                            st.markdown(html_matrix, unsafe_allow_html=True)
+                            
+                            # 5. 凡例ガイド
+                            with st.expander("ℹ️ マトリクスの戦術的意味"):
+                                st.markdown("""
+                                <div style="font-size: 11px; color: #aaa;">
+                                <strong>利確:</strong> +1.0(デイトレ堅実), +2.0(スイング標準), +3.0(過熱限界)<br>
+                                <strong>防衛:</strong> -1.0(<b>絶対撤退線</b>: トレンド崩壊確定ポイント)
+                                </div>
+                                """, unsafe_allow_html=True)
+
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
