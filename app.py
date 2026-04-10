@@ -167,7 +167,7 @@ def get_macro_weather():
     try:
         import yfinance as yf
         tk_ni = yf.Ticker("^N225")
-        hist_ni = tk_ni.history(period="5d") # 5日分取得
+        hist_ni = tk_ni.history(period="5d")
         if len(hist_ni) >= 2:
             lc_ni = hist_ni['Close'].iloc[-1]
             prev_ni = hist_ni['Close'].iloc[-2]
@@ -193,21 +193,11 @@ def render_macro_board():
             fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255,255,255,0.4)', width=1, dash='dot')))
             fig.update_layout(height=160, margin=dict(l=10, r=20, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, yaxis=dict(side="right", tickformat=",.0f"))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else:
         st.warning("📡 外部気象レーダー応答なし")
-        st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
-        with c2:
-            df['MA25'] = df['Close'].rolling(window=25).mean()
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
-            fig.update_layout(height=160, margin=dict(l=10, r=20, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, yaxis=dict(side="right", tickformat=",.0f"))
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ 外部気象レーダー応答なし。")
-        st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+
 render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
