@@ -161,27 +161,23 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
-# 【修正】不要なヘッダー偽装を排除し、標準通信のままTTL（キャッシュ保持）のみ60秒へ短縮
+# --- 🌪️ マクロ気象レーダー（日経平均）モジュール ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        import pandas as pd
-        
-        # セッション偽装を行わず、標準のまま呼び出す
         tk_ni = yf.Ticker("^N225")
-        hist_ni = tk_ni.history(period="3mo")
-        
+        hist_ni = tk_ni.history(period="5d") # 5日分取得
         if len(hist_ni) >= 2:
-            lc_ni = hist_ni['Close'].iloc[-1]; prev_ni = hist_ni['Close'].iloc[-2]
-            diff_ni = lc_ni - prev_ni; pct_ni = (diff_ni / prev_ni) * 100
+            lc_ni = hist_ni['Close'].iloc[-1]
+            prev_ni = hist_ni['Close'].iloc[-2]
+            diff_ni = lc_ni - prev_ni
+            pct_ni = (diff_ni / prev_ni) * 100
             df_ni = hist_ni.reset_index()
             if 'Date' in df_ni.columns:
                 df_ni['Date'] = pd.to_datetime(df_ni['Date'], utc=True).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni, "df": df_ni}}
-    except: 
-        return None
+    except: return None
 
 def render_macro_board():
     data = get_macro_weather()
@@ -189,14 +185,18 @@ def render_macro_board():
         ni = data["nikkei"]; df = ni["df"]; color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"; sign = "+" if ni['diff'] >= 0 else ""
         c1, c2 = st.columns([1, 2.5])
         with c1:
-            html = f"""
-            <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌤️ 戦場の天候 (日経平均)</div>
-                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.2f} 円</div>
-                <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</div>
-            </div>
-            """
-            st.markdown(html, unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:rgba(20,20,20,0.6); padding:1.2rem; border-radius:8px; border-left:4px solid {color}; height:100%; display:flex; flex-direction:column; justify-content:center;"><div style="font-size:14px; color:#aaa; margin-bottom:8px;">🌪️ 戦場の天候 (日経平均)</div><div style="font-size:26px; font-weight:bold; color:{color}; margin-bottom:4px;">{ni['price']:,.2f} 円</div><div style="font-size:16px; color:{color};">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</div></div>""", unsafe_allow_html=True)
+        with c2:
+            df['MA25'] = df['Close'].rolling(window=25).mean()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255,255,255,0.4)', width=1, dash='dot')))
+            fig.update_layout(height=160, margin=dict(l=10, r=20, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, yaxis=dict(side="right", tickformat=",.0f"))
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
+    else:
+        st.warning("📡 外部気象レーダー応答なし")
+        st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
             fig = go.Figure()
@@ -1100,118 +1100,56 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # ---------------------------------------------------------------------
-                # 🚨 【ホバーバグ修正版】ここから下を最後まで丸ごと上書き 🚨
+                # 🚨 【完全修復版・Tab3 UI】
                 # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
                         st.markdown(f"---")
-                        
-                        # --- 上段：情報パネル（左右分割） ---
                         sc_left, sc_right = st.columns([1, 1.2])
-                        
                         with sc_left:
-                            # SABC判定バッジ（維持：ボスの認めた仕様）
-                            st.markdown(f"""
-                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                                    <span style="background:{r['bg']}; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:1.1rem; border:1px solid rgba(255,255,255,0.2);">
-                                        RANK {r['rank']}
-                                    </span>
-                                    <span style="color:#aaa; font-size:0.9rem;">スコア: {r['score']}pts</span>
-                                </div>
-                            """, unsafe_allow_html=True)
-                            
+                            st.markdown(f"""<div style="display:flex; align-items:center; gap:10px; margin-bottom:5px;"><span style="background:{r['bg']}; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:1.1rem; border:1px solid rgba(255,255,255,0.2);">RANK {r['rank']}</span><span style="color:#aaa; font-size:0.9rem;">スコア: {r['score']}pts</span></div>""", unsafe_allow_html=True)
                             st.subheader(f"🎯 {r['name']} ({r['code']})")
                             st.caption(f"市場: {r['market']} | 業種: {r['sector']}")
-                            
                             c_m1, c_m2 = st.columns(2)
                             c_m1.metric("直近高値", f"{int(r['h14']):,}円")
                             c_m2.metric("直近安値", f"{int(r['l14']):,}円")
-                            
                             c_m3, c_m4 = st.columns(2)
                             c_m3.metric("現在値", f"{int(r['lc']):,}円")
                             atr_v = r['atr_val']
                             atr_pct = (atr_v / r['lc'] * 100) if r['lc'] > 0 else 0
                             st.metric("🌪️ 1ATR (平均値幅)", f"{int(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
-
                         with sc_right:
                             st.markdown(f"#### 📐 動的ATRマトリクス <small>(1ATR: {int(atr_v)}円)</small>", unsafe_allow_html=True)
-                            c_target = r['bt_val']
-                            tp_multipliers = [0.5, 1.0, 2.0, 3.0]
-                            sl_multipliers = [0.5, 1.0, 2.0]
-                            
+                            c_target = r['bt_val']; tp_multipliers = [0.5, 1.0, 2.0, 3.0]; sl_multipliers = [0.5, 1.0, 2.0]
                             html_matrix = "<div style='display:flex; gap:10px; font-family:monospace;'>"
-                            border_color = "#4db6ac" if r['bg'] == "rgba(38,166,154,0.1)" else "#81c784"
-                            html_matrix += f"<div style='flex:1; border:1px solid {border_color}; padding:8px; border-radius:5px; background:{r['bg']};'>"
-                            html_matrix += "<div style='color:#80cbc4; border-bottom:1px solid #80cbc4; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"
+                            html_matrix += f"<div style='flex:1; border:1px solid #81c784; padding:8px; border-radius:5px; background:{r['bg']};'><div style='color:#80cbc4; border-bottom:1px solid #80cbc4; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"
                             for m in tp_multipliers:
-                                val = int(c_target + (atr_v * m))
-                                pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
+                                val = int(c_target + (atr_v * m)); pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
                                 html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                            html_matrix += "</div>"
-                            
-                            html_matrix += "<div style='flex:1; border:1px solid #ef5350; padding:8px; border-radius:5px;'>"
-                            html_matrix += "<div style='color:#ef9a9a; border-bottom:1px solid #ef9a9a; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"
+                            html_matrix += "</div><div style='flex:1; border:1px solid #ef5350; padding:8px; border-radius:5px;'><div style='color:#ef9a9a; border-bottom:1px solid #ef9a9a; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"
                             for m in sl_multipliers:
-                                val = int(c_target - (atr_v * m))
-                                pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
-                                if m == 1.0:
-                                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.2); padding:2px; border-radius:3px;'><span style='color:#ff8a80; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
-                                else:
-                                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                                val = int(c_target - (atr_v * m)); pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
+                                if m == 1.0: html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.2); padding:2px; border-radius:3px;'><span style='color:#ff8a80; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
+                                else: html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                             html_matrix += "</div></div>"
                             st.markdown(html_matrix, unsafe_allow_html=True)
-                            
                             with st.expander("ℹ️ マトリクスの戦術的意味"):
                                 st.markdown("""<div style="font-size: 11px; color: #aaa;"><strong>利確:</strong> +1.0(堅実), +2.0(標準), +3.0(過熱) | <strong>防衛:</strong> -1.0(<b>絶対撤退線</b>)</div>""", unsafe_allow_html=True)
-
-                        # --- 下段：大型ローソク足チャート（ボスの認めた完璧な縮尺を維持） ---
                         st.markdown("---")
-                        st.caption(f"📊 {r['name']} 精密弾道チャート（直近20日間）")
+                        st.caption(f"📊 {r['name']} 精密弾道チャート")
                         import plotly.graph_objects as go
-                        import pandas as pd
-
                         d_p = r['df_chart'].tail(30).copy()
-                        # 🚨 バグ修正：日付を強制的にDatetime形式に変換してNaNを排除
-                        d_p.index = pd.to_datetime(d_p.index)
-                        
-                        c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
-                        c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
-                        c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
-                        c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
-
+                        d_p['display_date'] = d_p.index.strftime('%Y/%m/%d')
+                        c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'; c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
+                        c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'; c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
                         try:
                             fig_chart = go.Figure()
-                            # ローソク足
-                            fig_chart.add_trace(go.Candlestick(
-                                x=d_p.index, open=d_p[c_o], high=d_p[c_h],
-                                low=d_p[c_l], close=d_p[c_c],
-                                name="株価",
-                                increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-                                # 🚨 ホバー修正：日付と数値を正確に表示
-                                hovertemplate="<b>%{x|%Y/%m/%d}</b><br>始値: ¥%{open:,.1f}<br>高値: ¥%{high:,.1f}<br>安値: ¥%{low:,.1f}<br>終値: ¥%{close:,.1f}<extra></extra>"
-                            ))
-                            
-                            # 5日線
+                            fig_chart.add_trace(go.Candlestick(x=d_p['display_date'], open=d_p[c_o], high=d_p[c_h], low=d_p[c_l], close=d_p[c_c], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350', hovertemplate="<b>%{x}</b><br>始: ¥%{open:,.1f}<br>高: ¥%{high:,.1f}<br>安: ¥%{low:,.1f}<br>終: ¥%{close:,.1f}<extra></extra>"))
                             ma5 = r['df_chart'][c_c].rolling(window=5).mean().tail(30)
-                            fig_chart.add_trace(go.Scatter(
-                                x=d_p.index, y=ma5, 
-                                name="5日線", 
-                                line=dict(color='#ffca28', width=1.5),
-                                hovertemplate="5日線: ¥%{y:,.1f}<extra></extra>"
-                            ))
-                            
-                            fig_chart.update_layout(
-                                height=350, margin=dict(l=0, r=0, t=10, b=0),
-                                showlegend=False, xaxis_rangeslider_visible=False,
-                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                hovermode="x unified",
-                                hoverlabel=dict(bgcolor="rgba(33, 33, 33, 0.9)", font_size=12, font_family="monospace"),
-                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
-                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='date')
-                            )
+                            fig_chart.add_trace(go.Scatter(x=d_p['display_date'], y=ma5, name="5日線", line=dict(color='#ffca28', width=1.5), hovertemplate="5日線: ¥%{y:,.1f}<extra></extra>"))
+                            fig_chart.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0), showlegend=False, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')), xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category'))
                             st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
-                        except Exception as e:
-                            st.warning("チャート表示エリアの生成に失敗しました。")
+                        except: st.warning("チャート描画不可")
 
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
@@ -1492,169 +1430,55 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
-
+    st.caption("※ 展開中の全部隊の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
-
     if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
-                if "銘柄" in temp_df.columns:
-                    temp_df["銘柄"] = temp_df["銘柄"].astype(str)
+                if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
                 for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
-                    if col in temp_df.columns:
-                        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
+                    if col in temp_df.columns: temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
-            except:
-                st.session_state.frontline_df = pd.DataFrame([
-                    {"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0},
-                    {"銘柄": "3696", "買値": 1515.0, "第1利確": 0.0, "第2利確": 1680.0, "損切": 1395.0, "現在値": 1510.0},
-                    {"銘柄": "6769", "買値": 957.0, "第1利確": 0.0, "第2利確": 1042.0, "損切": 892.0, "現在値": 939.0}
-                ])
-        else:
-            st.session_state.frontline_df = pd.DataFrame([
-                {"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0},
-                {"銘柄": "3696", "買値": 1515.0, "第1利確": 0.0, "第2利確": 1680.0, "損切": 1395.0, "現在値": 1510.0},
-                {"銘柄": "6769", "買値": 957.0, "第1利確": 0.0, "第2利確": 1042.0, "損切": 892.0, "現在値": 939.0}
-            ])
+            except: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0}])
+        else: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 687.0}])
 
-    # --- 🛰️ 衛星通信：現在値の一括同期ボタン ---
-    if st.button("🔄 全軍の現在値を自動取得 (yfinance同期)", use_container_width=True):
-        with st.spinner("衛星通信中... 各部隊の現在地を再取得しています"):
-            import yfinance as yf
-            updated = False
-            for idx, row in st.session_state.frontline_df.iterrows():
-                code = str(row['銘柄']).strip()
-                if len(code) >= 4:
-                    api_code = code[:4] + ".T"  # 日本株のティッカー形式に変換
-                    try:
-                        tk = yf.Ticker(api_code)
-                        hist = tk.history(period="1d")
-                        if not hist.empty:
-                            latest_price = hist['Close'].iloc[-1]
-                            st.session_state.frontline_df.at[idx, '現在値'] = round(latest_price, 1)
-                            updated = True
-                    except:
-                        pass
-            
-            if updated:
-                st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-                st.success("🎯 現在値の同期が完了しました。（※yfinanceの仕様上、最大20分の遅延が含まれます）")
-                st.rerun()
-            else:
-                st.warning("データの取得に失敗しました。")
-    # ---------------------------------------------
+    if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
+        import yfinance as yf
+        updated = False
+        for idx, row in st.session_state.frontline_df.iterrows():
+            code = str(row['銘柄']).strip()
+            if len(code) >= 4:
+                try:
+                    tk = yf.Ticker(code[:4] + ".T"); hist = tk.history(period="1d")
+                    if not hist.empty:
+                        st.session_state.frontline_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1); updated = True
+                except: pass
+        if updated: st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False); st.rerun()
 
-    st.markdown("#### ⚙️ 部隊パラメーター入力 (コントロールパネル)")
-    st.caption("※ 直接数値を書き換えてください。下部の「行を追加」で新しい銘柄を無限に追加可能です。")
-
-    edited_df = st.data_editor(
-        st.session_state.frontline_df,
-        num_rows="dynamic",
-        column_config={
-            "銘柄": st.column_config.TextColumn("銘柄", required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%.1f", required=True),
-            "第1利確": st.column_config.NumberColumn("第1利確", format="%.1f", required=True),
-            "第2利確": st.column_config.NumberColumn("第2利確", format="%.1f", required=True),
-            "損切": st.column_config.NumberColumn("損切", format="%.1f", required=True),
-            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%.1f", required=True),
-        },
-        use_container_width=True,
-        key="frontline_editor"
-    )
-
+    edited_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", column_config={"銘柄": st.column_config.TextColumn("銘柄", required=True), "現在値": st.column_config.NumberColumn("🔴 現在値", format="%.1f")}, use_container_width=True, key="frontline_editor")
     if not edited_df.equals(st.session_state.frontline_df):
-        st.session_state.frontline_df = edited_df.copy()
-        edited_df.to_csv(FRONTLINE_FILE, index=False)
-        st.rerun()
+        st.session_state.frontline_df = edited_df.copy(); edited_df.to_csv(FRONTLINE_FILE, index=False); st.rerun()
 
     st.markdown("---")
-    st.markdown("#### 🔭 全軍レーダー展開状況")
-
-    active_squads = 0
-
     for index, row in edited_df.iterrows():
         ticker = str(row.get('銘柄', ''))
         if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
-            
-        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
-        active_squads += 1
-
-        # 戦況ステータスの判定と色設定
-        if cur <= sl: 
-            st_text, st_color, bg_rgba = "💀 被弾（防衛線突破・即時撤退）", "#ef5350", "rgba(239, 83, 80, 0.15)"
-        elif cur < buy: 
-            st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
-        elif tp1 > 0 and cur < tp1: 
-            st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
-        elif tp2 > 0 and cur < tp2: 
-            st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
-        else: 
-            st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
-
-        # 🚨 UI改修コア：HTMLによる大型HUDパネル（カンマ区切り対応、0はハイフン表示）
+        buy=float(row['買値']); tp1=float(row['第1利確']); tp2=float(row['第2利確']); sl=float(row['損切']); cur=float(row['現在値'])
+        if cur<=sl: st_t, st_c, bg = "💀 被弾", "#ef5350", "rgba(239,83,80,0.15)"
+        elif cur<buy: st_t, st_c, bg = "⚠️ 警戒", "#ff9800", "rgba(255,152,0,0.15)"
+        elif tp1>0 and cur<tp1: st_t, st_c, bg = "🟢 巡航中", "#26a69a", "rgba(38,166,154,0.15)"
+        elif tp2>0 and cur<tp2: st_t, st_c, bg = "🛡️ 目標到達", "#42a5f5", "rgba(66,165,245,0.15)"
+        else: st_t, st_c, bg = "🏆 任務完了", "#ab47bc", "rgba(171,71,188,0.15)"
         fmt = lambda x: f"¥{x:,.1f}" if x > 0 else "未設定"
-        
-        hud_html = f"""
-        <div style="margin-bottom: 5px;">
-            <span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span>
-            <span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color}; margin-bottom: 0px;">
-            <div style="flex: 1; text-align: left;">
-                <div style="font-size: 12px; color: #ef5350;">損切</div>
-                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div>
-            </div>
-            <div style="flex: 1; text-align: left;">
-                <div style="font-size: 12px; color: #ffca28;">買値</div>
-                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div>
-            </div>
-            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};">
-                <div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div>
-                <div style="font-size: 24px; color: #fff; font-weight: bold; letter-spacing: 1px;">{fmt(cur)}</div>
-            </div>
-            <div style="flex: 1; text-align: right;">
-                <div style="font-size: 12px; color: #26a69a;">第1利確</div>
-                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div>
-            </div>
-            <div style="flex: 1; text-align: right;">
-                <div style="font-size: 12px; color: #42a5f5;">第2利確</div>
-                <div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div>
-            </div>
-        </div>
-        """
-        st.markdown(hud_html, unsafe_allow_html=True)
-
-        # グラフ用のデータ構築（0.0の未設定値を除外してスケール崩れを防ぐ）
-        x_vals = []; t_vals = []; c_vals = []
-        if sl > 0: x_vals.append(sl); t_vals.append("損切"); c_vals.append("#ef5350")
-        if buy > 0: x_vals.append(buy); t_vals.append("買値"); c_vals.append("#ffca28")
-        if tp1 > 0: x_vals.append(tp1); t_vals.append("第1利確"); c_vals.append("#26a69a")
-        if tp2 > 0: x_vals.append(tp2); t_vals.append("第2利確"); c_vals.append("#42a5f5")
-        
-        valid_x = x_vals + [cur]
-        min_x = min(valid_x) * 0.98 if valid_x else 0
-        max_x = max(valid_x) * 1.02 if valid_x else 100
-
-        # スリム化されたPlotlyバーグラフ（文字を取り除き、視覚インジケーターに特化）
-        fig = go.Figure()
-        fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#444", width=2))
-        
-        bar_color = "rgba(38, 166, 154, 0.6)" if cur >= buy else "rgba(239, 83, 80, 0.6)"
-        fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color=bar_color, width=12))
-        
-        # 目標ポイントのドットのみ表示（文字はホバー時のみ）
-        fig.add_trace(go.Scatter(x=x_vals, y=[0]*len(x_vals), mode="markers", text=t_vals, hoverinfo="x+text", marker=dict(size=12, color=c_vals), name="防衛線"))
-        # 現在値のターゲットマーク
-        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", text=[f"現在値: {cur}"], hoverinfo="text", marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)), name="ターゲット"))
-        
-        # グラフの高さを大幅に圧縮
-        fig.update_layout(height=80, showlegend=False, yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]), xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")), margin=dict(l=10, r=10, t=10, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
+        st.markdown(f"""<div style="margin-bottom:5px;"><span style="font-size:18px; font-weight:bold;">部隊 [{ticker}]</span><span style="font-size:14px; font-weight:bold; color:{st_c}; margin-left:15px;">{st_t}</span></div><div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:12px 15px; border-radius:8px; border-left:5px solid {st_c};"><div style="flex:1;"><div style="font-size:12px; color:#ef5350;">損切</div><div style="font-size:16px; font-weight:bold;">{fmt(sl)}</div></div><div style="flex:1;"><div style="font-size:12px; color:#ffca28;">買値</div><div style="font-size:16px; font-weight:bold;">{fmt(buy)}</div></div><div style="flex:1.5; text-align:center; background:{bg}; padding:8px; border-radius:6px; border:1px solid {st_c};"><div style="font-size:13px; color:{st_c}; font-weight:bold;">現在値</div><div style="font-size:24px; font-weight:bold;">{fmt(cur)}</div></div><div style="flex:1; text-align:right;"><div style="font-size:12px; color:#26a69a;">利確1</div><div style="font-size:16px; font-weight:bold;">{fmt(tp1)}</div></div><div style="flex:1; text-align:right;"><div style="font-size:12px; color:#42a5f5;">利確2</div><div style="font-size:16px; font-weight:bold;">{fmt(tp2)}</div></div></div>""", unsafe_allow_html=True)
+        fig=go.Figure(); m_x=min(sl,cur,buy)*0.98; mx_x=max(tp2,cur,buy)*1.02
+        fig.add_shape(type="line",x0=m_x,y0=0,x1=mx_x,y1=0,line=dict(color="#444",width=2))
+        fig.add_shape(type="line",x0=buy,y0=0,x1=cur,y1=0,line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)",width=10))
+        fig.add_trace(go.Scatter(x=[sl,buy,tp1,tp2],y=[0]*4,mode="markers",marker=dict(size=10,color=["#ef5350","#ffca28","#26a69a","#42a5f5"])))
+        fig.add_trace(go.Scatter(x=[cur],y=[0],mode="markers",marker=dict(size=20,symbol="cross-thin",line=dict(width=3,color=st_c))))
+        fig.update_layout(height=60, showlegend=False, yaxis=dict(showticklabels=False, range=[-1,1]), xaxis=dict(showgrid=False, range=[m_x,mx_x], tickfont=dict(color="#888")), margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
         st.plotly_chart(fig, use_container_width=True)
-        st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True) # 余白
-
-    if active_squads == 0: st.info("現在、展開中の部隊はありません。上の表にデータを入力してください。")
 
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
