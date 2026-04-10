@@ -1152,6 +1152,45 @@ with tab3:
                         st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
                         
                         st.caption(f"🏭 業種: {r.get('sector','不明')}")
+                        # 📈 追記：精密弾道チャート（ローソク足）の実装
+                        st.markdown("---")
+                        st.caption("📊 直近14日間の弾道軌道（ローソク足）")
+                        
+                        # yfinanceから直近データを取得（精密分析用）
+                        import plotly.graph_objects as go
+                        
+                        # api_codeとhistデータはTab3冒頭で取得済みのものを流用
+                        # もし未取得の場合はここで再度 history(period="1mo") などを実行
+                        chart_hist = tk.history(period="1mo") # 余裕を持って1ヶ月分
+                        
+                        if not chart_hist.empty:
+                            fig_chart = go.Figure(data=[go.Candlestick(
+                                x=chart_hist.index,
+                                open=chart_hist['Open'],
+                                high=chart_hist['High'],
+                                low=chart_hist['Low'],
+                                close=chart_hist['Close'],
+                                name="価格",
+                                increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+                            )])
+                            
+                            # 5日移動平均線（短期トレンド）をオーバーレイ
+                            ma5 = chart_hist['Close'].rolling(window=5).mean()
+                            fig_chart.add_trace(go.Scatter(x=chart_hist.index, y=ma5, name="5日線", line=dict(color='#ffca28', width=1)))
+
+                            fig_chart.update_layout(
+                                height=300, 
+                                margin=dict(l=0, r=0, t=0, b=0),
+                                showlegend=False,
+                                xaxis_rangeslider_visible=False,
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                yaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888')),
+                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
+                            )
+                            st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
+                        else:
+                            st.warning("チャートデータの取得に失敗しました。")
                     with sc_mid:
                         if is_ambush:
                             html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
