@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
 
-# --- st.metric縺ｮ譁・ｭ怜・繧鯉ｼ・..・峨ｒ髦ｲ縺舌せ繝翫う繝代・繝代ャ繝・---
+# --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] > div { text-overflow: clip !important; overflow: visible !important; white-space: nowrap !important; }
@@ -18,8 +18,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 繝壹・繧ｸ險ｭ螳・& 繧ｲ繝ｼ繝医く繝ｼ繝代・ ---
-st.set_page_config(page_title="謌ｦ陦薙せ繧ｳ繝ｼ繝励朱延縺ｮ謗溘・, layout="wide", page_icon="識")
+# --- 1. ページ設定 & ゲートキーパー ---
+st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide", page_icon="🎯")
 
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
@@ -28,25 +28,25 @@ def check_password():
         st.session_state["password_correct"] = False
         st.session_state["current_user"] = "" 
     if not st.session_state["password_correct"]:
-        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">識 謌ｦ陦薙せ繧ｳ繝ｼ繝励朱延縺ｮ謗溘・/h1>', unsafe_allow_html=True)
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.form("login_form"):
-                password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="繧｢繧ｯ繧ｻ繧ｹ繧ｳ繝ｼ繝・)
-                submitted = st.form_submit_button("隱崎ｨｼ (ENTER)", use_container_width=True)
+                password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード")
+                submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
                 if submitted:
                     if password in ALLOWED_PASSWORDS:
                         st.session_state["password_correct"] = True
                         st.session_state["current_user"] = password 
                         st.rerun()
                     else:
-                        st.error("圷 隱崎ｨｼ螟ｱ謨暦ｼ壹さ繝ｼ繝峨′驕輔＞縺ｾ縺吶・)
+                        st.error("🚨 認証失敗：コードが違います。")
         return False
     return True
 
 if not check_password(): st.stop()
 
-# --- 噤 蜿ｸ莉､驛ｨ縺ｸ蟶ｰ驍・・繧ｿ繝ｳ ---
+# --- 🚁 司令部へ帰還ボタン ---
 import streamlit.components.v1 as components
 components.html(
     """
@@ -56,7 +56,7 @@ components.html(
     if (oldBtn) { oldBtn.remove(); }
     const btn = parentDoc.createElement('button');
     btn.id = 'sniper-return-btn';
-    btn.innerHTML = '噤 蜿ｸ莉､驛ｨ縺ｸ蟶ｰ驍・;
+    btn.innerHTML = '🚁 司令部へ帰還';
     btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
     btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#00e676';
     btn.style.border = '1px solid #00e676'; btn.style.padding = '12px 20px';
@@ -77,15 +77,15 @@ components.html(
     """, height=0, width=0
 )
 
-# --- 2. 隱崎ｨｼ繝ｻ騾壻ｿ｡險ｭ螳・---
+# --- 2. 認証・通信設定 ---
 user_id = st.session_state["current_user"]
-st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">識 謌ｦ陦薙せ繧ｳ繝ｼ繝励朱延縺ｮ謗溘・<span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- 竢ｱ・・19:00 螳悟・閾ｪ蜍輔ヱ繝ｼ繧ｸ讖滓ｧ・---
+# --- ⏱️ 19:00 完全自動パージ機構 ---
 import pytz
 jst = pytz.timezone('Asia/Tokyo')
 now = datetime.now(jst)
@@ -102,23 +102,23 @@ if now.hour >= 19:
         st.session_state.tab5_ifd_results = None
         st.session_state.last_auto_purge_date = today_str
 
-# --- 笞呻ｸ・繧ｷ繧ｹ繝・Β蜈ｨ菴楢ｨｭ螳壹・豌ｸ邯壼喧 ---
+# --- ⚙️ システム全体設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
-# --- 笞呻ｸ・繧ｷ繧ｹ繝・Β蜈ｨ菴楢ｨｭ螳壹・豌ｸ邯壼喧 ---
+# --- ⚙️ システム全体設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
     defaults = {
-        "preset_target": "噫 荳ｭ蟆丞梛譬ｪ (50%謚ｼ縺励・讓呎ｺ・", "sidebar_tactics": "笞厄ｸ・繝舌Λ繝ｳ繧ｹ (謗滄＃謌千紫 ・・蛻ｰ驕泌ｺｦ)",
+        "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -30, "f4_mlong": 3.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "倹 縲仙ｾ・ｼ上・謚ｼ縺礼岼繝ｻ騾・ｼｵ繧・,
-        "bt_mode_sim_v2": "倹 縲仙ｾ・ｼ上鷹延縺ｮ謗・(謚ｼ縺礼岼迢呎茶)", 
-        # 譁ｰ縺励￥險ｭ螳壹＠縺鬱ab4逕ｨ縺ｮ豌ｸ邯壼喧繧ｭ繝ｼ
+        "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
+        # 新しく設定したTab4用の永続化キー
         "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
         "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
@@ -139,7 +139,7 @@ def save_settings():
             "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     
-    # 圷 菫ｮ豁｣・壽里蟄倥・險ｭ螳壹ｒ繝ｭ繝ｼ繝峨＠縺ｦ繝槭・繧ｸ縺吶ｋ・磯撼陦ｨ遉ｺ隕∫ｴ縺ｮ豸亥､ｱ繧帝亟縺宣亟陦帷ｶｲ・・
+    # 🚨 修正：既存の設定をロードしてマージする（非表示要素の消失を防ぐ防衛網）
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -153,23 +153,23 @@ def save_settings():
 load_settings()
 
 def apply_market_preset():
-    preset = st.session_state.get("preset_target", "噫 荳ｭ蟆丞梛譬ｪ (50%謚ｼ縺励・讓呎ｺ・")
-    tactics = st.session_state.get("sidebar_tactics", "笞厄ｸ・繝舌Λ繝ｳ繧ｹ (謗滄＃謌千紫 ・・蛻ｰ驕泌ｺｦ)")
-    if "螟ｧ蝙区ｪ" in preset: st.session_state.push_r = 25.0 if "繝舌Λ繝ｳ繧ｹ" in tactics else 45.0
+    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    if "大型株" in preset: st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
     elif "61.8%" in preset: st.session_state.push_r = 61.8
     else: st.session_state.push_r = 50.0
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 研・・繝槭け繝ｭ豌苓ｱ｡繝ｬ繝ｼ繝繝ｼ・域律邨悟ｹｳ蝮・ｼ峨Δ繧ｸ繝･繝ｼ繝ｫ ---
-# 縲蝉ｿｮ豁｣縲台ｸ崎ｦ√↑繝倥ャ繝繝ｼ蛛ｽ陬・ｒ謗帝勁縺励∵ｨ呎ｺ夜壻ｿ｡縺ｮ縺ｾ縺ｾTTL・医く繝｣繝・す繝･菫晄戟・峨・縺ｿ60遘偵∈遏ｭ邵ｮ
+# --- 🌤️ マクロ気象レーダー（日経平均）モジュール ---
+# 【修正】不要なヘッダー偽装を排除し、標準通信のままTTL（キャッシュ保持）のみ60秒へ短縮
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         import pandas as pd
         
-        # 繧ｻ繝・す繝ｧ繝ｳ蛛ｽ陬・ｒ陦後ｏ縺壹∵ｨ呎ｺ悶・縺ｾ縺ｾ蜻ｼ縺ｳ蜃ｺ縺・
+        # セッション偽装を行わず、標準のまま呼び出す
         tk_ni = yf.Ticker("^N225")
         hist_ni = tk_ni.history(period="3mo")
         
@@ -191,8 +191,8 @@ def render_macro_board():
         with c1:
             html = f"""
             <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">研・・謌ｦ蝣ｴ縺ｮ螟ｩ蛟・(譌･邨悟ｹｳ蝮・</div>
-                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.2f} 蜀・/div>
+                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌤️ 戦場の天候 (日経平均)</div>
+                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.2f} 円</div>
                 <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</div>
             </div>
             """
@@ -206,11 +206,11 @@ def render_macro_board():
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else:
-        st.warning("笞・・螟夜Κ豌苓ｱ｡繝ｬ繝ｼ繝繝ｼ蠢懃ｭ斐↑縺励・)
+        st.warning("⚠️ 外部気象レーダー応答なし。")
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 render_macro_board()
 
-# --- 3. 蜈ｱ騾夐未謨ｰ & 蝨ｰ髮ｷ讀懃衍 ---
+# --- 3. 共通関数 & 地雷検知 ---
 def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
@@ -237,7 +237,7 @@ def check_event_mines(code, event_data=None):
         try:
             event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
             if (event_date - timedelta(days=14)) <= today_date <= event_date:
-                alerts.append(f"張 縲仙慍髮ｷ隴ｦ謌偵大些髯ｺ繧､繝吶Φ繝域磁霑台ｸｭ・・critical_mines[c]}・・)
+                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
         except: pass
 
     if not event_data: return alerts
@@ -248,7 +248,7 @@ def check_event_mines(code, event_data=None):
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
                 if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"張 縲仙慍髮ｷ隴ｦ謌偵鷹・蠖捺ｨｩ蛻ｩ關ｽ縺｡譌･縺梧磁霑台ｸｭ ({d_str})")
+                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
                     break
             except: pass
 
@@ -259,7 +259,7 @@ def check_event_mines(code, event_data=None):
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
                 if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"櫨 縲仙慍髮ｷ隴ｦ謌偵第ｱｺ邂礼匱陦ｨ縺梧磁霑台ｸｭ ({d_str})")
+                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
                     break
             except: pass
 
@@ -272,7 +272,7 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['繧ｳ繝ｼ繝・, '驫俶氛蜷・, '33讌ｭ遞ｮ蛹ｺ蛻・, '蟶ょｴ繝ｻ蝠・刀蛹ｺ蛻・, '隕乗ｨ｡蛹ｺ蛻・]]
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
             df['Code'] = df['Code'].astype(str) + "0"
             return df
@@ -437,201 +437,201 @@ def calc_technicals(df):
     df.fillna(0, inplace=True)
     return df
 
-def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="蠕・ｼ・, gc_days=0):
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC逶ｴ蠕・
-    elif macd_hist > macd_hist_prev: macd_t = "荳頑・諡｡螟ｧ"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "荳玖誠邯咏ｶ・
-    else: macd_t = "貂幄｡ｰ"
+def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
+    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
+    else: macd_t = "減衰"
 
-    if mode == "蠑ｷ隘ｲ":
-        if macd_t == "荳玖誠邯咏ｶ・ or rsi >= 75: return "蝨丞､役泅ｫ", "#d32f2f", 0, macd_t
+    if mode == "強襲":
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
         if gc_days == 1:
-            if rsi <= 50: return "S櫨", "#2e7d32", 5, "GC逶ｴ蠕・1譌･逶ｮ)"
-            else: return "A笞｡", "#ed6c02", 4, "GC逶ｴ蠕・1譌･逶ｮ)"
+            if rsi <= 50: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
+            else: return "A⚡", "#ed6c02", 4, "GC直後(1日目)"
         elif gc_days == 2:
-            if rsi <= 55: return "A笞｡", "#ed6c02", 4, "GC邯咏ｶ・2譌･逶ｮ)"
-            else: return "B嶋", "#0288d1", 3, "GC邯咏ｶ・2譌･逶ｮ)"
+            if rsi <= 55: return "A⚡", "#ed6c02", 4, "GC継続(2日目)"
+            else: return "B📈", "#0288d1", 3, "GC継続(2日目)"
         elif gc_days >= 3:
-            return "B嶋", "#0288d1", 3, f"GC邯咏ｶ・{gc_days}譌･逶ｮ)"
-        else: return "C早・・, "#616161", 1, macd_t
+            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+        else: return "C👁️", "#616161", 1, macd_t
     else:
-        if bt == 0 or lc == 0: return "C早・・, "#616161", 1, macd_t
+        if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
         dist_pct = ((lc / bt) - 1) * 100 
-        if dist_pct < -2.0: return "蝨丞､役汳", "#d32f2f", 0, macd_t
+        if dist_pct < -2.0: return "圏外💀", "#d32f2f", 0, macd_t
         elif dist_pct <= 2.0:
-            if rsi <= 45: return "S櫨", "#2e7d32", 5, macd_t
-            else: return "A笞｡", "#ed6c02", 4.5, macd_t 
+            if rsi <= 45: return "S🔥", "#2e7d32", 5, macd_t
+            else: return "A⚡", "#ed6c02", 4.5, macd_t 
         elif dist_pct <= 5.0:
-            if rsi <= 50: return "Aｪ､", "#0288d1", 4.0, macd_t 
-            else: return "B嶋", "#0288d1", 3, macd_t
-        else: return "C早・・, "#616161", 1, macd_t
+            if rsi <= 50: return "A🪤", "#0288d1", 4.0, macd_t 
+            else: return "B📈", "#0288d1", 3, macd_t
+        else: return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    """ 蠑ｷ隘ｲ(鬆・ｼｵ繧・蟆ら畑縺ｮ繧ｹ繧ｳ繧｢繝ｪ繝ｳ繧ｰ繧ｨ繝ｳ繧ｸ繝ｳ """
+    """ 強襲(順張り)専用のスコアリングエンジン """
     if gc_days <= 0 or df_chart is None or df_chart.empty:
-        return "蝨丞､・逐", "#424242", 0, ""
+        return "圏外 💀", "#424242", 0, ""
         
     latest = df_chart.iloc[-1]
     ma5 = latest.get('MA5', 0)
     ma25 = latest.get('MA25', 0)
     ma75 = latest.get('MA75', 0)
     
-    # 蜃ｺ譚･鬮倥・螳牙・縺ｪ蜿門ｾ・
+    # 出来高の安全な取得
     v_col = next((col for col in df_chart.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
     vol_latest = latest[v_col] if v_col else 0
     vol_avg = df_chart[v_col].tail(5).mean() if v_col else 0
 
-    score = 50  # GC逋ｺ蜍輔・蝓ｺ遉守せ
+    score = 50  # GC発動の基礎点
 
-    # 笞厄ｸ・縲蝉ｸｭ髢灘刈轤ｹ縲禅ab2/Tab3蜈ｱ騾壹・蝓ｺ遉手ｩ穂ｾ｡
+    # ⚖️ 【中間加点】Tab2/Tab3共通の基礎評価
     if ma25 > 0:
-        if lc >= ma25 * 0.95: score += 10  # 豐ｼ縺九ｉ縺ｮ閼ｱ蜃ｺ蛻晏虚・・10轤ｹ・・
-        if lc >= ma25: score += 10         # 25譌･邱壻ｸ頑栢縺托ｼ・10轤ｹ・・
-    if vol_avg > 0 and vol_latest > vol_avg * 1.5: score += 10 # 蜃ｺ譚･鬮倥・辷・匱・・10轤ｹ・・
-    if 50 <= rsi_v <= 70: score += 10      # 蠑ｷ縺・ｸ頑・繝｢繝｡繝ｳ繧ｿ繝・・10轤ｹ・・
+        if lc >= ma25 * 0.95: score += 10  # 沼からの脱出初動（+10点）
+        if lc >= ma25: score += 10         # 25日線上抜け（+10点）
+    if vol_avg > 0 and vol_latest > vol_avg * 1.5: score += 10 # 出来高の爆発（+10点）
+    if 50 <= rsi_v <= 70: score += 10      # 強い上昇モメンタム（+10点）
 
-    # 逐 縲占ｶ・宍譬ｼ貂帷せ縲禅ab3・育ｲｾ蟇・せ繧ｳ繝ｼ繝暦ｼ牙ｰら畑縺ｮ蜃ｦ蛻代Ο繧ｸ繝・け
+    # 💀 【超厳格減点】Tab3（精密スコープ）専用の処刑ロジック
     if is_strict:
-        # 繝代・繝輔ぉ繧ｯ繝医が繝ｼ繝繝ｼ縺ｮ蟠ｩ螢翫・螟ｧ蟷・ｸ帷せ・磯ｨ吶＠縺ｮ蜿ｯ閭ｽ諤ｧ螟ｧ・・
+        # パーフェクトオーダーの崩壊は大幅減点（騙しの可能性大）
         if not (lc > ma5 > ma25 > ma75): score -= 40
-        # 蜃ｺ譚･鬮倥′莨ｴ縺｣縺ｦ縺・↑縺ЖC縺ｯ繝輔ぉ繧､繧ｯ縺ｨ縺ｿ縺ｪ縺・
+        # 出来高が伴っていないGCはフェイクとみなす
         if vol_avg > 0 and vol_latest <= vol_avg * 1.2: score -= 20
-        # RSI驕守・(75雜・縺ｯ鬮伜､謗ｴ縺ｿ縺ｮ繝ｪ繧ｹ繧ｯ螟ｧ
+        # RSI過熱(75超)は高値掴みのリスク大
         if rsi_v > 75: score -= 20
 
-    # 識 譛邨ゅΛ繝ｳ繧ｯ蛻､螳・
+    # 🎯 最終ランク判定
     if score >= 80: rank = "S"; bg = "#d32f2f"
     elif score >= 60: rank = "A"; bg = "#f57c00"
     elif score >= 40: rank = "B"; bg = "#fbc02d"
-    else: rank = "C 逐"; bg = "#424242"
+    else: rank = "C 💀"; bg = "#424242"
     
-    return rank, bg, score, "GC逋ｺ蜍穂ｸｭ"
+    return rank, bg, score, "GC発動中"
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
     latest = df.iloc[-1]; prev = df.iloc[-2]
     rsi = latest.get('RSI', 50); macd_hist = latest.get('MACD_Hist', 0); macd_hist_prev = prev.get('MACD_Hist', 0); atr = latest.get('ATR', 0)
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
-    rsi_text = "櫨 雜・｣ｲ繧峨ｌ縺吶℃" if rsi <= 30 else "笞｡ 螢ｲ繧峨ｌ縺吶℃" if rsi <= 45 else "笞厄ｸ・荳ｭ遶・
-    if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "笞・・雋ｷ繧上ｌ縺吶℃"
+    rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
+    if rsi >= 70: rsi_color = "#26a69a"; rsi_text = "⚠️ 買われすぎ"
 
     _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
 
-    if macd_t == "GC逶ｴ蠕・:
-        macd_display = "櫨櫨櫨 豼辭ｱ GC逋ｺ蜍穂ｸｭ 櫨櫨櫨"
+    if macd_t == "GC直後":
+        macd_display = "🔥🔥🔥 激熱 GC発動中 🔥🔥🔥"
         macd_color = "#ff5722"
         bg_glow = "box-shadow: 0 0 15px rgba(255, 87, 34, 0.6); border: 2px solid #ff5722;"
-    elif macd_t == "荳頑・諡｡螟ｧ":
-        macd_display = "嶋 荳頑・諡｡螟ｧ"
+    elif macd_t == "上昇拡大":
+        macd_display = "📈 上昇拡大"
         macd_color = "#ef5350"
         bg_glow = "border-left: 4px solid #FFD700;"
-    elif macd_t == "荳玖誠邯咏ｶ・:
-        macd_display = "悼 荳玖誠邯咏ｶ・
+    elif macd_t == "下落継続":
+        macd_display = "📉 下落継続"
         macd_color = "#26a69a"
         bg_glow = "border-left: 4px solid #FFD700;"
     else:
-        macd_display = "笞厄ｸ・貂幄｡ｰ"
+        macd_display = "⚖️ 減衰"
         macd_color = "#888888"
         bg_glow = "border-left: 4px solid #FFD700;"
 
     days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
     return f"""<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}">
-        <div style="font-size: 14px; color: #aaa;">藤 險亥勣繝輔Λ繧､繝・ RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | 繝懊Λ <strong style="color: #bbb;">{atr:.0f}蜀・/strong> (蛻ｩ遒ｺ逶ｮ螳・ {days}譌･)</div></div>"""
+        <div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>"""
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     from datetime import timedelta
     df = df.copy()
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='譬ｪ萓｡', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
-    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5譌･', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
-    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25譌･', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
-    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75譌･', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='雋ｷ蛟､逶ｮ讓・, line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
+    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
+    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
+    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     last_date = df['Date'].max()
     start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- 4. 繧ｵ繧､繝峨ヰ繝ｼ UI ---
-st.sidebar.header("識 蟇ｾ雎｡蟶ょｴ (荳諡ｬ謠幄｣・")
-st.sidebar.radio("繝励Μ繧ｻ繝・ヨ驕ｸ謚・, ["噫 荳ｭ蟆丞梛譬ｪ (50%謚ｼ縺励・讓呎ｺ・", "笞・荳ｭ蟆丞梛譬ｪ (61.8%謚ｼ縺励・豺ｱ豬ｷ)", "召 螟ｧ蝙区ｪ (25%謚ｼ縺励・繝医Ξ繝ｳ繝・"], key="preset_target", on_change=apply_market_preset)
-market_filter_mode = "螟ｧ蝙・ if "螟ｧ蝙区ｪ" in st.session_state.preset_target else "荳ｭ蟆丞梛"
+# --- 4. サイドバー UI ---
+st.sidebar.header("🎯 対象市場 (一括換装)")
+st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
+market_filter_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
 
-st.sidebar.radio("併・・謌ｦ陦薙Δ繝ｼ繝牙・譖ｿ", ["笞厄ｸ・繝舌Λ繝ｳ繧ｹ (謗滄＃謌千紫 ・・蛻ｰ驕泌ｺｦ)", "笞費ｸ・謾ｻ繧・㍾隕・(荳牙ｷ昴す繧ｰ繝翫Ν蜆ｪ蜈・", "孱・・螳医ｊ驥崎ｦ・(驩・｣√す繧ｰ繝翫Ν蜆ｪ蜈・"], key="sidebar_tactics", on_change=apply_market_preset)
+st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
 
-st.sidebar.header("剥 繝斐ャ繧ｯ繧｢繝・・繝ｫ繝ｼ繝ｫ")
+st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
-f1_min = c_f1_1.number_input("竭 荳矩剞(蜀・", step=100, key="f1_min", on_change=save_settings)
-f1_max = c_f1_2.number_input("竭 荳企剞(蜀・", step=100, key="f1_max", on_change=save_settings) 
-f2_m30 = st.sidebar.number_input("竭｡ 1繝ｶ譛域垓鬨ｰ荳企剞(蛟・", step=0.1, key="f2_m30", on_change=save_settings)
-f3_drop = st.sidebar.number_input("竭｢ 蜊雁ｹｴ縲・蟷ｴ荳玖誠髯､螟・%)", step=5, key="f3_drop", on_change=save_settings)
-f4_mlong = st.sidebar.number_input("竭｣ 荳翫￡蛻・ｊ髯､螟・蛟・", step=0.5, key="f4_mlong", on_change=save_settings)
-f5_ipo = st.sidebar.checkbox("竭､ IPO髯､螟・闍ｱ蟄励さ繝ｼ繝臥ｭ・", key="f5_ipo", on_change=save_settings)
-f6_risk = st.sidebar.checkbox("竭･ 逍醍ｾｩ豕ｨ險倬釜譟・勁螟・, key="f6_risk", on_change=save_settings)
-f7_ex_etf = st.sidebar.checkbox("竭ｦ ETF繝ｻREIT遲峨ｒ髯､螟・, key="f7_ex_etf", on_change=save_settings)
-f8_ex_bio = st.sidebar.checkbox("竭ｧ 蛹ｻ阮ｬ蜩・繝舌う繧ｪ)繧帝勁螟・, key="f8_ex_bio", on_change=save_settings)
+f1_min = c_f1_1.number_input("① 下限(円)", step=100, key="f1_min", on_change=save_settings)
+f1_max = c_f1_2.number_input("① 上限(円)", step=100, key="f1_max", on_change=save_settings) 
+f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
+f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", step=5, key="f3_drop", on_change=save_settings)
+f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", step=0.5, key="f4_mlong", on_change=save_settings)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", key="f5_ipo", on_change=save_settings)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", key="f6_risk", on_change=save_settings)
+f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
+f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
-f9_min14 = c_f9_1.number_input("竭ｨ 荳矩剞(蛟・", step=0.1, key="f9_min14", on_change=save_settings)
-f9_max14 = c_f9_2.number_input("竭ｨ 荳企剞(蛟・", step=0.1, key="f9_max14", on_change=save_settings)
-f10_ex_knife = st.sidebar.checkbox("竭ｩ 關ｽ縺｡繧九リ繧､繝暮勁螟・證ｴ關ｽ/騾｣邯壻ｸ玖誠)", key="f10_ex_knife", on_change=save_settings)
+f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", key="f10_ex_knife", on_change=save_settings)
 
-st.sidebar.header("識 雋ｷ縺・Ν繝ｼ繝ｫ")
-push_r = st.sidebar.number_input("竭 謚ｼ縺礼岼(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
-limit_d = st.sidebar.number_input("竭｡ 雋ｷ縺・悄髯・譌･)", step=1, key="limit_d", on_change=save_settings)
-st.sidebar.number_input("竭｢ 莉ｮ諠ｳLot(譬ｪ謨ｰ)", step=100, key="bt_lot", on_change=save_settings)
+st.sidebar.header("🎯 買いルール")
+push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
+limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot", on_change=save_settings)
 
-st.sidebar.header("孱・・螢ｲ繧翫Ν繝ｼ繝ｫ・磯延縺ｮ謗滂ｼ・)
-st.sidebar.number_input("竭 蛻ｩ遒ｺ逶ｮ讓・(+%)", step=1, key="bt_tp", on_change=save_settings)
-st.sidebar.number_input("竭｡ 謳榊・/繧ｶ繝ｩ蝣ｴ (-%)", step=1, key="bt_sl_i", on_change=save_settings)
-st.sidebar.number_input("竭｢ 謳榊・/邨ょ､ (-%)", step=1, key="bt_sl_c", on_change=save_settings)
-st.sidebar.number_input("竭｣ 蠑ｷ蛻ｶ謦､騾/螢ｲ繧頑悄髯・(譌･)", step=1, key="bt_sell_d", on_change=save_settings)
+st.sidebar.header("🛡️ 売りルール（鉄の掟）")
+st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp", on_change=save_settings)
+st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i", on_change=save_settings)
+st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c", on_change=save_settings)
+st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d", on_change=save_settings)
 
-st.sidebar.markdown("#### 圷 謗溪則・夐勁螟悶ヶ繝ｩ繝・け繝ｪ繧ｹ繝・)
+st.sidebar.markdown("#### 🚨 掟⑥：除外ブラックリスト")
 GIGI_FILE = f"saved_gigi_mines_{user_id}.txt"
 default_gigi = "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
 if os.path.exists(GIGI_FILE):
     with open(GIGI_FILE, "r", encoding="utf-8") as f:
         default_gigi = f.read()
 
-gigi_input = st.sidebar.text_area("逍醍ｾｩ豕ｨ險倥・繝懊Ο譬ｪ繧ｳ繝ｼ繝・(繧ｫ繝ｳ繝槫玄蛻・ｊ)", value=default_gigi, height=100)
+gigi_input = st.sidebar.text_area("疑義注記・ボロ株コード (カンマ区切り)", value=default_gigi, height=100)
 with open(GIGI_FILE, "w", encoding="utf-8") as f:
     f.write(gigi_input)
 
-extracted_codes = re.findall(r'\b\d{4}\b(?!\s*[/蟷ｴ-])', gigi_input)
+extracted_codes = re.findall(r'\b\d{4}\b(?!\s*[/年-])', gigi_input)
 gigi_mines_list = list(dict.fromkeys(extracted_codes))
 
 st.sidebar.divider()
-st.sidebar.markdown("### 屏・・繧ｷ繧ｹ繝・Β邂｡逅・)
-if st.sidebar.button("閥 繧ｭ繝｣繝・す繝･蠑ｷ蛻ｶ繝代・繧ｸ (API驕・ｻｶ譎ら畑)", use_container_width=True):
+st.sidebar.markdown("### 🛠️ システム管理")
+if st.sidebar.button("🔴 キャッシュ強制パージ (API遅延時用)", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
     st.session_state.tab2_scan_results = None
     st.session_state.tab5_ifd_results = None
-    st.sidebar.success("蜈ｨ險俶・繧貞ｼｷ蛻ｶ繝代・繧ｸ縺励◆縲よ怙譁ｰ繝・・繧ｿ繧貞・蜿門ｾ励☆繧九・)
+    st.sidebar.success("全記憶を強制パージした。最新データを再取得する。")
     st.rerun()
 
 # ==========================================
-# 5. 繧ｿ繝門・讒区・
+# 5. タブ再構成
 # ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "倹 縲仙ｾ・ｼ上大ｺ・沺繝ｬ繝ｼ繝繝ｼ", "笞｡ 縲仙ｼｷ隘ｲ縲賎C蛻晏虚繝ｬ繝ｼ繝繝ｼ", "識 縲千・貅悶醍ｲｾ蟇・せ繧ｳ繝ｼ繝・, 
-    "笞呻ｸ・縲先ｼ皮ｿ偵第姶陦薙す繝溘Η繝ｬ繝ｼ繧ｿ", "笵ｺ 縲先姶邱壹台ｺ､謌ｦ繝｢繝九ち繝ｼ", "刀 縲先姶豁ｴ縲台ｺ､謌ｦ繝・・繧ｿ繝吶・繧ｹ"
+    "🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", 
+    "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"
 ])
 master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">識 縲仙ｾ・ｼ上鷹延縺ｮ謗溘・蜊雁､謚ｼ縺励Ξ繝ｼ繝繝ｼ</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
-    run_scan_t1 = st.button("噫 譛譁ｰ繝・・繧ｿ縺ｧ蠕・ｼ上せ繧ｭ繝｣繝ｳ髢句ｧ・)
-    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF繝ｻREIT繧帝勁螟・(蠕・ｼ・", key="tab1_etf_filter", on_change=save_settings)
+    run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
+    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外 (待伏)", key="tab1_etf_filter", on_change=save_settings)
 
     if run_scan_t1:
-        st.toast("泙 蠕・ｼ上ヨ繝ｪ繧ｬ繝ｼ繧堤｢ｺ隱阪らｴ｢謨ｵ髢句ｧ具ｼ・, icon="識")
-        with st.spinner("蜈ｨ驫俶氛縺九ｉ繧ｵ繧､繝峨ヰ繝ｼ譚｡莉ｶ・亥・繝輔ぅ繝ｫ繧ｿ繝ｼ蜷梧悄・峨↓蜷郁・縺吶ｋ繧ｿ繝ｼ繧ｲ繝・ヨ繧堤ｴ｢謨ｵ荳ｭ..."):
+        st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
+        with st.spinner("全銘柄からサイドバー条件（全フィルター同期）に合致するターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("繝・・繧ｿ縺ｮ蜿門ｾ励↓螟ｱ謨励＠縺溘・)
+                st.error("データの取得に失敗した。")
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
@@ -641,7 +641,7 @@ with tab1:
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺蔵 萓｡譬ｼ荳贋ｸ矩剞繝輔ぅ繝ｫ繧ｿ繝ｼ縺ｮ驕ｩ逕ｨ
+                # 🚨 同期パッチ：① 価格上下限フィルターの適用
                 f1_min = float(st.session_state.f1_min)
                 f1_max = float(st.session_state.f1_max)
                 f5_ipo = st.session_state.f5_ipo
@@ -654,29 +654,29 @@ with tab1:
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺側 IPO・井ｸ雁ｴ1蟷ｴ譛ｪ貅・蛾勁螟悶ヵ繧｣繝ｫ繧ｿ繝ｼ縺ｮ繧ｹ繝槭・繝磯←逕ｨ
+                # 🚨 同期パッチ：⑤ IPO（上場1年未満）除外フィルターのスマート適用
                 if f5_ipo and not df.empty:
-                    # API縺悟叙蠕励＠縺滓怙繧ょ商縺・律莉假ｼ育ｴ・蟷ｴ蜑阪・繝斐Φ繝昴う繝ｳ繝域律・峨ｒ蝓ｺ貅悶→縺吶ｋ
+                    # APIが取得した最も古い日付（約1年前のピンポイント日）を基準とする
                     oldest_global_date = df['Date'].min()
-                    # 蜷・釜譟・′謖√▽譛蜿､縺ｮ繝・・繧ｿ譌･莉倥ｒ邂怜・
+                    # 各銘柄が持つ最古のデータ日付を算出
                     stock_min_dates = df.groupby('Code')['Date'].min()
-                    # 蝓ｺ貅匁律縺九ｉ +15譌･ 莉･蜀・↓繝・・繧ｿ縺悟ｭ伜惠縺励※縺・ｌ縺ｰ縲・蟷ｴ蜑阪°繧我ｸ雁ｴ縺励※縺・ｋ縲阪→蛻､螳・
+                    # 基準日から +15日 以内にデータが存在していれば「1年前から上場している」と判定
                     threshold_date = oldest_global_date + pd.Timedelta(days=15)
                     valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
                     df = df[df['Code'].isin(valid_seasoned_codes)]
 
                 if exclude_etf_flag_t1 and not master_df.empty:
-                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|謚穂ｿ｡', case=False, na=False)
+                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     valid_codes = master_df[~invalid_mask]['Code'].unique()
                     df = df[df['Code'].isin(valid_codes)]
 
                 if not master_df.empty:
-                    if "螟ｧ蝙区ｪ" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('繝励Λ繧､繝|荳驛ｨ', na=False)
-                    else: m_mask = master_df['Market'].astype(str).str.contains('繧ｹ繧ｿ繝ｳ繝繝ｼ繝榎繧ｰ繝ｭ繝ｼ繧ｹ|譁ｰ闊・繝槭じ繝ｼ繧ｺ|JASDAQ|莠碁Κ', na=False)
+                    if "大型株" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
+                    else: m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
                     df = df[df['Code'].isin(master_df[m_mask]['Code'].unique())]
 
                 if st.session_state.f8_ex_bio and not master_df.empty:
-                    df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('蛹ｻ阮ｬ蜩・, case=False, na=False)]['Code'].unique())]
+                    df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)]['Code'].unique())]
 
                 if gigi_input:
                     target_blacklist = re.findall(r'\d{4}', str(gigi_input))
@@ -697,7 +697,7 @@ with tab1:
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
                     
-                    # 圷 蜷梧悄繝代ャ繝・ｼ壺束 關ｽ縺｡繧九リ繧､繝暮勁螟厄ｼ育峩霑・譌･髢薙〒15%莉･荳翫・閾ｴ蜻ｽ逧・垓關ｽ繧偵ヱ繝ｼ繧ｸ・・
+                    # 🚨 同期パッチ：⑩ 落ちるナイフ除外（直近3日間で15%以上の致命的暴落をパージ）
                     if f10_ex_knife:
                         recent_4d = group['AdjC'].values[-4:]
                         if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85):
@@ -715,7 +715,7 @@ with tab1:
                     low_10d_val = adjl_vals[max(0, global_max_idx - 10) : global_max_idx + 1].min()
 
                     if low_10d_val <= 0: continue
-                    # 竭ｨ 豕｢鬮倥ヵ繧｣繝ｫ繧ｿ繝ｼ
+                    # ⑨ 波高フィルター
                     if not (min14 <= high_4d_val / low_10d_val <= max14): continue
                     
                     wave_len = high_4d_val - low_10d_val
@@ -725,13 +725,13 @@ with tab1:
 
                     rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
                     
-                    # --- 事・・謗溘せ繧ｳ繧｢縺ｮ險育ｮ・---
+                    # --- 🎖️ 掟スコアの計算 ---
                     df_14 = group.tail(15).iloc[:-1]
                     df_30 = group.tail(31).iloc[:-1]
                     h14_real = df_14['AdjH'].max()
                     l14_real = df_14['AdjL'].min()
                     
-                    score = 4 # 繝吶・繧ｹ轤ｹ
+                    score = 4 # ベース点
                     if h14_real > 0 and l14_real > 0:
                         r14 = h14_real / l14_real
                         idxmax = df_14['AdjH'].idxmax()
@@ -747,14 +747,14 @@ with tab1:
                     # ----------------------------------------------------
 
                     m_info = master_dict.get(code, {})
-                    c_name = m_info.get('CompanyName', f"驫俶氛 {code[:4]}")
-                    c_market = m_info.get('Market', '荳肴・'); c_sector = m_info.get('Sector', '荳肴・'); c_scale = m_info.get('Scale', '荳肴・')
-                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="蠕・ｼ・)
+                    c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}")
+                    c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明'); c_scale = m_info.get('Scale', '不明')
+                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
 
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'high_4d': high_4d_val, 'low_14d': low_10d_val, 'target_buy': target_buy, 'reach_rate': reach_rate, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score})
                         
                 if not results:
-                    st.warning("迴ｾ蝨ｨ縲∵次繧呈ｺ縺溘☆繧ｿ繝ｼ繧ｲ繝・ヨ縺ｯ蟄伜惠縺励↑縺・・)
+                    st.warning("現在、掟を満たすターゲットは存在しない。")
                     st.session_state.tab1_scan_results = []
                 else:
                     st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
@@ -762,35 +762,35 @@ with tab1:
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
-        st.success(f"識 蠕・ｼ上Ο繝・け繧ｪ繝ｳ: {len(light_results)} 驫俶氛繧堤｢ｺ隱阪・)
+        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
         
-        st.info("搭 莉･荳九・繧ｳ繝ｼ繝峨ｒ繧ｳ繝斐・縺励※縲∫・貅厄ｼ・AB3・峨↓繝壹・繧ｹ繝亥庄閭ｽ縺縲・)
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         if sab_codes:
-            st.markdown("**識 蜆ｪ蜈亥ｺｦ S繝ｻA繝ｻB (荳ｻ蜉帶ｨ咏噪)**")
+            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
             st.code(sab_codes, language="text")
         if other_codes:
-            with st.expander("操 蜆ｪ蜈亥ｺｦ C繝ｻ蝨丞､・(逶｣隕門ｯｾ雎｡)"):
+            with st.expander("👀 優先度 C・圏外 (監視対象)"):
                 st.code(other_codes, language="text")
         
         for r in light_results:
             st.divider()
-            c = str(r.get('Code', '0000')); n = r.get('Name', f"驫俶氛 {c[:4]}")
-            m_lower = str(r.get('Market', '荳肴・')).lower()
-            if '繝励Λ繧､繝' in m_lower or '荳驛ｨ' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">召 繝励Λ繧､繝/螟ｧ蝙・/span>'
-            elif '繧ｰ繝ｭ繝ｼ繧ｹ' in m_lower or '繝槭じ繝ｼ繧ｺ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">噫 繧ｰ繝ｭ繝ｼ繧ｹ/譁ｰ闊・/span>'
+            c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
+            m_lower = str(r.get('Market', '不明')).lower()
+            if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("Market")}</span>'
             
-            triage_badge = f'<span style="background-color: {r.get("triage_bg")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">識 蜆ｪ蜈亥ｺｦ: {r.get("triage_rank")}</span>'
+            triage_badge = f'<span style="background-color: {r.get("triage_bg")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
             
             score_val = r.get("score", 0)
             score_color = "#2e7d32" if score_val >= 7 else "#ff5722"
             score_bg = "rgba(46, 125, 50, 0.15)" if score_val >= 7 else "rgba(255, 87, 34, 0.15)"
-            score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">事・・謗溘せ繧ｳ繧｢: {score_val}/9</span>'
+            score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
             
             swing_pct = ((r.get('high_4d', 0) - r.get('low_14d', 0)) / r.get('low_14d', 1)) * 100
-            volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">笞｡ 鬮倥・繝ｩ ({swing_pct:.1f}%)</span>' if swing_pct >= (40.0 if ('繝励Λ繧､繝' in m_lower or '荳驛ｨ' in m_lower) else 60.0) else ""
+            volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>' if swing_pct >= (40.0 if ('プライム' in m_lower or '一部' in m_lower) else 60.0) else ""
 
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
@@ -798,41 +798,41 @@ with tab1:
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                         {badge_html}{triage_badge}{score_badge}{volatility_badge}
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">RSI: {r.get("RSI", 50):.1f}%</span>
-                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">蛻ｰ驕泌ｺｦ: {r.get('reach_rate'):.1f}%</span>
+                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r.get('reach_rate'):.1f}%</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("逶ｴ霑鷹ｫ伜､", f"{int(r.get('high_4d', 0)):,}蜀・)
-            m_cols[1].metric("襍ｷ轤ｹ螳牙､", f"{int(r.get('low_14d', 0)):,}蜀・)
-            m_cols[2].metric("譛譁ｰ邨ょ､", f"{int(r.get('lc', 0)):,}蜀・)
-            m_cols[3].metric("蟷ｳ蝮・・譚･鬮・5譌･)", f"{int(r.get('avg_vol', 0)):,}譬ｪ")
+            m_cols[0].metric("直近高値", f"{int(r.get('high_4d', 0)):,}円")
+            m_cols[1].metric("起点安値", f"{int(r.get('low_14d', 0)):,}円")
+            m_cols[2].metric("最新終値", f"{int(r.get('lc', 0)):,}円")
+            m_cols[3].metric("平均出来高(5日)", f"{int(r.get('avg_vol', 0)):,}株")
             html_buy = f"""
             <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
-                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">識 蜊雁､謚ｼ縺・雋ｷ蛟､逶ｮ讓・/div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r.get('target_buy', 0)):,}<span style="font-size: 14px; margin-left:2px;">蜀・/span></div>
+                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 半値押し 買値目標</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r.get('target_buy', 0)):,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
             </div>"""
             m_cols[4].markdown(html_buy, unsafe_allow_html=True)
-            st.caption(f"召 {r.get('Market','荳肴・')} ・・少 {r.get('Sector','荳肴・')}")
+            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
 
 with tab2:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">笞｡ 縲仙ｼｷ隘ｲ縲賎C蛻晏虚繝ｬ繝ｼ繝繝ｼ</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI荳企剞・磯℃辭ｱ諢溘・雜ｳ蛻・ｊ・・, step=5, key="tab2_rsi_limit", on_change=save_settings)
-    vol_limit = col_t2_2.number_input("譛菴主・譚･鬮假ｼ・譌･蟷ｳ蝮・ｼ・, step=5000, key="tab2_vol_limit", on_change=save_settings)
+    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, key="tab2_rsi_limit", on_change=save_settings)
+    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
     
-    run_scan_t2 = st.button("噫 蜈ｨ霆宏C蛻晏虚繧ｹ繧ｭ繝｣繝ｳ髢句ｧ・, key="btn_assault_scan")
-    exclude_ipo_flag = st.sidebar.checkbox("IPO驫俶氛繧帝勁螟・(蠑ｷ隘ｲ)", key="tab2_ipo_filter", on_change=save_settings)
-    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF繝ｻREIT繧帝勁螟・(蠑ｷ隘ｲ)", key="tab2_etf_filter", on_change=save_settings)
+    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
+    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外 (強襲)", key="tab2_ipo_filter", on_change=save_settings)
+    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF・REITを除外 (強襲)", key="tab2_etf_filter", on_change=save_settings)
 
     if run_scan_t2:
-        st.toast("泙 蠑ｷ隘ｲ繝医Μ繧ｬ繝ｼ繧堤｢ｺ隱阪らｴ｢謨ｵ髢句ｧ具ｼ・, icon="噫")
-        with st.spinner("蜈ｨ驫俶氛縺ｮ豕｢蠖｢縺九ｉGC蛻晏虚蛟呵｣懊ｒ謚ｽ蜃ｺ荳ｭ..."):
+        st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
+        with st.spinner("全銘柄の波形からGC初動候補を抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("繝・・繧ｿ縺ｮ蜿門ｾ励↓螟ｱ謨励＠縺溘・)
+                st.error("データの取得に失敗した。")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
@@ -841,7 +841,7 @@ with tab2:
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺蔵 萓｡譬ｼ荳贋ｸ矩剞繝輔ぅ繝ｫ繧ｿ繝ｼ縺ｮ驕ｩ逕ｨ
+                # 🚨 同期パッチ：① 価格上下限フィルターの適用
                 f1_min = float(st.session_state.f1_min)
                 f1_max = float(st.session_state.f1_max)
                 f5_ipo = st.session_state.f5_ipo
@@ -854,7 +854,7 @@ with tab2:
                 valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
                 df = df[df['Code'].isin(valid_codes)]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺側 IPO・井ｸ雁ｴ1蟷ｴ譛ｪ貅・蛾勁螟悶ヵ繧｣繝ｫ繧ｿ繝ｼ
+                # 🚨 同期パッチ：⑤ IPO（上場1年未満）除外フィルター
                 if f5_ipo and not df.empty:
                     oldest_global_date = df['Date'].min()
                     stock_min_dates = df.groupby('Code')['Date'].min()
@@ -862,22 +862,22 @@ with tab2:
                     valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
                     df = df[df['Code'].isin(valid_seasoned_codes)]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺即 ETF繝ｻREIT遲峨ｒ髯､螟・
+                # 🚨 同期パッチ：⑦ ETF・REIT等を除外
                 if exclude_etf_flag_t2 and not master_df.empty:
-                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|謚穂ｿ｡', case=False, na=False)
+                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺息 蛹ｻ阮ｬ蜩・繝舌う繧ｪ)繧帝勁螟・
+                # 🚨 同期パッチ：⑧ 医薬品(バイオ)を除外
                 if f8_ex_bio and not master_df.empty:
-                    df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('蛹ｻ阮ｬ蜩・, case=False, na=False)]['Code'].unique())]
+                    df = df[df['Code'].isin(master_df[~master_df['Sector'].astype(str).str.contains('医薬品', case=False, na=False)]['Code'].unique())]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壼ｯｾ雎｡蟶ょｴ・亥､ｧ蝙・荳ｭ蟆丞梛・峨・驕ｩ逕ｨ
+                # 🚨 同期パッチ：対象市場（大型/中小型）の適用
                 if not master_df.empty:
-                    if "螟ｧ蝙区ｪ" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('繝励Λ繧､繝|荳驛ｨ', na=False)
-                    else: m_mask = master_df['Market'].astype(str).str.contains('繧ｹ繧ｿ繝ｳ繝繝ｼ繝榎繧ｰ繝ｭ繝ｼ繧ｹ|譁ｰ闊・繝槭じ繝ｼ繧ｺ|JASDAQ|莠碁Κ', na=False)
+                    if "大型株" in st.session_state.preset_target: m_mask = master_df['Market'].astype(str).str.contains('プライム|一部', na=False)
+                    else: m_mask = master_df['Market'].astype(str).str.contains('スタンダード|グロース|新興|マザーズ|JASDAQ|二部', na=False)
                     df = df[df['Code'].isin(master_df[m_mask]['Code'].unique())]
 
-                # 圷 蜷梧悄繝代ャ繝・ｼ壺則 逍醍ｾｩ豕ｨ險倬釜譟・勁螟厄ｼ医ヶ繝ｩ繝・け繝ｪ繧ｹ繝磯←逕ｨ・・
+                # 🚨 同期パッチ：⑥ 疑義注記銘柄除外（ブラックリスト適用）
                 if gigi_input:
                     target_blacklist = re.findall(r'\d{4}', str(gigi_input))
                     if target_blacklist:
@@ -904,15 +904,15 @@ with tab2:
 
                     lc = adjc_vals[-1]; adjh_vals = group['AdjH'].values; adjl_vals = group['AdjL'].values
                     
-                    # 圷 菫ｮ豁｣・壼ｼｷ隘ｲ繝ｭ繧ｸ繝・け逕ｨ ATR縺翫ｈ縺ｳ14譌･鬮伜､縺ｮ邂怜・
+                    # 🚨 修正：強襲ロジック用 ATRおよび14日高値の算出
                     if len(adjh_vals) >= 14:
                         h14 = adjh_vals[-14:].max()
-                        # 邁｡譏鄭TR(14d)縺ｮ邂怜・
+                        # 簡易ATR(14d)の算出
                         h_v = adjh_vals[-14:]; l_v = adjl_vals[-14:]; c_prev_v = adjc_vals[-15:-1]
                         tr = np.maximum(h_v - l_v, np.maximum(abs(h_v - c_prev_v), abs(l_v - c_prev_v)))
                         atr_val = tr.mean()
                     else:
-                        h14 = lc; atr_val = lc * 0.03 # 莠亥ｙ險育ｮ・
+                        h14 = lc; atr_val = lc * 0.03 # 予備計算
 
                     latest_ma25 = sum(adjc_vals[-25:]) / 25 if len(adjc_vals) >= 25 else 0
                     if latest_ma25 > 0 and lc < (latest_ma25 * 0.95): continue
@@ -921,15 +921,15 @@ with tab2:
                     t_rank, t_color, t_score, t_macd = get_assault_triage_info(gc_days, lc, rsi, dummy_df, is_strict=False)
                         
                     m_info = master_dict.get(code, {})
-                    c_name = m_info.get('CompanyName', f"驫俶氛 {code[:4]}")
-                    c_market = m_info.get('Market', '荳肴・'); c_sector = m_info.get('Sector', '荳肴・')
+                    c_name = m_info.get('CompanyName', f"銘柄 {code[:4]}")
+                    c_market = m_info.get('Market', '不明'); c_sector = m_info.get('Sector', '不明')
                     scale_val = str(m_info.get('Scale', ''))
-                    c_scale = "召 螟ｧ蝙・荳ｭ蝙・ if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "噫 蟆丞梛/譁ｰ闊・
+                    c_scale = "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
 
                     results.append({'Code': code, 'Name': c_name, 'Sector': c_sector, 'Market': c_market, 'Scale': c_scale, 'lc': lc, 'RSI': rsi, 'avg_vol': avg_vol, 'h14': h14, 'atr': atr_val, 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days})
                         
                 if not results:
-                    st.warning("迴ｾ蝨ｨ縲；C蛻晏虚譚｡莉ｶ繧呈ｺ縺溘☆繧ｿ繝ｼ繧ｲ繝・ヨ縺ｯ蟄伜惠縺励↑縺・・)
+                    st.warning("現在、GC初動条件を満たすターゲットは存在しない。")
                     st.session_state.tab2_scan_results = []
                 else:
                     st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))[:30]
@@ -937,51 +937,51 @@ with tab2:
 
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"笞｡ 蠑ｷ隘ｲ繝ｭ繝・け繧ｪ繝ｳ: GC蛻晏虚(3譌･莉･蜀・ 荳贋ｽ・{len(light_results)} 驫俶氛繧堤｢ｺ隱阪・)
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
-        st.info("搭 莉･荳九・繧ｳ繝ｼ繝峨ｒ繧ｳ繝斐・縺励※縲∫・貅厄ｼ・AB3・峨↓繝壹・繧ｹ繝亥庄閭ｽ縺縲・)
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         if sab_codes:
-            st.markdown("**識 蜆ｪ蜈亥ｺｦ S繝ｻA繝ｻB (荳ｻ蜉帶ｨ咏噪)**")
+            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
             st.code(sab_codes, language="text")
         
         for r in light_results:
             st.divider()
             lc_val = r.get('lc', 0); h14_val = r.get('h14', 0); atr_v = r.get('atr', 0)
             
-            # 圷 蜍慕噪繝ｭ繧ｸ繝・け驕ｩ逕ｨ・壹ヨ繝ｪ繧ｬ繝ｼ縺ｨ髦ｲ陦帷ｷ・
+            # 🚨 動的ロジック適用：トリガーと防衛線
             t_price = max(h14_val, lc_val + (atr_v * 0.5))
             d_price = t_price - atr_v
 
-            triage_badge = f'<span style="background-color: {r.get("T_Color", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">識 蜆ｪ蜈亥ｺｦ: {r.get("T_Rank")}</span>'
+            triage_badge = f'<span style="background-color: {r.get("T_Color", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("T_Rank")}</span>'
             
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
                     <div style="display: flex; gap: 4px; align-items: center;">
                         {triage_badge}
-                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC蠕・{r.get('GC_Days')}譌･逶ｮ</span>
+                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r.get('GC_Days')}日目</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("譛譁ｰ邨ょ､", f"{int(lc_val):,}蜀・)
+            m_cols[0].metric("最新終値", f"{int(lc_val):,}円")
             m_cols[1].metric("RSI", f"{r.get('RSI', 50):.1f}%")
-            m_cols[2].metric("ATR(14d)", f"{int(atr_v):,}蜀・)
+            m_cols[2].metric("ATR(14d)", f"{int(atr_v):,}円")
             
             html_sl = f"""<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
-                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">孱・・蜍慕噪髦ｲ陦帷ｷ・(-1.0 ATR)</div>
-                <div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}<span style="font-size: 14px; margin-left:2px;">蜀・/span></div></div>"""
+                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 動的防衛線 (-1.0 ATR)</div>
+                <div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>"""
             m_cols[3].markdown(html_sl, unsafe_allow_html=True)
 
             html_buy_assault = f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
-                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">識 蠑ｷ隘ｲ繝医Μ繧ｬ繝ｼ (14d鬮伜､蝓ｺ貅・</div>
-                <div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}<span style="font-size: 14px; margin-left:2px;">蜀・/span></div></div>"""
+                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 強襲トリガー (14d高値基準)</div>
+                <div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>"""
             m_cols[4].markdown(html_buy_assault, unsafe_allow_html=True)
 
 with tab3:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">識 縲千・貅悶醍ｲｾ蟇・せ繧ｳ繝ｼ繝暦ｼ域姶陦灘挨繝ｻ迢ｬ遶狗ｴ｢謨ｵ・・/h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
@@ -1000,21 +1000,21 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        scope_mode = st.radio("識 隗｣譫舌Δ繝ｼ繝峨ｒ驕ｸ謚・, ["倹 縲仙ｾ・ｼ上・謚ｼ縺礼岼繝ｻ騾・ｼｵ繧・, "笞｡ 縲仙ｼｷ隘ｲ縲・繝医Ξ繝ｳ繝峨・鬆・ｼｵ繧・], key="t3_scope_mode", on_change=save_settings)
-        is_ambush = "蠕・ｼ・ in scope_mode
+        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
+        is_ambush = "待伏" in scope_mode
         st.markdown("---")
         if is_ambush:
-            watch_in = st.text_area("倹 縲仙ｾ・ｼ上台ｸｻ蜉帷屮隕夜Κ髫・, value=st.session_state.t3_am_watch, height=120)
-            daily_in = st.text_area("倹 縲仙ｾ・ｼ上第悽譌･譁ｰ隕城Κ髫・, value=st.session_state.t3_am_daily, height=120)
+            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
+            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
-            watch_in = st.text_area("笞｡ 縲仙ｼｷ隘ｲ縲台ｸｻ蜉帷屮隕夜Κ髫・, value=st.session_state.t3_as_watch, height=120)
-            daily_in = st.text_area("笞｡ 縲仙ｼｷ隘ｲ縲第悽譌･譁ｰ隕城Κ髫・, value=st.session_state.t3_as_daily, height=120)
-        run_scope = st.button("鉢 陦ｨ遉ｺ荳ｭ縺ｮ驛ｨ髫翫ｒ邊ｾ蟇・せ繧ｭ繝｣繝ｳ", use_container_width=True, type="primary")
+            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
+            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
+        run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
-        st.markdown("#### 剥 邏｢謨ｵ繧ｹ繝・・繧ｿ繧ｹ")
-        if is_ambush: st.info("繝ｻ縲仙ｾ・ｼ丞ｰら畑縲大濠蛟､謚ｼ縺励・鮟・≡豈斐〒縺ｮ霑取茶蛻､螳・)
-        else: st.warning("繝ｻ縲仙ｼｷ隘ｲ蟆ら畑縲羨TR/14譌･鬮伜､繝吶・繧ｹ縺ｮ蜍慕噪繝悶Ξ繧､繧ｯ繧｢繧ｦ繝亥愛螳・)
+        st.markdown("#### 🔍 索敵ステータス")
+        if is_ambush: st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
+        else: st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
 
     if run_scope:
         if is_ambush:
@@ -1030,9 +1030,9 @@ with tab3:
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', all_text)]))
         
         if not t_codes:
-            st.warning("譛牙柑縺ｪ驫俶氛繧ｳ繝ｼ繝峨′遒ｺ隱阪〒縺阪∪縺帙ｓ縲・)
+            st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"蜈ｨ {len(t_codes)} 驫俶氛繧堤ｲｾ蟇・ｨ育ｮ嶺ｸｭ..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 scope_results = []
                 for c in t_codes:
                     api_code = c if len(c) == 5 else c + "0"
@@ -1041,23 +1041,23 @@ with tab3:
                     df_s = clean_df(pd.DataFrame(raw_s.get("bars", [])))
                     if len(df_s) < 30: continue
                         
-                    # 圷 菫ｮ豁｣・夐Κ蛻・ｸ閾ｴ(contains)繧貞ｻ・ｭ｢縺励∝ｮ悟・荳閾ｴ(==)縺ｾ縺溘・isin縺ｧ遒ｺ螳溘↓迚ｹ螳・
+                    # 🚨 修正：部分一致(contains)を廃止し、完全一致(==)またはisinで確実に特定
                     c_short = c[:4]
                     if not master_df.empty:
-                        # 4譯√〒繧・譯√〒繧ら｢ｺ螳溘↓繝槭ャ繝√☆繧句ｮ悟・荳閾ｴ讀懃ｴ｢
+                        # 4桁でも5桁でも確実にマッチする完全一致検索
                         m_row = master_df[master_df['Code'].astype(str).isin([c_short, c_short + "0", api_code])]
                     else:
                         m_row = pd.DataFrame()
                     
                     if not m_row.empty:
-                        # 遒ｺ螳溘↓譛蛻昴・1莉ｶ縺ｮ繝・・繧ｿ繧貞叙蠕・
+                        # 確実に最初の1件のデータを取得
                         c_name = str(m_row.iloc[0]['CompanyName'])
                         c_market = str(m_row.iloc[0]['Market'])
-                        # 讌ｭ遞ｮ(Sector)縺檎ｩｺ縲√∪縺溘・NaN縺ｮ蝣ｴ蜷医↓縲御ｸ肴・縲阪ｒ蝗樣∩
-                        raw_sector = m_row.iloc[0].get('Sector', '荳肴・')
-                        c_sector = str(raw_sector) if pd.notna(raw_sector) and raw_sector != "" else "諠・ｱ繝ｻ騾壻ｿ｡讌ｭ" # 6580遲峨・謨第ｸ域蒔鄂ｮ
+                        # 業種(Sector)が空、またはNaNの場合に「不明」を回避
+                        raw_sector = m_row.iloc[0].get('Sector', '不明')
+                        c_sector = str(raw_sector) if pd.notna(raw_sector) and raw_sector != "" else "情報・通信業" # 6580等の救済措置
                     else:
-                        c_name = f"驫俶氛 {c_short}"; c_market = "荳肴・"; c_sector = "荳肴・"
+                        c_name = f"銘柄 {c_short}"; c_market = "不明"; c_sector = "不明"
 
                     df_chart = calc_technicals(df_s.copy())
                     df_14 = df_s.tail(15).iloc[:-1]
@@ -1077,7 +1077,7 @@ with tab3:
                         is_bt_broken = lc < bt_primary
                         bt_val = int(bt_secondary if is_bt_broken else bt_primary)
                         is_trend_broken = lc < ((h14 - (ur * 0.618)) * 0.98)
-                        rank, bg, score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev.get('MACD_Hist', 0), rsi_v, lc, bt_val, mode="蠕・ｼ・)
+                        rank, bg, score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev.get('MACD_Hist', 0), rsi_v, lc, bt_val, mode="待伏")
                         reach_val = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
                         bt_val = int(max(h14, lc + (atr_val * 0.5)))
@@ -1094,26 +1094,26 @@ with tab3:
                         'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'is_trend_broken': is_trend_broken, 
                         'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'gc_days': gc_days, 'rank': rank, 'bg': bg, 'score': score, 
                         'reach_val': reach_val, 'atr_val': atr_val, 'rsi': rsi_v, 'df_chart': df_chart,
-                        'source': "孱・・逶｣隕・ if c in watch_in else "噫 譁ｰ隕・
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規"
                     })
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
-                # --- 陦ｨ遉ｺ繝ｫ繝ｼ繝・---
+                # --- 表示ループ ---
                 for r in scope_results:
                     st.divider()
-                    source_color = "#42a5f5" if "逶｣隕・ in r['source'] else "#ffa726"
+                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
                     
-                    if '繝励Λ繧､繝' in m_lower or '荳驛ｨ' in m_lower: 
-                        badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">召 繝励Λ繧､繝/螟ｧ蝙・/span>'
-                    elif '繧ｰ繝ｭ繝ｼ繧ｹ' in m_lower or '繝槭じ繝ｼ繧ｺ' in m_lower: 
-                        badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">噫 繧ｰ繝ｭ繝ｼ繧ｹ/譁ｰ闊・/span>'
+                    if 'プライム' in m_lower or '一部' in m_lower: 
+                        badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                        badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
                     else: 
                         badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
 
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
-                    t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>識 蜆ｪ蜈亥ｺｦ: {r['rank']}</span>"
+                    t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
                     st.markdown(f"""
                         <div style="margin-bottom: 0.8rem;">
@@ -1121,123 +1121,123 @@ with tab3:
                             <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                                 {badge_html}{t_badge}
                                 <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
-                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">蛻ｰ驕泌ｺｦ: {r['reach_val']:.1f}%</span>
+                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    if r['is_dt'] or r['is_hs']: st.error("圷 縲占ｭｦ蜻翫醍嶌蝣ｴ霆｢謠帙・蜊ｱ髯ｺ豕｢蠖｢・井ｸ牙ｰ・W繝医ャ繝暦ｼ峨ｒ讀懃衍縲よ彫騾繧呈耳螂ｨ縲・)
-                    if not is_ambush and r['gc_days'] > 0: st.success(f"櫨 縲触C逋ｺ蜍輔閃ACD繧ｴ繝ｼ繝ｫ繝・Φ繧ｯ繝ｭ繧ｹ縺九ｉ {r['gc_days']}譌･逶ｮ")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
+                    if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
                     
                     c_base = r['bt_val'] if is_ambush else r['lc']
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
                     with sc_left:
-                        # 圷 霑ｽ蜉・哂TR蛟､縺ｮ險育ｮ励→繝懊Λ繝・ぅ繝ｪ繝・ぅ縺ｮ邂怜・
+                        # 🚨 追加：ATR値の計算とボラティリティの算出
                         atr_v = r.get('atr_val', 0)
-                        # 荳・′荳ATR縺悟叙蠕励〒縺阪↑縺・ｴ蜷医・螳牙・陬・ｽｮ・育ｵょ､縺ｮ5%・・
+                        # 万が一ATRが取得できない場合の安全装置（終値の5%）
                         if atr_v == 0: atr_v = r.get('lc', 0) * 0.05 
                         atr_pct = (atr_v / r.get('lc', 1)) * 100 if r.get('lc', 0) > 0 else 0
 
-                        # 譌｢蟄倥・險亥勣鄒､・育ｶｭ謖・ｼ・
+                        # 既存の計器群（維持）
                         c_m1, c_m2 = st.columns(2)
-                        c_m1.metric("逶ｴ霑鷹ｫ伜､", f"{int(r['h14']):,}蜀・)
-                        c_m2.metric("逶ｴ霑大ｮ牙､", f"{int(r['l14']):,}蜀・)
+                        c_m1.metric("直近高値", f"{int(r['h14']):,}円")
+                        c_m2.metric("直近安値", f"{int(r['l14']):,}円")
                         
                         c_m3, c_m4 = st.columns(2)
-                        c_m3.metric("荳頑・蟷・, f"{int(r['ur']):,}蜀・)
-                        c_m4.metric("譛譁ｰ邨ょ､", f"{int(r['lc']):,}蜀・)
+                        c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
+                        c_m4.metric("最新終値", f"{int(r['lc']):,}円")
                         
-                        # 圷 霑ｽ蜉・哂TR・磯｢ｨ騾溯ｨ茨ｼ峨ｒ迢ｬ遶九＠縺溷､ｧ縺阪↑險亥勣縺ｨ縺励※驟咲ｽｮ
-                        st.metric("謙・・1ATR (1譌･縺ｮ蟷ｳ蝮・､蟷・", f"{int(atr_v):,}蜀・, f"繝懊Λ繝・ぅ繝ｪ繝・ぅ: {atr_pct:.1f}%", delta_color="off")
+                        # 🚨 追加：ATR（風速計）を独立した大きな計器として配置
+                        st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
                         
-                        st.caption(f"少 讌ｭ遞ｮ: {r.get('sector','荳肴・')}")
+                        st.caption(f"🏭 業種: {r.get('sector','不明')}")
                     with sc_mid:
                         if is_ambush:
-                            html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>識 雋ｷ蛟､逶ｮ讓・/div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}蜀・/div></div>"
+                            html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
                         else:
                             t_p = r['bt_val']; e_p = int(t_p + (r['atr_val'] * 0.2)); d_p = int(t_p - r['atr_val'])
                             html_box = f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
-                                <div style='font-size:13px; text-align:center;'>識 繝医Μ繧ｬ繝ｼ (14d鬮伜､蝓ｺ貅・</div>
-                                <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}蜀・/div>
+                                <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値基準)</div>
+                                <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
                                 <div style='border-top:1px dashed #444; margin:8px 0;'></div>
-                                <div style='display:flex; justify-content:space-between;'><span>笞費ｸ・蝓ｷ陦・+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}蜀・/span></div>
-                                <div style='display:flex; justify-content:space-between;'><span>孱・・髦ｲ陦・-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}蜀・/span></div></div>"""
+                                <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
+                                <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}円</span></div></div>"""
                         st.markdown(html_box, unsafe_allow_html=True)
 
                     with sc_right:
                         c_target = r['bt_val'] if is_ambush else r['bt_val']
                         atr_v = r.get('atr_val', 0)
-                        if atr_v == 0: atr_v = c_target * 0.05 # 莠亥ｙ險育ｮ・
+                        if atr_v == 0: atr_v = c_target * 0.05 # 予備計算
                         
-                        # 圷 譁ｰ繝ｭ繧ｸ繝・け・壼崋螳夲ｼ・ｒ蟒・ｭ｢縺励、TR縺ｮ蛟肴焚・医・繝ｫ繝√・繝ｫ・峨〒繧ｿ繝ｼ繧ｲ繝・ヨ繧堤函謌・
+                        # 🚨 新ロジック：固定％を廃止し、ATRの倍数（マルチプル）でターゲットを生成
                         tp_multipliers = [0.5, 1.0, 2.0, 3.0]
                         sl_multipliers = [0.5, 1.0, 2.0]
 
-                        # 蛻､螳壹↓蠢懊§縺滓耳螂ｨ繧ｿ繝ｼ繧ｲ繝・ヨ縺ｮ閾ｪ蜍暮∈謚・
-                        is_aggressive = any(mark in r['rank'] for mark in ["笞｡", "櫨", "S"])
+                        # 判定に応じた推奨ターゲットの自動選択
+                        is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
                         rec_tps = [2.0, 3.0] if is_aggressive else [0.5, 1.0]
 
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>投 蜍慕噪ATR繝槭ヨ繝ｪ繧ｯ繧ｹ (蝓ｺ貅・{int(c_target):,}蜀・| 1ATR:{int(atr_v):,}蜀・</div><div style='display:flex; gap:30px;'>"
+                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'>"
                         
-                        # 縲仙茜遒ｺ蛻励・
-                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>縲仙茜遒ｺ逶ｮ螳峨・/div>"
+                        # 【利確列】
+                        html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                         for m in tp_multipliers:
                             p_val = int(c_target + (atr_v * m))
                             pct_val = ((p_val / c_target) - 1) * 100 if c_target > 0 else 0
                             
                             if m in rec_tps:
-                                # 識 謗ｨ螂ｨ蛟､縺ｮ繝上う繝ｩ繧､繝・I
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>謗ｨ螂ｨ</span></span><b style='font-size:1.1rem; color:#fff;'>{p_val:,}</b></div>"
+                                # 🎯 推奨値のハイライトUI
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{p_val:,}</b></div>"
                             else:
                                 html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{p_val:,}</b></div>"
                         html_matrix += "</div>"
 
-                        # 縲先錐蛻・・縲・
-                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>縲宣亟陦帷岼螳峨・/div>"
+                        # 【損切列】
+                        html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
                         for m in sl_multipliers:
                             l_val = int(c_target - (atr_v * m))
                             pct_val = (1 - (l_val / c_target)) * 100 if c_target > 0 else 0
                             
                             if m == 1.0:
-                                # 孱・・邨ｶ蟇ｾ髦ｲ陦帷ｷ夲ｼ・1.0 ATR・峨・蝗ｺ螳壹ワ繧､繝ｩ繧､繝・I
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>驩・援</span></span><b style='font-size:1.1rem; color:#fff;'>{l_val:,}</b></div>"
+                                # 🛡️ 絶対防衛線（-1.0 ATR）の固定ハイライトUI
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span></span><b style='font-size:1.1rem; color:#fff;'>{l_val:,}</b></div>"
                             else:
                                 html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
                         html_matrix += "</div></div></div>"
                         
                         st.markdown(html_matrix, unsafe_allow_html=True)
                         
-                        # 圷 霑ｽ蜉・壹・繝医Μ繧ｯ繧ｹ縺ｮ逶ｴ荳九↓髢矩哩蠑上・蜃｡萓具ｼ医ぎ繧､繝会ｼ峨ｒ險ｭ鄂ｮ
-                        with st.expander("邃ｹ・・ATR繝槭ヨ繝ｪ繧ｯ繧ｹ 蜃｡萓具ｼ亥推逶ｮ螳峨・謌ｦ陦鍋噪諢丞袖・・):
+                        # 🚨 追加：マトリクスの直下に開閉式の凡例（ガイド）を設置
+                        with st.expander("ℹ️ ATRマトリクス 凡例（各目安の戦術的意味）"):
                             st.markdown("""
                             <div style="font-size: 13px; color: #ccc;">
-                            <strong>縲仙茜遒ｺ縺ｮ逶ｮ螳峨・/strong><br>
-                            <span style="color: #80cbc4;">+0.5ATR・・/span> 雜・洒譛溘せ繧ｭ繝｣繝ｫ繝斐Φ繧ｰ縲ゅヮ繧､繧ｺ繧・ｰ丞渚逋ｺ縺ｧ遒ｺ螳溘↓繧ゅ℃蜿悶ｋ縲・br>
-                            <span style="color: #80cbc4;">+1.0ATR・・/span> 繝・う繝医Ξ縲・豕翫・譌･蛻・・讓呎ｺ也噪縺ｪ豕｢繧呈拷縺医ｋ蝣・ｮ溘↑繝ｩ繧､繝ｳ縲・br>
-                            <span style="color: #80cbc4;">+2.0ATR・・/span> 繧ｹ繧､繝ｳ繧ｰ・域焚譌･・峨ゅヨ繝ｬ繝ｳ繝臥ｶ咏ｶ壽凾縺ｮ讓呎ｺ悶ょ享邇・→蛻ｩ逶翫・鮟・≡豈斐・br>
-                            <span style="color: #80cbc4;">+3.0ATR・・/span> 蠑ｷ繝医Ξ繝ｳ繝峨・讌ｵ縺ｿ縲ら洒譛溽噪縺ｪ縲碁℃辭ｱ・郁ｲｷ繧上ｌ縺吶℃・峨阪・髯千阜轤ｹ縲・br><br>
-                            <strong>縲宣亟陦帙・逶ｮ螳峨・/strong><br>
-                            <span style="color: #ef9a9a;">-0.5ATR・・/span> 讌ｵ蟆上Μ繧ｹ繧ｯ縲ゅ◆縺縺玲律荳ｭ縺ｮ繝弱う繧ｺ縺ｧ迢ｩ繧峨ｌ繧具ｼ郁ｪ､逋ｺ轣ｫ・臥｢ｺ邇・′鬮倥＞縲・br>
-                            <span style="color: #ef9a9a;">-1.0ATR・・/span> <strong>讓呎ｺ夜亟陦帷ｷ壹・/strong>繝悶Ξ繧､繧ｯ繧｢繧ｦ繝医′譏守｢ｺ縺ｫ螟ｱ謨励＠縺溘→蛻､譁ｭ縺吶ｋ謦､騾轤ｹ縲・br>
-                            <span style="color: #ef9a9a;">-2.0ATR・・/span> 繧ｹ繧､繝ｳ繧ｰ逕ｨ縲よｷｱ繧√・謚ｼ縺礼岼繧定ｨｱ螳ｹ縺吶ｋ縺後∝牡繧後ｌ縺ｰ繝医Ξ繝ｳ繝牙ｮ悟・蟠ｩ螢翫・
+                            <strong>【利確の目安】</strong><br>
+                            <span style="color: #80cbc4;">+0.5ATR：</span> 超短期スキャルピング。ノイズや小反発で確実にもぎ取る。<br>
+                            <span style="color: #80cbc4;">+1.0ATR：</span> デイトレ〜1泊。1日分の標準的な波を捉える堅実なライン。<br>
+                            <span style="color: #80cbc4;">+2.0ATR：</span> スイング（数日）。トレンド継続時の標準。勝率と利益の黄金比。<br>
+                            <span style="color: #80cbc4;">+3.0ATR：</span> 強トレンドの極み。短期的な「過熱（買われすぎ）」の限界点。<br><br>
+                            <strong>【防衛の目安】</strong><br>
+                            <span style="color: #ef9a9a;">-0.5ATR：</span> 極小リスク。ただし日中のノイズで狩られる（誤発火）確率が高い。<br>
+                            <span style="color: #ef9a9a;">-1.0ATR：</span> <strong>標準防衛線。</strong>ブレイクアウトが明確に失敗したと判断する撤退点。<br>
+                            <span style="color: #ef9a9a;">-2.0ATR：</span> スイング用。深めの押し目を許容するが、割れればトレンド完全崩壊。
                             </div>
                             """, unsafe_allow_html=True)
                         
 with tab4:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">笞呻ｸ・謌ｦ陦薙す繝溘Η繝ｬ繝ｼ繧ｿ (2蟷ｴ髢薙・繝舌ャ繧ｯ繝・せ繝・</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
-    # --- 圷 繧ｻ繝ｼ繝輔ユ繧｣繝ｻ繧ｬ繝ｼ繝会ｼ壼・譛溷､縺ｨ繝｢繝ｼ繝牙・譖ｿ譎ゅ・謖吝虚蛻ｶ蠕｡ ---
+    # --- 🚨 セーフティ・ガード：初期値とモード切替時の挙動制御 ---
     if "bt_mode_sim_v2" not in st.session_state:
-        st.session_state.bt_mode_sim_v2 = "倹 縲仙ｾ・ｼ上鷹延縺ｮ謗・(謚ｼ縺礼岼迢呎茶)"
+        st.session_state.bt_mode_sim_v2 = "🌐 【待伏】鉄の掟 (押し目狙撃)"
 
     current_mode = st.session_state.bt_mode_sim_v2
     if "prev_mode_for_defaults" not in st.session_state:
         st.session_state.prev_mode_for_defaults = current_mode
 
-    # 繝｢繝ｼ繝牙・譖ｿ譎ゅ・縲瑚ｲｷ縺・悄髯舌埼｣蜍包ｼ亥ｼｷ隘ｲ=3譌･ / 蠕・ｼ・4譌･・・
+    # モード切替時の「買い期限」連動（強襲=3日 / 待伏=4日）
     if st.session_state.prev_mode_for_defaults != current_mode:
-        if "蠕・ｼ・ in current_mode:
+        if "待伏" in current_mode:
             st.session_state.sim_sell_d_val = 10
             st.session_state.sim_limit_d_val = 4
         else:
@@ -1245,7 +1245,7 @@ with tab4:
             st.session_state.sim_limit_d_val = 3
         st.session_state.prev_mode_for_defaults = current_mode
 
-    # JSON縺ｫ縲・縲阪′菫晏ｭ倥＆繧後※縺励∪縺｣縺溷ｴ蜷医・閾ｪ蜍穂ｿｮ蠕ｩ・医Μ繧ｫ繝舌Μ繝ｼ・・
+    # JSONに「0」が保存されてしまった場合の自動修復（リカバリー）
     if st.session_state.get("sim_tp_val", 0) == 0: st.session_state.sim_tp_val = 10
     if st.session_state.get("sim_sl_val", 0) == 0: st.session_state.sim_sl_val = 8
     if st.session_state.get("sim_limit_d_val", 0) == 0: st.session_state.sim_limit_d_val = 4
@@ -1256,13 +1256,13 @@ with tab4:
     if st.session_state.get("sim_rsi_lim_assault_val", 0) == 0: st.session_state.sim_rsi_lim_assault_val = 70
     if st.session_state.get("sim_time_risk_val", 0) == 0: st.session_state.sim_time_risk_val = 5
     
-    # 繝励Μ繧ｻ繝・ヨ・医し繧､繝峨ヰ繝ｼ・峨・螟画峩繧呈､懃衍縺励※騾｣蜍・
+    # プリセット（サイドバー）の変更を検知して連動
     current_sidebar_push_r = st.session_state.get("push_r", 50.0)
     if "last_sidebar_push_r" not in st.session_state or st.session_state.last_sidebar_push_r != current_sidebar_push_r:
         st.session_state.sim_push_r_val = current_sidebar_push_r
         st.session_state.last_sidebar_push_r = current_sidebar_push_r
 
-    # 圷 蜿梧婿蜷大酔譛滓ｩ滓ｧ具ｼ售tore(螳溘ョ繝ｼ繧ｿ) -> UI逕ｨKey 縺ｸ蛟､繧貞ｼｷ蛻ｶ繧ｻ繝・ヨ (騾｣蜍募撫鬘後・螳悟・隗｣豎ｺ)
+    # 🚨 双方向同期機構：Store(実データ) -> UI用Key へ値を強制セット (連動問題の完全解決)
     st.session_state['_ui_tp'] = int(st.session_state.sim_tp_val)
     st.session_state['_ui_sl'] = int(st.session_state.sim_sl_val)
     st.session_state['_ui_lim'] = int(st.session_state.sim_limit_d_val)
@@ -1280,45 +1280,45 @@ with tab4:
         with open(T4_FILE, "r", encoding="utf-8") as f: default_t4 = f.read()
 
     with col_b1: 
-        st.markdown("剥 **讀懆ｨｼ謌ｦ陦・*")
-        st.radio("謌ｦ陦薙Δ繝ｼ繝・, ["倹 縲仙ｾ・ｼ上鷹延縺ｮ謗・(謚ｼ縺礼岼迢呎茶)", "笞｡ 縲仙ｼｷ隘ｲ縲賎C繝悶Ξ繧､繧ｯ繧｢繧ｦ繝・(鬆・ｼｵ繧・"], key="bt_mode_sim_v2")
-        bt_c_in = st.text_area("驫俶氛繧ｳ繝ｼ繝・, value=default_t4, height=100, key="bt_codes_sim_v2")
-        run_bt = st.button("櫨 莉ｮ諠ｳ螳溷ｼｾ繝・せ繝亥ｮ溯｡・, use_container_width=True)
-        optimize_bt = st.button("噫 謌ｦ陦薙・鮟・≡豈皮紫繧呈歓蜃ｺ (譛驕ｩ蛹・", use_container_width=True)
+        st.markdown("🔍 **検証戦術**")
+        st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
+        bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, key="bt_codes_sim_v2")
+        run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True)
+        optimize_bt = st.button("🚀 戦術の黄金比率を抽出 (最適化)", use_container_width=True)
         
     with col_b2:
-        st.markdown("#### 笞呻ｸ・謌ｦ陦薙ヱ繝ｩ繝｡繝ｼ繧ｿ繝ｼ・域ｼ皮ｿ堤畑繝√Η繝ｼ繝九Φ繧ｰ・・)
-        st.info("窶ｻ 謌ｦ陦灘・譖ｿ譎ゅ∝｣ｲ繧頑悄髯舌・閾ｪ蜍輔〒縲悟ｾ・ｼ・10譌･ / 蠑ｷ隘ｲ:5譌･縲阪↓蜀崎｣・｡ｫ縺輔ｌ縺ｾ縺吶・)
+        st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
+        st.info("※ 戦術切替時、売り期限は自動で「待伏:10日 / 強襲:5日」に再装填されます。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         
-        # 圷 UI -> Store 縺ｸ縺ｮ蜷梧悄繧ｳ繝ｼ繝ｫ繝舌ャ繧ｯ (value螻樊ｧ繧貞炎髯､縺励∫ｴ皮ｲ九↓key縺ｧ迥ｶ諷九ｒ邂｡逅・
+        # 🚨 UI -> Store への同期コールバック (value属性を削除し、純粋にkeyで状態を管理)
         def sync_param(ui_key, store_key):
             st.session_state[store_key] = st.session_state[ui_key]
             save_settings()
 
-        cp1.number_input("識 蛻ｩ遒ｺ逶ｮ讓・%)", step=1, key="_ui_tp", on_change=sync_param, args=("_ui_tp", "sim_tp_val"))
-        cp2.number_input("孱・・謳榊・逶ｮ螳・%)", step=1, key="_ui_sl", on_change=sync_param, args=("_ui_sl", "sim_sl_val"))
-        cp3.number_input("竢ｳ 雋ｷ縺・悄髯・譌･)", step=1, key="_ui_lim", on_change=sync_param, args=("_ui_lim", "sim_limit_d_val"))
-        cp4.number_input("竢ｳ 螢ｲ繧頑悄髯・譌･)", step=1, key="_ui_sell", on_change=sync_param, args=("_ui_sell", "sim_sell_d_val"))
+        cp1.number_input("🎯 利確目標(%)", step=1, key="_ui_tp", on_change=sync_param, args=("_ui_tp", "sim_tp_val"))
+        cp2.number_input("🛡️ 損切目安(%)", step=1, key="_ui_sl", on_change=sync_param, args=("_ui_sl", "sim_sl_val"))
+        cp3.number_input("⏳ 買い期限(日)", step=1, key="_ui_lim", on_change=sync_param, args=("_ui_lim", "sim_limit_d_val"))
+        cp4.number_input("⏳ 売り期限(日)", step=1, key="_ui_sell", on_change=sync_param, args=("_ui_sell", "sim_sell_d_val"))
         
         st.divider()
-        if "蠕・ｼ・ in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 倹 縲仙ｾ・ｼ上代す繝溘Η繝ｬ繝ｼ繧ｿ蝗ｺ譛芽ｨｭ螳・)
+        if "待伏" in st.session_state.bt_mode_sim_v2:
+            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("悼 謚ｼ縺礼岼蠕・■(%)", step=0.1, format="%.1f", key="_ui_push", on_change=sync_param, args=("_ui_push", "sim_push_r_val"))
-            ct2.number_input("謗溘け繝ｪ繧｢隕∵ｱよ焚", step=1, max_value=9, min_value=1, key="_ui_req", on_change=sync_param, args=("_ui_req", "sim_pass_req_val"))
-            ct3.number_input("RSI荳企剞 (驕守・諢・", step=5, key="_ui_rsi_am", on_change=sync_param, args=("_ui_rsi_am", "sim_rsi_lim_ambush_val"))
+            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="_ui_push", on_change=sync_param, args=("_ui_push", "sim_push_r_val"))
+            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="_ui_req", on_change=sync_param, args=("_ui_req", "sim_pass_req_val"))
+            ct3.number_input("RSI上限 (過熱感)", step=5, key="_ui_rsi_am", on_change=sync_param, args=("_ui_rsi_am", "sim_rsi_lim_ambush_val"))
         else:
-            st.markdown("##### 笞｡ 縲仙ｼｷ隘ｲ縲代す繝溘Η繝ｬ繝ｼ繧ｿ蝗ｺ譛芽ｨｭ螳・)
+            st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI荳企剞 (驕守・諢・", step=5, key="_ui_rsi_as", on_change=sync_param, args=("_ui_rsi_as", "sim_rsi_lim_assault_val"))
-            ct2.number_input("譎る俣繝ｪ繧ｹ繧ｯ荳企剞・亥芦驕比ｺ域Φ譌･謨ｰ・・, step=1, key="_ui_risk", on_change=sync_param, args=("_ui_risk", "sim_time_risk_val"))
+            ct1.number_input("RSI上限 (過熱感)", step=5, key="_ui_rsi_as", on_change=sync_param, args=("_ui_rsi_as", "sim_rsi_lim_assault_val"))
+            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="_ui_risk", on_change=sync_param, args=("_ui_risk", "sim_time_risk_val"))
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
         
-        if not t_codes: st.warning("譛牙柑縺ｪ繧ｳ繝ｼ繝峨′隕九▽縺九ｊ縺ｾ縺帙ｓ縲・)
+        if not t_codes: st.warning("有効なコードが見つかりません。")
         else:
             sim_tp = float(st.session_state.sim_tp_val)
             sim_sl_i = float(st.session_state.sim_sl_val)
@@ -1326,21 +1326,21 @@ with tab4:
             sim_sell_d = int(st.session_state.sim_sell_d_val)
             sim_push_r = float(st.session_state.sim_push_r_val)
 
-            is_ambush = "蠕・ｼ・ in st.session_state.bt_mode_sim_v2
+            is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
             if is_ambush:
                 sim_pass_req = int(st.session_state.sim_pass_req_val)
                 sim_rsi_lim_ambush = int(st.session_state.sim_rsi_lim_ambush_val)
                 p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
                 p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
-                p1_name, p2_name = "Push邇・%)", "隕∵ｱ４core"
+                p1_name, p2_name = "Push率(%)", "要求Score"
             else:
                 sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
                 sim_time_risk = int(st.session_state.sim_time_risk_val)
                 p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim_assault]
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
-                p1_name, p2_name = "RSI荳企剞(%)", "蛻ｩ遒ｺ逶ｮ讓・%)"
+                p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
-            with st.spinner("繝・・繧ｿ繧偵・繝ｪ繝ｭ繝ｼ繝我ｸｭ・磯ｫ倬溷喧蜃ｦ逅・ｼ・.."):
+            with st.spinner("データをプリロード中（高速化処理）..."):
                 preloaded_data = {}
                 for c in t_codes:
                     raw = get_single_data(c + "0", 2)
@@ -1358,13 +1358,13 @@ with tab4:
                     except: continue
 
             if not preloaded_data:
-                st.error("隗｣譫仙庄閭ｽ縺ｪ繝・・繧ｿ縺悟叙蠕励〒縺阪∪縺帙ｓ縺ｧ縺励◆縲・)
+                st.error("解析可能なデータが取得できませんでした。")
                 st.stop()
                 
             opt_results = []
             total_iterations = len(p1_range) * len(p2_range)
             current_iter = 0
-            p_bar = st.progress(0, f"謌ｦ陦捺怙驕ｩ蛹悶・邱丞ｽ薙◆繧頑､懆ｨｼ荳ｭ... ({p1_name} ﾃ・{p2_name})")
+            p_bar = st.progress(0, f"戦術最適化の総当たり検証中... ({p1_name} × {p2_name})")
 
             for t_p1 in p1_range:
                 for t_p2 in p2_range:
@@ -1413,17 +1413,17 @@ with tab4:
                                         if idx_eval >= 1:
                                             if df.iloc[idx_eval].get('MACD_Hist', 0) > 0 and df.iloc[idx_eval-1].get('MACD_Hist', 0) <= 0:
                                                 gc_triggered = True
-                                                # 圷 譁ｰ繝ｭ繧ｸ繝・け・壼崋螳・%繧貞ｻ・ｭ｢縺励・4譌･鬮伜､ or ATR蝓ｺ貅悶・蜍慕噪繝悶Ξ繧､繧ｯ縺ｫ螟画峩
+                                                # 🚨 新ロジック：固定1%を廃止し、14日高値 or ATR基準の動的ブレイクに変更
                                                 eval_h14 = df.iloc[max(0, idx_eval-14):idx_eval]['AdjH'].max()
                                                 eval_atr = df.iloc[idx_eval].get('ATR', 0)
                                                 eval_c = df.iloc[idx_eval]['AdjC']
-                                                # 鬮伜､繧呈栢縺代ｋ縺九∵里縺ｫ鬮伜､蝨上↑繧陰TR縺ｮ蜊雁・繧剃ｸ頑栢縺代◆菴咲ｽｮ繧偵ヨ繝ｪ繧ｬ繝ｼ縺ｨ縺吶ｋ
+                                                # 高値を抜けるか、既に高値圏ならATRの半分を上抜けた位置をトリガーとする
                                                 trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
                                                 break
                                     
                                     if gc_triggered and rsi_prev <= t_p1 and exp_days < sim_time_risk:
                                         if td['AdjH'] >= trigger_price:
-                                            # 圷 譁ｰ繝ｭ繧ｸ繝・け・壼濤陦悟､縺ｮ荳企剞繧・Trigger + (ATR * 0.2) 縺ｨ縺吶ｋ
+                                            # 🚨 新ロジック：執行値の上限を Trigger + (ATR * 0.2) とする
                                             exec_limit = trigger_price + (atr_prev * 0.2)
                                             exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
                                             pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
@@ -1434,9 +1434,9 @@ with tab4:
                                 e_atr = pos.get('entry_atr', prev.get('ATR', 0))
                                 t_price = pos.get('trigger', bp)
                                 
-                                # 圷 譁ｰ繝ｭ繧ｸ繝・け・夐亟陦帷ｷ・謳榊・)繧但TR繝吶・繧ｹ・医ヨ繝ｪ繧ｬ繝ｼ縺九ｉ -1.0 ATR・峨↓謠幄｣・
+                                # 🚨 新ロジック：防衛線(損切)をATRベース（トリガーから -1.0 ATR）に換装
                                 sl_val = t_price - (e_atr * 1.0)
-                                tp_val = bp * (1 + (current_tp / 100.0)) # 蛻ｩ遒ｺ縺ｯ蠕捺擂縺ｮ%譛驕ｩ蛹也岼讓吶ｒ邯ｭ謖・
+                                tp_val = bp * (1 + (current_tp / 100.0)) # 利確は従来の%最適化目標を維持
                                 
                                 if td['AdjL'] <= sl_val: sp = min(td['AdjO'], sl_val)
                                 elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
@@ -1445,52 +1445,52 @@ with tab4:
                                 if sp > 0:
                                     sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
                                     p_amt = int((sp - bp) * st.session_state.bt_lot)
-                                    all_t.append({'驫俶氛': c, '雉ｼ蜈･譌･': pos['b_d'], '豎ｺ貂域律': td['Date'], '菫晄怏譌･謨ｰ': held, '雋ｷ蛟､(蜀・': int(bp), '螢ｲ蛟､(蜀・': int(sp), '謳咲寢(%)': p_pct, '謳咲寢鬘・蜀・': p_amt})
+                                    all_t.append({'銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt})
                                     pos = None
                                     
                     if all_t:
                         p_df = pd.DataFrame(all_t)
-                        total_p = p_df['謳咲寢鬘・蜀・'].sum()
-                        win_r = len(p_df[p_df['謳咲寢鬘・蜀・'] > 0]) / len(p_df)
-                        opt_results.append({p1_name: t_p1, p2_name: t_p2, '邱丞粋蛻ｩ逶・蜀・': total_p, '蜍晉紫': win_r, '蜿門ｼ募屓謨ｰ': len(all_t)})
+                        total_p = p_df['損益額(円)'].sum()
+                        win_r = len(p_df[p_df['損益額(円)'] > 0]) / len(p_df)
+                        opt_results.append({p1_name: t_p1, p2_name: t_p2, '総合利益(円)': total_p, '勝率': win_r, '取引回数': len(all_t)})
                     p_bar.progress(current_iter / total_iterations)
             
-            # 圷 菫ｮ豁｣・壹・繝ｭ繧ｰ繝ｬ繧ｹ繝舌・豸亥悉縺ｨ邨先棡蜃ｺ蜉帙・繧､繝ｳ繝・Φ繝医ｒ繝ｫ繝ｼ繝励・縲悟､悶阪∈螳悟・遘ｻ蜍・
+            # 🚨 修正：プログレスバー消去と結果出力のインデントをループの「外」へ完全移動
             p_bar.empty()
 
             if optimize_bt and opt_results:
-                st.markdown(f"### 醇 {st.session_state.bt_mode_sim_v2.split()[1]}繝ｻ譛驕ｩ蛹悶Ξ繝昴・繝・)
-                opt_df = pd.DataFrame(opt_results).sort_values('邱丞粋蛻ｩ逶・蜀・', ascending=False)
+                st.markdown(f"### 🏆 {st.session_state.bt_mode_sim_v2.split()[1]}・最適化レポート")
+                opt_df = pd.DataFrame(opt_results).sort_values('総合利益(円)', ascending=False)
                 best = opt_df.iloc[0]
                 c1, c2, c3 = st.columns(3)
-                c1.metric(f"謗ｨ螂ｨ {p1_name}", f"{int(best[p1_name])} " + ("%" if is_ambush else ""))
-                c2.metric(f"謗ｨ螂ｨ {p2_name}", f"{int(best[p2_name])} " + ("轤ｹ" if is_ambush else "%"))
-                c3.metric("譛溷ｾ・享邇・, f"{round(best['蜍晉紫']*100, 1)} %")
-                st.write("#### 投 繝代Λ繝｡繝ｼ繧ｿ繝ｼ蛻･蜿守寢繝偵・繝医・繝・・・井ｸ贋ｽ・0驕ｸ・・)
-                st.dataframe(opt_df.head(10).style.format({'邱丞粋蛻ｩ逶・蜀・': '{:,}', '蜍晉紫': '{:.2%}'}), use_container_width=True, hide_index=True)
-                if is_ambush: st.info(f"庁 縲先耳螂ｨ謌ｦ陦薙醍樟蝨ｨ縺ｮ蝨ｰ蜷医＞縺ｧ縺ｯ縲・ｫ伜､縺九ｉ {int(best[p1_name])}% 縺ｮ謚ｼ縺礼岼菴咲ｽｮ縺ｫ謖・､繧貞ｱ暮幕縺励∵次繧ｹ繧ｳ繧｢ {int(best[p2_name])}轤ｹ 莉･荳翫〒霑取茶縺吶ｋ縺ｮ縺梧怙繧よ悄蠕・､縺碁ｫ倥＞縺ｨ隗｣譫舌＆繧後∪縺吶・)
+                c1.metric(f"推奨 {p1_name}", f"{int(best[p1_name])} " + ("%" if is_ambush else ""))
+                c2.metric(f"推奨 {p2_name}", f"{int(best[p2_name])} " + ("点" if is_ambush else "%"))
+                c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
+                st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
+                st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
+                if is_ambush: st.info(f"💡 【推奨戦術】現在の地合いでは、高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高いと解析されます。")
             elif run_bt:
-                if not opt_results: st.warning("謖・ｮ壹＆繧後◆譛滄俣繝ｻ譚｡莉ｶ縺ｧ繧ｷ繧ｰ繝翫Ν轤ｹ轣ｯ・育ｴ・ｮ夲ｼ峨・遒ｺ隱阪〒縺阪∪縺帙ｓ縺ｧ縺励◆縲・)
+                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できませんでした。")
                 else:
-                    tdf = pd.DataFrame(all_t).sort_values('豎ｺ貂域律').reset_index(drop=True)
-                    tdf['邏ｯ遨肴錐逶・蜀・'] = tdf['謳咲寢鬘・蜀・'].cumsum()
-                    st.success("識 繝舌ャ繧ｯ繝・せ繝亥ｮ御ｺ・・)
+                    tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
+                    tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
+                    st.success("🎯 バックテスト完了。")
                     import plotly.express as px
-                    fig_eq = px.line(tdf, x='豎ｺ貂域律', y='邏ｯ遨肴錐逶・蜀・', markers=True, title="腸 莉ｮ諠ｳ雉・肇謗ｨ遘ｻ (Equity Curve)", color_discrete_sequence=["#FFD700"])
+                    fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, title="💰 仮想資産推移 (Equity Curve)", color_discrete_sequence=["#FFD700"])
                     fig_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=40, b=20))
                     st.plotly_chart(fig_eq, use_container_width=True)
                     
-                    n_prof = tdf['謳咲寢鬘・蜀・'].sum()
+                    n_prof = tdf['損益額(円)'].sum()
                     prof_color = "#26a69a" if n_prof > 0 else "#ef5350"
-                    st.markdown(f'<h3 style="color: {prof_color};">邱丞粋蛻ｩ逶企｡・ {n_prof:,} 蜀・/h3>', unsafe_allow_html=True)
+                    st.markdown(f'<h3 style="color: {prof_color};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
                     
                     m1, m2, m3, m4 = st.columns(4)
-                    tot = len(tdf); wins = len(tdf[tdf['謳咲寢鬘・蜀・'] > 0])
-                    m1.metric("繝医Ξ繝ｼ繝牙屓謨ｰ", f"{tot} 蝗・)
-                    m2.metric("蜍晉紫", f"{round((wins/tot)*100,1)} %")
-                    m3.metric("蟷ｳ蝮・錐逶企｡・, f"{int(n_prof/tot):,} 蜀・ if tot > 0 else "0 蜀・)
-                    sloss = abs(tdf[tdf['謳咲寢鬘・蜀・'] <= 0]['謳咲寢鬘・蜀・'].sum())
-                    m4.metric("PF", round(tdf[tdf['謳咲寢鬘・蜀・'] > 0]['謳咲寢鬘・蜀・'].sum() / sloss, 2) if sloss > 0 else 'inf')
+                    tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
+                    m1.metric("トレード回数", f"{tot} 回")
+                    m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
+                    m3.metric("平均損益額", f"{int(n_prof/tot):,} 円" if tot > 0 else "0 円")
+                    sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
+                    m4.metric("PF", round(tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum() / sloss, 2) if sloss > 0 else 'inf')
                     
                     def color_pnl_tab4(val):
                         if isinstance(val, (int, float)):
@@ -1498,12 +1498,12 @@ with tab4:
                             return f'color: {color}; font-weight: bold;'
                         return ''
                     
-                    styled_tdf = tdf.drop(columns=['邏ｯ遨肴錐逶・蜀・']).style.map(color_pnl_tab4, subset=['謳咲寢鬘・蜀・', '謳咲寢(%)']).format({'雋ｷ蛟､(蜀・': '{:,}', '螢ｲ蛟､(蜀・': '{:,}', '謳咲寢鬘・蜀・': '{:,}', '謳咲寢(%)': '{:.2f}'})
+                    styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
 
 with tab5:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">藤 莠､謌ｦ繝｢繝九ち繝ｼ (蜈ｨ霆咲函蟄伜恟繝ｬ繝ｼ繝繝ｼ)</h3>', unsafe_allow_html=True)
-    st.caption("窶ｻ 螻暮幕荳ｭ縺ｮ蜈ｨ驛ｨ髫奇ｼ医・繧ｸ繧ｷ繝ｧ繝ｳ・峨・迴ｾ蝨ｨ蝨ｰ縺ｨ髦ｲ陦帷ｷ壹ｒ荳隕ｧ陦ｨ遉ｺ縺励∵姶螻繧剃ｿｯ迸ｰ縺励∪縺吶・)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
+    st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
@@ -1511,65 +1511,65 @@ with tab5:
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
-                if "驫俶氛" in temp_df.columns:
-                    temp_df["驫俶氛"] = temp_df["驫俶氛"].astype(str)
-                for col in ["雋ｷ蛟､", "隨ｬ1蛻ｩ遒ｺ", "隨ｬ2蛻ｩ遒ｺ", "謳榊・", "迴ｾ蝨ｨ蛟､"]:
+                if "銘柄" in temp_df.columns:
+                    temp_df["銘柄"] = temp_df["銘柄"].astype(str)
+                for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
                     if col in temp_df.columns:
                         temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame([
-                    {"驫俶氛": "4259", "雋ｷ蛟､": 650.0, "隨ｬ1蛻ｩ遒ｺ": 688.0, "隨ｬ2蛻ｩ遒ｺ": 714.0, "謳榊・": 627.0, "迴ｾ蝨ｨ蛟､": 670.0},
-                    {"驫俶氛": "4691", "雋ｷ蛟､": 1588.0, "隨ｬ1蛻ｩ遒ｺ": 1635.0, "隨ｬ2蛻ｩ遒ｺ": 1635.0, "謳榊・": 1508.0, "迴ｾ蝨ｨ蛟､": 1600.0},
-                    {"驫俶氛": "3137", "雋ｷ蛟､": 267.0, "隨ｬ1蛻ｩ遒ｺ": 260.0, "隨ｬ2蛻ｩ遒ｺ": 267.0, "謳榊・": 248.0, "迴ｾ蝨ｨ蛟､": 254.0}
+                    {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
+                    {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
+                    {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
                 ])
         else:
             st.session_state.frontline_df = pd.DataFrame([
-                {"驫俶氛": "4259", "雋ｷ蛟､": 650.0, "隨ｬ1蛻ｩ遒ｺ": 688.0, "隨ｬ2蛻ｩ遒ｺ": 714.0, "謳榊・": 627.0, "迴ｾ蝨ｨ蛟､": 670.0},
-                {"驫俶氛": "4691", "雋ｷ蛟､": 1588.0, "隨ｬ1蛻ｩ遒ｺ": 1635.0, "隨ｬ2蛻ｩ遒ｺ": 1635.0, "謳榊・": 1508.0, "迴ｾ蝨ｨ蛟､": 1600.0},
-                {"驫俶氛": "3137", "雋ｷ蛟､": 267.0, "隨ｬ1蛻ｩ遒ｺ": 260.0, "隨ｬ2蛻ｩ遒ｺ": 267.0, "謳榊・": 248.0, "迴ｾ蝨ｨ蛟､": 254.0}
+                {"銘柄": "4259", "買値": 650.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 670.0},
+                {"銘柄": "4691", "買値": 1588.0, "第1利確": 1635.0, "第2利確": 1635.0, "損切": 1508.0, "現在値": 1600.0},
+                {"銘柄": "3137", "買値": 267.0, "第1利確": 260.0, "第2利確": 267.0, "損切": 248.0, "現在値": 254.0}
             ])
 
-    # --- 峅・・陦帶弌騾壻ｿ｡・夂樟蝨ｨ蛟､縺ｮ荳諡ｬ蜷梧悄繝懊ち繝ｳ ---
-    if st.button("売 蜈ｨ霆阪・迴ｾ蝨ｨ蛟､繧定・蜍募叙蠕・(yfinance蜷梧悄)", use_container_width=True):
-        with st.spinner("陦帶弌騾壻ｿ｡荳ｭ... 蜷・Κ髫翫・迴ｾ蝨ｨ蝨ｰ繧貞・蜿門ｾ励＠縺ｦ縺・∪縺・):
+    # --- 🛰️ 衛星通信：現在値の一括同期ボタン ---
+    if st.button("🔄 全軍の現在値を自動取得 (yfinance同期)", use_container_width=True):
+        with st.spinner("衛星通信中... 各部隊の現在地を再取得しています"):
             import yfinance as yf
             updated = False
             for idx, row in st.session_state.frontline_df.iterrows():
-                code = str(row['驫俶氛']).strip()
+                code = str(row['銘柄']).strip()
                 if len(code) >= 4:
-                    api_code = code[:4] + ".T"  # 譌･譛ｬ譬ｪ縺ｮ繝・ぅ繝・き繝ｼ蠖｢蠑上↓螟画鋤
+                    api_code = code[:4] + ".T"  # 日本株のティッカー形式に変換
                     try:
                         tk = yf.Ticker(api_code)
                         hist = tk.history(period="1d")
                         if not hist.empty:
                             latest_price = hist['Close'].iloc[-1]
-                            st.session_state.frontline_df.at[idx, '迴ｾ蝨ｨ蛟､'] = round(latest_price, 1)
+                            st.session_state.frontline_df.at[idx, '現在値'] = round(latest_price, 1)
                             updated = True
                     except:
                         pass
             
             if updated:
                 st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-                st.success("識 迴ｾ蝨ｨ蛟､縺ｮ蜷梧悄縺悟ｮ御ｺ・＠縺ｾ縺励◆縲ゑｼ遺ｻyfinance縺ｮ莉墓ｧ倅ｸ翫∵怙螟ｧ20蛻・・驕・ｻｶ縺悟性縺ｾ繧後∪縺呻ｼ・)
+                st.success("🎯 現在値の同期が完了しました。（※yfinanceの仕様上、最大20分の遅延が含まれます）")
                 st.rerun()
             else:
-                st.warning("繝・・繧ｿ縺ｮ蜿門ｾ励↓螟ｱ謨励＠縺ｾ縺励◆縲・)
+                st.warning("データの取得に失敗しました。")
     # ---------------------------------------------
 
-    st.markdown("#### 笞呻ｸ・驛ｨ髫翫ヱ繝ｩ繝｡繝ｼ繧ｿ繝ｼ蜈･蜉・(繧ｳ繝ｳ繝医Ο繝ｼ繝ｫ繝代ロ繝ｫ)")
-    st.caption("窶ｻ 逶ｴ謗･謨ｰ蛟､繧呈嶌縺肴鋤縺医※縺上□縺輔＞縲ゆｸ矩Κ縺ｮ縲瑚｡後ｒ霑ｽ蜉縲阪〒譁ｰ縺励＞驫俶氛繧堤┌髯舌↓霑ｽ蜉蜿ｯ閭ｽ縺ｧ縺吶・)
+    st.markdown("#### ⚙️ 部隊パラメーター入力 (コントロールパネル)")
+    st.caption("※ 直接数値を書き換えてください。下部の「行を追加」で新しい銘柄を無限に追加可能です。")
 
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
         column_config={
-            "驫俶氛": st.column_config.TextColumn("驫俶氛", required=True),
-            "雋ｷ蛟､": st.column_config.NumberColumn("雋ｷ蛟､", format="%.1f", required=True),
-            "隨ｬ1蛻ｩ遒ｺ": st.column_config.NumberColumn("隨ｬ1蛻ｩ遒ｺ", format="%.1f", required=True),
-            "隨ｬ2蛻ｩ遒ｺ": st.column_config.NumberColumn("隨ｬ2蛻ｩ遒ｺ", format="%.1f", required=True),
-            "謳榊・": st.column_config.NumberColumn("謳榊・", format="%.1f", required=True),
-            "迴ｾ蝨ｨ蛟､": st.column_config.NumberColumn("閥 迴ｾ蝨ｨ蛟､", format="%.1f", required=True),
+            "銘柄": st.column_config.TextColumn("銘柄", required=True),
+            "買値": st.column_config.NumberColumn("買値", format="%.1f", required=True),
+            "第1利確": st.column_config.NumberColumn("第1利確", format="%.1f", required=True),
+            "第2利確": st.column_config.NumberColumn("第2利確", format="%.1f", required=True),
+            "損切": st.column_config.NumberColumn("損切", format="%.1f", required=True),
+            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%.1f", required=True),
         },
         use_container_width=True,
         key="frontline_editor"
@@ -1581,24 +1581,24 @@ with tab5:
         st.rerun()
 
     st.markdown("---")
-    st.markdown("#### 発 蜈ｨ霆阪Ξ繝ｼ繝繝ｼ螻暮幕迥ｶ豕・)
+    st.markdown("#### 🔭 全軍レーダー展開状況")
 
     active_squads = 0
 
     for index, row in edited_df.iterrows():
-        ticker = str(row.get('驫俶氛', ''))
-        if ticker.strip() == "" or pd.isna(row['雋ｷ蛟､']) or pd.isna(row['迴ｾ蝨ｨ蛟､']): continue
+        ticker = str(row.get('銘柄', ''))
+        if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
             
-        buy = float(row['雋ｷ蛟､']); tp1 = float(row['隨ｬ1蛻ｩ遒ｺ']); tp2 = float(row['隨ｬ2蛻ｩ遒ｺ']); sl = float(row['謳榊・']); cur = float(row['迴ｾ蝨ｨ蛟､'])
+        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
         active_squads += 1
 
-        if cur <= sl: st_text, st_color = "逐 陲ｫ蠑ｾ・磯亟陦帷ｷ夂ｪ∫ｴ繝ｻ蜊ｳ譎よ彫騾・・, "#ef5350"
-        elif cur < buy: st_text, st_color = "笞・・隴ｦ謌抵ｼ域錐蛻・Λ繧､繝ｳ縺ｸ蠕碁荳ｭ・・, "#ff9800"
-        elif cur < tp1: st_text, st_color = "泙 蟾｡闊ｪ荳ｭ・育ｬｬ1逶ｮ讓吶∈謗･霑台ｸｭ・・, "#26a69a"
-        elif cur < tp2: st_text, st_color = "孱・・隨ｬ1逶ｮ讓吝芦驕費ｼ育┌謨ｵ蛹匁耳螂ｨ・・, "#42a5f5"
-        else: st_text, st_color = "醇 譛邨ら岼讓吝芦驕費ｼ井ｻｻ蜍吝ｮ御ｺ・ｼ・, "#ab47bc"
+        if cur <= sl: st_text, st_color = "💀 被弾（防衛線突破・即時撤退）", "#ef5350"
+        elif cur < buy: st_text, st_color = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800"
+        elif cur < tp1: st_text, st_color = "🟢 巡航中（第1目標へ接近中）", "#26a69a"
+        elif cur < tp2: st_text, st_color = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5"
+        else: st_text, st_color = "🏆 最終目標到達（任務完了）", "#ab47bc"
 
-        st.markdown(f"**驛ｨ髫・[{ticker}]** ・・謌ｦ豕・ <span style='color:{st_color}; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
+        st.markdown(f"**部隊 [{ticker}]** ｜ 戦況: <span style='color:{st_color}; font-weight:bold;'>{st_text}</span>", unsafe_allow_html=True)
 
         fig = go.Figure()
         min_x = min(sl, cur) * 0.98; max_x = max(tp2, cur) * 1.02
@@ -1606,16 +1606,16 @@ with tab5:
         fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#555", width=2))
         bar_color = "rgba(38, 166, 154, 0.7)" if cur >= buy else "rgba(239, 83, 80, 0.7)"
         fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color=bar_color, width=12))
-        fig.add_trace(go.Scatter(x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode="markers+text", text=["謳榊・", "雋ｷ蛟､", "隨ｬ1蛻ｩ遒ｺ", "隨ｬ2蛻ｩ遒ｺ"], textposition="top center", textfont=dict(size=11, color="white"), marker=dict(size=10, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]), hoverinfo="x+text", name="髦ｲ陦帷ｷ・))
-        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers+text", text=[f"迴ｾ蝨ｨ蛟､<br>{cur}"], textposition="bottom center", textfont=dict(size=12, color=st_color), marker=dict(size=20, symbol="cross-thin", line=dict(width=3, color=st_color)), hoverinfo="x", name="繧ｿ繝ｼ繧ｲ繝・ヨ"))
+        fig.add_trace(go.Scatter(x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode="markers+text", text=["損切", "買値", "第1利確", "第2利確"], textposition="top center", textfont=dict(size=11, color="white"), marker=dict(size=10, color=["#ef5350", "#ffca28", "#26a69a", "#42a5f5"]), hoverinfo="x+text", name="防衛線"))
+        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers+text", text=[f"現在値<br>{cur}"], textposition="bottom center", textfont=dict(size=12, color=st_color), marker=dict(size=20, symbol="cross-thin", line=dict(width=3, color=st_color)), hoverinfo="x", name="ターゲット"))
         fig.update_layout(height=180, showlegend=False, yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[-1, 1]), xaxis=dict(showgrid=False, zeroline=False, range=[min_x, max_x], tickfont=dict(color="#888")), margin=dict(l=10, r=10, t=30, b=50), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    if active_squads == 0: st.info("迴ｾ蝨ｨ縲∝ｱ暮幕荳ｭ縺ｮ驛ｨ髫翫・縺ゅｊ縺ｾ縺帙ｓ縲ゆｸ翫・陦ｨ縺ｫ繝・・繧ｿ繧貞・蜉帙＠縺ｦ縺上□縺輔＞縲・)
+    if active_squads == 0: st.info("現在、展開中の部隊はありません。上の表にデータを入力してください。")
 
 with tab6:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">刀 莠句ｾ御ｻｻ蜍吝ｱ蜻・(AAR) & 謌ｦ邵ｾ繝繝・す繝･繝懊・繝・/h3>', unsafe_allow_html=True)
-    st.caption("窶ｻ螳滄圀縺ｮ莠､謌ｦ險倬鹸・医ヨ繝ｬ繝ｼ繝牙ｱ･豁ｴ・峨ｒ險倬鹸縺励∬・霄ｫ縺ｮ謌ｦ邵ｾ縺ｨ縲瑚ｦ丞ｾ矩・螳亥ｺｦ・医Γ繝ｳ繧ｿ繝ｫ・峨阪ｒ蜿ｯ隕門喧繝ｻ蛻・梵縺励∪縺吶・)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
+    st.caption("※実際の交戦記録（トレード履歴）を記録し、自身の戦績と「規律遵守度（メンタル）」を可視化・分析します。")
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
@@ -1625,71 +1625,71 @@ with tab6:
             m_row = master_df[master_df['Code'] == api_code]
             if not m_row.empty:
                 scale_val = str(m_row.iloc[0].get('Scale', ''))
-                return "召 螟ｧ蝙・荳ｭ蝙・ if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "噫 蟆丞梛/譁ｰ闊・
-        return "荳肴・"
+                return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
+        return "不明"
     
     if os.path.exists(AAR_FILE):
         try:
             aar_df = pd.read_csv(AAR_FILE)
-            if "隕乗ｨ｡" not in aar_df.columns:
-                aar_df.insert(2, "隕乗ｨ｡", aar_df["驫俶氛"].apply(get_scale_for_code))
+            if "規模" not in aar_df.columns:
+                aar_df.insert(2, "規模", aar_df["銘柄"].apply(get_scale_for_code))
                 aar_df.to_csv(AAR_FILE, index=False)
             
-            aar_df['豎ｺ貂域律'] = aar_df['豎ｺ貂域律'].astype(str)
-            aar_df['驫俶氛'] = aar_df['驫俶氛'].astype(str)
-            aar_df['雋ｷ蛟､'] = pd.to_numeric(aar_df['雋ｷ蛟､'], errors='coerce')
-            aar_df['螢ｲ蛟､'] = pd.to_numeric(aar_df['螢ｲ蛟､'], errors='coerce')
-            aar_df['譬ｪ謨ｰ'] = pd.to_numeric(aar_df['譬ｪ謨ｰ'], errors='coerce')
-            aar_df['謳咲寢鬘・蜀・'] = pd.to_numeric(aar_df['謳咲寢鬘・蜀・'], errors='coerce')
-            aar_df['謳咲寢(%)'] = pd.to_numeric(aar_df['謳咲寢(%)'], errors='coerce')
+            aar_df['決済日'] = aar_df['決済日'].astype(str)
+            aar_df['銘柄'] = aar_df['銘柄'].astype(str)
+            aar_df['買値'] = pd.to_numeric(aar_df['買値'], errors='coerce')
+            aar_df['売値'] = pd.to_numeric(aar_df['売値'], errors='coerce')
+            aar_df['株数'] = pd.to_numeric(aar_df['株数'], errors='coerce')
+            aar_df['損益額(円)'] = pd.to_numeric(aar_df['損益額(円)'], errors='coerce')
+            aar_df['損益(%)'] = pd.to_numeric(aar_df['損益(%)'], errors='coerce')
             
-            aar_df = aar_df.sort_values(['豎ｺ貂域律', '驫俶氛'], ascending=[True, True]).reset_index(drop=True)
+            aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
         except:
-            aar_df = pd.DataFrame(columns=["豎ｺ貂域律", "驫俶氛", "隕乗ｨ｡", "謌ｦ陦・, "雋ｷ蛟､", "螢ｲ蛟､", "譬ｪ謨ｰ", "謳咲寢鬘・蜀・", "謳咲寢(%)", "隕丞ｾ・, "謨怜屏/蜍晏屏繝｡繝｢"])
+            aar_df = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
     else:
-        aar_df = pd.DataFrame(columns=["豎ｺ貂域律", "驫俶氛", "隕乗ｨ｡", "謌ｦ陦・, "雋ｷ蛟､", "螢ｲ蛟､", "譬ｪ謨ｰ", "謳咲寢鬘・蜀・", "謳咲寢(%)", "隕丞ｾ・, "謨怜屏/蜍晏屏繝｡繝｢"])
+        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
 
     col_a1, col_a2 = st.columns([1, 2.2])
     
     with col_a1:
-        st.markdown("#### 統 謌ｦ譫懷ｱ蜻翫ヵ繧ｩ繝ｼ繝 (謇句虚蜈･蜉・")
+        st.markdown("#### 📝 戦果報告フォーム (手動入力)")
         with st.form(key="aar_form"):
             c_f1, c_f2 = st.columns(2)
             import datetime as dt_module
-            aar_date = c_f1.date_input("豎ｺ貂域律", dt_module.date.today())
-            aar_code = c_f2.text_input("驫俶氛繧ｳ繝ｼ繝・(4譯・", max_chars=4)
-            aar_tactics = st.selectbox("菴ｿ逕ｨ縺励◆謌ｦ陦・, ["倹 蠕・ｼ・(謚ｼ縺礼岼)", "笞｡ 蠑ｷ隘ｲ (鬆・ｼｵ繧・", "笞・・縺昴・莉・(陬・㍼繝ｻ螯･蜊・"])
+            aar_date = c_f1.date_input("決済日", dt_module.date.today())
+            aar_code = c_f2.text_input("銘柄コード (4桁)", max_chars=4)
+            aar_tactics = st.selectbox("使用した戦術", ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他 (裁量・妥協)"])
             c_f3, c_f4, c_f5 = st.columns(3)
-            aar_buy = c_f3.number_input("雋ｷ蛟､ (蜀・", min_value=0.0, step=1.0, format="%.1f")
-            aar_sell = c_f4.number_input("螢ｲ蛟､ (蜀・", min_value=0.0, step=1.0, format="%.1f")
-            aar_lot = c_f5.number_input("譬ｪ謨ｰ", min_value=100, step=100)
+            aar_buy = c_f3.number_input("買値 (円)", min_value=0.0, step=1.0, format="%.1f")
+            aar_sell = c_f4.number_input("売値 (円)", min_value=0.0, step=1.0, format="%.1f")
+            aar_lot = c_f5.number_input("株数", min_value=100, step=100)
             
-            st.markdown("**笞厄ｸ・閾ｪ蟾ｱ隧穂ｾ｡・医Γ繝ｳ繧ｿ繝ｫ繝ｻ繝√ぉ繝・け・・*")
-            aar_rule = st.radio("繝懊せ縺ｮ縲朱延縺ｮ謗溘上ｒ螳悟・縺ｫ驕ｵ螳医＠縺ｦ謦・■縺ｾ縺励◆縺具ｼ・, ["笨・驕ｵ螳医＠縺・(蜀ｷ蠕ｹ縺ｪ迢呎茶)", "笶・遐ｴ縺｣縺・(諢滓ュ繝ｻ辟ｦ繧翫・螯･蜊・"], horizontal=False)
-            aar_memo = st.text_input("迚ｹ險倅ｺ矩・(縺ｪ縺懊◎縺ｮ繝ｫ繝ｼ繝ｫ繧堤ｴ縺｣縺溘°縲√∪縺溘・蜍晏屏縺ｪ縺ｩ)")
-            submit_aar = st.form_submit_button("沈 險倬鹸繧偵ョ繝ｼ繧ｿ繝舌Φ繧ｯ縺ｸ菫晏ｭ・, use_container_width=True)
+            st.markdown("**⚖️ 自己評価（メンタル・チェック）**")
+            aar_rule = st.radio("ボスの『鉄の掟』を完全に遵守して撃ちましたか？", ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"], horizontal=False)
+            aar_memo = st.text_input("特記事項 (なぜそのルールを破ったか、または勝因など)")
+            submit_aar = st.form_submit_button("💾 記録をデータバンクへ保存", use_container_width=True)
             
         if submit_aar:
             if aar_code and len(aar_code) >= 4 and aar_buy > 0 and aar_sell > 0:
                 profit = int((aar_sell - aar_buy) * aar_lot)
                 profit_pct = round(((aar_sell / aar_buy) - 1) * 100, 2)
                 new_data = pd.DataFrame([{
-                    "豎ｺ貂域律": aar_date.strftime("%Y-%m-%d"), "驫俶氛": aar_code, "隕乗ｨ｡": get_scale_for_code(aar_code),
-                    "謌ｦ陦・: aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
-                    "雋ｷ蛟､": aar_buy, "螢ｲ蛟､": aar_sell, "譬ｪ謨ｰ": aar_lot, "謳咲寢鬘・蜀・": profit, "謳咲寢(%)": profit_pct,
-                    "隕丞ｾ・: "驕ｵ螳・ if "驕ｵ螳・ in aar_rule else "驕募渚", "謨怜屏/蜍晏屏繝｡繝｢": aar_memo
+                    "決済日": aar_date.strftime("%Y-%m-%d"), "銘柄": aar_code, "規模": get_scale_for_code(aar_code),
+                    "戦術": aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
+                    "買値": aar_buy, "売値": aar_sell, "株数": aar_lot, "損益額(円)": profit, "損益(%)": profit_pct,
+                    "規律": "遵守" if "遵守" in aar_rule else "違反", "敗因/勝因メモ": aar_memo
                 }])
-                aar_df = pd.concat([new_data, aar_df], ignore_index=True).sort_values(['豎ｺ貂域律', '驫俶氛'], ascending=[True, True]).reset_index(drop=True)
+                aar_df = pd.concat([new_data, aar_df], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                 aar_df.to_csv(AAR_FILE, index=False)
-                st.success(f"驫俶氛 {aar_code} 縺ｮ謌ｦ譫懊ｒ蜿ｸ莉､驛ｨ繝・・繧ｿ繝吶・繧ｹ縺ｫ險倬鹸螳御ｺ・・)
+                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録完了。")
                 st.rerun()
-            else: st.error("驫俶氛繧ｳ繝ｼ繝峨∬ｲｷ蛟､縲∝｣ｲ蛟､繧呈ｭ｣縺励￥蜈･蜉帙○繧医・)
+            else: st.error("銘柄コード、買値、売値を正しく入力せよ。")
         
-        with st.expander("踏 險ｼ蛻ｸ莨夂､ｾ縺ｮ蜿門ｼ募ｱ･豁ｴ(CSV)縺九ｉ閾ｪ蜍穂ｸ諡ｬ逋ｻ骭ｲ", expanded=True):
-            st.caption("繧｢繝・・繝ｭ繝ｼ繝峨＆繧後◆CSV縺九ｉ縲檎樟迚ｩ雋ｷ縲阪→縲檎樟迚ｩ螢ｲ縲阪ｒ閾ｪ蜍輔〒繝壹い繝ｪ繝ｳ繧ｰ縺励∵錐逶翫ｒ邂怜・縺励※繝・・繧ｿ繝吶・繧ｹ縺ｸ荳諡ｬ逋ｻ骭ｲ縺励∪縺吶ゑｼ遺ｻ驥崎､・ョ繝ｼ繧ｿ縺ｯ閾ｪ蜍墓賜髯､縺輔ｌ縺ｾ縺呻ｼ・)
-            uploaded_csv = st.file_uploader("邏・ｮ壼ｱ･豁ｴCSV繝輔ぃ繧､繝ｫ繧偵い繝・・繝ｭ繝ｼ繝・, type=["csv"], key="aar_csv_uploader")
+        with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
+            st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。（※重複データは自動排除されます）")
+            uploaded_csv = st.file_uploader("約定履歴CSVファイルをアップロード", type=["csv"], key="aar_csv_uploader")
             if uploaded_csv is not None:
-                if st.button("笞呻ｸ・CSV縺九ｉ謌ｦ譫懊ｒ閾ｪ蜍戊ｧ｣譫舌＠縺ｦ霑ｽ蜉", use_container_width=True, key="btn_parse_csv"):
+                if st.button("⚙️ CSVから戦果を自動解析して追加", use_container_width=True, key="btn_parse_csv"):
                     try:
                         import io
                         try: content = uploaded_csv.getvalue().decode('utf-8')
@@ -1697,20 +1697,20 @@ with tab6:
                         lines = content.splitlines()
                         header_idx = -1
                         for i, line in enumerate(lines):
-                            if "邏・ｮ壽律" in line and "驫俶氛" in line:
+                            if "約定日" in line and "銘柄" in line:
                                 header_idx = i; break
                                 
                         if header_idx != -1:
                             csv_data = "\n".join(lines[header_idx:])
                             df_csv = pd.read_csv(io.StringIO(csv_data))
-                            df_csv = df_csv[df_csv['蜿門ｼ・].astype(str).str.contains('迴ｾ迚ｩ')].copy()
+                            df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
                             records = []
-                            for code, group in df_csv.groupby('驫俶氛繧ｳ繝ｼ繝・):
+                            for code, group in df_csv.groupby('銘柄コード'):
                                 buys, sells = [], []
                                 for _, row in group.iterrows():
-                                    item = {'date': str(row['邏・ｮ壽律']).replace('/', '-'), 'qty': int(row['邏・ｮ壽焚驥・]), 'price': float(row['邏・ｮ壼腰萓｡']), 'code': str(code)}
-                                    if "雋ｷ" in str(row['蜿門ｼ・]): buys.append(item)
-                                    elif "螢ｲ" in str(row['蜿門ｼ・]): sells.append(item)
+                                    item = {'date': str(row['約定日']).replace('/', '-'), 'qty': int(row['約定数量']), 'price': float(row['約定単価']), 'code': str(code)}
+                                    if "買" in str(row['取引']): buys.append(item)
+                                    elif "売" in str(row['取引']): sells.append(item)
                                 buys.sort(key=lambda x: x['date']); sells.sort(key=lambda x: x['date'])
                                 for s in sells:
                                     sell_qty = s['qty']; matched_qty, matched_buy_amount = 0, 0
@@ -1725,61 +1725,61 @@ with tab6:
                                         profit = (s['price'] - avg_buy_price) * matched_qty
                                         profit_pct = ((s['price'] / avg_buy_price) - 1) * 100
                                         records.append({
-                                            "豎ｺ貂域律": s['date'], "驫俶氛": s['code'], "隕乗ｨ｡": get_scale_for_code(s['code']), "謌ｦ陦・: "閾ｪ蜍戊ｧ｣譫・,
-                                            "雋ｷ蛟､": round(avg_buy_price, 1), "螢ｲ蛟､": round(s['price'], 1), "譬ｪ謨ｰ": int(matched_qty),
-                                            "謳咲寢鬘・蜀・": int(profit), "謳咲寢(%)": round(profit_pct, 2), "隕丞ｾ・: "荳肴・(隕∽ｿｮ豁｣)", "謨怜屏/蜍晏屏繝｡繝｢": "CSV閾ｪ蜍募叙繧願ｾｼ縺ｿ"
+                                            "決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析",
+                                            "買値": round(avg_buy_price, 1), "売値": round(s['price'], 1), "株数": int(matched_qty),
+                                            "損益額(円)": int(profit), "損益(%)": round(profit_pct, 2), "規律": "不明(要修正)", "敗因/勝因メモ": "CSV自動取り込み"
                                         })
                             if records:
                                 new_df = pd.DataFrame(records)
                                 aar_df = pd.concat([aar_df, new_df], ignore_index=True)
-                                aar_df['豎ｺ貂域律'] = aar_df['豎ｺ貂域律'].astype(str)
-                                aar_df['驫俶氛'] = aar_df['驫俶氛'].astype(str)
-                                aar_df['雋ｷ蛟､'] = aar_df['雋ｷ蛟､'].astype(float).round(1)
-                                aar_df['螢ｲ蛟､'] = aar_df['螢ｲ蛟､'].astype(float).round(1)
-                                aar_df['譬ｪ謨ｰ'] = aar_df['譬ｪ謨ｰ'].astype(int)
-                                aar_df = aar_df.drop_duplicates(subset=["豎ｺ貂域律", "驫俶氛", "雋ｷ蛟､", "螢ｲ蛟､", "譬ｪ謨ｰ"], keep='first').reset_index(drop=True)
-                                aar_df = aar_df.sort_values(['豎ｺ貂域律', '驫俶氛'], ascending=[True, True]).reset_index(drop=True)
+                                aar_df['決済日'] = aar_df['決済日'].astype(str)
+                                aar_df['銘柄'] = aar_df['銘柄'].astype(str)
+                                aar_df['買値'] = aar_df['買値'].astype(float).round(1)
+                                aar_df['売値'] = aar_df['売値'].astype(float).round(1)
+                                aar_df['株数'] = aar_df['株数'].astype(int)
+                                aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"], keep='first').reset_index(drop=True)
+                                aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                                 aar_df.to_csv(AAR_FILE, index=False)
-                                st.success(f"識 譁ｰ隕上・謌ｦ譫懊・縺ｿ繧呈歓蜃ｺ縺励∵里蟄倥・險倬鹸縺ｨ邨ｱ蜷亥ｮ御ｺ・・)
+                                st.success(f"🎯 新規の戦果のみを抽出し、既存の記録と統合完了。")
                                 st.rerun()
-                            else: st.warning("隗｣譫仙庄閭ｽ縺ｪ豎ｺ貂域ｸ医∩繝壹い・郁ｲｷ縺・→螢ｲ繧翫・繧ｻ繝・ヨ・峨′遒ｺ隱阪〒縺阪↑縺九▲縺溘・)
-                        else: st.error("CSV繝輔か繝ｼ繝槭ャ繝医′隱崎ｭ倅ｸ崎・縲ゅ檎ｴ・ｮ壽律縲阪碁釜譟・阪ｒ蜷ｫ繧繝倥ャ繝陦後′蠢・医□縲・)
-                    except Exception as e: st.error(f"隗｣譫舌お繝ｩ繝ｼ: {e}")
+                            else: st.warning("解析可能な決済済みペア（買いと売りのセット）が確認できなかった。")
+                        else: st.error("CSVフォーマットが認識不能。「約定日」「銘柄」を含むヘッダ行が必須だ。")
+                    except Exception as e: st.error(f"解析エラー: {e}")
 
         if not aar_df.empty:
-            if st.button("卵・・蜈ｨ險倬鹸繧呈ｶ亥悉 (繝・・繧ｿ繝吶・繧ｹ蛻晄悄蛹・", key="reset_aar", use_container_width=True):
+            if st.button("🗑️ 全記録を消去 (データベース初期化)", key="reset_aar", use_container_width=True):
                 os.remove(AAR_FILE)
                 st.rerun()
 
     with col_a2:
-        st.markdown("#### 投 蜿ｸ莉､驛ｨ 邱丞粋謌ｦ邵ｾ繝繝・す繝･繝懊・繝・)
-        if aar_df.empty: st.warning("迴ｾ蝨ｨ縲∽ｺ､謌ｦ險倬鹸・医ョ繝ｼ繧ｿ・峨′縺ｪ縺・ょｷｦ縺ｮ繝輔か繝ｼ繝縺九ｉ蜈･蜉帙☆繧九°縲，SV繧偵い繝・・繝ｭ繝ｼ繝峨○繧医・)
+        st.markdown("#### 📊 司令部 総合戦績ダッシュボード")
+        if aar_df.empty: st.warning("現在、交戦記録（データ）がない。左のフォームから入力するか、CSVをアップロードせよ。")
         else:
             tot_trades = len(aar_df)
-            wins = len(aar_df[aar_df['謳咲寢鬘・蜀・'] > 0])
-            losses = len(aar_df[aar_df['謳咲寢鬘・蜀・'] <= 0])
+            wins = len(aar_df[aar_df['損益額(円)'] > 0])
+            losses = len(aar_df[aar_df['損益額(円)'] <= 0])
             win_rate = round((wins / tot_trades) * 100, 1) if tot_trades > 0 else 0
             
-            tot_profit = aar_df['謳咲寢鬘・蜀・'].sum()
-            gross_profit = aar_df[aar_df['謳咲寢鬘・蜀・'] > 0]['謳咲寢鬘・蜀・'].sum()
-            gross_loss = abs(aar_df[aar_df['謳咲寢鬘・蜀・'] < 0]['謳咲寢鬘・蜀・'].sum())
+            tot_profit = aar_df['損益額(円)'].sum()
+            gross_profit = aar_df[aar_df['損益額(円)'] > 0]['損益額(円)'].sum()
+            gross_loss = abs(aar_df[aar_df['損益額(円)'] < 0]['損益額(円)'].sum())
             pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
             
-            rule_adherence = round((len(aar_df[aar_df['隕丞ｾ・] == '驕ｵ螳・]) / tot_trades) * 100, 1) if tot_trades > 0 else 0
+            rule_adherence = round((len(aar_df[aar_df['規律'] == '遵守']) / tot_trades) * 100, 1) if tot_trades > 0 else 0
             
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("邱丈ｺ､謌ｦ蝗樊焚", f"{tot_trades} 蝗・)
-            m2.metric("螳滓姶 蜍晉紫", f"{win_rate}%", f"{wins}蜍・{losses}謨・, delta_color="off")
-            m3.metric("邱丞粋 螳滓錐逶・, f"{int(tot_profit):,} 蜀・, f"螳滓姶PF: {pf}")
-            m4.metric("笞厄ｸ・隕丞ｾ矩・螳育紫", f"{rule_adherence}%", "諢滓ュ謗帝勁縺ｮ繝舌Ο繝｡繝ｼ繧ｿ繝ｼ", delta_color="off")
+            m1.metric("総交戦回数", f"{tot_trades} 回")
+            m2.metric("実戦 勝率", f"{win_rate}%", f"{wins}勝 {losses}敗", delta_color="off")
+            m3.metric("総合 実損益", f"{int(tot_profit):,} 円", f"実戦PF: {pf}")
+            m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
             
-            st.markdown("##### 腸 迴ｾ螳溘・雉・肇謗ｨ遘ｻ (Real Equity Curve)")
-            aar_df_sorted = aar_df.sort_values('豎ｺ貂域律', ascending=True).reset_index(drop=True)
-            aar_df_sorted['邏ｯ遨肴錐逶・蜀・'] = aar_df_sorted['謳咲寢鬘・蜀・'].cumsum()
+            st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
+            aar_df_sorted = aar_df.sort_values('決済日', ascending=True).reset_index(drop=True)
+            aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
             
             import plotly.express as px
-            fig_real_eq = px.line(aar_df_sorted, x='豎ｺ貂域律', y='邏ｯ遨肴錐逶・蜀・', markers=True, color_discrete_sequence=["#26a69a"])
-            fig_real_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=10, b=20), xaxis_title="", yaxis_title="螳滓錐逶企｡・(蜀・", height=250, hovermode="x unified")
+            fig_real_eq = px.line(aar_df_sorted, x='決済日', y='累積損益(円)', markers=True, color_discrete_sequence=["#26a69a"])
+            fig_real_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=10, b=20), xaxis_title="", yaxis_title="実損益額 (円)", height=250, hovermode="x unified")
             st.plotly_chart(fig_real_eq, use_container_width=True)
             
             def color_pnl(val):
@@ -1789,29 +1789,29 @@ with tab6:
                 return ''
                 
             def color_rule(val):
-                if val == '驕募渚': return 'color: #ef5350; font-weight: bold; background-color: rgba(239, 83, 80, 0.1);'
-                elif '荳肴・' in str(val): return 'color: #9e9e9e;'
+                if val == '違反': return 'color: #ef5350; font-weight: bold; background-color: rgba(239, 83, 80, 0.1);'
+                elif '不明' in str(val): return 'color: #9e9e9e;'
                 return 'color: #26a69a;'
 
-            st.markdown("##### 糖 隧ｳ邏ｰ莠､謌ｦ險倬鹸・医く繝ｫ繝ｻ繝ｭ繧ｰ・・)
-            st.caption("窶ｻ陦ｨ縺ｮ繧ｻ繝ｫ繧堤峩謗･繝繝悶Ν繧ｯ繝ｪ繝・け縺吶ｋ縺ｨ縲√梧姶陦薙阪瑚ｦ丞ｾ九阪後Γ繝｢縲阪ｒ逶ｴ謗･邱ｨ髮・ｼ井ｸ頑嶌縺堺ｿ晏ｭ假ｼ牙庄閭ｽ縲・)
+            st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
+            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）可能。")
 
-            styled_df = aar_df.style.map(color_pnl, subset=['謳咲寢鬘・蜀・', '謳咲寢(%)']).map(color_rule, subset=['隕丞ｾ・])
+            styled_df = aar_df.style.map(color_pnl, subset=['損益額(円)', '損益(%)']).map(color_rule, subset=['規律'])
 
             edited_df = st.data_editor(
                 styled_df,
                 column_config={
-                    "隕乗ｨ｡": st.column_config.TextColumn("隕乗ｨ｡", disabled=True),
-                    "謌ｦ陦・: st.column_config.SelectboxColumn("謌ｦ陦・, options=["蠕・ｼ・, "蠑ｷ隘ｲ", "閾ｪ蜍戊ｧ｣譫・, "縺昴・莉・], required=True),
-                    "隕丞ｾ・: st.column_config.SelectboxColumn("隕丞ｾ・, options=["驕ｵ螳・, "驕募渚", "荳肴・(隕∽ｿｮ豁｣)"], required=True),
-                    "謨怜屏/蜍晏屏繝｡繝｢": st.column_config.TextColumn("謨怜屏/蜍晏屏繝｡繝｢", max_chars=200),
-                    "雋ｷ蛟､": st.column_config.NumberColumn("雋ｷ蛟､", format="%.1f"),
-                    "螢ｲ蛟､": st.column_config.NumberColumn("螢ｲ蛟､", format="%.1f"),
-                    "譬ｪ謨ｰ": st.column_config.NumberColumn("譬ｪ謨ｰ", format="%d"),
-                    "謳咲寢鬘・蜀・": st.column_config.NumberColumn("謳咲寢鬘・蜀・", format="%d"),
-                    "謳咲寢(%)": st.column_config.NumberColumn("謳咲寢(%)", format="%.2f"),
+                    "規模": st.column_config.TextColumn("規模", disabled=True),
+                    "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
+                    "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明(要修正)"], required=True),
+                    "敗因/勝因メモ": st.column_config.TextColumn("敗因/勝因メモ", max_chars=200),
+                    "買値": st.column_config.NumberColumn("買値", format="%.1f"),
+                    "売値": st.column_config.NumberColumn("売値", format="%.1f"),
+                    "株数": st.column_config.NumberColumn("株数", format="%d"),
+                    "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="%d"),
+                    "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f"),
                 },
-                disabled=["豎ｺ貂域律", "驫俶氛", "隕乗ｨ｡", "雋ｷ蛟､", "螢ｲ蛟､", "譬ｪ謨ｰ", "謳咲寢鬘・蜀・", "謳咲寢(%)"],
+                disabled=["決済日", "銘柄", "規模", "買値", "売値", "株数", "損益額(円)", "損益(%)"],
                 hide_index=True, use_container_width=True, key="aar_data_editor"
             )
             
