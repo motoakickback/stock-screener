@@ -1100,10 +1100,7 @@ with tab3:
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
                 # ---------------------------------------------------------------------
-                # 🚨 【SABC判定復元・最終版】ここから下を最後まで丸ごと上書き 🚨
-                # ---------------------------------------------------------------------
-                # ---------------------------------------------------------------------
-                # 🚨 【ホバー精密化・最終完成版】ここから下を最後まで丸ごと上書き 🚨
+                # 🚨 【ホバーバグ修正版】ここから下を最後まで丸ごと上書き 🚨
                 # ---------------------------------------------------------------------
                 for r in scope_results:
                     with st.container():
@@ -1113,7 +1110,7 @@ with tab3:
                         sc_left, sc_right = st.columns([1, 1.2])
                         
                         with sc_left:
-                            # SABC判定バッジ（維持）
+                            # SABC判定バッジ（維持：ボスの認めた仕様）
                             st.markdown(f"""
                                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
                                     <span style="background:{r['bg']}; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:1.1rem; border:1px solid rgba(255,255,255,0.2);">
@@ -1167,34 +1164,31 @@ with tab3:
                             with st.expander("ℹ️ マトリクスの戦術的意味"):
                                 st.markdown("""<div style="font-size: 11px; color: #aaa;"><strong>利確:</strong> +1.0(堅実), +2.0(標準), +3.0(過熱) | <strong>防衛:</strong> -1.0(<b>絶対撤退線</b>)</div>""", unsafe_allow_html=True)
 
-                        # --- 下段：大型ローソク足チャート（フルワイド & 高機能ホバー） ---
+                        # --- 下段：大型ローソク足チャート（ボスの認めた完璧な縮尺を維持） ---
                         st.markdown("---")
                         st.caption(f"📊 {r['name']} 精密弾道チャート（直近20日間）")
                         import plotly.graph_objects as go
+                        import pandas as pd
+
+                        d_p = r['df_chart'].tail(30).copy()
+                        # 🚨 バグ修正：日付を強制的にDatetime形式に変換してNaNを排除
+                        d_p.index = pd.to_datetime(d_p.index)
                         
-                        d_p = r['df_chart'].tail(30)
                         c_o = 'AdjO' if 'AdjO' in d_p.columns else 'Open'
                         c_h = 'AdjH' if 'AdjH' in d_p.columns else 'High'
                         c_l = 'AdjL' if 'AdjL' in d_p.columns else 'Low'
                         c_c = 'AdjC' if 'AdjC' in d_p.columns else 'Close'
 
                         try:
-                            # 🚨 修正：ホバー表示の精密カスタマイズ
                             fig_chart = go.Figure()
-                            
-                            # ローソク足本体
+                            # ローソク足
                             fig_chart.add_trace(go.Candlestick(
                                 x=d_p.index, open=d_p[c_o], high=d_p[c_h],
                                 low=d_p[c_l], close=d_p[c_c],
                                 name="株価",
                                 increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-                                hovertemplate=(
-                                    "<b>%{x|%Y/%m/%d}</b><br>" +
-                                    "始値: ¥%{open:,.1f}<br>" +
-                                    "高値: ¥%{high:,.1f}<br>" +
-                                    "安値: ¥%{low:,.1f}<br>" +
-                                    "終値: ¥%{close:,.1f}<extra></extra>"
-                                )
+                                # 🚨 ホバー修正：日付と数値を正確に表示
+                                hovertemplate="<b>%{x|%Y/%m/%d}</b><br>始値: ¥%{open:,.1f}<br>高値: ¥%{high:,.1f}<br>安値: ¥%{low:,.1f}<br>終値: ¥%{close:,.1f}<extra></extra>"
                             ))
                             
                             # 5日線
@@ -1210,10 +1204,10 @@ with tab3:
                                 height=350, margin=dict(l=0, r=0, t=10, b=0),
                                 showlegend=False, xaxis_rangeslider_visible=False,
                                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                hovermode="x unified", # 🚨 縦線一本で全ての情報を表示するプロ仕様
+                                hovermode="x unified",
                                 hoverlabel=dict(bgcolor="rgba(33, 33, 33, 0.9)", font_size=12, font_family="monospace"),
                                 yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickfont=dict(color='#888')),
-                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'))
+                                xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='date')
                             )
                             st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
                         except Exception as e:
