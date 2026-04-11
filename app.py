@@ -9,6 +9,8 @@ from io import BytesIO
 import plotly.graph_objects as go
 import numpy as np
 import concurrent.futures
+# 🚨 必須：ログインパッチと帰還ボタンで使用するコンポーネントをここで宣言
+import streamlit.components.v1 as components
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -36,20 +38,17 @@ def check_password():
                 """
                 <script>
                 const doc = window.parent.document;
-                // インターバルで入力欄の状態を監視
                 const autoLoginInterval = setInterval(() => {
                     const input = doc.querySelector('input[type="password"]');
                     const btn = doc.querySelector('button[data-testid="baseButton-secondaryFormSubmit"]');
                     
                     if (input && btn) {
-                        // ブラウザの補完や入力があり、且つ空でない場合に実行
-                        // 1回クリックしたら監視を終了して二重送信を防止
                         if (input.value.length > 0) {
                             btn.click();
                             clearInterval(autoLoginInterval);
                         }
                     }
-                }, 500); // 0.5秒ごとにスキャン
+                }, 500);
                 </script>
                 """,
                 height=0,
