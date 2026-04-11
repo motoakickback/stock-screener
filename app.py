@@ -1361,16 +1361,12 @@ with tab3:
                             </div>
                             """, unsafe_allow_html=True)
 
-                    st.markdown("---")
-                    st.caption(f"📊 {r['name']} 精密弾道チャート")
-                    d_p = r['df_chart'].tail(100).copy()
-                    d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
-                    
                     # 🎯 弾道チャート
                     st.markdown("---")
                     st.caption(f"📊 {r['name']} 精密弾道チャート")
                     d_p = r['df_chart'].tail(100).copy()
-                    d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
+                    # 🚨 変更：日付形式を「4/10」形式へ
+                    d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
                     
                     try:
                         fig_chart = go.Figure()
@@ -1389,7 +1385,7 @@ with tab3:
                                     hovertemplate=f"{ma_name}: ¥%{{y:,.0f}}<extra></extra>"
                                 ))
 
-                        # 🚨 追加：買値目標ライン（黄色点線）
+                        # 買値目標ライン（黄色点線）
                         fig_chart.add_trace(go.Scatter(
                             x=d_p['display_date'], y=[r['bt_val']] * len(d_p), name="買値目標", mode='lines',
                             line=dict(color='#FFD700', width=2, dash='dot'),
@@ -1402,7 +1398,7 @@ with tab3:
                             xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                             hovermode="x unified",
                             yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickformat=",.0f", tickfont=dict(color='#888')), 
-                            # 🚨 追加：dtick=5 を設定し、5営業日（1週間）単位でX軸の日付を表示
+                            # 🚨 変更：type='category' と dtick=5 を設定し、5営業日単位でX軸ラベルを表示。
                             xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category', dtick=5)
                         )
                         st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
