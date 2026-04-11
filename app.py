@@ -603,25 +603,38 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- 390行目付近：サイドバーUI 全文 ---
+# --- 390行目付近：サイドバーUI 完全統出版 ---
 st.sidebar.title("🛠️ 戦術コンソール")
-st.sidebar.header("🎯 対象市場 (一括換装)")
-st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
-market_filter_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
 
-st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
+# --- 1. 市場ターゲット・プリセット（最上段へ集約） ---
+st.sidebar.header("📍 ターゲット選別")
+preset_options = ["🚀 中小型株 (50%押し・標準)", "🏢 大型株 (25%押し・堅実)", "🔱 黄金分割 (61.8%押し)"]
+# 🚨 ここで唯一の preset_target を定義
+st.sidebar.selectbox(
+    "🎯 市場ターゲット・プリセット", 
+    preset_options, 
+    key="preset_target", 
+    on_change=apply_market_preset
+)
 
-# --- ピックアップルール（グローバル設定） ---
+# 戦術アルゴリズム切替
+tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
+st.sidebar.selectbox("🕹️ 戦術アルゴリズム", tactic_options, key="sidebar_tactics", on_change=save_settings)
+
+st.sidebar.divider()
+
+# --- 2. ピックアップルール（グローバル設定） ---
 st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 価格下限(円)", step=100, key="f1_min", on_change=save_settings)
 f1_max = c_f1_2.number_input("① 価格上限(円)", step=100, key="f1_max", on_change=save_settings) 
+
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
 
-# 🚨 ③ 1年最高値からの下落率チェック (-50%など)
+# ③ 1年最高値からの下落率
 f3_drop = st.sidebar.number_input(
     "③ 1年最高値からの下落除外(%)", 
-    value=float(st.session_state.f3_drop), 
+    value=float(st.session_state.get("f3_drop", -50.0)), 
     step=5.0, 
     max_value=0.0, 
     key="f3_drop", 
@@ -633,7 +646,7 @@ f6_risk = st.sidebar.checkbox("⑥ 疑義注記・信用リスク銘柄除外", 
 f11_ex_wave3 = st.sidebar.checkbox("⑪ 上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
 f12_ex_overvalued = st.sidebar.checkbox("⑫ 非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
 
-# --- 特殊除外フィルター ---
+# --- 3. 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
 f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
@@ -644,22 +657,11 @@ f9_max14 = c_f9_2.number_input("⑨ 波高上限(倍)", step=0.1, key="f9_max14"
 
 f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 
-# --- システム管理（清掃済み） ---
-st.sidebar.header("⚙️ システム管理")
-# 🚨 重複していた tab1_etf_filter や tab2_ipo_filter 等はすべて抹殺しました。
-# ここにはUIの基本設定やキャッシュ操作のみを残します。
-
-# 市場プリセット切替
-preset_options = ["🚀 中小型株 (50%押し・標準)", "🏢 大型株 (25%押し・堅実)", "🔱 黄金分割 (61.8%押し)"]
-st.sidebar.selectbox("🎯 市場ターゲット・プリセット", preset_options, key="preset_target", on_change=apply_market_preset)
-
-# 戦術アルゴリズム切替
-tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("🕹️ 戦術アルゴリズム", tactic_options, key="sidebar_tactics", on_change=save_settings)
-
 st.sidebar.divider()
 
-# キャッシュ操作
+# --- 4. 管理機能 ---
+st.sidebar.header("⚙️ システム管理")
+
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.toast("全キャッシュデータを消去した。最新データを再取得する。")
