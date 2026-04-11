@@ -161,18 +161,18 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）最新化・座標修正パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）3ヶ月スパン復元パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         tk_ni = yf.Ticker("^N225")
-        # 確実に最新営業日（4/10）を捕捉するため、期間指定を1moに絞り込み
-        hist_ni = tk_ni.history(period="1mo")
+        # 🚨 ボスの仕様に基づき「3ヶ月(3mo)」を死守
+        hist_ni = tk_ni.history(period="3mo")
         
         if not hist_ni.empty and len(hist_ni) >= 2:
             df_ni = hist_ni.reset_index()
-            # 🚨 座標修正：yfinanceのタイムゾーンを日本時間(JST)へ強制変換し、時刻を削る
+            # 🚨 修正：UTCから日本時間(JST)へ変換し、日付の末尾欠落を防止
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             
             latest_row = df_ni.iloc[-1]
@@ -184,7 +184,7 @@ def get_macro_weather():
                     "diff": latest_row['Close'] - prev_row['Close'], 
                     "pct": ((latest_row['Close'] / prev_row['Close']) - 1) * 100, 
                     "df": df_ni,
-                    "date": latest_row['Date'].strftime('%m/%d') # メトリックに表示する日付
+                    "date": latest_row['Date'].strftime('%m/%d')
                 }
             }
     except: 
@@ -205,19 +205,18 @@ def render_macro_board():
             """, unsafe_allow_html=True)
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
-            # グラフ末端の視認性を上げるため直近30日分を表示
-            plot_df = df.tail(30)
+            # 🚨 ボスの指示通り全期間（3ヶ月）を表示
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], mode='lines+markers', line=dict(color='#FFD700', width=2), marker=dict(size=4)))
-            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
             
             fig.update_layout(
                 height=160, margin=dict(l=10, r=40, t=10, b=10),
                 xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False,
                 yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
-                # 🚨 X軸の描画範囲を「最新データ＋12時間分」に拡張し、端のドットを確実に表示させる
+                # 最新データ（4/10）をグラフの右端に確実にプロット
                 xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)',
-                          range=[plot_df['Date'].min(), plot_df['Date'].max() + pd.Timedelta(hours=12)])
+                          range=[df['Date'].min(), df['Date'].max()])
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
