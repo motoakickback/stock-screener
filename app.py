@@ -106,7 +106,7 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    # 🚨 スキャン結果の箱(None)と除外リストを初期値として完全定義
+    # 🚨 全変数の初期値を定義（ここが抜けると起動時に爆発します）
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
@@ -118,8 +118,8 @@ def load_settings():
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "",
-        "tab1_scan_results": None, 
+        "gigi_input": "", # 除外リストの永続化
+        "tab1_scan_results": None, # スキャン結果の初期化
         "tab2_scan_results": None
     }
     if os.path.exists(SETTINGS_FILE):
@@ -134,7 +134,7 @@ def load_settings():
             st.session_state[k] = v
 
 def save_settings():
-    # gigi_input を含む全設定を settings.json に書き出し
+    # 🚨 画面上の全入力を settings.json に永久保存
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
@@ -142,24 +142,17 @@ def save_settings():
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=4)
-        
-# 🚨 古い apply_market_preset は削除し、これだけに統一します
+
 def apply_presets():
-    # 押し目プリセット(25.0%, 50.0%, 61.8%)の選択を、内部数値(push_r)に同期させる
+    # 押し目プリセット(25.0%, 50.0%, 61.8%)を数値(push_r)に同期
     p_rate = st.session_state.get("preset_push_r", "50.0%")
-    
-    if p_rate == "25.0%":
-        st.session_state.push_r = 25.0
-    elif p_rate == "50.0%":
-        st.session_state.push_r = 50.0
-    elif p_rate == "61.8%":
-        st.session_state.push_r = 61.8
-    
-    # シミュレーター用の数値も同期
+    if p_rate == "25.0%": st.session_state.push_r = 25.0
+    elif p_rate == "50.0%": st.session_state.push_r = 50.0
+    elif p_rate == "61.8%": st.session_state.push_r = 61.8
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
-        
-load_settings()
+
+load_settings() # 起動時に読み込みを実行
 
 # --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉：最終狙撃パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
@@ -601,52 +594,26 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
 # --- 390行目付近：サイドバーUI 完全復元 ＆ 整理版 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- ターゲット選別 ---
+# --- 1. ターゲット選別 ---
 st.sidebar.header("📍 ターゲット選別")
-
-market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox(
-    "市場ターゲット", 
-    market_options, 
-    key="preset_market", 
-    on_change=save_settings
-)
-
-push_options = ["25.0%", "50.0%", "61.8%"]
-st.sidebar.selectbox(
-    "押し目プリセット", 
-    push_options, 
-    key="preset_push_r", 
-    on_change=apply_presets
-)
-
-tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("戦術アルゴリズム", tactic_options, key="sidebar_tactics", on_change=save_settings)
+st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
+st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
+st.sidebar.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
 
 st.sidebar.divider()
 
-# --- ピックアップルール（グローバル設定） ---
+# --- 2. ピックアップルール ---
 st.sidebar.header("🔍 ピックアップルール")
-
-c_f1_1, c_f1_2 = st.sidebar.columns(2)
-st.sidebar.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-st.sidebar.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings) 
-
+c1, c2 = st.sidebar.columns(2)
+c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
+c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.get("f3_drop", -50.0)), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
 
-st.sidebar.number_input(
-    "1年最高値からの下落除外(%)", 
-    value=float(st.session_state.get("f3_drop", -50.0)), 
-    step=5.0, 
-    max_value=0.0, 
-    key="f3_drop", 
-    on_change=save_settings
-)
-
-# 🚨 【復元・配置変更】波高の設定（IPOの上に配置）
-c_w1, c_w2 = st.sidebar.columns(2)
-st.sidebar.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-st.sidebar.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+# 🚨 波高の設定をIPOの上に配置
+c3, c4 = st.sidebar.columns(2)
+c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
 
 st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
@@ -655,48 +622,37 @@ st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overv
 
 st.sidebar.divider()
 
-# --- 🎯 買いルール（完全復元） ---
+# --- 3. 買い・売りルール ---
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
 st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
 
-# --- 💰 売りルール（完全復元） ---
 st.sidebar.header("💰 売りルール")
 st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
-c_sl1, c_sl2 = st.sidebar.columns(2)
-c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
-c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
+c5, c6 = st.sidebar.columns(2)
+c5.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
+c6.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
 st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
 
 st.sidebar.divider()
 
-# --- サイドバーUI内の「特殊除外フィルター」部分を差し替え ---
+# --- 4. 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
-
-# 🚨 【復元】ブラックリスト入力欄。これがないとスキャンが止まります
-st.sidebar.text_area(
-    "除外銘柄コード (スペース区切り)", 
-    help="特定の銘柄をスキャンから永久に排除する場合に入力してください。",
-    key="gigi_input", 
-    on_change=save_settings
-)
+st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings, help="サイト上の情報を丸ごと貼れば4桁数字だけを抽出して除外します。")
 
 st.sidebar.divider()
 
-# --- システム管理 ---
+# --- 5. システム管理 ---
 st.sidebar.header("⚙️ システム管理")
-
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
-    st.toast("全キャッシュデータを消去。最新データを再取得。")
     st.rerun()
-
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings()
-    st.toast("戦術設定を settings.json に永久保存。")
+    st.toast("設定を settings.json に永久保存した。")
     
 # ==========================================
 # 5. タブ再構成
@@ -709,323 +665,138 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】 掟破りの押し目索敵</h3>', unsafe_allow_html=True)
-    
+    st.markdown('<h3 style="font-size: 24px;">🎯 【待伏】 掟破りの押し目索敵</h3>', unsafe_allow_html=True)
     run_scan_t1 = st.button("📡 全軍広域スキャン開始", key="btn_ambush_scan")
 
     if run_scan_t1:
-        st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
-        with st.spinner("全銘柄からターゲットを索敵中..."):
+        with st.spinner("索敵中..."):
             raw = get_hist_data_cached()
-            if not raw:
-                st.error("データの取得に失敗した。")
-                st.session_state.tab1_scan_results = None
+            if not raw: st.error("データ取得失敗")
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
                 df['Code'] = df['Code'].astype(str)
-                
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
-                if v_col:
-                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
-                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
-                else: avg_vols = pd.Series(0, index=df['Code'].unique())
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
                 # 設定同期
-                f1_min = float(st.session_state.f1_min)
-                f1_max = float(st.session_state.f1_max)
-                f5_ipo = st.session_state.f5_ipo
-                f7_ex_etf = st.session_state.f7_ex_etf
-                f10_ex_knife = st.session_state.f10_ex_knife
-                f3_drop_val = float(st.session_state.f3_drop)
-                push_ratio = st.session_state.push_r / 100.0
-                limit_d_val = int(st.session_state.limit_d)
+                f1_min = float(st.session_state.f1_min); f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo; f7_ex_etf = st.session_state.f7_ex_etf; f10_ex_knife = st.session_state.f10_ex_knife
+                f3_d = float(st.session_state.f3_drop); p_r = st.session_state.push_r / 100.0; l_d = int(st.session_state.limit_d)
 
-                latest_date = df['Date'].max()
-                latest_df = df[df['Date'] == latest_date]
-                
                 # 市場フィルター
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
-                if not master_df.empty:
-                    master_copy = master_df.copy()
-                    master_copy['Code'] = master_copy['Code'].astype(str)
-                    l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
-                    m_target = master_copy[master_copy['Market'].str.contains('|'.join(l_kw if m_mode=="大型" else s_kw), na=False)]['Code'].unique()
-                    df = df[df['Code'].isin(m_target)]
-
-                # 基本足切り
-                v_p_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].astype(str).unique()
-                v_v_codes = avg_vols[avg_vols >= 10000].index
-                df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
-
-                # IPO除外
-                if f5_ipo and not df.empty:
-                    s_min = df.groupby('Code')['Date'].min()
-                    v_s_codes = s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index
-                    df = df[df['Code'].isin(v_s_codes)]
-
-                # ETF/REIT除外
-                if f7_ex_etf and not master_df.empty:
-                    inv = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
-                    df = df[df['Code'].isin(master_df[~inv]['Code'].astype(str).unique())]
-
-                # 🚨 【完全装填】雑なコピペ対応ブラックリスト
-                g_input_str = st.session_state.get("gigi_input", "")
-                if g_input_str:
-                    target_blacklist = re.findall(r'\d{4}', str(g_input_str))
-                    if target_blacklist:
-                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
-                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
-
-                master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
-                
-                results = []
-                for code, group in df.groupby('Code'):
-                    if len(group) < 15: continue 
-                    adjc_vals = group['AdjC'].values; adjh_vals = group['AdjH'].values; adjl_vals = group['AdjL'].values
-                    lc = adjc_vals[-1]
-
-                    if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
-
-                    if st.session_state.f11_ex_wave3:
-                        peaks = []
-                        for j in range(5, len(adjh_vals)-5):
-                            if adjh_vals[j] == max(adjh_vals[j-5:j+5]):
-                                if not peaks or adjh_vals[j] > peaks[-1] * 1.15: peaks.append(adjh_vals[j])
-                        if len(peaks) >= 3 and lc < max(peaks) * 0.85: continue
-
-                    if f10_ex_knife:
-                        r4 = adjc_vals[-4:]; 
-                        if len(r4) == 4 and (r4[-1] / r4[0] < 0.85): continue
-                    
-                    r4h = adjh_vals[-4:]; h4 = r4h.max()
-                    g_idx = len(adjh_vals) - 4 + r4h.argmax()
-                    l14 = adjl_vals[max(0, g_idx-14) : g_idx+1].min()
-
-                    if l14 <= 0 or h4 <= l14: continue
-                    w_h = h4 / l14
-                    if not (st.session_state.f9_min14 <= w_h <= st.session_state.f9_max14): continue
-                    
-                    t_buy = h4 - ((h4 - l14) * push_ratio)
-                    rsi, m_h, m_hp, _ = get_fast_indicators(adjc_vals)
-                    
-                    score = 4 
-                    if 1.3 <= w_h <= 2.0: score += 1
-                    if (len(adjh_vals) - 1 - g_idx) <= limit_d_val: score += 1
-                    if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                    if t_buy * 0.85 <= lc <= t_buy * 1.35: score += 1
-
-                    m_i = master_dict.get(str(code), {})
-                    rank, bg, t_s, _ = get_triage_info(m_h, m_hp, rsi, lc, t_buy, mode="待伏")
-
-                    results.append({
-                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"),
-                        'Market': m_i.get('Market', '不明'), 'Sector': m_i.get('Sector', '不明'),
-                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code, 0)), 'high_4d': h4, 
-                        'low_14d': l14, 'target_buy': t_buy, 'reach_rate': (t_buy / lc) * 100, 
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_s, 'score': score
-                    })
-                
-                st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
-                import gc; gc.collect()
-
-    # --- 🖥️ TAB1 表示フェーズ（コピペ枠あり） ---
-    if st.session_state.get("tab1_scan_results") is not None:
-        results = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏ターゲット: 掟達成率上位 {len(results)} 銘柄を捕捉。")
-
-        codes_to_copy = " ".join([str(r['Code'])[:4] for r in results])
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        st.code(codes_to_copy, language="text")
-
-        for r in results:
-            st.divider()
-            m_info = r.get('Market', '不明')
-            m_lower = str(m_info).lower()
-            if 'プライム' in m_lower or '一部' in m_lower: 
-                m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
-                m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: 
-                m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
-
-            t_badge = f'<span style="background-color: {r.get("triage_bg", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
-            
-            st.markdown(f"""
-                <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {m_badge}{t_badge}
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get('RSI', 50):.1f}%</span>
-                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">掟スコア: {r.get('score', 0)} / 8</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("最新終値", f"{int(r['lc']):,}円")
-            m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
-            m_cols[2].metric("直近高値", f"{int(r['high_4d']):,}円")
-            m_cols[3].markdown(f"""<div style="background: rgba(38, 166, 154, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(38, 166, 154, 0.3); text-align: center;">
-                <div style="font-size: 12px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">到達度</div>
-                <div style="font-size: 1.5rem; font-weight: bold; color: #26a69a;">{r['reach_rate']:.1f}<span style="font-size: 12px; margin-left:2px;">%</span></div></div>""", unsafe_allow_html=True)
-            m_cols[4].markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
-                <div style="font-size: 12px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 待伏目標 ({int(st.session_state.push_r)}%押し)</div>
-                <div style="font-size: 1.5rem; font-weight: bold; color: #FFD700;">{int(r['target_buy']):,}<span style="font-size: 12px; margin-left:2px;">円</span></div></div>""", unsafe_allow_html=True)
-            st.caption(f"🏭 {r['Sector']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
-            
-with tab2:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
-    
-    col_t2_1, col_t2_2 = st.columns(2)
-    rsi_input = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, key="tab2_rsi_limit", on_change=save_settings)
-    vol_input = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
-    
-    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
-
-    if run_scan_t2:
-        st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
-        with st.spinner("GC初動候補を抽出中..."):
-            raw = get_hist_data_cached()
-            if not raw:
-                st.session_state.tab2_scan_results = None
-            else:
-                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
-                df['Code'] = df['Code'].astype(str)
-                v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
-                if v_col:
-                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
-                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
-                else: avg_vols = pd.Series(0, index=df['Code'].unique())
-
-                # --- 🚨 【配線確定】設定同期 ---
-                f1_min = float(st.session_state.f1_min)
-                f1_max = float(st.session_state.f1_max)
-                rsi_limit = float(st.session_state.tab2_rsi_limit)
-                vol_limit = float(st.session_state.tab2_vol_limit)
-                f5_ipo = st.session_state.f5_ipo
-                f7_ex_etf = st.session_state.f7_ex_etf
-                f3_d = float(st.session_state.f3_drop)
-                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
-                
-                # 市場フィルター
                 if not master_df.empty:
                     m_copy = master_df.copy(); m_copy['Code'] = m_copy['Code'].astype(str)
-                    l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
-                    m_target = m_copy[m_copy['Market'].str.contains('|'.join(l_kw if m_mode=="大型" else s_kw), na=False)]['Code'].unique()
-                    df = df[df['Code'].isin(m_target)]
+                    target = m_copy[m_copy['Market'].str.contains('|'.join(['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']), na=False)]['Code'].unique()
+                    df = df[df['Code'].isin(target)]
 
-                # 基本足切り
-                latest_date = df['Date'].max()
-                latest_df = df[df['Date'] == latest_date]
-                v_p_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
-                v_v_codes = avg_vols[avg_vols >= vol_limit].index
-                df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
-
-                # IPO除外
-                if f5_ipo and not df.empty:
+                # 基本足切り & IPO除外
+                latest_df = df[df['Date'] == df['Date'].max()]
+                v_codes = set(latest_df[(latest_df['AdjC']>=f1_min) & (latest_df['AdjC']<=f1_max)]['Code']).intersection(set(avg_vols[avg_vols>=10000].index))
+                df = df[df['Code'].isin(v_codes)]
+                if f5_ipo:
                     s_min = df.groupby('Code')['Date'].min()
-                    v_s_codes = s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index
-                    df = df[df['Code'].isin(v_s_codes)]
+                    df = df[df['Code'].isin(s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index)]
 
-                # ETF/REIT除外
-                if f7_ex_etf and not master_df.empty:
-                    inv = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
-                    df = df[df['Code'].isin(master_df[~inv]['Code'].astype(str).unique())]
-
-                # 🚨 【完全装填】雑なコピペ対応ブラックリスト
-                g_input_str = st.session_state.get("gigi_input", "")
-                if g_input_str:
-                    target_blacklist = re.findall(r'\d{4}', str(g_input_str))
-                    if target_blacklist:
-                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
-                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
+                # 🚨 【完全版】雑なコピペ除外
+                g_in = st.session_state.get("gigi_input", "")
+                if g_in:
+                    bl = re.findall(r'\d{4}', str(g_in))
+                    if bl: df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
 
                 master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
-
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
-                    adjc = group['AdjC'].values; adjh = group['AdjH'].values; lc = adjc[-1]
-
-                    # 1年高値からの下落率チェック
+                    adjc = group['AdjC'].values; adjh = group['AdjH'].values; adjl = group['AdjL'].values; lc = adjc[-1]
                     if lc < adjh.max() * (1 + (f3_d / 100.0)): continue
+                    r4h = adjh[-4:]; h4 = r4h.max(); g_idx = len(adjh)-4+r4h.argmax(); l14 = adjl[max(0, g_idx-14):g_idx+1].min()
+                    if l14 <= 0 or h4 <= l14: continue
+                    w_h = h4 / l14
+                    if not (st.session_state.f9_min14 <= w_h <= st.session_state.f9_max14): continue
+                    t_buy = h4 - ((h4 - l14) * p_r); rsi, m_h, m_hp, _ = get_fast_indicators(adjc)
+                    rank, bg, t_s, score = get_triage_info(m_h, m_hp, rsi, lc, t_buy, mode="待伏")
+                    results.append({'Code':code, 'Name':master_dict.get(code,{}).get('CompanyName','不明'), 'Market':master_dict.get(code,{}).get('Market','不明'), 'Sector':master_dict.get(code,{}).get('Sector','不明'), 'lc':lc, 'RSI':rsi, 'avg_vol':avg_vols.get(code,0), 'high_4d':h4, 'target_buy':t_buy, 'reach_rate':(t_buy/lc)*100, 'triage_rank':rank, 'triage_bg':bg, 't_score':t_s, 'score':score})
+                st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
+                import gc; gc.collect()
 
-                    rsi, m_h, m_hp, hist_5d = get_fast_indicators(adjc)
-                    if rsi > rsi_limit: continue
+    # --- TAB1 表示フェーズ ---
+    if st.session_state.get("tab1_scan_results"):
+        st.code(" ".join([str(r['Code'])[:4] for r in st.session_state.tab1_scan_results]), language="text")
+        for r in st.session_state.tab1_scan_results:
+            st.divider()
+            t_badge = f'<span style="background-color:{r["triage_bg"]}; color:white; padding:0.2rem 0.6rem; border-radius:4px; font-weight:bold;">{r["triage_rank"]}</span>'
+            st.markdown(f"### ({str(r['Code'])[:4]}) {r['Name']} {t_badge}", unsafe_allow_html=True)
+            c = st.columns([1,1,1,1,1])
+            c[0].metric("終値", f"{int(r['lc']):,}円")
+            c[1].metric("RSI", f"{r['RSI']:.1f}%")
+            c[2].metric("到達度", f"{r['reach_rate']:.1f}%")
+            c[3].metric("目標値", f"{int(r['target_buy']):,}円")
+            c[4].metric("出来高", f"{int(r['avg_vol']):,}")
 
-                    # GC初動判定
-                    gc_days = 1 if len(hist_5d)>=2 and hist_5d[-2]<0 and hist_5d[-1]>=0 else 2 if len(hist_5d)>=3 and hist_5d[-3]<0 and hist_5d[-1]>=0 else 3 if len(hist_5d)>=4 and hist_5d[-4]<0 and hist_5d[-1]>=0 else 0
-                    if gc_days == 0: continue
+with tab2:
+    st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
+    c_t2_1, c_t2_2 = st.columns(2)
+    rsi_lim = c_t2_1.number_input("RSI上限", step=5, key="tab2_rsi_limit", on_change=save_settings)
+    vol_lim = c_t2_2.number_input("最低出来高", step=5000, key="tab2_vol_limit", on_change=save_settings)
+    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
 
-                    # MA25乖離チェック（底這い・初動のみを狙う）
-                    ma25 = sum(adjc[-25:]) / 25 if len(adjc) >= 25 else adjc.mean()
-                    if lc < (ma25 * 0.95): continue
+    if run_scan_t2:
+        with st.spinner("強襲索敵中..."):
+            raw = get_hist_data_cached()
+            if not raw: st.error("取得失敗")
+            else:
+                df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df['Code'] = df['Code'].astype(str)
+                v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
-                    t_rank, t_color, t_s, _ = get_assault_triage_info(gc_days, lc, rsi, pd.DataFrame([{'MA25': ma25}]), is_strict=False)
-                    
-                    m_i = master_dict.get(str(code), {})
-                    results.append({
-                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
-                        'Market': m_i.get('Market', '不明'), 'Sector': m_i.get('Sector', '不明'),
-                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code,0)), 
-                        'h14': adjh[-14:].max(), 'T_Rank': t_rank, 'T_Color': t_color, 
-                        'T_Score': t_s, 'GC_Days': gc_days
-                    })
+                # 設定同期 (🚨 NameError解消)
+                f1_min = float(st.session_state.f1_min); f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo; f7_ex_etf = st.session_state.f7_ex_etf; f3_d = float(st.session_state.f3_drop)
+                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
+                # 市場 & 足切り & 除外
+                if not master_df.empty:
+                    m_copy = master_df.copy(); m_copy['Code'] = m_copy['Code'].astype(str)
+                    target = m_copy[m_copy['Market'].str.contains('|'.join(['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']), na=False)]['Code'].unique()
+                    df = df[df['Code'].isin(target)]
+                v_codes = set(df[df['Date']==df['Date'].max()][(df['AdjC']>=f1_min) & (df['AdjC']<=f1_max)]['Code']).intersection(set(avg_vols[avg_vols>=vol_lim].index))
+                df = df[df['Code'].isin(v_codes)]
+                
+                # 🚨 除外銘柄処理
+                g_in = st.session_state.get("gigi_input", "")
+                if g_in:
+                    bl = re.findall(r'\d{4}', str(g_in))
+                    if bl: df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
+
+                master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
+                results = []
+                for code, group in df.groupby('Code'):
+                    if len(group) < 15: continue
+                    adjc = group['AdjC'].values; lc = adjc[-1]
+                    rsi, m_h, m_hp, h5 = get_fast_indicators(adjc)
+                    if rsi > rsi_lim: continue
+                    gc_d = 1 if h5[-2]<0 and h5[-1]>=0 else 2 if h5[-3]<0 and h5[-1]>=0 else 3 if h5[-4]<0 and h5[-1]>=0 else 0
+                    if gc_d == 0: continue
+                    ma25 = sum(adjc[-25:])/25; t_rank, t_col, t_s, _ = get_assault_triage_info(gc_d, lc, rsi, pd.DataFrame([{'MA25':ma25}]), False)
+                    results.append({'Code':code, 'Name':master_dict.get(code,{}).get('CompanyName','不明'), 'lc':lc, 'RSI':rsi, 'GC_Days':gc_d, 'T_Rank':t_rank, 'T_Color':t_col, 'T_Score':t_s})
                 st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
                 import gc; gc.collect()
 
-    # --- 🖥️ TAB2 表示フェーズ（リッチUI復元） ---
-    if st.session_state.get("tab2_scan_results") is not None:
-        results = st.session_state.tab2_scan_results
-        st.success(f"🚀 強襲候補: GC初動 {len(results)} 銘銘柄を捕捉。")
-        
-        # コピペ枠
-        codes_to_copy = " ".join([str(r['Code'])[:4] for r in results])
-        st.info("📋 強襲ターゲットの銘柄コード一括コピー:")
-        st.code(codes_to_copy, language="text")
-
-        for r in results:
+    # --- TAB2 表示フェーズ (🚨 リッチUI装填) ---
+    if st.session_state.get("tab2_scan_results"):
+        st.code(" ".join([str(r['Code'])[:4] for r in st.session_state.tab2_scan_results]), language="text")
+        for r in st.session_state.tab2_scan_results:
             st.divider()
-            
-            # 市場バッジ判定
-            m_info = r.get('Market', '不明')
-            m_lower = str(m_info).lower()
-            if 'プライム' in m_lower or '一部' in m_lower: 
-                m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
-                m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: 
-                m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
+            t_badge = f'<span style="background-color:{r["T_Color"]}; color:white; padding:0.2rem 0.6rem; border-radius:4px; font-weight:bold;">{r["T_Rank"]}</span>'
+            st.markdown(f"### ({str(r['Code'])[:4]}) {r['Name']} {t_badge}", unsafe_allow_html=True)
+            c = st.columns(4)
+            c[0].metric("最新終値", f"{int(r['lc']):,}円")
+            c[1].metric("RSI", f"{r['RSI']:.1f}%")
+            c[2].metric("GC経過", f"{r['GC_Days']}日")
+            c[3].metric("強襲スコア", f"{r['T_Score']}pt")
 
-            t_badge = f'<span style="background-color: {r.get("T_Color", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">⚡ 強襲ランク: {r.get("T_Rank")}</span>'
-            
-            st.markdown(f"""
-                <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {m_badge}{t_badge}
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get('RSI', 50):.1f}%</span>
-                        <span style="background-color: rgba(255, 69, 0, 0.1); border: 1px solid #FF4500; color: #FF4500; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC {r.get('GC_Days')}日目</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("最新終値", f"{int(r['lc']):,}円")
-            m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
-            m_cols[2].metric("14日高値", f"{int(r['h14']):,}円")
-            
-            # 強襲スコアパネル
-            m_cols[3].markdown(f"""<div style="background: rgba(255, 69, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 69, 0, 0.3); text-align: center;">
-                <div style="font-size: 12px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">強襲スコア</div>
-                <div style="font-size: 1.5rem; font-weight: bold; color: #FF4500;">{r['T_Score']}<span style="font-size: 12px; margin-left:2px;">pt</span></div></div>""", unsafe_allow_html=True)
-
-            # 状態コメント（簡易）
-            m_cols[4].info(f"⚡ GC{r['GC_Days']}日目の初動。短期資金流入の兆候あり。")
-            
-            st.caption(f"🏭 {r['Sector']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
-            
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
