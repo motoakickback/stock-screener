@@ -161,14 +161,14 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）最新化パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）最新化・範囲拡張パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         tk_ni = yf.Ticker("^N225")
-        # 4/10等の最新値を確実に拾うため、期間を3mo維持しつつ取得ロジックを安定化
-        hist_ni = tk_ni.history(period="3mo")
+        # 4/10のデータを確実に拾うため、取得期間を広めに設定
+        hist_ni = tk_ni.history(period="6mo")
         
         if len(hist_ni) >= 2:
             lc_ni = hist_ni['Close'].iloc[-1]
@@ -177,9 +177,9 @@ def get_macro_weather():
             pct_ni = (diff_ni / prev_ni) * 100
             
             df_ni = hist_ni.reset_index()
-            # 日付型を確実に変換し、グラフの末端が切れるのを防止
             if 'Date' in df_ni.columns:
-                df_ni['Date'] = pd.to_datetime(df_ni['Date'])
+                # タイムゾーンを排除して純粋な日付型に変換
+                df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
             
             return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni, "df": df_ni}}
     except: 
@@ -194,17 +194,18 @@ def render_macro_board():
             st.markdown(f"""
             <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
                 <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均)</div>
-                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.2f} 円</div>
-                <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.2f} / {sign}{ni['pct']:.2f}%)</div>
+                <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.0f} 円</div>
+                <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.0f} / {sign}{ni['pct']:.2f}%)</div>
             </div>
             """, unsafe_allow_html=True)
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
+            # グラフの端まで描画するために直近30日分に絞る
+            plot_df = df.tail(60)
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
+            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
+            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
             
-            # 🚨 修正：範囲固定を廃止し、最新の4/10データを確実に表示させる
             fig.update_layout(
                 height=160, 
                 margin=dict(l=10, r=20, t=10, b=10), 
@@ -213,7 +214,8 @@ def render_macro_board():
                 plot_bgcolor='rgba(0,0,0,0)', 
                 showlegend=False, 
                 yaxis=dict(side="right", tickformat=",.0f"),
-                xaxis=dict(type='date', tickformat='%m/%d') # 日付形式を明示
+                # 🚨 修正：X軸のタイプを'date'に指定し、最新日まで強制表示
+                xaxis=dict(type='date', range=[plot_df['Date'].min(), plot_df['Date'].max()])
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
@@ -1515,7 +1517,7 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 展開中の全部隊（ポジション）の現在地と防衛線を一覧表示し、戦局を俯瞰します。")
+    st.caption("※ 展開中の全部隊の現在地と防衛線を一覧表示します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
@@ -1532,30 +1534,24 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
 
-    # --- 🛰️ 衛星通信：現在値の一括同期ボタン ---
-    if st.button("🔄 全軍の現在値を自動取得 (yfinance同期)", use_container_width=True):
-        with st.spinner("衛星通信中... 各部隊の現在地を再取得しています"):
-            import yfinance as yf
-            updated = False
-            for idx, row in st.session_state.frontline_df.iterrows():
-                code = str(row['銘柄']).strip()
-                if len(code) >= 4:
-                    api_code = code[:4] + ".T"
-                    try:
-                        tk = yf.Ticker(api_code)
-                        hist = tk.history(period="1d")
-                        if not hist.empty:
-                            latest_price = hist['Close'].iloc[-1]
-                            st.session_state.frontline_df.at[idx, '現在値'] = round(latest_price, 1)
-                            updated = True
-                    except: pass
-            if updated:
-                st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-                st.success("🎯 現在値の同期が完了しました。")
-                st.rerun()
+    # --- 同期ボタン ---
+    if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
+        import yfinance as yf
+        updated = False
+        for idx, row in st.session_state.frontline_df.iterrows():
+            code = str(row['銘柄']).strip()
+            if len(code) >= 4:
+                try:
+                    tk = yf.Ticker(code[:4] + ".T"); hist = tk.history(period="1d")
+                    if not hist.empty:
+                        st.session_state.frontline_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
+                        updated = True
+                except: pass
+        if updated:
+            st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
+            st.rerun()
 
-    st.markdown("#### ⚙️ 部隊パラメーター入力")
-    # 🚨 修正：エディタの表示を整数に強制
+    # 🚨 整数表示への強制換装
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -1577,15 +1573,24 @@ with tab5:
         st.rerun()
 
     st.markdown("---")
-    st.markdown("#### 🔭 全軍レーダー展開状況")
-
     active_squads = 0
-    # 🚨 修正：HUDパネル内の数値を整数にキャスト
     for index, row in edited_df.iterrows():
-        # ... (ステータス判定ロジックは維持) ...
-        
+        ticker = str(row.get('銘柄', ''))
+        if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
+        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
+        active_squads += 1
+
+        # 🚨 NameError回避：ロジックを完全記述
+        if cur <= sl: st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
+        elif cur < buy: st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
+        elif tp1 > 0 and cur < tp1: st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
+        elif tp2 > 0 and cur < tp2: st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
+        else: st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
+
+        # 🚨 整数化（intキャスト）を徹底
         fmt = lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "未設定"
-        hud_html = f"""
+        
+        st.markdown(f"""
         <div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>
         <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color};">
             <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">損切</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div></div>
@@ -1594,9 +1599,9 @@ with tab5:
             <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div></div>
             <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #42a5f5;">利確2</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div></div>
         </div>
-        """
-        st.markdown(hud_html, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
+        # 小型バーグラフ（整数化）
         fig = go.Figure()
         min_x = min(sl, cur, buy) * 0.98; max_x = max(tp2 if tp2 > 0 else tp1, cur, buy) * 1.02
         fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#444", width=2))
