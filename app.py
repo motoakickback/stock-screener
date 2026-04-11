@@ -594,13 +594,12 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- サイドバーUI 全文 ---
+# --- 390行目付近：サイドバーUI 完全復元 ＆ 整理版 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- ターゲット選別 ---
 st.sidebar.header("📍 ターゲット選別")
 
-# 🚨 市場ターゲットの分離
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 st.sidebar.selectbox(
     "市場ターゲット", 
@@ -609,13 +608,12 @@ st.sidebar.selectbox(
     on_change=save_settings
 )
 
-# 🚨 押し目プリセットの分離
 push_options = ["25.0%", "50.0%", "61.8%"]
 st.sidebar.selectbox(
     "押し目プリセット", 
     push_options, 
     key="preset_push_r", 
-    on_change=apply_presets # 数値(push_r)へ即時反映
+    on_change=apply_presets
 )
 
 tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
@@ -641,7 +639,7 @@ st.sidebar.number_input(
     on_change=save_settings
 )
 
-# 🚨 波高の設定（IPOの上に配置）
+# 🚨 【復元・配置変更】波高の設定（IPOの上に配置）
 c_w1, c_w2 = st.sidebar.columns(2)
 st.sidebar.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
 st.sidebar.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
@@ -650,6 +648,23 @@ st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
 st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
 st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+
+st.sidebar.divider()
+
+# --- 🎯 買いルール（完全復元） ---
+st.sidebar.header("🎯 買いルール")
+st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
+st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
+
+# --- 💰 売りルール（完全復元） ---
+st.sidebar.header("💰 売りルール")
+st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
+c_sl1, c_sl2 = st.sidebar.columns(2)
+c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
+c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
+st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
+
+st.sidebar.divider()
 
 # --- 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
