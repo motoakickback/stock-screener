@@ -161,32 +161,36 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）最新値捕捉：最終精密狙撃パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉：最終狙撃パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        # 🚨 明示的に「今日の日付」までの範囲を指定して4/10を強制捕捉
-        # 土曜日に実行する場合、これがないと4/10が漏れるケースがある
-        today = datetime.now(pytz.timezone('Asia/Tokyo'))
-        start_date = (today - timedelta(days=100)).strftime('%Y-%m-%d')
-        end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+        from datetime import datetime, timedelta
+        import pytz
         
-        # historyではなくdownloadを使用（週末のデータ反映が早いため）
+        # 🚨 修正：終了日を「明日」に設定することで、4/10を確実に範囲内に含める
+        # yfinanceのdownloadは「endに指定した日の前日まで」しか取得しない仕様のため
+        jst = pytz.timezone('Asia/Tokyo')
+        now = datetime.now(jst)
+        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
+        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d') # 明後日まで指定し、物理的に漏れを防ぐ
+        
+        # 最新の反映が最も速い download メソッドを使用
         df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
         
         if not df_raw.empty:
-            # マルチインデックス対策（yfinanceの仕様変更対応）
+            # マルチインデックス（2024年以降のyfinance仕様）をフラット化
             if isinstance(df_raw.columns, pd.MultiIndex):
                 df_raw.columns = df_raw.columns.get_level_values(0)
             
             df_ni = df_raw.reset_index()
-            # Date列を日本時間として処理し、タイムゾーンを消す
+            # タイムゾーンを抹殺し、純粋な日付のみにする（描画バグ回避）
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
             df_ni = df_ni.dropna(subset=['Close'])
             
-            # 取得できた全データのうち、3ヶ月分をスライス（ボスの視界を維持）
-            df_ni = df_ni.tail(65) 
+            # ボスの「3ヶ月」の視界を維持（営業日ベースで約65日分）
+            df_ni = df_ni.tail(65)
             
             latest_row = df_ni.iloc[-1]
             prev_row = df_ni.iloc[-2]
@@ -218,19 +222,38 @@ def render_macro_board():
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], name='25日線', mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'))
+            # ホバー名を「日経平均」に固定
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Close'], name='日経平均', mode='lines', 
+                line=dict(color='#FFD700', width=2),
+                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
+            ))
+            # ホバー名を「25日線」に固定
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
+                line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'),
+                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+            ))
+            
+            # 🚨 描画範囲の最終調整：最大値を「今日」に設定することで右端を広げる
+            x_min = df['Date'].min()
+            x_max = df['Date'].max() + pd.Timedelta(hours=12)
+            
             fig.update_layout(
-                height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                showlegend=False, hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
-                # 🚨 4/10が表示されるようX軸の最大値を「明日」に設定してマージンを確保
-                xaxis=dict(type='date', tickformat='%m/%d', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=12)])
+                height=160, margin=dict(l=10, r=40, t=10, b=10),
+                xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                showlegend=False, hovermode="x unified",
+                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
+                xaxis=dict(
+                    type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)',
+                    range=[x_min, x_max] 
+                )
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else: st.warning("📡 外部気象レーダー応答なし")
 
-# 命令実行
+# 実行呼び出し
 render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
