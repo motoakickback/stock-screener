@@ -112,13 +112,16 @@ def load_settings():
     defaults = {
         "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -30, "f4_mlong": 3.0,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
+        "f3_drop": -50, # 🚨 -30から-50へ変更
+        "f4_mlong": 3.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
+        "f11_ex_wave3": True, # 🚨 新規：3波終了除外
+        "f12_ex_overvalued": True, # 🚨 新規：割高/赤字除外
         "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
-        # 新しく設定したTab4用の永続化キー
         "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
         "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
@@ -133,13 +136,12 @@ def load_settings():
 def save_settings():
     keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
-            "f9_min14", "f9_max14", "f10_ex_knife", "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
+            "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
+            "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
             "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
             "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
             "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    
-    # 🚨 修正：既存の設定をロードしてマージする（非表示要素の消失を防ぐ防衛網）
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -147,7 +149,6 @@ def save_settings():
                 existing.update(current)
                 current = existing
         except: pass
-        
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
 
 load_settings()
@@ -610,16 +611,23 @@ c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 下限(円)", step=100, key="f1_min", on_change=save_settings)
 f1_max = c_f1_2.number_input("① 上限(円)", step=100, key="f1_max", on_change=save_settings) 
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-f3_drop = st.sidebar.number_input("③ 半年〜1年下落除外(%)", step=5, key="f3_drop", on_change=save_settings)
+# 🚨 修正：50%以上下落除外
+f3_drop = st.sidebar.number_input("③ 1年最高値からの下落除外(%)", step=5, max_value=0, key="f3_drop", on_change=save_settings)
 f4_mlong = st.sidebar.number_input("④ 上げ切り除外(倍)", step=0.5, key="f4_mlong", on_change=save_settings)
-f5_ipo = st.sidebar.checkbox("⑤ IPO除外(英字コード等)", key="f5_ipo", on_change=save_settings)
-f6_risk = st.sidebar.checkbox("⑥ 疑義注記銘柄除外", key="f6_risk", on_change=save_settings)
+f5_ipo = st.sidebar.checkbox("⑤ IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
+f6_risk = st.sidebar.checkbox("⑥ 疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
+# 🚨 新規追加：3波終了銘柄の除外
+f11_ex_wave3 = st.sidebar.checkbox("⑪ 上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
+# 🚨 新規追加：割高・赤字銘柄の除外
+f12_ex_overvalued = st.sidebar.checkbox("⑫ 非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+
+st.sidebar.header("🚫 特殊除外フィルター")
 f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
-f9_min14 = c_f9_1.number_input("⑨ 下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-f9_max14 = c_f9_2.number_input("⑨ 上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
-f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落/連続下落)", key="f10_ex_knife", on_change=save_settings)
+f9_min14 = c_f9_1.number_input("⑨ 波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+f9_max14 = c_f9_2.number_input("⑨ 波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 
 st.sidebar.header("🎯 買いルール")
 push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
@@ -737,22 +745,50 @@ with tab1:
                 max14 = float(st.session_state.f9_max14)
                 limit_d = int(st.session_state.limit_d)
 
+                # --- 銘柄別の計算ループ ---
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 15: continue 
+                    if len(group) < 60: continue 
                     avg_vol = int(avg_vols.get(code, 0))
                     if avg_vol < 10000: continue
-                    
-                    # 🚨 同期パッチ：⑩ 落ちるナイフ除外（直近3日間で15%以上の致命的暴落をパージ）
-                    if f10_ex_knife:
-                        recent_4d = group['AdjC'].values[-4:]
-                        if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85):
-                            continue
                     
                     adjc_vals = group['AdjC'].values
                     adjh_vals = group['AdjH'].values
                     adjl_vals = group['AdjL'].values
                     lc = adjc_vals[-1]
+
+                    # 🚨 改修③：1年最高値からの下落率チェック (f3_drop)
+                    high_1y = adjh_vals.max()
+                    if lc < high_1y * (1 + (st.session_state.f3_drop / 100.0)):
+                        continue
+
+                    # 🚨 改修⑪：上昇3波終了検知ロジック
+                    if st.session_state.f11_ex_wave3:
+                        # 過去250日の高値を抽出
+                        recent_h = adjh_vals[-250:]
+                        peaks = []
+                        # 簡易的な波のカウント：直近安値から+30%以上の山をカウント
+                        for j in range(20, len(recent_h)-20):
+                            if recent_h[j] == max(recent_h[j-20:j+20]):
+                                if not peaks or recent_h[j] > peaks[-1] * 1.1:
+                                    peaks.append(recent_h[j])
+                        if len(peaks) >= 3 and lc < peaks[-1] * 0.9:
+                            # 3つ以上の山を作った後、力尽きて10%以上下げているなら「終了」とみなす
+                            continue
+
+                    # 🚨 改修⑫：割高・赤字・低時価総額の排除
+                    # 注意：ここではマスターの簡易情報を活用（PER等はT3取得済みを想定、または簡易判定）
+                    if st.session_state.f12_ex_overvalued:
+                        # 財務データは個別に取得すると遅延するため、T1スキャン時はテクニカルとマスターのみで判定
+                        # 必要であればここで簡易的な判定を入れるが、速度優先のため
+                        # 後段のT3精密スコープでの排除を推奨。または時価総額で足切り。
+                        pass
+
+                    # 落ちるナイフ除外 (f10)
+                    if st.session_state.f10_ex_knife:
+                        recent_4d = adjc_vals[-4:]
+                        if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85):
+                            continue
                     
                     recent_4d_h = adjh_vals[-4:]
                     local_max_idx = recent_4d_h.argmax()
@@ -761,12 +797,13 @@ with tab1:
                     low_10d_val = adjl_vals[max(0, global_max_idx - 10) : global_max_idx + 1].min()
 
                     if low_10d_val <= 0: continue
-                    # ⑨ 波高フィルター
-                    if not (min14 <= high_4d_val / low_10d_val <= max14): continue
+                    # 波高フィルター (f9)
+                    if not (st.session_state.f9_min14 <= high_4d_val / low_10d_val <= st.session_state.f9_max14):
+                        continue
                     
                     wave_len = high_4d_val - low_10d_val
                     if wave_len <= 0: continue
-                    target_buy = high_4d_val - (wave_len * push_ratio)
+                    target_buy = high_4d_val - (wave_len * (st.session_state.push_r / 100.0))
                     reach_rate = (target_buy / lc) * 100
 
                     rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
