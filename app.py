@@ -161,27 +161,32 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）最新化・範囲拡張パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）最新化・座標修正パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         tk_ni = yf.Ticker("^N225")
-        # 4/10のデータを確実に拾うため、取得期間を広めに設定
-        hist_ni = tk_ni.history(period="6mo")
+        # 確実に最新営業日（4/10）を捕捉するため、期間指定を1moに絞り込み
+        hist_ni = tk_ni.history(period="1mo")
         
-        if len(hist_ni) >= 2:
-            lc_ni = hist_ni['Close'].iloc[-1]
-            prev_ni = hist_ni['Close'].iloc[-2]
-            diff_ni = lc_ni - prev_ni
-            pct_ni = (diff_ni / prev_ni) * 100
-            
+        if not hist_ni.empty and len(hist_ni) >= 2:
             df_ni = hist_ni.reset_index()
-            if 'Date' in df_ni.columns:
-                # タイムゾーンを排除して純粋な日付型に変換
-                df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
+            # 🚨 座標修正：yfinanceのタイムゾーンを日本時間(JST)へ強制変換し、時刻を削る
+            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             
-            return {"nikkei": {"price": lc_ni, "diff": diff_ni, "pct": pct_ni, "df": df_ni}}
+            latest_row = df_ni.iloc[-1]
+            prev_row = df_ni.iloc[-2]
+            
+            return {
+                "nikkei": {
+                    "price": latest_row['Close'], 
+                    "diff": latest_row['Close'] - prev_row['Close'], 
+                    "pct": ((latest_row['Close'] / prev_row['Close']) - 1) * 100, 
+                    "df": df_ni,
+                    "date": latest_row['Date'].strftime('%m/%d') # メトリックに表示する日付
+                }
+            }
     except: 
         return None
 
@@ -193,35 +198,32 @@ def render_macro_board():
         with c1:
             st.markdown(f"""
             <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均)</div>
+                <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni['date']})</div>
                 <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni['price']:,.0f} 円</div>
                 <div style="font-size: 16px; color: {color};">({sign}{ni['diff']:,.0f} / {sign}{ni['pct']:.2f}%)</div>
             </div>
             """, unsafe_allow_html=True)
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
-            # グラフの端まで描画するために直近30日分に絞る
-            plot_df = df.tail(60)
+            # グラフ末端の視認性を上げるため直近30日分を表示
+            plot_df = df.tail(30)
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
+            fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['Close'], mode='lines+markers', line=dict(color='#FFD700', width=2), marker=dict(size=4)))
             fig.add_trace(go.Scatter(x=plot_df['Date'], y=plot_df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
             
             fig.update_layout(
-                height=160, 
-                margin=dict(l=10, r=20, t=10, b=10), 
-                xaxis_rangeslider_visible=False, 
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                showlegend=False, 
-                yaxis=dict(side="right", tickformat=",.0f"),
-                # 🚨 修正：X軸のタイプを'date'に指定し、最新日まで強制表示
-                xaxis=dict(type='date', range=[plot_df['Date'].min(), plot_df['Date'].max()])
+                height=160, margin=dict(l=10, r=40, t=10, b=10),
+                xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False,
+                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
+                # 🚨 X軸の描画範囲を「最新データ＋12時間分」に拡張し、端のドットを確実に表示させる
+                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)',
+                          range=[plot_df['Date'].min(), plot_df['Date'].max() + pd.Timedelta(hours=12)])
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else:
         st.warning("📡 外部気象レーダー応答なし")
-        st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+
 render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
