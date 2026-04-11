@@ -161,18 +161,19 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）3ヶ月スパン復元パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）3ヶ月スパン・完全版パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         tk_ni = yf.Ticker("^N225")
-        # 🚨 ボスの仕様に基づき「3ヶ月(3mo)」を死守
+        # 3ヶ月分を取得
         hist_ni = tk_ni.history(period="3mo")
         
         if not hist_ni.empty and len(hist_ni) >= 2:
-            df_ni = hist_ni.reset_index()
-            # 🚨 修正：UTCから日本時間(JST)へ変換し、日付の末尾欠落を防止
+            # 🚨 修正：終値がNaNの行（土日の空データ等）を排除し、確実に4/10を拾う
+            df_ni = hist_ni.dropna(subset=['Close']).reset_index()
+            # タイムゾーン変換
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             
             latest_row = df_ni.iloc[-1]
@@ -205,18 +206,35 @@ def render_macro_board():
             """, unsafe_allow_html=True)
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
-            # 🚨 ボスの指示通り全期間（3ヶ月）を表示
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', line=dict(color='#FFD700', width=2)))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot')))
+            # 🚨 修正：名前(name)を適切に設定し、ホバー時の「trace」表記を排除
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Close'], 
+                name='日経平均', 
+                mode='lines', 
+                line=dict(color='#FFD700', width=2),
+                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
+            ))
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['MA25'], 
+                name='25日線', 
+                mode='lines', 
+                line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'),
+                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+            ))
             
             fig.update_layout(
                 height=160, margin=dict(l=10, r=40, t=10, b=10),
                 xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False,
+                hovermode="x unified", # 縦線一本でまとめて表示するプロ仕様
                 yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
-                # 最新データ（4/10）をグラフの右端に確実にプロット
-                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)',
-                          range=[df['Date'].min(), df['Date'].max()])
+                # 🚨 修正：X軸の範囲をデータの末尾（4/10）まで確実に強制指定
+                xaxis=dict(
+                    type='date', 
+                    tickformat='%m/%d', 
+                    gridcolor='rgba(255,255,255,0.05)',
+                    range=[df['Date'].min(), df['Date'].max()]
+                )
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
