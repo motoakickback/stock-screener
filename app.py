@@ -821,51 +821,64 @@ with tab1:
                 st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
                 import gc; gc.collect()
 
-    # 表示フェーズ
+    # --- 🖥️ TAB1 表示フェーズ（コピペ枠 復元版） ---
     if st.session_state.tab1_scan_results:
-        st.success(f"🎯 待伏ターゲット: 掟達成率上位 {len(st.session_state.tab1_scan_results)} 銘柄を表示中。")
-        for r in st.session_state.tab1_scan_results:
-            st.divider()
-            c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
-            m_lower = str(r.get('Market', '不明')).lower()
-            if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("Market")}</span>'
-            
-            triage_badge = f'<span style="background-color: {r.get("triage_bg")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
-            
-            score_val = r.get("score", 0)
-            score_color = "#2e7d32" if score_val >= 7 else "#ff5722"
-            score_bg = "rgba(46, 125, 50, 0.15)" if score_val >= 7 else "rgba(255, 87, 34, 0.15)"
-            score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
-            
-            swing_pct = ((r.get('high_4d', 0) - r.get('low_14d', 0)) / r.get('low_14d', 1)) * 100
-            volatility_badge = f'<span style="background-color: #ff9800; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 0.5rem; border: 1px solid #e65100;">⚡ 高ボラ ({swing_pct:.1f}%)</span>' if swing_pct >= (40.0 if ('プライム' in m_lower or '一部' in m_lower) else 60.0) else ""
+        results = st.session_state.tab1_scan_results
+        st.success(f"🎯 待伏ターゲット: 掟達成率上位 {len(results)} 銘柄を捕捉。")
 
+        # 🚨 【復元】コピペ用コード枠：照準（TAB3）へのスムーズな移行を実現
+        codes_to_copy = " ".join([str(r['Code'])[:4] for r in results])
+        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
+        st.code(codes_to_copy, language="text")
+
+        for r in results:
+            st.divider()
+            
+            # 市場バッジ判定
+            m_info = r.get('Market', '不明')
+            m_lower = str(m_info).lower()
+            if 'プライム' in m_lower or '一部' in m_lower: 
+                m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
+
+            t_badge = f'<span style="background-color: {r.get("triage_bg", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("triage_rank")}</span>'
+            
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c[:4]}) {n}</h3>
+                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{triage_badge}{score_badge}{volatility_badge}
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">RSI: {r.get("RSI", 50):.1f}%</span>
-                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r.get('reach_rate'):.1f}%</span>
+                        {m_badge}{t_badge}
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get('RSI', 50):.1f}%</span>
+                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">掟スコア: {r.get('score', 0)} / 8</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
+            lc_v = r.get('lc', 0); t_buy = r.get('target_buy', 0); h4 = r.get('high_4d', 0)
+            
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("直近高値", f"{int(r.get('high_4d', 0)):,}円")
-            m_cols[1].metric("起点安値", f"{int(r.get('low_14d', 0)):,}円")
-            m_cols[2].metric("最新終値", f"{int(r.get('lc', 0)):,}円")
-            m_cols[3].metric("平均出来高(5日)", f"{int(r.get('avg_vol', 0)):,}株")
-            html_buy = f"""
-            <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
-                <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 半値押し 買値目標</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r.get('target_buy', 0)):,}<span style="font-size: 14px; margin-left:2px;">円</span></div>
-            </div>"""
-            m_cols[4].markdown(html_buy, unsafe_allow_html=True)
-            st.caption(f"🏢 {r.get('Market','不明')} ｜ 🏭 {r.get('Sector','不明')}")
+            m_cols[0].metric("最新終値", f"{int(lc_v):,}円")
+            m_cols[1].metric("RSI", f"{r.get('RSI', 50):.1f}%")
+            m_cols[2].metric("直近高値", f"{int(h4):,}円")
+            
+            # 到達度パネル
+            reach = r.get('reach_rate', 0)
+            html_reach = f"""<div style="background: rgba(38, 166, 154, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(38, 166, 154, 0.3); text-align: center;">
+                <div style="font-size: 12px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">到達度</div>
+                <div style="font-size: 1.5rem; font-weight: bold; color: #26a69a;">{reach:.1f}<span style="font-size: 12px; margin-left:2px;">%</span></div></div>"""
+            m_cols[3].markdown(html_reach, unsafe_allow_html=True)
 
+            # 待伏目標パネル
+            html_target = f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
+                <div style="font-size: 12px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 待伏目標 ({int(st.session_state.push_r)}%押し)</div>
+                <div style="font-size: 1.5rem; font-weight: bold; color: #FFD700;">{int(t_buy):,}<span style="font-size: 12px; margin-left:2px;">円</span></div></div>"""
+            m_cols[4].markdown(html_target, unsafe_allow_html=True)
+            
+            st.caption(f"🏭 {r.get('Sector', '不明')} ｜ 📊 平均出来高: {int(r.get('avg_vol', 0)):,}株")
+            
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     
