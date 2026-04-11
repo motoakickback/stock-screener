@@ -31,6 +31,30 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            # 🚨 JavaScript 狙撃パッチ：ブラウザの補完が入った瞬間に送信ボタンを自動クリック
+            components.html(
+                """
+                <script>
+                const doc = window.parent.document;
+                // インターバルで入力欄の状態を監視
+                const autoLoginInterval = setInterval(() => {
+                    const input = doc.querySelector('input[type="password"]');
+                    const btn = doc.querySelector('button[data-testid="baseButton-secondaryFormSubmit"]');
+                    
+                    if (input && btn) {
+                        // ブラウザの補完や入力があり、且つ空でない場合に実行
+                        // 1回クリックしたら監視を終了して二重送信を防止
+                        if (input.value.length > 0) {
+                            btn.click();
+                            clearInterval(autoLoginInterval);
+                        }
+                    }
+                }, 500); // 0.5秒ごとにスキャン
+                </script>
+                """,
+                height=0,
+            )
+            
             with st.form("login_form"):
                 password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード")
                 submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
@@ -43,7 +67,7 @@ def check_password():
                         st.error("🚨 認証失敗：コードが違います。")
         return False
     return True
-
+    
 if not check_password(): st.stop()
 
 # --- 🚁 司令部へ帰還ボタン ---
