@@ -106,8 +106,10 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
+    # 🚨 全てのフィルタキーに加え、スキャン結果の「箱」も初期化対象に加えます
     defaults = {
-        "preset_market": "🚀 中小型株 (スタンダード・グロース)", "preset_push_r": "50.0%",
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
+        "preset_push_r": "50.0%",
         "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
@@ -116,7 +118,10 @@ def load_settings():
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "" # 🚨 【追加】保存の初期値を用意
+        "gigi_input": "",
+        # 🚨 【今回の修正：座標】エラー回避用の初期値
+        "tab1_scan_results": None, 
+        "tab2_scan_results": None
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -126,8 +131,9 @@ def load_settings():
         except: pass
     
     for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
-
+        if k not in st.session_state: 
+            st.session_state[k] = v
+            
 def save_settings():
     # 🚨 gigi_input を保存キーに追加
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
@@ -820,7 +826,8 @@ with tab1:
                 import gc; gc.collect()
                 
     # --- 🖥️ TAB1 表示フェーズ（コピペ枠 復元版） ---
-    if st.session_state.tab1_scan_results:
+    # 🚨 座標: 820行目付近。get()を使うことで、変数が無くてもNoneを返して落ちなくなります。
+    if st.session_state.get("tab1_scan_results") is not None:
         results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ターゲット: 掟達成率上位 {len(results)} 銘柄を捕捉。")
 
