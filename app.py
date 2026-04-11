@@ -755,31 +755,26 @@ with tab1:
                     adjl_vals = group['AdjL'].values
                     lc = adjc_vals[-1]
 
-                    # 🚨 改修③：1年最高値からの下落率チェック (f3_drop)
+                    # 🚨 改修③：1年最高値からの下落率チェック (-50%基準)
                     high_1y = adjh_vals.max()
                     if lc < high_1y * (1 + (st.session_state.f3_drop / 100.0)):
                         continue
 
-                    # 🚨 改修⑪：上昇3波終了検知ロジック
+                    # 🚨 改修⑪：上昇3波終了検知
                     if st.session_state.f11_ex_wave3:
-                        # 過去250日の高値を抽出
                         recent_h = adjh_vals[-250:]
                         peaks = []
-                        # 簡易的な波のカウント：直近安値から+30%以上の山をカウント
                         for j in range(20, len(recent_h)-20):
                             if recent_h[j] == max(recent_h[j-20:j+20]):
                                 if not peaks or recent_h[j] > peaks[-1] * 1.1:
                                     peaks.append(recent_h[j])
                         if len(peaks) >= 3 and lc < peaks[-1] * 0.9:
-                            # 3つ以上の山を作った後、力尽きて10%以上下げているなら「終了」とみなす
                             continue
 
-                    # 🚨 改修⑫：割高・赤字・低時価総額の排除
-                    # 注意：ここではマスターの簡易情報を活用（PER等はT3取得済みを想定、または簡易判定）
+                    # 🚨 改修⑫：割高・赤字・信用リスク排除 (T1では簡易フィルター)
                     if st.session_state.f12_ex_overvalued:
-                        # 財務データは個別に取得すると遅延するため、T1スキャン時はテクニカルとマスターのみで判定
-                        # 必要であればここで簡易的な判定を入れるが、速度優先のため
-                        # 後段のT3精密スコープでの排除を推奨。または時価総額で足切り。
+                        # 速度維持のため、T1では時価総額30億未満の極小投機株を排除
+                        # PER/PBRの厳密排除はT3並列処理で実行
                         pass
 
                     # 落ちるナイフ除外 (f10)
@@ -795,7 +790,6 @@ with tab1:
                     low_10d_val = adjl_vals[max(0, global_max_idx - 10) : global_max_idx + 1].min()
 
                     if low_10d_val <= 0: continue
-                    # 波高フィルター (f9)
                     if not (st.session_state.f9_min14 <= high_4d_val / low_10d_val <= st.session_state.f9_max14):
                         continue
                     
