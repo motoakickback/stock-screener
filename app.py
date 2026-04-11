@@ -106,65 +106,56 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
+    # 🚨 全てのフィルタキーを網羅した最新のデフォルト定義
     defaults = {
-        "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", # 市場ターゲット
+        "preset_push_r": "50.0%", # 押し目プリセット
+        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
-        "f3_drop": -50.0, # 🚨 -50に完全固定
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
-        "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
-        "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
-        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
+        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り"
     }
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                defaults.update(json.load(f))
+                saved = json.load(f)
+                defaults.update(saved)
         except: pass
-    # 🚨 強制上書きパッチ：既存の-30設定を-50へ引き込む防衛網
-    if defaults["f3_drop"] > -50: defaults["f3_drop"] = -50.0
     
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
 def save_settings():
-    keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+    # 現在のセッションステートから全設定値を抽出して保存
+    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
-            "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
-            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
-            "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
+            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-                existing.update(current)
-                current = existing
-        except: pass
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
-        
-load_settings()
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=4)
 
-def apply_market_preset():
-    preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+# 🚨 古い apply_market_preset は削除し、これだけに統一します
+def apply_presets():
+    # 押し目プリセット(25.0%, 50.0%, 61.8%)の選択を、内部数値(push_r)に同期させる
+    p_rate = st.session_state.get("preset_push_r", "50.0%")
     
-    # 🚨 市場フィルターキーワードの厳格定義
-    if "大型株" in preset:
-        st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
-    elif "61.8%" in preset:
-        st.session_state.push_r = 61.8
-    else:
+    if p_rate == "25.0%":
+        st.session_state.push_r = 25.0
+    elif p_rate == "50.0%":
         st.session_state.push_r = 50.0
+    elif p_rate == "61.8%":
+        st.session_state.push_r = 61.8
     
+    # シミュレーター用の数値も同期
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
+        
+load_settings()
 
 # --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉：最終狙撃パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
@@ -603,17 +594,28 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- 390行目付近：サイドバーUI（再編成 ＆ 番号排除版） ---
+# --- サイドバーUI 全文 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- ターゲット選別 ---
 st.sidebar.header("📍 ターゲット選別")
-preset_options = ["🚀 中小型株 (50%押し・標準)", "🏢 大型株 (25%押し・堅実)", "🔱 黄金分割 (61.8%押し)"]
+
+# 🚨 市場ターゲットの分離
+market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 st.sidebar.selectbox(
-    "市場ターゲット・プリセット", 
-    preset_options, 
-    key="preset_target", 
-    on_change=apply_market_preset
+    "市場ターゲット", 
+    market_options, 
+    key="preset_market", 
+    on_change=save_settings
+)
+
+# 🚨 押し目プリセットの分離
+push_options = ["25.0%", "50.0%", "61.8%"]
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    push_options, 
+    key="preset_push_r", 
+    on_change=apply_presets # 数値(push_r)へ即時反映
 )
 
 tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
@@ -623,13 +625,14 @@ st.sidebar.divider()
 
 # --- ピックアップルール（グローバル設定） ---
 st.sidebar.header("🔍 ピックアップルール")
+
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
-f1_min = c_f1_1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-f1_max = c_f1_2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings) 
+st.sidebar.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
+st.sidebar.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings) 
 
-f2_m30 = st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
 
-f3_drop = st.sidebar.number_input(
+st.sidebar.number_input(
     "1年最高値からの下落除外(%)", 
     value=float(st.session_state.get("f3_drop", -50.0)), 
     step=5.0, 
@@ -638,21 +641,21 @@ f3_drop = st.sidebar.number_input(
     on_change=save_settings
 )
 
-# 🚨 ボスの指示により「波高」をIPOの上に移動
-c_wave_1, c_wave_2 = st.sidebar.columns(2)
-f9_min14 = c_wave_1.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-f9_max14 = c_wave_2.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+# 🚨 波高の設定（IPOの上に配置）
+c_w1, c_w2 = st.sidebar.columns(2)
+st.sidebar.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+st.sidebar.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
 
-f5_ipo = st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
-f6_risk = st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
-f11_ex_wave3 = st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
-f12_ex_overvalued = st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
+st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
+st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
 
 # --- 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
-f7_ex_etf = st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
-f8_ex_bio = st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
-f10_ex_knife = st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
+st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
+st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
+st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 
 st.sidebar.divider()
 
@@ -661,12 +664,12 @@ st.sidebar.header("⚙️ システム管理")
 
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
-    st.toast("全キャッシュデータを消去した。最新データを再取得する。")
+    st.toast("全キャッシュデータを消去。最新データを再取得。")
     st.rerun()
 
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings()
-    st.toast("戦術設定を settings.json に永久保存した。")
+    st.toast("戦術設定を settings.json に永久保存。")
     
 # ==========================================
 # 5. タブ再構成
