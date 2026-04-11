@@ -1079,26 +1079,43 @@ with tab3:
             st.warning("有効な銘柄コードが確認できません。")
         else:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
-                # 🚀 【高速化パッチ】待伏モード遅延の原因（直列取得）を並列処理（マルチスレッド）へ換装
                 raw_data_dict = {}
+                
+                # 🚀 並列処理（マルチスレッド）でAPI取得とPER/PBR取得を同時実行
                 def fetch_single_data(c):
                     api_code = c if len(c) == 5 else c + "0"
-                    return c, get_single_data(api_code, 1)
+                    data = get_single_data(api_code, 1)
+                    per, pbr = None, None
+                    try:
+                        import yfinance as yf
+                        tk = yf.Ticker(c[:4] + ".T")
+                        info = tk.info
+                        per = info.get('trailingPE')
+                        pbr = info.get('priceToBook')
+                    except:
+                        pass
+                    return c, data, per, pbr
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_single_data, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
-                        res_c, res_data = f.result()
-                        raw_data_dict[res_c] = res_data
+                        res_c, res_data, res_per, res_pbr = f.result()
+                        raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr}
 
                 scope_results = []
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
                     if not raw_s: continue
-                    df_s = clean_df(pd.DataFrame(raw_s.get("bars", [])))
+                    res_data = raw_s["data"]
+                    res_per = raw_s["per"]
+                    res_pbr = raw_s["pbr"]
+                    
+                    df_s = clean_df(pd.DataFrame(res_data.get("bars", [])))
                     if len(df_s) < 30: continue
                         
                     c_short = c[:4]
+                    api_code = c if len(c) == 5 else c + "0"
+                    
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'].astype(str).isin([c_short, c_short + "0", api_code])]
                     else:
@@ -1114,6 +1131,7 @@ with tab3:
 
                     df_chart = calc_technicals(df_s.copy())
                     df_14 = df_s.tail(15).iloc[:-1]
+                    df_30 = df_s.tail(31).iloc[:-1]
                     latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
                     lc = latest['AdjC']; h14 = df_14['AdjH'].max(); l14 = df_14['AdjL'].min()
                     ur = h14 - l14
@@ -1123,6 +1141,17 @@ with tab3:
                     
                     bt_val = 0; reach_val = 0; sl_val = 0; tp_val = 0; gc_days = 0; is_bt_broken = False; is_trend_broken = False
                     
+                    # --- 基礎スコア計算（待伏モード用） ---
+                    score = 4
+                    if h14 > 0 and l14 > 0:
+                        r14 = h14 / l14
+                        idxmax = df_14['AdjH'].idxmax()
+                        d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                        if 1.3 <= r14 <= 2.0: score += 1
+                        if d_high <= int(st.session_state.limit_d): score += 1
+                        if not is_dt: score += 1
+                        if not is_hs: score += 1
+                    
                     if is_ambush:
                         bt_primary = h14 - (ur * (st.session_state.push_r / 100.0))
                         shift_ratio = 0.618 if st.session_state.push_r >= 40 else (st.session_state.push_r / 100.0 + 0.15)
@@ -1130,16 +1159,31 @@ with tab3:
                         is_bt_broken = lc < bt_primary
                         bt_val = int(bt_secondary if is_bt_broken else bt_primary)
                         is_trend_broken = lc < ((h14 - (ur * 0.618)) * 0.98)
-                        rank, bg, score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev.get('MACD_Hist', 0), rsi_v, lc, bt_val, mode="待伏")
+                        if bt_val * 0.85 <= lc <= bt_val * 1.35: score += 1
+                        
+                        rank, bg, t_score, macd_t = get_triage_info(latest.get('MACD_Hist', 0), prev.get('MACD_Hist', 0), rsi_v, lc, bt_val, mode="待伏")
                         reach_val = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
+                        
+                        # 🚨 追加：PBRによるトリアージ判定加点（待伏モード：+1点）
+                        if res_pbr is not None and res_pbr <= 5.0:
+                            score += 1
+                            
                     else:
                         bt_val = int(max(h14, lc + (atr_val * 0.5)))
                         hist_vals = df_chart['MACD_Hist'].tail(5).values
                         if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
                         elif hist_vals[-3] < 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 2
                         elif hist_vals[-4] < 0 and hist_vals[-3] >= 0 and hist_vals[-2] >= 0 and hist_vals[-1] >= 0: gc_days = 3
-                        rank, bg, score, macd_t = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
+                        rank, bg, t_score, macd_t = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_val = 100 - rsi_v
+                        
+                        # 🚨 追加：PBRによるトリアージ判定加点（強襲モード：+10点、再昇格判定）
+                        if res_pbr is not None and res_pbr <= 5.0:
+                            t_score += 10
+                            if t_score >= 80: rank = "S"; bg = "#d32f2f"
+                            elif t_score >= 60: rank = "A"; bg = "#f57c00"
+                            elif t_score >= 40: rank = "B"; bg = "#fbc02d"
+                            else: rank = "C"; bg = "#424242"
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'market': c_market, 'sector': c_sector,
@@ -1147,7 +1191,8 @@ with tab3:
                         'bt_val': bt_val, 'is_bt_broken': is_bt_broken, 'is_trend_broken': is_trend_broken, 
                         'is_dt': is_dt, 'is_hs': is_hs, 'is_db': is_db, 'gc_days': gc_days, 'rank': rank, 'bg': bg, 'score': score, 
                         'reach_val': reach_val, 'atr_val': atr_val, 'rsi': rsi_v, 'df_chart': df_chart,
-                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規"
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
+                        'per': res_per, 'pbr': res_pbr
                     })
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
@@ -1197,7 +1242,24 @@ with tab3:
                         c_m4.metric("最新終値", f"{int(r['lc']):,}円")
                         
                         st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
-                        st.caption(f"🏭 業種: {r.get('sector','不明')}")
+                        
+                        # 🚨 追加：PERとPBRのカラー判定表示
+                        per_val = r.get('per')
+                        pbr_val = r.get('pbr')
+                        
+                        if per_val is not None:
+                            per_color = "#26a69a" if per_val <= 50 else "#ef5350"
+                            per_str = f"<span style='color:{per_color}; font-weight:bold;'>{per_val:.1f}倍</span>"
+                        else:
+                            per_str = "-"
+                            
+                        if pbr_val is not None:
+                            pbr_color = "#26a69a" if pbr_val <= 5.0 else "#ef5350"
+                            pbr_str = f"<span style='color:{pbr_color}; font-weight:bold;'>{pbr_val:.2f}倍</span>"
+                        else:
+                            pbr_str = "-"
+                            
+                        st.markdown(f"<div style='font-size: 13px; color: #aaa; margin-top: 5px;'>🏭 {r.get('sector','不明')} ｜ 📊 PER: {per_str} ｜ 📉 PBR: {pbr_str}</div>", unsafe_allow_html=True)
                         
                     with sc_mid:
                         if is_ambush:
@@ -1256,25 +1318,19 @@ with tab3:
                             </div>
                             """, unsafe_allow_html=True)
 
-                    # 🎯 弾道チャートの追加（小数点切り捨て、MAs、ホバー適正化）
                     st.markdown("---")
                     st.caption(f"📊 {r['name']} 精密弾道チャート")
-                    
-                    # 期間の適切化：MA75が見えるよう約100日分を取得
                     d_p = r['df_chart'].tail(100).copy()
-                    # Date列から直接抽出（1970年バグ回避）
                     d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
                     
                     try:
                         fig_chart = go.Figure()
-                        # ローソク足
                         fig_chart.add_trace(go.Candlestick(
                             x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], 
                             name="株価", increasing_line_color='#26a69a', decreasing_line_color='#ef5350', 
                             hovertemplate="<b>%{x}</b><br>始: ¥%{open:,.0f}<br>高: ¥%{high:,.0f}<br>安: ¥%{low:,.0f}<br>終: ¥%{close:,.0f}<extra></extra>"
                         ))
                         
-                        # MA表示（5, 25, 75）
                         for ma_col, ma_name, ma_color in [('MA5', '5日線', '#ffca28'), ('MA25', '25日線', '#42a5f5'), ('MA75', '75日線', '#ab47bc')]:
                             if ma_col in r['df_chart'].columns:
                                 ma_vals = r['df_chart'][ma_col].tail(len(d_p))
@@ -1288,9 +1344,8 @@ with tab3:
                             height=400, margin=dict(l=0, r=0, t=10, b=0), 
                             showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5),
                             xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                            hovermode="x unified", # 縦線で全データを一覧
+                            hovermode="x unified",
                             yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickformat=",.0f", tickfont=dict(color='#888')), 
-                            # category型にして土日の空白を詰める
                             xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category')
                         )
                         st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
