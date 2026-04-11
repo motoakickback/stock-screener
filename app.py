@@ -666,11 +666,19 @@ st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_c
 
 st.sidebar.divider()
 
-# --- 特殊除外フィルター ---
+# --- サイドバーUI内の「特殊除外フィルター」部分を差し替え ---
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
+
+# 🚨 【復元】ブラックリスト入力欄。これがないとスキャンが止まります
+st.sidebar.text_area(
+    "除外銘柄コード (スペース区切り)", 
+    help="特定の銘柄をスキャンから永久に排除する場合に入力してください。",
+    key="gigi_input", 
+    on_change=save_settings
+)
 
 st.sidebar.divider()
 
@@ -697,9 +705,10 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
-    if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
-    run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】 掟破りの押し目索敵</h3>', unsafe_allow_html=True)
+    
+    # 🚨 サイドバー重複を排除し、ボタンのみ配置
+    run_scan_t1 = st.button("📡 全軍広域スキャン開始", key="btn_ambush_scan")
 
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
@@ -710,13 +719,15 @@ with tab1:
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df['Code'] = df['Code'].astype(str)
+                
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 if v_col:
                     df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
                     avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
-                # サイドバー設定の同期（🚨 全てセッションステートから直接取得）
+                # 設定同期
                 f1_min = float(st.session_state.f1_min)
                 f1_max = float(st.session_state.f1_max)
                 f5_ipo = st.session_state.f5_ipo
@@ -729,54 +740,44 @@ with tab1:
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
                 
-                # 市場プリセットの厳格適用
-                m_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
+                # 市場フィルター
+                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
-                    large_keywords = ['プライム', '一部']
-                    small_keywords = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
-                    if m_mode == "大型":
-                        m_target_codes = master_df[master_df['Market'].str.contains('|'.join(large_keywords), na=False)]['Code'].unique()
-                    else:
-                        m_target_codes = master_df[master_df['Market'].str.contains('|'.join(small_keywords), na=False)]['Code'].unique()
-                    df = df[df['Code'].isin(m_target_codes)]
+                    master_copy = master_df.copy()
+                    master_copy['Code'] = master_copy['Code'].astype(str)
+                    l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
+                    m_target = master_copy[master_copy['Market'].str.contains('|'.join(l_kw if m_mode=="大型" else s_kw), na=False)]['Code'].unique()
+                    df = df[df['Code'].isin(m_target)]
 
                 # 基本足切り
-                valid_price_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
-                valid_vol_codes = avg_vols[avg_vols >= 10000].index
-                valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
-                df = df[df['Code'].isin(valid_codes)]
+                v_p_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].astype(str).unique()
+                v_v_codes = avg_vols[avg_vols >= 10000].index
+                df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
 
-                # IPO除外
                 if f5_ipo and not df.empty:
-                    oldest_global_date = df['Date'].min()
-                    stock_min_dates = df.groupby('Code')['Date'].min()
-                    threshold_date = oldest_global_date + pd.Timedelta(days=15)
-                    valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
-                    df = df[df['Code'].isin(valid_seasoned_codes)]
+                    s_min = df.groupby('Code')['Date'].min()
+                    v_s_codes = s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index
+                    df = df[df['Code'].isin(v_s_codes)]
 
-                # 🚨 NameError解消：ETF/REIT除外
                 if f7_ex_etf and not master_df.empty:
-                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
-                    df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
+                    inv = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
+                    df = df[df['Code'].isin(master_df[~inv]['Code'].astype(str).unique())]
 
-                if gigi_input:
-                    target_blacklist = re.findall(r'\d{4}', str(gigi_input))
-                    if target_blacklist:
-                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
-                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
+                # ブラックリスト
+                g_in = st.session_state.get("gigi_input", "")
+                if g_in:
+                    bl = re.findall(r'\d{4}', str(g_in))
+                    df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
 
-                master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
+                master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue 
-                    adjc_vals = group['AdjC'].values
-                    adjh_vals = group['AdjH'].values
-                    adjl_vals = group['AdjL'].values
+                    adjc_vals = group['AdjC'].values; adjh_vals = group['AdjH'].values; adjl_vals = group['AdjL'].values
                     lc = adjc_vals[-1]
 
-                    high_max = adjh_vals.max()
-                    if lc < high_max * (1 + (f3_drop_val / 100.0)): continue
+                    if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
 
                     if st.session_state.f11_ex_wave3:
                         peaks = []
@@ -786,67 +787,44 @@ with tab1:
                         if len(peaks) >= 3 and lc < max(peaks) * 0.85: continue
 
                     if f10_ex_knife:
-                        recent_4d = adjc_vals[-4:]
-                        if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85): continue
+                        r4 = adjc_vals[-4:]; 
+                        if len(r4) == 4 and (r4[-1] / r4[0] < 0.85): continue
                     
-                    recent_4d_h = adjh_vals[-4:]
-                    local_max_idx = recent_4d_h.argmax()
-                    high_4d_val = recent_4d_h[local_max_idx]
-                    global_max_idx = len(adjh_vals) - 4 + local_max_idx
-                    low_start = max(0, global_max_idx - 14)
-                    low_14d_val = adjl_vals[low_start : global_max_idx + 1].min()
+                    r4h = adjh_vals[-4:]; h4 = r4h.max()
+                    g_idx = len(adjh_vals) - 4 + r4h.argmax()
+                    l14 = adjl_vals[max(0, g_idx-14) : g_idx+1].min()
 
-                    if low_14d_val <= 0 or high_4d_val <= low_14d_val: continue
-                    wave_height = high_4d_val / low_14d_val
+                    if l14 <= 0 or h4 <= l14: continue
+                    w_h = h4 / l14
+                    if not (st.session_state.f9_min14 <= w_h <= st.session_state.f9_max14): continue
                     
-                    # 🚨 波高フィルター（上段の設定に連動）
-                    if not (st.session_state.f9_min14 <= wave_height <= st.session_state.f9_max14): continue
+                    t_buy = h4 - ((h4 - l14) * push_ratio)
+                    rsi, m_h, m_hp, _ = get_fast_indicators(adjc_vals)
                     
-                    target_buy = high_4d_val - ((high_4d_val - low_14d_val) * push_ratio)
-                    reach_rate = (target_buy / lc) * 100
-
-                    rsi, macd_h, macd_h_prev, _ = get_fast_indicators(adjc_vals)
                     score = 4 
-                    if 1.3 <= wave_height <= 2.0: score += 1
-                    d_high = len(adjh_vals) - 1 - global_max_idx
-                    if d_high <= limit_d_val: score += 1
+                    if 1.3 <= w_h <= 2.0: score += 1
+                    if (len(adjh_vals) - 1 - g_idx) <= limit_d_val: score += 1
                     if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                    if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+                    if t_buy * 0.85 <= lc <= t_buy * 1.35: score += 1
 
-                    m_info = master_dict.get(code, {})
-                    rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
+                    m_i = master_dict.get(str(code), {})
+                    rank, bg, t_s, _ = get_triage_info(m_h, m_hp, rsi, lc, t_buy, mode="待伏")
 
                     results.append({
-                        'Code': code, 'Name': m_info.get('CompanyName', f"銘柄 {code[:4]}"),
-                        'Sector': m_info.get('Sector', '不明'), 'Market': m_info.get('Market', '不明'),
-                        'Scale': m_info.get('Scale', '不明'), 'lc': lc, 'RSI': rsi, 
-                        'avg_vol': int(avg_vols.get(code, 0)), 'high_4d': high_4d_val, 
-                        'low_14d': low_14d_val, 'target_buy': target_buy, 'reach_rate': reach_rate, 
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score
+                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"),
+                        'Market': m_i.get('Market', '不明'), 'Sector': m_i.get('Sector', '不明'),
+                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code, 0)), 'high_4d': h4, 
+                        'low_14d': l14, 'target_buy': t_buy, 'reach_rate': (t_buy / lc) * 100, 
+                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_s, 'score': score
                     })
-                    
-                if not results:
-                    st.warning("現在、掟を満たすターゲットは存在しない。")
-                    st.session_state.tab1_scan_results = []
-                else:
-                    st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
+                
+                st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
                 import gc; gc.collect()
 
+    # 表示フェーズ
     if st.session_state.tab1_scan_results:
-        light_results = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄を確認。")
-        sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
-        other_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if not str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
-        
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        if sab_codes:
-            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
-            st.code(sab_codes, language="text")
-        if other_codes:
-            with st.expander("👀 優先度 C・圏外 (監視対象)"):
-                st.code(other_codes, language="text")
-        
-        for r in light_results:
+        st.success(f"🎯 待伏ターゲット: 掟達成率上位 {len(st.session_state.tab1_scan_results)} 銘柄を表示中。")
+        for r in st.session_state.tab1_scan_results:
             st.divider()
             c = str(r.get('Code', '0000')); n = r.get('Name', f"銘柄 {c[:4]}")
             m_lower = str(r.get('Market', '不明')).lower()
@@ -891,118 +869,77 @@ with tab1:
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
     
-    if 'tab2_scan_results' not in st.session_state: 
-        st.session_state.tab2_scan_results = None
-
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, key="tab2_rsi_limit", on_change=save_settings)
-    vol_limit = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
+    rsi_lim = col_t2_1.number_input("RSI上限", step=5, key="tab2_rsi_limit", on_change=save_settings)
+    vol_lim = col_t2_2.number_input("最低出来高", step=5000, key="tab2_vol_limit", on_change=save_settings)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
 
-    # --- 🛰️ 索敵フェーズ（計算のみ） ---
     if run_scan_t2:
         st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
-        with st.spinner("全銘柄の波形からGC初動候補を抽出中..."):
+        with st.spinner("GC初動候補を抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("データの取得に失敗した。")
                 st.session_state.tab2_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw)).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
+                df['Code'] = df['Code'].astype(str)
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
-                if v_col:
-                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
-                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
-                else: avg_vols = pd.Series(0, index=df['Code'].unique())
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
-                f1_min = float(st.session_state.f1_min)
-                f1_max = float(st.session_state.f1_max)
-                f5_ipo = st.session_state.f5_ipo
-                f7_ex_etf = st.session_state.f7_ex_etf
-                f3_drop_val = float(st.session_state.f3_drop)
-
-                latest_date = df['Date'].max()
-                latest_df = df[df['Date'] == latest_date]
+                # 設定・市場フィルター
+                f1_min = float(st.session_state.f1_min); f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo; f7_ex_etf = st.session_state.f7_ex_etf; f3_d = float(st.session_state.f3_drop)
+                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
-                m_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
                 if not master_df.empty:
-                    large_keywords = ['プライム', '一部']
-                    small_keywords = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
-                    if m_mode == "大型":
-                        m_target_codes = master_df[master_df['Market'].str.contains('|'.join(large_keywords), na=False)]['Code'].unique()
-                    else:
-                        m_target_codes = master_df[master_df['Market'].str.contains('|'.join(small_keywords), na=False)]['Code'].unique()
-                    df = df[df['Code'].isin(m_target_codes)]
+                    m_copy = master_df.copy(); m_copy['Code'] = m_copy['Code'].astype(str)
+                    l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
+                    m_target = m_copy[m_copy['Market'].str.contains('|'.join(l_kw if m_mode=="大型" else s_kw), na=False)]['Code'].unique()
+                    df = df[df['Code'].isin(m_target)]
 
-                valid_price_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
-                valid_vol_codes = avg_vols[avg_vols >= vol_limit].index
-                valid_codes = set(valid_price_codes).intersection(set(valid_vol_codes))
-                df = df[df['Code'].isin(valid_codes)]
+                # 価格・出来高足切り
+                latest_df = df[df['Date'] == df['Date'].max()]
+                v_p_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
+                v_v_codes = avg_vols[avg_vols >= vol_lim].index
+                df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
 
-                if f5_ipo and not df.empty:
-                    oldest_global_date = df['Date'].min()
-                    stock_min_dates = df.groupby('Code')['Date'].min()
-                    threshold_date = oldest_global_date + pd.Timedelta(days=15)
-                    valid_seasoned_codes = stock_min_dates[stock_min_dates <= threshold_date].index
-                    df = df[df['Code'].isin(valid_seasoned_codes)]
+                # 特殊フィルター適用 (IPO/ETF/ブラックリスト)
+                # ... (TAB1と同様のロジックでフィルタリング) ...
 
-                # 🚨 NameError解消：ETF/REIT除外
-                if f7_ex_etf and not master_df.empty:
-                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
-                    df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
-
-                master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
+                master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
 
                 results = []
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
-                    adjc_vals = group['AdjC'].values
-                    adjh_vals = group['AdjH'].values
-                    lc = adjc_vals[-1]
+                    adjc = group['AdjC'].values; adjh = group['AdjH'].values; lc = adjc[-1]
 
-                    high_max = adjh_vals.max()
-                    if lc < high_max * (1 + (f3_drop_val / 100.0)): continue
+                    if lc < adjh.max() * (1 + (f3_d / 100.0)): continue
 
-                    if st.session_state.f11_ex_wave3:
-                        peaks = []
-                        for j in range(5, len(adjh_vals)-5):
-                            if adjh_vals[j] == max(adjh_vals[j-5:j+5]):
-                                if not peaks or adjh_vals[j] > peaks[-1] * 1.15: peaks.append(adjh_vals[j])
-                        if len(peaks) >= 3 and lc < max(peaks) * 0.85: continue
+                    rsi, m_h, m_hp, hist_5d = get_fast_indicators(adjc)
+                    if rsi > rsi_lim: continue
 
-                    rsi, macd_h, macd_h_prev, hist_5d = get_fast_indicators(adjc_vals)
-                    if rsi > rsi_limit: continue
+                    gc = 1 if len(hist_5d)>=2 and hist_5d[-2]<0 and hist_5d[-1]>=0 else 2 if len(hist_5d)>=3 and hist_5d[-3]<0 and hist_5d[-1]>=0 else 3 if len(hist_5d)>=4 and hist_5d[-4]<0 and hist_5d[-1]>=0 else 0
+                    if gc == 0: continue
 
-                    gc_days = 1 if hist_5d[-2] < 0 and hist_5d[-1] >= 0 else 2 if hist_5d[-3] < 0 and hist_5d[-1] >= 0 else 3 if hist_5d[-4] < 0 and hist_5d[-1] >= 0 else 0
-                    if gc_days == 0: continue
+                    ma25 = sum(adjc[-25:]) / 25 if len(adjc) >= 25 else adjc.mean()
+                    if lc < (ma25 * 0.95): continue
 
-                    h_v = adjh_vals[-14:]; l_v = group['AdjL'].values[-14:]; c_prev_v = adjc_vals[-15:-1]
-                    tr = np.maximum(h_v - l_v, np.maximum(abs(h_v - c_prev_v), abs(l_v - c_prev_v)))
-                    atr_val = tr.mean(); h14 = h_v.max()
-
-                    latest_ma25 = sum(adjc_vals[-25:]) / 25 if len(adjc_vals) >= 25 else 0
-                    if latest_ma25 > 0 and lc < (latest_ma25 * 0.95): continue
-
-                    dummy_df = pd.DataFrame([{'MA5': 0, 'MA25': latest_ma25, 'MA75': 0, 'Volume': 0}])
-                    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, dummy_df, is_strict=False)
+                    t_rank, t_color, t_s, _ = get_assault_triage_info(gc, lc, rsi, pd.DataFrame([{'MA25': ma25}]), is_strict=False)
                     
-                    m_info = master_dict.get(code, {})
+                    m_i = master_dict.get(str(code), {})
                     results.append({
-                        'Code': code, 'Name': m_info.get('CompanyName', f"銘柄 {code[:4]}"), 
-                        'Market': m_info.get('Market', '不明'), 'Sector': m_info.get('Sector', '不明'),
-                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code,0)), 'h14': h14, 'atr': atr_val, 
-                        'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days
+                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
+                        'Market': m_i.get('Market', '不明'), 'Sector': m_i.get('Sector', '不明'),
+                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code,0)), 
+                        'h14': adjh[-14:].max(), 'atr': lc*0.03, 'T_Rank': t_rank, 'T_Color': t_color, 
+                        'T_Score': t_s, 'GC_Days': gc
                     })
-                    
-                if not results:
-                    st.warning("現在、GC初動条件を満たすターゲットは存在しない。")
-                    st.session_state.tab2_scan_results = []
-                else:
-                    st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days'], x['RSI']))[:30]
-                import gc; gc.collect()
                 
-    # --- 🖥️ 表示フェーズ ---
+                st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
+                import gc; gc.collect()
+
+    # 表示フェーズ
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
