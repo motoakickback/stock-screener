@@ -105,20 +105,15 @@ if now.hour >= 19:
 # --- ⚙️ システム全体設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
-# --- ⚙️ システム全体設定の永続化 ---
-SETTINGS_FILE = f"saved_settings_{user_id}.json"
-
 def load_settings():
     defaults = {
         "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
-        "f3_drop": -50, # 🚨 -30から-50へ変更
-        "f4_mlong": 3.0,
+        "f3_drop": -50.0, # 🚨 -50に完全固定
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
-        "f11_ex_wave3": True, # 🚨 新規：3波終了除外
-        "f12_ex_overvalued": True, # 🚨 新規：割高/赤字除外
+        "f11_ex_wave3": True, "f12_ex_overvalued": True,
         "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
@@ -130,12 +125,15 @@ def load_settings():
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 defaults.update(json.load(f))
         except: pass
+    # 🚨 強制上書きパッチ：既存の-30設定を-50へ引き込む防衛網
+    if defaults["f3_drop"] > -50: defaults["f3_drop"] = -50.0
+    
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
 def save_settings():
     keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
-            "f1_min", "f1_max", "f2_m30", "f3_drop", "f4_mlong", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
+            "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
             "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
             "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
@@ -150,7 +148,7 @@ def save_settings():
                 current = existing
         except: pass
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
-
+        
 load_settings()
 
 def apply_market_preset():
