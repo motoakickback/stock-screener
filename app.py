@@ -106,10 +106,8 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    # 🚨 全てのフィルタキーを網羅した最新のデフォルト定義
     defaults = {
-        "preset_market": "🚀 中小型株 (スタンダード・グロース)", # 市場ターゲット
-        "preset_push_r": "50.0%", # 押し目プリセット
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", "preset_push_r": "50.0%",
         "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
@@ -117,7 +115,8 @@ def load_settings():
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り"
+        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "gigi_input": "" # 🚨 【追加】保存の初期値を用意
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -130,11 +129,11 @@ def load_settings():
         if k not in st.session_state: st.session_state[k] = v
 
 def save_settings():
-    # 現在のセッションステートから全設定値を抽出して保存
+    # 🚨 gigi_input を保存キーに追加
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode"]
+            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=4)
