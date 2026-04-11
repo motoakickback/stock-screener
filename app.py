@@ -682,7 +682,6 @@ with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
-    exclude_etf_flag_t1 = st.sidebar.checkbox("ETF・REITを除外 (待伏)", key="tab1_etf_filter", on_change=save_settings)
 
     if run_scan_t1:
         st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
@@ -893,8 +892,6 @@ with tab2:
     vol_limit = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
     
     run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan")
-    exclude_ipo_flag = st.sidebar.checkbox("IPO銘柄を除外 (強襲)", key="tab2_ipo_filter", on_change=save_settings)
-    exclude_etf_flag_t2 = st.sidebar.checkbox("ETF・REITを除外 (強襲)", key="tab2_etf_filter", on_change=save_settings)
 
     # --- 🛰️ 索敵フェーズ（計算のみ） ---
     if run_scan_t2:
