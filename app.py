@@ -994,48 +994,69 @@ with tab2:
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
         st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
+        
+        # 🎯 優先銘柄コードの抽出
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         if sab_codes:
-            st.markdown("**🎯 優先度 S・A・B (主力標的)**")
+            st.markdown("**🎯 優先度 S・A・B (主力標的に推奨)**")
             st.code(sab_codes, language="text")
         
+        # --- 🚀 銘柄カード表示ループ ---
         for r in light_results:
             st.divider()
-            lc_val = r.get('lc', 0); h14_val = r.get('h14', 0); atr_v = r.get('atr', 0)
             
-            # 🚨 動的ロジック適用：トリガーと防衛線
-            t_price = max(h14_val, lc_val + (atr_v * 0.5))
-            d_price = t_price - atr_v
+            # 🚨 【復元】市場バッジ判定ロジック
+            # スキャン時にマスターから取得したMarket情報を元にバッジを生成
+            m_info = r.get('Market', '不明')
+            m_lower = str(m_info).lower()
+            if 'プライム' in m_lower or '一部' in m_lower: 
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
 
+            # ランクバッジ
             triage_badge = f'<span style="background-color: {r.get("T_Color", "#616161")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("T_Rank")}</span>'
             
+            # ヘッダー情報の描画
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        {triage_badge}
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        {badge_html}{triage_badge}
                         <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r.get('GC_Days')}日目</span>
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r.get('RSI', 50):.1f}%</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
+            # 計器群の描画
+            lc_val = r.get('lc', 0); h14_val = r.get('h14', 0); atr_v = r.get('atr', 0)
+            t_price = max(h14_val, lc_val + (atr_v * 0.5))
+            d_price = t_price - atr_v
+
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
             m_cols[0].metric("最新終値", f"{int(lc_val):,}円")
             m_cols[1].metric("RSI", f"{r.get('RSI', 50):.1f}%")
             m_cols[2].metric("ATR(14d)", f"{int(atr_v):,}円")
             
+            # 防衛線パネル
             html_sl = f"""<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
                 <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 動的防衛線 (-1.0 ATR)</div>
                 <div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>"""
             m_cols[3].markdown(html_sl, unsafe_allow_html=True)
 
+            # 強襲トリガーパネル
             html_buy_assault = f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
                 <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 強襲トリガー (14d高値基準)</div>
                 <div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>"""
             m_cols[4].markdown(html_buy_assault, unsafe_allow_html=True)
-
+            
+            st.caption(f"🏭 {r.get('Sector', '不明')} ｜ 📊 平均出来高: {int(r.get('avg_vol', 0)):,}株")
+            
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
