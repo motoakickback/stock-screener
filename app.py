@@ -727,14 +727,10 @@ with tab1:
                 else: avg_vols = pd.Series(0, index=df['Code'].unique())
 
                 # 設定同期
-                f1_min = float(st.session_state.f1_min)
-                f1_max = float(st.session_state.f1_max)
-                f5_ipo = st.session_state.f5_ipo
-                f7_ex_etf = st.session_state.f7_ex_etf
-                f10_ex_knife = st.session_state.f10_ex_knife
-                f3_drop_val = float(st.session_state.f3_drop)
-                push_ratio = st.session_state.push_r / 100.0
-                limit_d_val = int(st.session_state.limit_d)
+                f1_min = float(st.session_state.f1_min); f1_max = float(st.session_state.f1_max)
+                f5_ipo = st.session_state.f5_ipo; f7_ex_etf = st.session_state.f7_ex_etf
+                f10_ex_knife = st.session_state.f10_ex_knife; f3_drop_val = float(st.session_state.f3_drop)
+                push_ratio = st.session_state.push_r / 100.0; limit_d_val = int(st.session_state.limit_d)
 
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
@@ -742,8 +738,7 @@ with tab1:
                 # 市場フィルター
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
-                    master_copy = master_df.copy()
-                    master_copy['Code'] = master_copy['Code'].astype(str)
+                    master_copy = master_df.copy(); master_copy['Code'] = master_copy['Code'].astype(str)
                     l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
                     m_target = master_copy[master_copy['Market'].str.contains('|'.join(l_kw if m_mode=="大型" else s_kw), na=False)]['Code'].unique()
                     df = df[df['Code'].isin(m_target)]
@@ -753,20 +748,24 @@ with tab1:
                 v_v_codes = avg_vols[avg_vols >= 10000].index
                 df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
 
+                # IPO除外
                 if f5_ipo and not df.empty:
                     s_min = df.groupby('Code')['Date'].min()
                     v_s_codes = s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index
                     df = df[df['Code'].isin(v_s_codes)]
 
+                # ETF/REIT除外
                 if f7_ex_etf and not master_df.empty:
                     inv = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     df = df[df['Code'].isin(master_df[~inv]['Code'].astype(str).unique())]
 
-                # ブラックリスト
-                g_in = st.session_state.get("gigi_input", "")
-                if g_in:
-                    bl = re.findall(r'\d{4}', str(g_in))
-                    df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
+                # 🚨 【座標: TAB1 除外処理】ここが検索にヒットすべき箇所です
+                g_input_str = st.session_state.get("gigi_input", "")
+                if g_input_str:
+                    target_blacklist = re.findall(r'\d{4}', str(g_input_str))
+                    if target_blacklist:
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
 
                 master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 
@@ -819,7 +818,7 @@ with tab1:
                 
                 st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
                 import gc; gc.collect()
-
+                
     # --- 🖥️ TAB1 表示フェーズ（コピペ枠 復元版） ---
     if st.session_state.tab1_scan_results:
         results = st.session_state.tab1_scan_results
@@ -899,11 +898,12 @@ with tab2:
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
-                # 設定・市場フィルター
+                # 設定同期
                 f1_min = float(st.session_state.f1_min); f1_max = float(st.session_state.f1_max)
                 f5_ipo = st.session_state.f5_ipo; f7_ex_etf = st.session_state.f7_ex_etf; f3_d = float(st.session_state.f3_drop)
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
+                # 市場フィルター
                 if not master_df.empty:
                     m_copy = master_df.copy(); m_copy['Code'] = m_copy['Code'].astype(str)
                     l_kw = ['プライム', '一部']; s_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
@@ -913,11 +913,22 @@ with tab2:
                 # 価格・出来高足切り
                 latest_df = df[df['Date'] == df['Date'].max()]
                 v_p_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
-                v_v_codes = avg_vols[avg_vols >= vol_lim].index
+                v_v_codes = avg_vols[avg_vols >= vol_limit].index
                 df = df[df['Code'].isin(set(v_p_codes).intersection(set(v_v_codes)))]
 
-                # 特殊フィルター適用 (IPO/ETF/ブラックリスト)
-                # ... (TAB1と同様のロジックでフィルタリング) ...
+                # IPO除外
+                if f5_ipo and not df.empty:
+                    s_min = df.groupby('Code')['Date'].min()
+                    v_s_codes = s_min[s_min <= (df['Date'].min() + pd.Timedelta(days=15))].index
+                    df = df[df['Code'].isin(v_s_codes)]
+
+                # 🚨 【座標: TAB2 除外処理】ここが検索にヒットすべき箇所です
+                g_input_str = st.session_state.get("gigi_input", "")
+                if g_input_str:
+                    target_blacklist = re.findall(r'\d{4}', str(g_input_str))
+                    if target_blacklist:
+                        df['Temp_Code'] = df['Code'].astype(str).str.extract(r'(\d{4})')[0]
+                        df = df[~df['Temp_Code'].isin(target_blacklist)].drop(columns=['Temp_Code'])
 
                 master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
 
@@ -929,7 +940,7 @@ with tab2:
                     if lc < adjh.max() * (1 + (f3_d / 100.0)): continue
 
                     rsi, m_h, m_hp, hist_5d = get_fast_indicators(adjc)
-                    if rsi > rsi_lim: continue
+                    if rsi > rsi_limit: continue
 
                     gc = 1 if len(hist_5d)>=2 and hist_5d[-2]<0 and hist_5d[-1]>=0 else 2 if len(hist_5d)>=3 and hist_5d[-3]<0 and hist_5d[-1]>=0 else 3 if len(hist_5d)>=4 and hist_5d[-4]<0 and hist_5d[-1]>=0 else 0
                     if gc == 0: continue
@@ -950,7 +961,7 @@ with tab2:
                 
                 st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
                 import gc; gc.collect()
-
+                
     # 表示フェーズ
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
