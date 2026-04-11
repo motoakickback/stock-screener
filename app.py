@@ -161,34 +161,43 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）最新値捕捉：最終精密狙撃パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        # 🚨 期間指定ではなく明示的に日付を指定して4/10を強制捕捉
-        now_jst = datetime.now(pytz.timezone('Asia/Tokyo'))
-        start_date = (now_jst - timedelta(days=100)).strftime('%Y-%m-%d')
-        end_date = (now_jst + timedelta(days=1)).strftime('%Y-%m-%d')
+        # 🚨 明示的に「今日の日付」までの範囲を指定して4/10を強制捕捉
+        # 土曜日に実行する場合、これがないと4/10が漏れるケースがある
+        today = datetime.now(pytz.timezone('Asia/Tokyo'))
+        start_date = (today - timedelta(days=100)).strftime('%Y-%m-%d')
+        end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
         
+        # historyではなくdownloadを使用（週末のデータ反映が早いため）
         df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
         
         if not df_raw.empty:
+            # マルチインデックス対策（yfinanceの仕様変更対応）
             if isinstance(df_raw.columns, pd.MultiIndex):
                 df_raw.columns = df_raw.columns.get_level_values(0)
+            
             df_ni = df_raw.reset_index()
-            date_col = 'Date' if 'Date' in df_ni.columns else 'date'
-            df_ni[date_col] = pd.to_datetime(df_ni[date_col]).dt.tz_localize(None)
+            # Date列を日本時間として処理し、タイムゾーンを消す
+            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
             df_ni = df_ni.dropna(subset=['Close'])
+            
+            # 取得できた全データのうち、3ヶ月分をスライス（ボスの視界を維持）
+            df_ni = df_ni.tail(65) 
+            
             latest_row = df_ni.iloc[-1]
             prev_row = df_ni.iloc[-2]
+            
             return {
                 "nikkei": {
                     "price": latest_row['Close'], 
                     "diff": latest_row['Close'] - prev_row['Close'], 
                     "pct": ((latest_row['Close'] / prev_row['Close']) - 1) * 100, 
                     "df": df_ni,
-                    "date": latest_row[date_col].strftime('%m/%d')
+                    "date": latest_row['Date'].strftime('%m/%d')
                 }
             }
     except: return None
@@ -214,13 +223,14 @@ def render_macro_board():
             fig.update_layout(
                 height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                 showlegend=False, hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
+                # 🚨 4/10が表示されるようX軸の最大値を「明日」に設定してマージンを確保
                 xaxis=dict(type='date', tickformat='%m/%d', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=12)])
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
-    else:
-        st.warning("📡 外部気象レーダー応答なし")
+    else: st.warning("📡 外部気象レーダー応答なし")
 
+# 命令実行
 render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
