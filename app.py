@@ -1059,8 +1059,29 @@ with tab3:
         
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
-        if is_ambush: st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
-        else: st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
+        if is_ambush: 
+            st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;">
+                <b>【掟スコア加点基準（最大10点）】</b><br>
+                ✅ 基礎モメンタム（MACD/RSIの優位性：最大+5点）<br>
+                ✅ 波高1.3〜2.0倍（+1点） ｜ ✅ 調整日数が規定内（+1点）<br>
+                ✅ 危険波形(Wトップ等)なし（+1点） ｜ ✅ 買値目標の±15%圏内（+1点）<br>
+                ✅ 割安性：PBR 5.0倍以下（+1点）
+            </div>
+            """, unsafe_allow_html=True)
+        else: 
+            st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;">
+                <b>【強襲スコア加点基準（最大100点）】</b><br>
+                ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
+                ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
+                ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
+                ⚡ 割安性：PBR 5.0倍以下（+10点）<br>
+                <span style="color:#ef5350;">※ パーフェクトオーダー崩壊・過熱(RSI75超)・出来高不足は厳格減点</span>
+            </div>
+            """, unsafe_allow_html=True)
 
     if run_scope:
         if is_ambush:
@@ -1323,6 +1344,12 @@ with tab3:
                     d_p = r['df_chart'].tail(100).copy()
                     d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
                     
+                    # 🎯 弾道チャート
+                    st.markdown("---")
+                    st.caption(f"📊 {r['name']} 精密弾道チャート")
+                    d_p = r['df_chart'].tail(100).copy()
+                    d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
+                    
                     try:
                         fig_chart = go.Figure()
                         fig_chart.add_trace(go.Candlestick(
@@ -1340,13 +1367,21 @@ with tab3:
                                     hovertemplate=f"{ma_name}: ¥%{{y:,.0f}}<extra></extra>"
                                 ))
 
+                        # 🚨 追加：買値目標ライン（黄色点線）
+                        fig_chart.add_trace(go.Scatter(
+                            x=d_p['display_date'], y=[r['bt_val']] * len(d_p), name="買値目標", mode='lines',
+                            line=dict(color='#FFD700', width=2, dash='dot'),
+                            hovertemplate="買値目標: ¥%{y:,.0f}<extra></extra>"
+                        ))
+
                         fig_chart.update_layout(
                             height=400, margin=dict(l=0, r=0, t=10, b=0), 
                             showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5),
                             xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                             hovermode="x unified",
                             yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickformat=",.0f", tickfont=dict(color='#888')), 
-                            xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category')
+                            # 🚨 追加：dtick=5 を設定し、5営業日（1週間）単位でX軸の日付を表示
+                            xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category', dtick=5)
                         )
                         st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
                     except: 
