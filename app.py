@@ -1267,54 +1267,44 @@ with tab3:
                         st.caption(f"🏭 {r.get('sector','不明')}")
                         
                     with sc_mid:
-                        # PERとPBRのカラー判定表示用 HTML
+                        # PERとPBRのカラー判定ロジック
                         per_val = r.get('per')
                         pbr_val = r.get('pbr')
-                        
-                        if per_val is not None:
-                            per_color = "#26a69a" if per_val <= 50 else "#ef5350"
-                            per_str = f"{per_val:.1f}倍"
-                        else:
-                            per_str = "-"
-                            
-                        if pbr_val is not None:
-                            pbr_color = "#26a69a" if pbr_val <= 5.0 else "#ef5350"
-                            pbr_str = f"{pbr_val:.2f}倍"
-                        else:
-                            pbr_str = "-"
+                        per_color = "#26a69a" if (per_val and per_val <= 50) else "#ef5350"
+                        pbr_color = "#26a69a" if (pbr_val and pbr_val <= 5.0) else "#ef5350"
+                        per_str = f"{per_val:.1f}倍" if per_val else "-"
+                        pbr_str = f"{pbr_val:.2f}倍" if pbr_val else "-"
 
-                        # PER/PBR配置用 HTML
+                        # PER/PBR配置用（左右に整列）
                         per_pbr_html = f"""
-                            <div style='display:flex; justify-content:space-between; text-align:center;'>
-                                <div style='flex:1;'><div style='font-size:13px;'>📊 PER</div><div style='font-size:1.6rem; color:{per_color}; font-weight:bold;'>{per_str}</div></div>
-                                <div style='flex:1;'><div style='font-size:13px;'>📉 PBR</div><div style='font-size:1.6rem; color:{pbr_color}; font-weight:bold;'>{pbr_str}</div></div>
-                            </div>
-                        """
+                            <div style='display:flex; justify-content:space-between; text-align:center; margin-top:10px;'>
+                                <div style='flex:1;'><div style='font-size:13px; color:#aaa;'>📊 PER</div><div style='font-size:1.6rem; color:{per_color}; font-weight:bold;'>{per_str}</div></div>
+                                <div style='flex:1;'><div style='font-size:13px; color:#aaa;'>📉 PBR</div><div style='font-size:1.6rem; color:{pbr_color}; font-weight:bold;'>{pbr_str}</div></div>
+                            </div>"""
 
                         if is_ambush:
-                            # 待伏モード
+                            # 待伏モード：目標価格を中央に
                             html_box = f"""
-                                <div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
-                                    <div style='font-size:14px; text-align:center;'>🎯 買値目標</div>
-                                    <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(r['bt_val']):,}円</div>
-                                    <div style='border-top:1px dashed #444; margin:8px 0;'></div>
+                                <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3);'>
+                                    <div style='font-size:14px; text-align:center; color:rgba(255,255,255,0.7);'>🎯 買値目標</div>
+                                    <div style='font-size:2.6rem; font-weight:bold; color:#FFD700; text-align:center; margin:5px 0;'>{int(r['bt_val']):,}円</div>
+                                    <div style='border-top:1px dashed #444; margin:10px 0;'></div>
                                     {per_pbr_html}
-                                </div>
-                            """
+                                </div>"""
                         else:
-                            # 強襲モード
+                            # 強襲モード：トリガー・執行・防衛を表示
                             t_p = r['bt_val']; e_p = int(t_p + (r['atr_val'] * 0.2)); d_p = int(t_p - r['atr_val'])
                             html_box = f"""
-                                <div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3);'>
-                                    <div style='font-size:13px; text-align:center;'>🎯 トリガー (14d高値基準)</div>
+                                <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3);'>
+                                    <div style='font-size:14px; text-align:center; color:rgba(255,255,255,0.7);'>🎯 トリガー (14d高値)</div>
                                     <div style='font-size:2.2rem; font-weight:bold; color:#FFD700; text-align:center;'>{int(t_p):,}円</div>
-                                    <div style='border-top:1px dashed #444; margin:8px 0;'></div>
-                                    <div style='display:flex; justify-content:space-between;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
+                                    <div style='border-top:1px dashed #444; margin:10px 0;'></div>
+                                    <div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>⚔️ 執行(+0.2ATR)</span><span style='color:#FFD700; font-weight:bold;'>{int(e_p):,}円</span></div>
                                     <div style='display:flex; justify-content:space-between;'><span>🛡️ 防衛(-1.0ATR)</span><span style='color:#ef5350; font-weight:bold;'>{int(d_p):,}円</span></div>
-                                    <div style='border-top:1px dashed #444; margin:8px 0;'></div>
+                                    <div style='border-top:1px dashed #444; margin:10px 0;'></div>
                                     {per_pbr_html}
-                                </div>
-                            """
+                                </div>"""
+                        
                         st.markdown(html_box, unsafe_allow_html=True)
 
                     with sc_right:
