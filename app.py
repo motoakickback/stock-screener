@@ -161,36 +161,37 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉・座標修正パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉パッチ ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        tk_ni = yf.Ticker("^N225")
-        # 3ヶ月分を確実に取得
-        hist_ni = tk_ni.history(period="3mo")
+        # 🚨 期間指定ではなく明示的に日付を指定して4/10を強制捕捉
+        now_jst = datetime.now(pytz.timezone('Asia/Tokyo'))
+        start_date = (now_jst - timedelta(days=100)).strftime('%Y-%m-%d')
+        end_date = (now_jst + timedelta(days=1)).strftime('%Y-%m-%d')
         
-        if not hist_ni.empty and len(hist_ni) >= 2:
-            # 終値がNaNの行を排除
-            df_ni = hist_ni.dropna(subset=['Close']).reset_index()
-            # タイムゾーンを日本時間に変換し、時刻を削る
-            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
-            
-            # 最新（金曜）とその前日のデータを抽出
+        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
+        
+        if not df_raw.empty:
+            if isinstance(df_raw.columns, pd.MultiIndex):
+                df_raw.columns = df_raw.columns.get_level_values(0)
+            df_ni = df_raw.reset_index()
+            date_col = 'Date' if 'Date' in df_ni.columns else 'date'
+            df_ni[date_col] = pd.to_datetime(df_ni[date_col]).dt.tz_localize(None)
+            df_ni = df_ni.dropna(subset=['Close'])
             latest_row = df_ni.iloc[-1]
             prev_row = df_ni.iloc[-2]
-            
             return {
                 "nikkei": {
                     "price": latest_row['Close'], 
                     "diff": latest_row['Close'] - prev_row['Close'], 
                     "pct": ((latest_row['Close'] / prev_row['Close']) - 1) * 100, 
                     "df": df_ni,
-                    "date": latest_row['Date'].strftime('%m/%d') # ここが04/10になるか確認
+                    "date": latest_row[date_col].strftime('%m/%d')
                 }
             }
-    except: 
-        return None
+    except: return None
 
 def render_macro_board():
     data = get_macro_weather()
@@ -198,7 +199,6 @@ def render_macro_board():
         ni = data["nikkei"]; df = ni["df"]; color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"; sign = "+" if ni['diff'] >= 0 else ""
         c1, c2 = st.columns([1, 2.5])
         with c1:
-            # メトリック表示に日付を明記し、データの新鮮さを証明
             st.markdown(f"""
             <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
                 <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni['date']})</div>
@@ -209,37 +209,12 @@ def render_macro_board():
         with c2:
             df['MA25'] = df['Close'].rolling(window=25).mean()
             fig = go.Figure()
-            # 日経平均（名前を固定、ホバーを統一）
-            fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['Close'], 
-                name='日経平均', mode='lines', 
-                line=dict(color='#FFD700', width=2),
-                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
-            ))
-            # 25日線（名前を固定、ホバーを統一）
-            fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['MA25'], 
-                name='25日線', mode='lines', 
-                line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'),
-                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
-            ))
-            
-            # 🚨 座標修正：描画範囲の最大値を「最新データの日付 + 1日」に設定
-            # これにより、右端の4/10データが隠れずに表示される
-            x_min = df['Date'].min()
-            x_max = df['Date'].max() + pd.Timedelta(days=1)
-            
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], name='25日線', mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'))
             fig.update_layout(
-                height=160, margin=dict(l=10, r=40, t=10, b=10),
-                xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                showlegend=False, hovermode="x unified",
-                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
-                xaxis=dict(
-                    type='date', 
-                    tickformat='%m/%d', 
-                    gridcolor='rgba(255,255,255,0.05)',
-                    range=[x_min, x_max] # 🚨 視界を1日分広げる
-                )
+                height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                showlegend=False, hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
+                xaxis=dict(type='date', tickformat='%m/%d', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=12)])
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
