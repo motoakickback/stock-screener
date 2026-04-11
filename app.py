@@ -603,71 +603,72 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- 4. サイドバー UI ---
+# --- 390行目付近：サイドバーUI 全文 ---
+st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.header("🎯 対象市場 (一括換装)")
 st.sidebar.radio("プリセット選択", ["🚀 中小型株 (50%押し・標準)", "⚓ 中小型株 (61.8%押し・深海)", "🏢 大型株 (25%押し・トレンド)"], key="preset_target", on_change=apply_market_preset)
 market_filter_mode = "大型" if "大型株" in st.session_state.preset_target else "中小型"
 
 st.sidebar.radio("🕹️ 戦術モード切替", ["⚖️ バランス (掟達成率 ＞ 到達度)", "⚔️ 攻め重視 (三川シグナル優先)", "🛡️ 守り重視 (鉄壁シグナル優先)"], key="sidebar_tactics", on_change=apply_market_preset)
 
+# --- ピックアップルール（グローバル設定） ---
 st.sidebar.header("🔍 ピックアップルール")
 c_f1_1, c_f1_2 = st.sidebar.columns(2)
 f1_min = c_f1_1.number_input("① 価格下限(円)", step=100, key="f1_min", on_change=save_settings)
 f1_max = c_f1_2.number_input("① 価格上限(円)", step=100, key="f1_max", on_change=save_settings) 
 f2_m30 = st.sidebar.number_input("② 1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
 
-# 🚨 修正：50%以上下落除外。ボスの直感に合わせ、マイナス値を入力しやすく設定
-f3_drop = st.sidebar.number_input("③ 1年最高値からの下落除外(%)", value=float(st.session_state.f3_drop), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+# 🚨 ③ 1年最高値からの下落率チェック (-50%など)
+f3_drop = st.sidebar.number_input(
+    "③ 1年最高値からの下落除外(%)", 
+    value=float(st.session_state.f3_drop), 
+    step=5.0, 
+    max_value=0.0, 
+    key="f3_drop", 
+    on_change=save_settings
+)
 
 f5_ipo = st.sidebar.checkbox("⑤ IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
 f6_risk = st.sidebar.checkbox("⑥ 疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
-# ⑪・⑫の追加
 f11_ex_wave3 = st.sidebar.checkbox("⑪ 上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
 f12_ex_overvalued = st.sidebar.checkbox("⑫ 非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
 
+# --- 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
 f7_ex_etf = st.sidebar.checkbox("⑦ ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 f8_ex_bio = st.sidebar.checkbox("⑧ 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
+
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
 f9_min14 = c_f9_1.number_input("⑨ 波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
 f9_max14 = c_f9_2.number_input("⑨ 波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+
 f10_ex_knife = st.sidebar.checkbox("⑩ 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 
-st.sidebar.header("🎯 買いルール")
-push_r = st.sidebar.number_input("① 押し目(%)", step=0.1, format="%.1f", key="push_r", on_change=save_settings)
-limit_d = st.sidebar.number_input("② 買い期限(日)", step=1, key="limit_d", on_change=save_settings)
-st.sidebar.number_input("③ 仮想Lot(株数)", step=100, key="bt_lot", on_change=save_settings)
+# --- システム管理（清掃済み） ---
+st.sidebar.header("⚙️ システム管理")
+# 🚨 重複していた tab1_etf_filter や tab2_ipo_filter 等はすべて抹殺しました。
+# ここにはUIの基本設定やキャッシュ操作のみを残します。
 
-st.sidebar.header("🛡️ 売りルール（鉄の掟）")
-st.sidebar.number_input("① 利確目標 (+%)", step=1, key="bt_tp", on_change=save_settings)
-st.sidebar.number_input("② 損切/ザラ場 (-%)", step=1, key="bt_sl_i", on_change=save_settings)
-st.sidebar.number_input("③ 損切/終値 (-%)", step=1, key="bt_sl_c", on_change=save_settings)
-st.sidebar.number_input("④ 強制撤退/売り期限 (日)", step=1, key="bt_sell_d", on_change=save_settings)
+# 市場プリセット切替
+preset_options = ["🚀 中小型株 (50%押し・標準)", "🏢 大型株 (25%押し・堅実)", "🔱 黄金分割 (61.8%押し)"]
+st.sidebar.selectbox("🎯 市場ターゲット・プリセット", preset_options, key="preset_target", on_change=apply_market_preset)
 
-st.sidebar.markdown("#### 🚨 掟⑥：除外ブラックリスト")
-GIGI_FILE = f"saved_gigi_mines_{user_id}.txt"
-default_gigi = "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
-if os.path.exists(GIGI_FILE):
-    with open(GIGI_FILE, "r", encoding="utf-8") as f:
-        default_gigi = f.read()
-
-gigi_input = st.sidebar.text_area("疑義注記・ボロ株コード (カンマ区切り)", value=default_gigi, height=100)
-with open(GIGI_FILE, "w", encoding="utf-8") as f:
-    f.write(gigi_input)
-
-extracted_codes = re.findall(r'\b\d{4}\b(?!\s*[/年-])', gigi_input)
-gigi_mines_list = list(dict.fromkeys(extracted_codes))
+# 戦術アルゴリズム切替
+tactic_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
+st.sidebar.selectbox("🕹️ 戦術アルゴリズム", tactic_options, key="sidebar_tactics", on_change=save_settings)
 
 st.sidebar.divider()
-st.sidebar.markdown("### 🛠️ システム管理")
-if st.sidebar.button("🔴 キャッシュ強制パージ (API遅延時用)", use_container_width=True):
+
+# キャッシュ操作
+if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
-    st.session_state.tab1_scan_results = None
-    st.session_state.tab2_scan_results = None
-    st.session_state.tab5_ifd_results = None
-    st.sidebar.success("全記憶を強制パージした。最新データを再取得する。")
+    st.toast("全キャッシュデータを消去した。最新データを再取得する。")
     st.rerun()
 
+if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
+    save_settings()
+    st.toast("戦術設定を settings.json に永久保存した。")
+    
 # ==========================================
 # 5. タブ再構成
 # ==========================================
