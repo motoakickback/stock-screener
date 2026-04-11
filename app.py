@@ -1079,29 +1079,36 @@ with tab3:
             st.warning("有効な銘柄コードが確認できません。")
         else:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
+                # 🚀 【高速化パッチ】待伏モード遅延の原因（直列取得）を並列処理（マルチスレッド）へ換装
+                raw_data_dict = {}
+                def fetch_single_data(c):
+                    api_code = c if len(c) == 5 else c + "0"
+                    return c, get_single_data(api_code, 1)
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+                    futs = [exe.submit(fetch_single_data, c) for c in t_codes]
+                    for f in concurrent.futures.as_completed(futs):
+                        res_c, res_data = f.result()
+                        raw_data_dict[res_c] = res_data
+
                 scope_results = []
                 for c in t_codes:
-                    api_code = c if len(c) == 5 else c + "0"
-                    raw_s = get_single_data(api_code, 1)
+                    raw_s = raw_data_dict.get(c)
                     if not raw_s: continue
                     df_s = clean_df(pd.DataFrame(raw_s.get("bars", [])))
                     if len(df_s) < 30: continue
                         
-                    # 🚨 修正：部分一致(contains)を廃止し、完全一致(==)またはisinで確実に特定
                     c_short = c[:4]
                     if not master_df.empty:
-                        # 4桁でも5桁でも確実にマッチする完全一致検索
                         m_row = master_df[master_df['Code'].astype(str).isin([c_short, c_short + "0", api_code])]
                     else:
                         m_row = pd.DataFrame()
                     
                     if not m_row.empty:
-                        # 確実に最初の1件のデータを取得
                         c_name = str(m_row.iloc[0]['CompanyName'])
                         c_market = str(m_row.iloc[0]['Market'])
-                        # 業種(Sector)が空、またはNaNの場合に「不明」を回避
                         raw_sector = m_row.iloc[0].get('Sector', '不明')
-                        c_sector = str(raw_sector) if pd.notna(raw_sector) and raw_sector != "" else "情報・通信業" # 6580等の救済措置
+                        c_sector = str(raw_sector) if pd.notna(raw_sector) and raw_sector != "" else "情報・通信業"
                     else:
                         c_name = f"銘柄 {c_short}"; c_market = "不明"; c_sector = "不明"
 
@@ -1145,7 +1152,6 @@ with tab3:
                 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 
-                # --- 表示ループ ---
                 for r in scope_results:
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
@@ -1175,17 +1181,13 @@ with tab3:
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
                     if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
                     
-                    c_base = r['bt_val'] if is_ambush else r['lc']
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
                     with sc_left:
-                        # 🚨 追加：ATR値の計算とボラティリティの算出
                         atr_v = r.get('atr_val', 0)
-                        # 万が一ATRが取得できない場合の安全装置（終値の5%）
                         if atr_v == 0: atr_v = r.get('lc', 0) * 0.05 
                         atr_pct = (atr_v / r.get('lc', 1)) * 100 if r.get('lc', 0) > 0 else 0
 
-                        # 既存の計器群（維持）
                         c_m1, c_m2 = st.columns(2)
                         c_m1.metric("直近高値", f"{int(r['h14']):,}円")
                         c_m2.metric("直近安値", f"{int(r['l14']):,}円")
@@ -1194,10 +1196,9 @@ with tab3:
                         c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
                         c_m4.metric("最新終値", f"{int(r['lc']):,}円")
                         
-                        # 🚨 追加：ATR（風速計）を独立した大きな計器として配置
                         st.metric("🌪️ 1ATR (1日の平均値幅)", f"{int(atr_v):,}円", f"ボラティリティ: {atr_pct:.1f}%", delta_color="off")
-                        
                         st.caption(f"🏭 業種: {r.get('sector','不明')}")
+                        
                     with sc_mid:
                         if is_ambush:
                             html_box = f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:8px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>🎯 買値目標</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div></div>"
@@ -1213,48 +1214,33 @@ with tab3:
 
                     with sc_right:
                         c_target = r['bt_val'] if is_ambush else r['bt_val']
-                        atr_v = r.get('atr_val', 0)
-                        if atr_v == 0: atr_v = c_target * 0.05 # 予備計算
-                        
-                        # 🚨 新ロジック：固定％を廃止し、ATRの倍数（マルチプル）でターゲットを生成
                         tp_multipliers = [0.5, 1.0, 2.0, 3.0]
                         sl_multipliers = [0.5, 1.0, 2.0]
 
-                        # 判定に応じた推奨ターゲットの自動選択
                         is_aggressive = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
                         rec_tps = [2.0, 3.0] if is_aggressive else [0.5, 1.0]
 
                         html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'>"
                         
-                        # 【利確列】
                         html_matrix += "<div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                         for m in tp_multipliers:
-                            p_val = int(c_target + (atr_v * m))
-                            pct_val = ((p_val / c_target) - 1) * 100 if c_target > 0 else 0
-                            
+                            val = int(c_target + (atr_v * m)); pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
                             if m in rec_tps:
-                                # 🎯 推奨値のハイライトUI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{p_val:,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct:+.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
                             else:
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{p_val:,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         html_matrix += "</div>"
 
-                        # 【損切列】
                         html_matrix += "<div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
                         for m in sl_multipliers:
-                            l_val = int(c_target - (atr_v * m))
-                            pct_val = (1 - (l_val / c_target)) * 100 if c_target > 0 else 0
-                            
+                            val = int(c_target - (atr_v * m)); pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
                             if m == 1.0:
-                                # 🛡️ 絶対防衛線（-1.0 ATR）の固定ハイライトUI
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct_val:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span></span><b style='font-size:1.1rem; color:#fff;'>{l_val:,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;'><span style='color:#ef9a9a; font-weight:bold;'>-{m}ATR <span style='font-size:10px;'>({pct:.1f}%)</span> <span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
                             else:
-                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_val:.1f}%)</span></span><b style='font-size:1.1rem;'>{l_val:,}</b></div>"
+                                html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; padding:3px 6px;'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         html_matrix += "</div></div></div>"
-                        
                         st.markdown(html_matrix, unsafe_allow_html=True)
                         
-                        # 🚨 追加：マトリクスの直下に開閉式の凡例（ガイド）を設置
                         with st.expander("ℹ️ ATRマトリクス 凡例（各目安の戦術的意味）"):
                             st.markdown("""
                             <div style="font-size: 13px; color: #ccc;">
@@ -1269,6 +1255,47 @@ with tab3:
                             <span style="color: #ef9a9a;">-2.0ATR：</span> スイング用。深めの押し目を許容するが、割れればトレンド完全崩壊。
                             </div>
                             """, unsafe_allow_html=True)
+
+                    # 🎯 弾道チャートの追加（小数点切り捨て、MAs、ホバー適正化）
+                    st.markdown("---")
+                    st.caption(f"📊 {r['name']} 精密弾道チャート")
+                    
+                    # 期間の適切化：MA75が見えるよう約100日分を取得
+                    d_p = r['df_chart'].tail(100).copy()
+                    # Date列から直接抽出（1970年バグ回避）
+                    d_p['display_date'] = d_p['Date'].dt.strftime('%Y/%m/%d')
+                    
+                    try:
+                        fig_chart = go.Figure()
+                        # ローソク足
+                        fig_chart.add_trace(go.Candlestick(
+                            x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], 
+                            name="株価", increasing_line_color='#26a69a', decreasing_line_color='#ef5350', 
+                            hovertemplate="<b>%{x}</b><br>始: ¥%{open:,.0f}<br>高: ¥%{high:,.0f}<br>安: ¥%{low:,.0f}<br>終: ¥%{close:,.0f}<extra></extra>"
+                        ))
+                        
+                        # MA表示（5, 25, 75）
+                        for ma_col, ma_name, ma_color in [('MA5', '5日線', '#ffca28'), ('MA25', '25日線', '#42a5f5'), ('MA75', '75日線', '#ab47bc')]:
+                            if ma_col in r['df_chart'].columns:
+                                ma_vals = r['df_chart'][ma_col].tail(len(d_p))
+                                fig_chart.add_trace(go.Scatter(
+                                    x=d_p['display_date'], y=ma_vals, name=ma_name, mode='lines',
+                                    line=dict(color=ma_color, width=1.5), 
+                                    hovertemplate=f"{ma_name}: ¥%{{y:,.0f}}<extra></extra>"
+                                ))
+
+                        fig_chart.update_layout(
+                            height=400, margin=dict(l=0, r=0, t=10, b=0), 
+                            showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5),
+                            xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                            hovermode="x unified", # 縦線で全データを一覧
+                            yaxis=dict(gridcolor='rgba(255,255,255,0.05)', side='right', tickformat=",.0f", tickfont=dict(color='#888')), 
+                            # category型にして土日の空白を詰める
+                            xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#888'), type='category')
+                        )
+                        st.plotly_chart(fig_chart, use_container_width=True, config={'displayModeBar': False})
+                    except: 
+                        st.warning("チャート描画不可")
                         
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
