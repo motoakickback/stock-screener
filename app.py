@@ -1304,7 +1304,7 @@ with tab4:
         st.session_state[store_key] = st.session_state[ui_key]
         save_settings()
 
-    # UI側キーの初期化
+    # UI側表示用キーの強制同期
     st.session_state['_ui4_tp'] = int(st.session_state.sim_tp_val)
     st.session_state['_ui4_sl'] = int(st.session_state.sim_sl_val)
     st.session_state['_ui4_lim'] = int(st.session_state.sim_limit_d_val)
@@ -1323,7 +1323,7 @@ with tab4:
 
     with col_b1:
         st.markdown("🔍 **検証戦術**")
-        st.radio("戦術モード", ["🌐 【待伏】鉄 of 掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
+        st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
         bt_codes_in = st.text_area("検証対象コード (一括入力)", value=default_t4_codes, height=100, key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, type="primary")
         optimize_bt = st.button("🚀 戦術最適化レポート (黄金比抽出)", use_container_width=True)
@@ -1339,7 +1339,7 @@ with tab4:
         st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
         ct1, ct2 = st.columns(2)
         ct1.number_input("📉 押し目待ち(%)", step=0.1, key="_ui4_push", on_change=sync_sim_p, args=("_ui4_push", "sim_push_r_val"))
-        st.info("※ このタブでの検証は「砂場」であり、実戦環境（TAB1/2）の設定とは独立してパラメータを探索可能。")
+        st.info("※ このタブでの検証は「砂場」であり、実戦環境（TAB1/2）の設定とは独立してパラメータを探索可能だ。")
 
     if (run_bt or optimize_bt) and bt_codes_in:
         with open(T4_CODES_FILE, "w", encoding="utf-8") as f:
@@ -1355,7 +1355,7 @@ with tab4:
             is_ambush_mode = "待伏" in st.session_state.bt_mode_sim_v2
             p1_range_sim = range(25, 66, 5) if optimize_bt else [int(st.session_state.sim_push_r_val)]
             
-            with st.spinner("過去2年間のデータを解析中..."):
+            with st.spinner("過去2年間のデータをプリロード中..."):
                 preloaded_sim_dfs = {}
                 for code_sim in t_codes_sim:
                     raw_sim = get_single_data(code_sim + "0", 2)
