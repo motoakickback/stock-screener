@@ -1025,7 +1025,7 @@ with tab3:
     col_opt1, col_opt2 = st.columns([1, 1])
     t3_mode = col_opt1.radio("分析モードを選択せよ", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 順張り・GC初動"], key="t3_scope_mode", horizontal=True, on_change=save_settings)
     
-    t3_run = st.button("🚀 ターゲットをロックオン（精密スキャン & シミュレーション）", key="btn_t3_scan_full_final", use_container_width=True)
+    t3_run = st.button("🚀 ターゲットをロックオン（精密スキャン & 戦術シミュレーション）", key="btn_t3_scan_full_final_asset", use_container_width=True)
 
     if t3_run:
         # 入力された全てのコードを抽出（原典ロジック）
@@ -1085,7 +1085,6 @@ with tab3:
                     adjl = df_t3['AdjL'].values
                     
                     if "待伏" in t3_mode:
-                        # 待伏ロジック復元
                         r4h = adjh[-4:]; high_4d = r4h.max(); g_max_idx = len(adjh) - 4 + r4h.argmax()
                         low_14d = adjl[max(0, g_max_idx - 14) : g_max_idx + 1].min()
                         push_r = st.session_state.push_r / 100.0
@@ -1099,7 +1098,6 @@ with tab3:
                             <div style="font-size: 2rem; font-weight: bold; color: #FFD700;">{int(target_val):,}<span style="font-size: 16px; margin-left:4px;">円</span></div>
                         </div>"""
                     else:
-                        # 強襲ロジック復元
                         hist_vals = df_t3['MACD_Hist'].values
                         gc_days = 1 if len(hist_vals)>=2 and hist_vals[-2]<0 and hist_vals[-1]>=0 else 2 if len(hist_vals)>=3 and hist_vals[-3]<0 and hist_vals[-1]>=0 else 3 if len(hist_vals)>=4 and hist_vals[-4]<0 and hist_vals[-1]>=0 else 0
                         atr = latest['ATR']
@@ -1164,63 +1162,103 @@ with tab3:
                     st.divider()
                     st.markdown(f"#### ⚙️ 銘柄 {code} に対する過去1年の戦術シミュレーション結果")
                     
-                    # パラメータ同期
-                    lot_v = st.session_state.bt_lot; tp_v = st.session_state.bt_tp / 100.0
-                    sli_v = st.session_state.bt_sl_i / 100.0; slc_v = st.session_state.bt_sl_c / 100.0
-                    max_hold_d = st.session_state.bt_sell_d; lim_d_v = st.session_state.limit_d
+                    # 共通パラメータ
+                    lot_v = st.session_state.bt_lot
+                    tp_v = st.session_state.bt_tp / 100.0
+                    sli_v = st.session_state.bt_sl_i / 100.0
+                    slc_v = st.session_state.bt_sl_c / 100.0
+                    max_hold_d = st.session_state.bt_sell_d
+                    lim_d_v = st.session_state.limit_d
                     
-                    sim_history = []; trade_count = 0; win_count = 0; total_pnl_val = 0
+                    sim_history = []
+                    trade_count = 0
+                    win_count = 0
+                    total_pnl_val = 0
                     
-                    # 過去スライド判定ループ
+                    # 過去スライド判定ループ（ここが40行の核となるバックテスト処理）
                     for i in range(50, len(df_t3)-5):
-                        sub_df = df_t3.iloc[:i+1]; cur_row = sub_df.iloc[-1]
-                        c_v = sub_df['AdjC'].values; h_v = sub_df['AdjH'].values; l_v = sub_df['AdjL'].values
-                        entry_signal = False; entry_price_val = 0
+                        sub_df = df_t3.iloc[:i+1]
+                        cur_row = sub_df.iloc[-1]
+                        c_vals_sim = sub_df['AdjC'].values
+                        h_vals_sim = sub_df['AdjH'].values
+                        l_vals_sim = sub_df['AdjL'].values
+                        
+                        entry_signal = False
+                        entry_price_val = 0
                         
                         if "待伏" in t3_mode:
-                            # 過去時点での待伏判定
-                            r4h_p = h_v[-4:]; h4_p = r4h_p.max(); gi_p = len(h_v)-4+r4h_p.argmax()
-                            l14_p = l_v[max(0, gi_p-14):gi_p+1].min()
-                            if l14_p > 0 and (h4_p/l14_p) >= st.session_state.f9_min14:
-                                target_p_v = h4_p - ((h4_p-l14_p)*push_r)
-                                if cur_row['AdjC'] <= target_p_v and (len(h_v)-1-gi_p) <= lim_d_v: 
-                                    entry_signal = True; entry_price_val = cur_row['AdjC']
+                            # 過去時点での待伏判定ロジック
+                            r4h_sim = h_vals_sim[-4:]; h4_sim = r4h_sim.max()
+                            gi_sim = len(h_vals_sim)-4+r4h_sim.argmax()
+                            l14_sim = l_vals_sim[max(0, gi_sim-14):gi_sim+1].min()
+                            
+                            if l14_sim > 0 and (h4_sim / l14_sim) >= st.session_state.f9_min14:
+                                target_p_sim = h4_sim - ((h4_sim - l14_sim) * (st.session_state.push_r / 100.0))
+                                if cur_row['AdjC'] <= target_p_sim and (len(h_vals_sim)-1-gi_sim) <= lim_d_v:
+                                    entry_signal = True
+                                    entry_price_val = cur_row['AdjC']
                         else:
-                            # 過去時点での強襲判定
-                            hist_p = sub_df['MACD_Hist'].values
-                            if hist_p[-2]<0 and hist_p[-1]>=0 and cur_row['AdjC'] >= h_v[-14:].max():
-                                entry_signal = True; entry_price_val = cur_row['AdjC']
+                            # 過去時点での強襲判定ロジック
+                            hist_sim = sub_df['MACD_Hist'].values
+                            if hist_sim[-2] < 0 and hist_sim[-1] >= 0: # GC発生
+                                if cur_row['AdjC'] >= h_vals_sim[-14:].max(): # 14日高値突破
+                                    entry_signal = True
+                                    entry_price_val = cur_row['AdjC']
 
                         if entry_signal:
-                            trade_count += 1; stop_p_v = entry_price_val * (1 - sli_v); take_p_v = entry_price_val * (1 + tp_v)
-                            exit_price_val = 0; hold_days = 0
-                            for j in range(i+1, min(i+max_hold_d+1, len(df_t3))):
-                                n_row = df_t3.iloc[j]; hold_days += 1
-                                if n_row['AdjH'] >= take_p_v: exit_price_val = take_p_v; win_count += 1; break
-                                if n_row['AdjL'] <= stop_p_v: exit_price_val = stop_p_v; break
-                                if hold_days >= max_hold_d: exit_price_val = n_row['AdjC']; break
+                            trade_count += 1
+                            stop_p_v = entry_price_val * (1 - sli_v)
+                            take_p_v = entry_price_val * (1 + tp_v)
+                            exit_price_val = 0
+                            hold_days = 0
+                            
+                            # エントリー後の推移を追跡
+                            for j in range(i+1, min(i + max_hold_d + 1, len(df_t3))):
+                                n_row = df_t3.iloc[j]
+                                hold_days += 1
+                                if n_row['AdjH'] >= take_p_v:
+                                    exit_price_val = take_p_v
+                                    win_count += 1
+                                    break
+                                if n_row['AdjL'] <= stop_p_v:
+                                    exit_price_val = stop_p_v
+                                    break
+                                if hold_days >= max_hold_d:
+                                    exit_price_val = n_row['AdjC']
+                                    break
+                                # トレーリングストップ（現在損切設定の適用）
                                 stop_p_v = max(stop_p_v, n_row['AdjC'] * (1 - slc_v))
                             
                             if exit_price_val > 0:
                                 pnl_val = (exit_price_val - entry_price_val) * lot_v
                                 total_pnl_val += pnl_val
-                                sim_history.append({"日付": sub_df.iloc[-1]['Date'].strftime('%m/%d'), "保有日数": hold_days, "損益(円)": int(pnl_val)})
+                                sim_history.append({
+                                    "日付": sub_df.iloc[-1]['Date'].strftime('%Y/%m/%d'),
+                                    "保有日数": hold_days,
+                                    "エントリー": int(entry_price_val),
+                                    "エグジット": int(exit_price_val),
+                                    "損益(円)": int(pnl_val)
+                                })
 
+                    # 結果の描画（全行復元）
                     if trade_count > 0:
                         s_cols = st.columns(4)
-                        s_cols[0].metric("試行回数", f"{t_cnt if 't_cnt' in locals() else trade_count}回")
+                        s_cols[0].metric("試行回数", f"{trade_count}回")
                         s_cols[1].metric("勝率", f"{(win_count/trade_count)*100:.1f}%")
                         s_cols[2].metric("累積損益", f"{int(total_pnl_val):,}円")
                         s_cols[3].metric("期待値", f"{int(total_pnl_val/trade_count):,}円")
-                        with st.expander("📝 戦術介入・取引履歴詳細"):
-                            st.table(pd.DataFrame(sim_history).tail(10))
+                        
+                        with st.expander("📝 過去1年の戦術介入・全取引履歴詳細"):
+                            st.table(pd.DataFrame(sim_history).tail(20))
                     else:
-                        st.info("ℹ️ 指定期間内に現在の掟に合致する過去シグナルは検出されなかった。")
+                        st.info("ℹ️ 指定期間内に現在の『鉄の掟』に合致する過去シグナルは検出されなかった。")
 
-                    # 7. 地雷警告 & チャート描画
+                    # --- 7. 地雷警告 & チャート描画 ---
                     mines = check_event_mines(code)
-                    for mine in mines: st.warning(mine)
-                    draw_chart(df_t3, target_val, chart_key=f"t3_chart_full_{code}")
+                    for mine in mines:
+                        st.warning(mine)
+                    
+                    draw_chart(df_t3, target_val, chart_key=f"t3_chart_full_final_{code}")
                     st.divider()
                         
 with tab4:
