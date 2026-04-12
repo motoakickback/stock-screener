@@ -937,19 +937,15 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
-        
-        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
-            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
@@ -1067,7 +1063,8 @@ with tab3:
                     if 'プライム' in m_l or '一部' in m_l: 
                         m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: 
-                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 STD・GRW/中小型</span>'
+                        # 💎 物理配線：「🚀 中小型」へ短縮
+                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 中小型</span>'
                     else: 
                         m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
 
@@ -1078,7 +1075,6 @@ with tab3:
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
-                    # 💎 UI黄金比レイアウト
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
@@ -1142,7 +1138,16 @@ with tab3:
                     for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
                         fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
-                    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
+                    
+                    # 💎 物理配線：凡例をチャートの下（y=-0.25）へ強制移動。日付との重なりを排除。
+                    fig.update_layout(
+                        height=450, margin=dict(l=0, r=0, t=10, b=100), 
+                        xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                        hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), 
+                        xaxis=dict(type='category', dtick=5),
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
+                    )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
 with tab4:
