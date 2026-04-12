@@ -120,68 +120,24 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- ⚙️ システム設定の永続化 ---
-SETTINGS_FILE = f"saved_settings_{user_id}.json"
-
-def load_settings():
-    # 💎 デフォルト設定の定義
-    defaults = {
-        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
-        "preset_push_r": "50.0%",
-        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
-        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
-        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
-        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
-        "f11_ex_wave3": True, "f12_ex_overvalued": True,
-        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
-        "sim_tp_val": 10.0, "sim_sl_val": 8.0, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
-        "sim_push_r_val": 50.0, "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
-        "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
-    }
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                for k, v in saved.items():
-                    if k in defaults:
-                        defaults[k] = v
-        except: pass
-    for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
-    
-    # 💎 物理固定：f3_dropは必ず-50.0をロードする
-    st.session_state.f3_drop = -50.0
-
-def save_settings():
-    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
-            "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
-            "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
-            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val",
-            "sim_push_r_val", "sim_pass_req_val", "sim_rsi_lim_ambush_val",
-            "sim_rsi_lim_assault_val", "sim_time_risk_val"]
-    current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(current, f, ensure_ascii=False, indent=4)
-
-def apply_presets():
-    p_rate = st.session_state.get("preset_push_r", "50.0%")
-    if p_rate == "25.0%": st.session_state.push_r = 25.0
-    elif p_rate == "50.0%": st.session_state.push_r = 50.0
-    elif p_rate == "61.8%": st.session_state.push_r = 61.8
-    save_settings()
-
-load_settings()
+# --- ⏱️ 19:00 完全自動パージ機構 ---
+import pytz
+jst = pytz.timezone('Asia/Tokyo')
+now = datetime.now(jst)
+if 'last_auto_purge_date' not in st.session_state: st.session_state.last_auto_purge_date = None
+if now.hour >= 19:
+    today_str = now.strftime('%Y-%m-%d')
+    if st.session_state.last_auto_purge_date != today_str:
+        st.cache_data.clear()
+        st.session_state.tab1_scan_results = None
+        st.session_state.tab2_scan_results = None
+        st.session_state.last_auto_purge_date = today_str
 
 # --- 🌪️ マクロ気象レーダー（日経平均） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
-        import pytz
         jst = pytz.timezone('Asia/Tokyo')
         now = datetime.now(jst)
         start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
@@ -276,53 +232,72 @@ def check_event_mines(code, event_data=None):
             except: pass
     return alerts
 
-def check_double_top(df_sub):
+    def check_double_top(df_sub):
     try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        v = df_sub['AdjH'].values
+        c = df_sub['AdjC'].values
+        l = df_sub['AdjL'].values
         if len(v) < 6: return False
         peaks = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+                if not peaks or (i - peaks[-1][0] > 1):
+                    peaks.append((i, v[i]))
         if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
+            if not peaks or (len(v)-1 - peaks[-1][0] > 1):
+                peaks.append((len(v)-1, v[-1]))
         if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
+            p2_idx, p2_val = peaks[-1]
+            p1_idx, p1_val = peaks[-2]
             if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
                 valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
+                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
+                    return True
         return False
-    except: return False
+    except:
+        return False
 
 def check_head_shoulders(df_sub):
     try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        v = df_sub['AdjH'].values
+        c = df_sub['AdjC'].values
         if len(v) < 8: return False
         peaks = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+                if not peaks or (i - peaks[-1][0] > 1):
+                    peaks.append((i, v[i]))
         if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
+            p3_idx, p3_val = peaks[-1]
+            p2_idx, p2_val = peaks[-2]
+            p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97:
+                return True
         return False
-    except: return False
+    except:
+        return False
 
 def check_double_bottom(df_sub):
     try:
-        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        l = df_sub['AdjL'].values
+        c = df_sub['AdjC'].values
+        h = df_sub['AdjH'].values
         if len(l) < 6: return False
         valleys = []
         for i in range(1, len(l)-1):
             if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
+                if not valleys or (i - valleys[-1][0] > 1):
+                    valleys.append((i, l[i]))
         if len(valleys) >= 2:
-            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            v2_idx, v2_val = valleys[-1]
+            v1_idx, v1_val = valleys[-2]
             if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
                 peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
+                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01:
+                    return True
         return False
-    except: return False
+    except:
+        return False
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
@@ -333,14 +308,37 @@ def get_fundamentals(code):
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if data:
-                latest = data[0]; roe = None
+                latest = data[0]
+                roe = None
                 if latest.get("NetIncome") and latest.get("Equity"):
-                    try: roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
-                    except: pass
-                return {"op": latest.get("OperatingProfit"), "er": latest.get("EquityRatio"), "roe": roe}
-    except: pass
+                    try:
+                        roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
+                    except:
+                        pass
+                return {
+                    "op": latest.get("OperatingProfit"),
+                    "er": latest.get("EquityRatio"),
+                    "roe": roe
+                }
+    except:
+        pass
     return None
-    
+
+@st.cache_data(ttl=86400)
+def load_master():
+    try:
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except:
+        pass
+    return pd.DataFrame()
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
     base = datetime.utcnow() + timedelta(hours=9)
@@ -383,7 +381,6 @@ def get_hist_data_cached():
             if res:
                 rows.extend(res)
     return rows
-
 def get_fast_indicators(prices):
     if len(prices) < 15:
         return 50.0, 0.0, 0.0, np.zeros(5)
@@ -462,7 +459,7 @@ def render_technical_radar(df, buy_price, tp_pct):
     macd_hist_prev = prev.get('MACD_Hist', 0)
     atr = latest.get('ATR', 0)
     rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
-    rsi_text = "🔥 売られすぎ" if rsi <= 30 else "⚡ 低RSI" if rsi <= 45 else "⚖️ 中立"
+    rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 低RSI" if rsi <= 45 else "⚖️ 中立"
     if rsi >= 70:
         rsi_color = "#26a69a"
         rsi_text = "⚠️ 買われすぎ"
@@ -481,34 +478,92 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='#42a5f5', width=1.5)))
     if 'MA75' in df.columns:
         fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='#ab47bc', width=1.5)))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side="right"))
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
-# --- 4. サイドバー UI ---
+def load_settings():
+    defaults = {
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
+        "preset_push_r": "50.0%",
+        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
+        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
+        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
+        "f11_ex_wave3": True, "f12_ex_overvalued": True,
+        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
+        "sim_tp_val": 10.0, "sim_sl_val": 8.0, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
+        "sim_push_r_val": 50.0, "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
+        "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
+    }
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                for k, v in saved.items():
+                    if k in defaults:
+                        defaults[k] = v
+        except:
+            pass
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+    # 💎 物理固定：f3_dropは必ず-50.0を維持
+    st.session_state.f3_drop = -50.0
+
+def save_settings():
+    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+            "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
+            "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
+            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
+            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val",
+            "sim_push_r_val", "sim_pass_req_val", "sim_rsi_lim_ambush_val",
+            "sim_rsi_lim_assault_val", "sim_time_risk_val"]
+    current = {k: st.session_state[k] for k in keys if k in st.session_state}
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=4)
+
+def apply_presets():
+    p_rate = st.session_state.get("preset_push_r", "50.0%")
+    if p_rate == "25.0%": st.session_state.push_r = 25.0
+    elif p_rate == "50.0%": st.session_state.push_r = 50.0
+    elif p_rate == "61.8%": st.session_state.push_r = 61.8
+    save_settings()
+
+load_settings()
+
+# --- 4. サイドバー UI詳細設計 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.header("📍 ターゲット選別")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
 st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
 st.sidebar.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
 st.sidebar.divider()
+
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
 c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
 st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+
 c3, c4 = st.sidebar.columns(2)
 c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
 c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+
 st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
 st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
 st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
 st.sidebar.divider()
+
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
 st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
+
 st.sidebar.header("💰 売りルール")
 st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
 c_sl1, c_sl2 = st.sidebar.columns(2)
@@ -516,33 +571,41 @@ c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_sett
 c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
 st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
 st.sidebar.divider()
+
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
 st.sidebar.divider()
-if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    st.cache_data.clear(); st.session_state.tab1_scan_results = None; st.session_state.tab2_scan_results = None; st.rerun()
-if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
-    save_settings(); st.toast("全設定を永久保存した。")
 
-# --- 5. タブ構成 ---
+if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
+    st.cache_data.clear()
+    st.session_state.tab1_scan_results = None
+    st.session_state.tab2_scan_results = None
+    st.rerun()
+if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
+    save_settings()
+    st.toast("全設定を永久保存した。")
+
+# --- 5. タブ構成の開始 ---
 master_df = load_master()
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"])
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
-    if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
+    if 'tab1_scan_results' not in st.session_state:
+        st.session_state.tab1_scan_results = None
+    
     run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
 
     if run_scan_t1:
-        st.toast("🟢 待伏開始。精鋭を選別する。", icon="🎯")
+        st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
         with st.spinner("全銘柄からターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("データの取得に失敗した。")
+                st.error("データの取得に失敗した。APIキーまたはネットワークを確認せよ。")
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw))
@@ -550,58 +613,78 @@ with tab1:
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
-                # --- 物理配線：設定同期 ---
+                # --- 設定のローカル変数化 ---
                 f1_min, f1_max = float(st.session_state.f1_min), float(st.session_state.f1_max)
                 f2_limit, f3_drop_val = float(st.session_state.f2_m30), float(st.session_state.f3_drop)
                 f5_ipo, f6_risk = st.session_state.f5_ipo, st.session_state.f6_risk
                 f7_ex_etf, f8_bio_flag = st.session_state.f7_ex_etf, st.session_state.f8_ex_bio
                 f10_ex_knife, f11_ex_wave3 = st.session_state.f10_ex_knife, st.session_state.f11_ex_wave3
                 f12_overvalued = st.session_state.f12_ex_overvalued
-                push_ratio = st.session_state.push_r / 100.0; limit_d_val = int(st.session_state.limit_d)
+                push_ratio = st.session_state.push_r / 100.0
+                limit_d_val = int(st.session_state.limit_d)
 
-                latest_date = df['Date'].max(); latest_df = df[df['Date'] == latest_date]
+                latest_date = df['Date'].max()
+                latest_df = df[df['Date'] == latest_date]
+                
+                # 市場フィルタ
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
-                    large_kw = ['プライム', '一部']; small_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
+                    large_kw = ['プライム', '一部']
+                    small_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
                     m_codes = master_df[master_df['Market'].str.contains('|'.join(large_kw if m_mode == "大型" else small_kw), na=False)]['Code'].unique()
                     df = df[df['Code'].isin(m_codes)]
 
+                # 価格・出来高の基本足切り
                 valid_p = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
                 valid_v = avg_vols[avg_vols >= 10000].index
                 df = df[df['Code'].isin(set(valid_p).intersection(set(valid_v)))]
 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 results = []
+                
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue 
-                    adjc, adjh, adjl = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values; lc = adjc[-1]
+                    adjc, adjh, adjl = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values
+                    lc = adjc[-1]
 
+                    # 掟：暴騰・暴落チェック
                     if lc / adjc[max(0, len(adjc)-20)] > f2_limit: continue
                     if lc < adjh.max() * (1 + (f3_drop_val / 100.0)): continue
 
+                    # 掟：上昇第3波終了の検知（物理修正版）
                     if f11_ex_wave3:
-                        pk = []
+                        pk = [] # 💎 pk変数を使用
                         for j in range(5, len(adjh)-5):
                             if adjh[j] == max(adjh[j-5:j+5]):
-                                if not pk or adjh[j] > pk[-1] * 1.15: pk.append(adjh[j])
-                        if len(pk) >= 3 and lc < max(pk) * 0.85: continue # 💎 Fixed NameError (pkを使用)
+                                if not pk or adjh[j] > pk[-1] * 1.15:
+                                    pk.append(adjh[j])
+                        if len(pk) >= 3 and lc < max(pk) * 0.85:
+                            continue
 
-                    if st.session_state.f10_ex_knife and len(adjc) >= 4 and (adjc[-1] / adjc[max(0, len(adjc)-4)] < 0.85): continue
+                    # 掟：落ちるナイフ除外
+                    if f10_ex_knife and len(adjc) >= 4 and (adjc[-1] / adjc[max(0, len(adjc)-4)] < 0.85):
+                        continue
                     
-                    r4h = adjh[-4:]; h4 = r4h.max(); gi = len(adjh) - 4 + r4h.argmax(); l14 = adjl[max(0, gi-14) : gi+1].min()
+                    # 掟：14日窓の波高計算
+                    r4h = adjh[-4:]; h4 = r4h.max()
+                    gi = len(adjh) - 4 + r4h.argmax()
+                    l14 = adjl[max(0, gi-14) : gi+1].min()
                     if l14 <= 0 or h4 <= l14: continue
                     wh = h4 / l14
+                    
+                    # 波高フィルタ導通
                     if not (st.session_state.f9_min14 <= wh <= st.session_state.f9_max14): continue
                     
-                    bt = h4 - ((h4 - l14) * push_ratio); rr = (bt / lc) * 100
+                    bt = h4 - ((h4 - l14) * push_ratio)
+                    rr = (bt / lc) * 100
                     rsi, macdh, macdh_p, _ = get_fast_indicators(adjc)
                     
-                    # 🏅 掟スコア計算 & Wボトム配線
+                    # 🏅 掟スコア計算
                     score = 4 
                     if 1.3 <= wh <= 2.0: score += 1
                     if (len(adjh) - 1 - gi) <= limit_d_val: score += 1
                     if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                    if check_double_bottom(group.tail(31).iloc[:-1]): score += 1 # 💎 通電
+                    if check_double_bottom(group.tail(31).iloc[:-1]): score += 1
                     if bt * 0.85 <= lc <= bt * 1.35: score += 1
 
                     # 🚀 財務配線（信用リスク・赤字除外）
@@ -613,116 +696,204 @@ with tab1:
 
                     m_i = master_dict.get(code, {})
                     rank, bg, t_score, _ = get_triage_info(macdh, macdh_p, rsi, lc, bt, mode="待伏")
-                    results.append({'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 'Sector': m_i.get('Sector', '不明'), 'Market': m_i.get('Market', '不明'), 'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code, 0)), 'high_4d': h4, 'low_14d': l14, 'target_buy': bt, 'reach_rate': rr, 'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score})
+                    
+                    results.append({
+                        'Code': code, 
+                        'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
+                        'Sector': m_i.get('Sector', '不明'), 
+                        'Market': m_i.get('Market', '不明'), 
+                        'lc': lc, 
+                        'RSI': rsi, 
+                        'avg_vol': int(avg_vols.get(code, 0)), 
+                        'high_4d': h4, 
+                        'low_14d': l14, 
+                        'target_buy': bt, 
+                        'reach_rate': rr, 
+                        'triage_rank': rank, 
+                        'triage_bg': bg, 
+                        't_score': t_score, 
+                        'score': score
+                    })
                 
                 st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
+                
+    # --- TAB1 UI表示フェーズ（不退転の物理復元） ---
+    if st.session_state.tab1_scan_results:
+        light_results = st.session_state.tab1_scan_results
+        st.success(f"🎯 待伏ロックオン: 現在の掟に基づき {len(light_results)} 銘柄を選別。")
+        
+        for r in light_results:
+            st.divider()
+            c_code = str(r['Code'])
+            m_l = str(r['Market']).lower()
+            
+            # 🏢 市場バッジの動的生成
+            if 'プライム' in m_l or '一部' in m_l: 
+                b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_l or 'マザーズ' in m_l: 
+                b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["Market"]}</span>'
+            
+            t_b = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
+            s_b = f'<span style="background-color: rgba(46,125,50,0.15); border: 1px solid #2e7d32; color: #2e7d32; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {r["score"]}/10</span>'
+            
+            st.markdown(f"""
+                <div style="margin-bottom: 0.8rem;">
+                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0;">({c_code[:4]}) {r["Name"]}</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        {b_html}{t_b}{s_b}
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 4px;">RSI: {r["RSI"]:.1f}%</span>
+                        <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r["reach_rate"]:.1f}%</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            m_cols = st.columns([1, 1, 1, 1.2, 1.5])
+            m_cols[0].metric("直近高値", f"{int(r['high_4d']):,}円")
+            m_cols[1].metric("起点安値", f"{int(r['low_14d']):,}円")
+            m_cols[2].metric("最新終値", f"{int(r['lc']):,}円")
+            m_cols[3].metric("平均出来高", f"{int(r['avg_vol']):,}株")
+            
+            # 🎯 買値目標ボックス（Turn 24仕様）
+            m_cols[4].markdown(f"""
+                <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
+                    <div style="font-size: 13px; color: #aaa;">🎯 買値目標</div>
+                    <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r["target_buy"]):,}<span style="font-size: 14px;">円</span></div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.caption(f"🏭 {r.get('Sector', '不明')} ｜ 🏢 {r.get('Market', '不明')}")
 
 with tab2:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚡ 【強襲】GC初動レーダー</h3>', unsafe_allow_html=True)
-    if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
+    if 'tab2_scan_results' not in st.session_state:
+        st.session_state.tab2_scan_results = None
+    
     col_t2_1, col_t2_2 = st.columns(2)
-    rsi_limit_val = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, key="tab2_rsi_limit", on_change=save_settings)
-    vol_limit_val = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
-    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始")
+    rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, value=75, key="tab2_rsi_limit", on_change=save_settings)
+    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", step=5000, value=15000, key="tab2_vol_limit", on_change=save_settings)
+    
+    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan_trigger")
 
     if run_scan_t2:
-        st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
-        with st.spinner("GC初動候補を抽出中..."):
+        st.toast("🟢 強襲トリガーを確認。MACDクロスを捕捉する。", icon="🚀")
+        with st.spinner("全軍からGC初動候補を抽出中..."):
             raw = get_hist_data_cached()
             if not raw:
+                st.error("データの取得に失敗した。")
                 st.session_state.tab2_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw))
                 df['Code'] = df['Code'].astype(str)
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
-
-                f1_min, f1_max = float(st.session_state.f1_min), float(st.session_state.f1_max)
-                f5_ipo = st.session_state.f5_ipo; f3_drop_val = float(st.session_state.f3_drop)
-                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
+                # 市場フィルタリング
+                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
-                    m_target_codes = master_df[master_df['Market'].str.contains('|'.join(['プライム', '一部'] if m_mode=="大型" else ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']), na=False)]['Code'].unique()
-                    df = df[df['Code'].isin(m_target_codes)]
-
-                valid_codes = set(df[df['Date']==df['Date'].max()][(df['AdjC']>=f1_min) & (df['AdjC']<=f1_max)]['Code']).intersection(set(avg_vols[avg_vols>=vol_limit_val].index))
+                    large_kw = ['プライム', '一部']
+                    small_kw = ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']
+                    m_codes = master_df[master_df['Market'].str.contains('|'.join(large_kw if m_mode == "大型" else small_kw), na=False)]['Code'].unique()
+                    df = df[df['Code'].isin(m_codes)]
+                
+                # 基本足切り（価格・出来高）
+                valid_codes = set(df[df['Date']==df['Date'].max()][(df['AdjC']>=float(st.session_state.f1_min)) & (df['AdjC']<=float(st.session_state.f1_max))]['Code']).intersection(set(avg_vols[avg_vols>=vol_lim].index))
                 df = df[df['Code'].isin(valid_codes)]
-
-                if f5_ipo and not df.empty:
-                    stock_min_dates = df.groupby('Code')['Date'].min()
-                    df = df[df['Code'].isin(stock_min_dates[stock_min_dates <= (df['Date'].min() + pd.Timedelta(days=15))].index)]
                 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 results = []
+                
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue
-                    adjc_vals, adjh_vals = group['AdjC'].values, group['AdjH'].values; lc = adjc_vals[-1]
-                    if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
+                    adjc, adjh = group['AdjC'].values, group['AdjH'].values
+                    lc = adjc[-1]
+                    rsi, _, _, h_vals = get_fast_indicators(adjc)
                     
-                    rsi, _, _, hist_vals = get_fast_indicators(adjc_vals)
-                    if rsi > rsi_limit_val: continue
+                    if rsi > rsi_lim: continue
                     
-                    gc_days = 1 if len(hist_vals)>=2 and hist_vals[-2]<0 and hist_vals[-1]>=0 else 2 if len(hist_vals)>=3 and hist_vals[-3]<0 and hist_vals[-1]>=0 else 3 if len(hist_vals)>=4 and hist_vals[-4]<0 and hist_vals[-1]>=0 else 0
-                    if gc_days == 0: continue
+                    # ⚡ GC判定ロジック (3日以内)
+                    gc_d = 1 if len(h_vals)>=2 and h_vals[-2]<0 and h_vals[-1]>=0 else 2 if len(h_vals)>=3 and h_vals[-3]<0 and h_vals[-1]>=0 else 3 if len(h_vals)>=4 and h_vals[-4]<0 and h_vals[-1]>=0 else 0
                     
-                    ma25 = group['AdjC'].rolling(window=25).mean().iloc[-1]
-                    if lc < (ma25 * 0.95): continue
+                    # 掟：25日線近辺のフィルタ
+                    if gc_d == 0 or lc < (group['AdjC'].rolling(window=25).mean().iloc[-1] * 0.95):
+                        continue
                     
-                    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=False)
+                    # 🚀 物理配線：財務フィルタ（信用・赤字）
+                    if st.session_state.f6_risk or st.session_state.f12_ex_overvalued:
+                        fund = get_fundamentals(code)
+                        if fund:
+                            if st.session_state.f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0): continue
+                            if st.session_state.f12_ex_overvalued and float(fund.get('op', 1)) < 0: continue
+                    
+                    # トリアージ実行
+                    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_d, lc, rsi, group, is_strict=False)
                     m_i = master_dict.get(code, {})
+                    
                     results.append({
-                        'Code':code, 'Name':m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
-                        'Market':m_i.get('Market','不明'), 'Sector':m_i.get('Sector','不明'), 
-                        'lc':lc, 'RSI':rsi, 'avg_vol':int(avg_vols.get(code,0)), 'h14':adjh_vals[-14:].max(), 
-                        'atr':group['AdjH'].values[-14:].max()*0.03, 'T_Rank':t_rank, 'T_Color':t_color, 'T_Score':t_score, 'GC_Days':gc_days
+                        'Code': code, 
+                        'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
+                        'Market': m_i.get('Market', '不明'), 
+                        'Sector': m_i.get('Sector', '不明'),
+                        'lc': lc, 
+                        'RSI': rsi, 
+                        'avg_vol': int(avg_vols.get(code, 0)), 
+                        'h14': adjh[-14:].max(), 
+                        'atr': adjh[-14:].max() * 0.03, 
+                        'T_Rank': t_rank, 
+                        'T_Color': t_color, 
+                        'T_Score': t_score, 
+                        'GC_Days': gc_d
                     })
                 
                 st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
 
+    # --- TAB2 UI表示フェーズ ---
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄。")
         
-        # 📋 銘柄コード一括コピーエリア
+        # 📋 一括コピー用コード
         sab_codes = " ".join([str(r['Code'])[:4] for r in light_results if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
         if sab_codes:
-            st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
+            st.info("📋 以下のコードをコピーして照準（TAB3）に投入せよ。")
             st.code(sab_codes, language="text")
         
         for r in light_results:
             st.divider()
-            m_lower = str(r['Market']).lower()
+            t_b = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
             
-            # 🏢 市場バッジの動的生成
-            if 'プライム' in m_lower or '一部' in m_lower: 
-                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
-                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: 
-                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["Market"]}</span>'
-            
-            t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; display: inline-block; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
-
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r['Code'])[:4]}) {r['Name']}</h3>
+                    <h3 style="font-size: 24px; font-weight: bold; margin: 0;">({str(r["Code"])[:4]}) {r["Name"]}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{t_badge}
-                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r.get('GC_Days')}日目</span>
+                        {t_b}
+                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r.get("GC_Days")}日目</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
             lc_v, h14_v, atr_v = r['lc'], r['h14'], r['atr']
-            t_price, d_price = max(h14_v, lc_v + (atr_v * 0.5)), max(h14_v, lc_v + (atr_v * 0.5)) - atr_v
+            t_p, d_p = max(h14_v, lc_v + (atr_v * 0.5)), max(h14_v, lc_v + (atr_v * 0.5)) - atr_v
             
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
             m_cols[0].metric("最新終値", f"{int(lc_v):,}円")
             m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
             m_cols[2].metric("ボラ(推定)", f"{int(atr_v):,}円")
-            m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}円</div></div>', unsafe_allow_html=True)
-            m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}円</div></div>', unsafe_allow_html=True)
-            st.caption(f"🏭 {r['Sector']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
+            
+            m_cols[3].markdown(f"""
+                <div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
+                    <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div>
+                    <div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_p):,}円</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            m_cols[4].markdown(f"""
+                <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
+                    <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div>
+                    <div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_p):,}円</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.caption(f"🏭 {r['Sector']} ｜ 🏢 {r['Market']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
 
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
@@ -745,10 +916,12 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
+        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
+        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
@@ -785,6 +958,7 @@ with tab3:
             """, unsafe_allow_html=True)
 
     if run_scope:
+        # ファイル保存ロジック（原典）
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
@@ -794,6 +968,7 @@ with tab3:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
             st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
 
+        # 全入力コードの抽出（正規表現）
         all_text = watch_in + " " + daily_in
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', all_text)]))
         
@@ -836,14 +1011,17 @@ with tab3:
                     
                     df_chart = calc_technicals(df_s.copy())
                     latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
-                    
                     lc = latest['AdjC']
+                    
+                    # 指標
+                    rsi_v = latest.get('RSI', 50); atr_v = int(latest.get('ATR', 0))
+                    
+                    # 掟：14日窓の計算
                     win_14 = df_s.tail(15).iloc[:-1]
                     h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min(); ur = h14 - l14
                     
                     is_dt = check_double_top(df_s.tail(31).iloc[:-1])
                     is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1])
-                    rsi_v = latest.get('RSI', 50); atr_v = int(latest.get('ATR', 0))
                     
                     res_mcap = raw_s.get("mcap")
                     mcap_str = f"{res_mcap / 1e12:.2f}兆円" if res_mcap and res_mcap >= 1e12 else f"{res_mcap / 1e8:.0f}億円" if res_mcap else "-"
@@ -866,18 +1044,22 @@ with tab3:
                         if check_double_bottom(df_s.tail(31).iloc[:-1]): score += 1
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                        h_p = df_chart['MACD_Hist'].tail(5).values
-                        gc_days = 1 if h_p[-2] < 0 and h_p[-1] >= 0 else 2 if h_p[-3] < 0 and h_p[-1] >= 0 else 3 if h_p[-4] < 0 and h_p[-1] >= 0 else 0
+                        h_p_macd = df_chart['MACD_Hist'].tail(5).values
+                        gc_days = 1 if h_p_macd[-2] < 0 and h_p_macd[-1] >= 0 else 2 if h_p_macd[-3] < 0 and h_p_macd[-1] >= 0 else 3 if h_p_macd[-4] < 0 and h_p_macd[-1] >= 0 else 0
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
                         if raw_s['pbr'] and raw_s['pbr'] <= 5.0:
                             t_score += 10
                             rank, bg = ("S", "#d32f2f") if t_score >= 80 else ("A", "#f57c00") if t_score >= 60 else ("B", "#fbc02d") if t_score >= 40 else ("C", "#424242")
 
+                    # 市場・業種の厳格取得
                     c_name = f"銘柄 {c[:4]}"; c_sector, c_market = "不明", "不明"
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'].astype(str).str.contains(c[:4])]
-                        if not m_row.empty: c_name, c_sector, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Sector'], m_row.iloc[0]['Market']
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_sector = m_row.iloc[0]['Sector']
+                            c_market = m_row.iloc[0]['Market']
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
@@ -959,16 +1141,16 @@ with tab3:
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
                         roe_l = "進撃" if (r['roe'] and r['roe'] >= 10) else "静観"
                         
-                        # 🚨 物理的ValueError回避ロジック
-                        per_disp = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
-                        pbr_disp = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
-                        roe_disp = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                        # 🚨 物理的ValueError回避ロジック（文字列と数値を厳格分離）
+                        p_fmt = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                        pb_fmt = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                        ro_fmt = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
 
                         html_i = f"""
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
-                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📊 PER</div><div style='font-size:1.4rem; color:{per_c}; font-weight:bold;'>{per_disp}</div></div>
-                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📉 PBR</div><div style='font-size:1.4rem; color:{pbr_c}; font-weight:bold;'>{pbr_disp}</div></div>
-                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📈 ROE({roe_l})</div><div style='font-size:1.4rem; color:{roe_c}; font-weight:bold;'>{roe_disp}</div></div>
+                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📊 PER</div><div style='font-size:1.4rem; color:{per_c}; font-weight:bold;'>{p_fmt}</div></div>
+                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📉 PBR</div><div style='font-size:1.4rem; color:{pbr_c}; font-weight:bold;'>{pb_fmt}</div></div>
+                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📈 ROE({roe_l})</div><div style='font-size:1.4rem; color:{roe_c}; font-weight:bold;'>{ro_fmt}</div></div>
                             </div>
                             <div style='text-align:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
                                 <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.2rem; color:#fff; font-weight:bold;'>{r['mcap']}</div>
@@ -991,16 +1173,16 @@ with tab3:
                     
                     # チャート描画
                     st.markdown("---")
-                    d_p = r['df_chart'].tail(100).copy(); d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
+                    d_p_chart = r['df_chart'].tail(100).copy(); d_p_chart['display_date'] = d_p_chart['Date'].dt.strftime('%m/%d')
                     fig = go.Figure()
-                    fig.add_trace(go.Candlestick(x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
+                    fig.add_trace(go.Candlestick(x=d_p_chart['display_date'], open=d_p_chart['AdjO'], high=d_p_chart['AdjH'], low=d_p_chart['AdjL'], close=d_p_chart['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
                     for m_c, m_n, m_col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
-                        fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
-                    fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
+                        fig.add_trace(go.Scatter(x=d_p_chart['display_date'], y=d_p_chart[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
+                    fig.add_trace(go.Scatter(x=d_p_chart['display_date'], y=[r['bt_val']]*len(d_p_chart), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5), showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- ⚙️ 【全行復元】 精密バックテスト計算ロジック ---
+                    # --- ⚙️ 単一銘柄精密バックテスト計算ロジック（全行復元） ---
                     st.markdown(f"#### ⚙️ 銘柄 {r['code']} に対する過去1年の戦術介入シミュレーション結果")
                     lot_s = st.session_state.bt_lot; tp_s = st.session_state.bt_tp / 100.0
                     sli_s = st.session_state.bt_sl_i / 100.0; slc_s = st.session_state.bt_sl_c / 100.0
@@ -1021,8 +1203,8 @@ with tab3:
                                 if cur['AdjC'] <= t_v and (len(h_v)-1-gi_p) <= lim_d_s: 
                                     entry = True; entry_p = cur['AdjC']
                         else:
-                            hist_p = sub['MACD_Hist'].values
-                            if hist_p[-2]<0 and hist_p[-1]>=0 and cur['AdjC'] >= h_v[-14:].max():
+                            hist_p_macd = sub['MACD_Hist'].values
+                            if hist_p_macd[-2]<0 and hist_p_macd[-1]>=0 and cur['AdjC'] >= h_v[-14:].max():
                                 entry = True; entry_p = cur['AdjC']
 
                         if entry:
@@ -1039,16 +1221,16 @@ with tab3:
                                 sim_h.append({"日付": sub.iloc[-1]['Date'].strftime('%m/%d'), "保有": f"{hold}日", "買値": int(entry_p), "売値": int(exit_p), "損益": int(pnl)})
 
                     if t_cnt > 0:
-                        s_c = st.columns(4)
-                        s_c[0].metric("試行数", f"{t_cnt}回"); s_c[1].metric("勝率", f"{(wins/t_cnt)*100:.1f}%")
-                        s_c[2].metric("累計損益", f"{int(total_p):,}円"); s_c[3].metric("期待値", f"{int(total_p/t_cnt):,}円")
+                        s_cols = st.columns(4)
+                        s_cols[0].metric("試行数", f"{t_cnt}回"); s_cols[1].metric("勝率", f"{(wins/t_cnt)*100:.1f}%")
+                        s_cols[2].metric("累計損益", f"{int(total_p):,}円"); s_cols[3].metric("期待値", f"{int(total_p/t_cnt):,}円")
                         with st.expander("📝 介入履歴詳細"): st.table(pd.DataFrame(sim_h).tail(10))
                     else: st.info("ℹ️ 現在の掟に合致する過去1年のシグナルは検出されなかった。")
-                        
+
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
-    # 🚨 AttributeErrorを物理的に抹殺する初期化回路
+    # 🚨 AttributeErrorを物理的に抹殺する初期化プロトコル
     def force_init_sim_final_v24():
         s = st.session_state
         initial_keys = {
@@ -1066,8 +1248,8 @@ with tab4:
             if k not in s: s[k] = v
     force_init_sim_final_v24()
 
-    # UIからStoreへの同期プロトコル
-    def sync_sim_param(ui_key, store_key):
+    # UI同期用関数
+    def sync_sim_p(ui_key, store_key):
         st.session_state[store_key] = st.session_state[ui_key]
         save_settings()
 
@@ -1082,197 +1264,168 @@ with tab4:
 
     col_b1, col_b2 = st.columns([1, 1.8])
     T4_FILE = f"saved_t4_codes_{user_id}.txt"
-    default_t4 = "7839\n6614"
+    default_t4_val = "7839\n6614"
     if os.path.exists(T4_FILE):
-        with open(T4_FILE, "r", encoding="utf-8") as f: default_t4 = f.read()
+        with open(T4_FILE, "r", encoding="utf-8") as f: default_t4_val = f.read()
 
     with col_b1:
         st.markdown("🔍 **検証戦術**")
         st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
-        bt_c_in = st.text_area("検証対象コード (一括入力)", value=default_t4, height=100, key="bt_codes_sim_v2")
+        bt_codes_in = st.text_area("検証対象コード (一括入力)", value=default_t4_val, height=100, key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, type="primary")
         optimize_bt = st.button("🚀 戦術最適化レポート (黄金比抽出)", use_container_width=True)
         
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
         cp1, cp2, cp3, cp4 = st.columns(4)
-        cp1.number_input("🎯 利確(%)", step=1, key="_ui4_tp", on_change=sync_sim_param, args=("_ui4_tp", "sim_tp_val"))
-        cp2.number_input("🛡️ 損切(%)", step=1, key="_ui4_sl", on_change=sync_p, args=("_ui4_sl", "sim_sl_val"))
-        cp3.number_input("買い猶予", step=1, key="_ui4_lim", on_change=sync_p, args=("_ui4_lim", "sim_limit_d_val"))
-        cp4.number_input("売り期限", step=1, key="_ui4_sell", on_change=sync_p, args=("_ui4_sell", "sim_sell_d_val"))
+        cp1.number_input("🎯 利確(%)", step=1, key="_ui4_tp", on_change=sync_sim_p, args=("_ui4_tp", "sim_tp_val"))
+        cp2.number_input("🛡️ 損切(%)", step=1, key="_ui4_sl", on_change=sync_sim_p, args=("_ui4_sl", "sim_sl_val"))
+        cp3.number_input("買い猶予", step=1, key="_ui4_lim", on_change=sync_sim_p, args=("_ui4_lim", "sim_limit_d_val"))
+        cp4.number_input("売り期限", step=1, key="_ui4_sell", on_change=sync_sim_p, args=("_ui4_sell", "sim_sell_d_val"))
         st.divider()
         st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
         ct1, ct2 = st.columns(2)
-        ct1.number_input("📉 押し目待ち(%)", step=0.1, key="_ui4_push", on_change=sync_p, args=("_ui4_push", "sim_push_r_val"))
-        st.info("※ このタブでの検証結果は、パラメータの黄金比を抽出するための「砂場」であり、実戦環境（TAB1/2）の設定とは独立しています。")
+        ct1.number_input("📉 押し目待ち(%)", step=0.1, key="_ui4_push", on_change=sync_sim_p, args=("_ui4_push", "sim_push_r_val"))
+        st.info("※ ここでの検証は「砂場」であり、実戦環境（TAB1/2）の設定とは独立してパラメータを探索可能。")
 
-    if (run_bt or optimize_bt) and bt_c_in:
-        with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
-        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
+    if (run_bt or optimize_bt) and bt_codes_in:
+        with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_codes_in)
+        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_codes_in)]))
         
         if not t_codes:
             st.warning("有効なコードが見つかりません。")
         else:
             sim_tp = float(st.session_state.sim_tp_val)
-            sim_sl_i = float(st.session_state.sim_sl_val)
-            sim_limit_d = int(st.session_state.sim_limit_d_val)
-            sim_sell_d = int(st.session_state.sim_sell_d_val)
-            is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
+            sim_sl_init = float(st.session_state.sim_sl_val)
+            sim_sell_limit = int(st.session_state.sim_sell_d_val)
+            is_ambush_mode = "待伏" in st.session_state.bt_mode_sim_v2
+            p1_range_val = range(25, 66, 5) if optimize_bt else [int(st.session_state.sim_push_r_val)]
             
-            p1_range = range(25, 66, 5) if optimize_bt else [int(st.session_state.sim_push_r_val)]
+            with st.spinner("過去2年間のデータを解析中..."):
+                preloaded_dfs = {}
+                for code_bt in t_codes:
+                    raw_bt = get_single_data(code_bt + "0", 2)
+                    if raw_bt and raw_bt.get('bars'):
+                        df_bt = clean_df(pd.DataFrame(raw_bt['bars']))
+                        if len(df_bt) >= 35: preloaded_dfs[code_bt] = calc_technicals(df_bt)
             
-            with st.spinner("過去2年間の戦場データをプリロード中..."):
-                preloaded = {}
-                for c in t_codes:
-                    raw = get_single_data(c + "0", 2)
-                    if raw and raw.get('bars'):
-                        df_p = clean_df(pd.DataFrame(raw['bars']))
-                        if len(df_p) >= 35: preloaded[c] = calc_technicals(df_p)
-            
-            if not preloaded:
-                st.error("解析可能なデータが取得できませんでした。")
-                st.stop()
+            if not preloaded_dfs:
+                st.error("解析可能なデータがありません。"); st.stop()
 
-            opt_res = []; p_bar = st.progress(0, "総当たり戦術検証中...")
-            total_it = len(p1_range); curr_it = 0
+            opt_results = []; p_bar_sim = st.progress(0, "総当たり戦術検証中...")
+            total_it_sim = len(p1_range_val); curr_it_sim = 0
             
-            for t_p1 in p1_range:
-                curr_it += 1; all_t = []
-                for c, df in preloaded.items():
-                    pos = None
-                    for i in range(35, len(df)):
-                        td = df.iloc[i]; prev = df.iloc[i-1]
-                        if pos is None:
-                            h14 = df.iloc[i-15:i-1]['AdjH'].max(); l14 = df.iloc[i-15:i-1]['AdjL'].min()
-                            if is_ambush:
-                                bt_v = int(h14 - ((h14-l14)*(t_p1/100.0)))
-                                if td['AdjL'] <= bt_v: 
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': min(td['AdjO'], bt_v)}
+            for t_p_val in p1_range_val:
+                curr_it_sim += 1; trade_logs = []
+                for code_bt, df_bt in preloaded_dfs.items():
+                    position = None
+                    for i in range(35, len(df_bt)):
+                        t_day = df_bt.iloc[i]; p_day = df_bt.iloc[i-1]
+                        if position is None:
+                            h14_sim = df_bt.iloc[i-15:i-1]['AdjH'].max(); l14_sim = df_bt.iloc[i-15:i-1]['AdjL'].min()
+                            if is_ambush_mode:
+                                bt_trigger = int(h14_sim - ((h14_sim-l14_sim)*(t_p_val/100.0)))
+                                if t_day['AdjL'] <= bt_trigger: 
+                                    position = {'b_i': i, 'b_d': t_day['Date'], 'b_p': min(t_day['AdjO'], bt_trigger)}
                             else:
-                                if prev.get('MACD_Hist', 0) > 0 and df.iloc[i-2].get('MACD_Hist', 0) <= 0 and td['AdjH'] >= h14:
-                                    pos = {'b_i': i, 'b_d': td['Date'], 'b_p': td['AdjO']}
+                                if p_day.get('MACD_Hist', 0) > 0 and df_bt.iloc[i-2].get('MACD_Hist', 0) <= 0 and t_day['AdjH'] >= h14_sim:
+                                    position = {'b_i': i, 'b_d': t_day['Date'], 'b_p': t_day['AdjO']}
                         else:
-                            held = i - pos['b_i']; bp = pos['b_p']; sp = 0
-                            tp_v = bp * (1 + (sim_tp/100.0)); sl_v = bp * (1 - sim_sl_i/100.0)
-                            if td['AdjL'] <= sl_v: sp = sl_v
-                            elif td['AdjH'] >= tp_v: sp = tp_v
-                            elif held >= sim_sell_d: sp = td['AdjC']
+                            held_d = i - position['b_i']; b_price = position['b_p']; s_price = 0
+                            tp_price = b_price * (1 + (sim_tp/100.0)); sl_price = b_price * (1 - sim_sl_init/100.0)
+                            if t_day['AdjL'] <= sl_price: s_price = sl_price
+                            elif t_day['AdjH'] >= tp_price: s_price = tp_price
+                            elif held_d >= sim_sell_limit: s_price = t_day['AdjC']
                             
-                            if sp > 0:
-                                all_t.append({'銘柄': c, '決済日': td['Date'], '買値': int(bp), '売値': int(sp), '損益額': int((sp-bp)*st.session_state.bt_lot), '勝敗': 1 if sp>bp else 0})
-                                pos = None
+                            if s_price > 0:
+                                trade_logs.append({'銘柄': code_bt, '決済日': t_day['Date'], '買値': int(b_price), '売値': int(s_price), '損益': int((s_price-b_price)*st.session_state.bt_lot), '勝敗': 1 if s_price>b_price else 0})
+                                position = None
                 
-                if all_t:
-                    tdf = pd.DataFrame(all_t); opt_res.append({'Push率': t_p1, '利益': tdf['損益額'].sum(), '勝率': tdf['勝敗'].mean(), '回数': len(all_t), 'data': tdf})
-                p_bar.progress(curr_it / total_it)
+                if trade_logs:
+                    tdf_sim = pd.DataFrame(trade_logs)
+                    opt_results.append({'Push率': t_p_val, '利益': tdf_sim['損益'].sum(), '勝率': tdf_sim['勝敗'].mean(), '回数': len(trade_logs), 'data': tdf_sim})
+                p_bar_sim.progress(curr_it_sim / total_it_sim)
             
-            p_bar.empty()
-            if optimize_bt and opt_res:
-                res_df = pd.DataFrame(opt_res).sort_values('利益', ascending=False)
-                best = res_df.iloc[0]
-                st.markdown(f"### 🏆 最適化結果: 推奨Push率 {best['Push率']}%")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("最高利益額", f"{int(best['利益']):,}円"); c2.metric("期待勝率", f"{best['勝率']*100:.1f}%"); c3.metric("取引回数", f"{best['回数']}回")
-                st.dataframe(res_df.drop(columns=['data']).style.background_gradient(subset=['利益']), use_container_width=True)
-            elif run_bt and opt_res:
-                tdf = opt_res[0]['data'].sort_values('決済日'); tdf['累積損益'] = tdf['損益額'].cumsum()
-                st.success("🎯 バックテスト完了。"); st.markdown(f"### 総合損益: {tdf['損益額'].sum():,}円")
-                fig = go.Figure(); fig.add_trace(go.Scatter(x=tdf['決済日'], y=tdf['累積損益'], mode='lines+markers', name='資産推移', line=dict(color='#FFD700')))
-                fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=400); st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(tdf.style.format({'買値': '{:,}', '売値': '{:,}', '損益額': '{:,}'}), use_container_width=True)
+            p_bar_sim.empty()
+            if optimize_bt and opt_results:
+                res_df_sim = pd.DataFrame(opt_results).sort_values('利益', ascending=False); best_sim = res_df_sim.iloc[0]
+                st.markdown(f"### 🏆 最適化結果: 推奨Push率 {best_sim['Push率']}%")
+                c1, c2, c3 = st.columns(3); c1.metric("最高利益額", f"{int(best_sim['利益']):,}円"); c2.metric("期待勝率", f"{best_sim['勝率']*100:.1f}%"); c3.metric("取引回数", f"{best_sim['回数']}回")
+                st.dataframe(res_df_sim.drop(columns=['data']).style.background_gradient(subset=['利益']), use_container_width=True)
+            elif run_bt and opt_results:
+                tdf_final = opt_results[0]['data'].sort_values('決済日'); tdf_final['累積損益'] = tdf_final['損益'].cumsum()
+                st.success("🎯 バックテスト完了。"); st.markdown(f"### 総合損益: {tdf_final['損益'].sum():,}円")
+                fig_sim = go.Figure(); fig_sim.add_trace(go.Scatter(x=tdf_final['決済日'], y=tdf_final['累積損益'], mode='lines+markers', name='資産推移', line=dict(color='#FFD700')))
+                fig_sim.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=400); st.plotly_chart(fig_sim, use_container_width=True)
+                st.dataframe(tdf_final.style.format({'買値': '{:,}', '売値': '{:,}', '損益': '{:,}'}), use_container_width=True)
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
-    
+    FR_FILE = f"saved_frontline_{user_id}.csv"
     if 'frontline_df' not in st.session_state:
-        if os.path.exists(FRONTLINE_FILE):
-            try:
-                st.session_state.frontline_df = pd.read_csv(FRONTLINE_FILE)
-                st.session_state.frontline_df["銘柄"] = st.session_state.frontline_df["銘柄"].astype(str)
-            except:
-                st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
-        else:
-            st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+        if os.path.exists(FR_FILE):
+            try: st.session_state.frontline_df = pd.read_csv(FR_FILE); st.session_state.frontline_df["銘柄"] = st.session_state.frontline_df["銘柄"].astype(str)
+            except: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+        else: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
 
     if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
-        import yfinance as yf; updated = False
-        for idx, row in st.session_state.frontline_df.iterrows():
-            code = str(row['銘柄']).strip()
-            if len(code) >= 4:
-                tk = yf.Ticker(code[:4] + ".T"); h = tk.history(period="1d")
-                if not h.empty:
-                    st.session_state.frontline_df.at[idx, '現在値'] = round(h['Close'].iloc[-1], 1)
-                    updated = True
-        if updated:
-            st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False); st.rerun()
+        import yfinance as yf; updated_fr = False
+        for idx_fr, row_fr in st.session_state.frontline_df.iterrows():
+            c_fr = str(row_fr['銘柄']).strip()
+            if len(c_fr) >= 4:
+                tk_fr = yf.Ticker(c_fr[:4] + ".T"); h_fr = tk_fr.history(period="1d")
+                if not h_fr.empty: st.session_state.frontline_df.at[idx_fr, '現在値'] = round(h_fr['Close'].iloc[-1], 1); updated_fr = True
+        if updated_fr: st.session_state.frontline_df.to_csv(FR_FILE, index=False); st.rerun()
 
-    edited_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="frontline_editor_v24")
-    if not edited_df.equals(st.session_state.frontline_df):
-        st.session_state.frontline_df = edited_df; edited_df.to_csv(FRONTLINE_FILE, index=False); st.rerun()
+    ed_fr_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="fr_editor_v24")
+    if not ed_fr_df.equals(st.session_state.frontline_df): st.session_state.frontline_df = ed_fr_df; ed_fr_df.to_csv(FR_FILE, index=False); st.rerun()
 
     st.markdown("---")
-    for idx, row in edited_df.iterrows():
-        t, b, tp1, tp2, s, c = str(row.get('銘柄', '')), row['買値'], row['第1利確'], row['第2利確'], row['損切'], row['現在値']
-        if not t or pd.isna(b) or pd.isna(c): continue
+    for _, r_fr in ed_fr_df.iterrows():
+        t_f, b_f, tp1_f, tp2_f, s_f, c_f = str(r_fr.get('銘柄', '')), r_fr['買値'], r_fr['第1利確'], r_fr['第2利確'], r_fr['損切'], r_fr['現在値']
+        if not t_f or pd.isna(b_f) or pd.isna(c_f): continue
+        if c_f <= s_f: col_f, txt_f = "#ef5350", "💀 被弾（防衛線突破）"
+        elif c_f < b_f: col_f, txt_f = "#ff9800", "⚠️ 警戒（損切圏内）"
+        elif tp1_f > 0 and c_f < tp1_f: col_f, txt_f = "#26a69a", "🟢 巡航（第1目標へ）"
+        elif tp2_f > 0 and c_f < tp2_f: col_f, txt_f = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
+        else: col_f, txt_f = "#ab47bc", "🏆 任務完了（利確推奨）"
         
-        # ステータス判定
-        if c <= s: col, txt = "#ef5350", "💀 被弾（防衛線突破）"
-        elif c < b: col, txt = "#ff9800", "⚠️ 警戒（損切圏内）"
-        elif tp1 > 0 and c < tp1: col, txt = "#26a69a", "🟢 巡航（第1目標へ）"
-        elif tp2 > 0 and c < tp2: col, txt = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
-        else: col, txt = "#ab47bc", "🏆 任務完了（利確推奨）"
-        
-        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col}; margin-bottom: 5px;"><strong>部隊 [{t}]</strong> {txt} ｜ 現在: ¥{int(c):,} (買: ¥{int(b):,})</div>', unsafe_allow_html=True)
-        
-        # 物理復元：Plotly生存圏ゲージ
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=[s, b, tp1, tp2], y=[0,0,0,0], mode='markers', marker=dict(size=12, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標線"))
-        fig.add_trace(go.Scatter(x=[c], y=[0], mode='markers', marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col)), name="現在地"))
-        fig.update_layout(height=80, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(visible=False), xaxis=dict(showgrid=False, zeroline=False))
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_f}; margin-bottom: 5px;"><strong>部隊 [{t_f}]</strong> {txt_f} ｜ 現在: ¥{int(c_f):,} (買: ¥{int(b_f):,})</div>', unsafe_allow_html=True)
+        fig_fr = go.Figure()
+        fig_fr.add_trace(go.Scatter(x=[s_f, b_f, tp1_f, tp2_f], y=[0,0,0,0], mode='markers', marker=dict(size=12, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標"))
+        fig_fr.add_trace(go.Scatter(x=[c_f], y=[0], mode='markers', marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col_f)), name="現在地"))
+        fig_fr.update_layout(height=80, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(visible=False), xaxis=dict(showgrid=False, zeroline=False))
+        st.plotly_chart(fig_fr, use_container_width=True, config={'displayModeBar': False})
 
 with tab6:
     st.markdown('<h3 style="font-size: 24px;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
-    AAR_FILE = f"saved_aar_log_{user_id}.csv"
-    if os.path.exists(AAR_FILE): aar_df = pd.read_csv(AAR_FILE)
-    else: aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
+    A_FILE = f"saved_aar_log_{user_id}.csv"
+    if os.path.exists(A_FILE): aar_df_v = pd.read_csv(A_FILE)
+    else: aar_df_v = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
     col_a1, col_a2 = st.columns([1, 2.2])
     with col_a1:
         st.markdown("#### 📝 戦果報告")
         with st.form("aar_form_v24"):
-            d = st.date_input("決済日"); code = st.text_input("銘柄コード"); tac = st.selectbox("戦術", ["待伏", "強襲", "他"])
-            b = st.number_input("買値"); s = st.number_input("売値"); l = st.number_input("株数", step=100); r = st.radio("規律", ["遵守", "違反"]); m = st.text_input("メモ")
+            d_a = st.date_input("決済日"); c_a = st.text_input("銘柄コード"); t_a = st.selectbox("戦術", ["待伏", "強襲", "他"])
+            b_a = st.number_input("買値"); s_a = st.number_input("売値"); l_a = st.number_input("株数", step=100); r_a = st.radio("規律", ["遵守", "違反"]); m_a = st.text_input("メモ")
             if st.form_submit_button("記録を保存"):
-                p = int((s - b) * l); pp = round(((s / b) - 1) * 100, 2)
-                nd = pd.DataFrame([{"決済日":d, "銘柄":code, "戦術":tac, "買値":b, "売値":s, "株数":l, "損益額(円)":p, "損益(%)":pp, "規律":r, "メモ":m}])
-                pd.concat([nd, aar_df]).to_csv(AAR_FILE, index=False); st.rerun()
+                p_a = int((s_a - b_a) * l_a); pp_a = round(((s_a / b_a) - 1) * 100, 2)
+                nd_a = pd.DataFrame([{"決済日":d_a, "銘柄":c_a, "戦術":t_a, "買値":b_a, "売値":s_a, "株数":l_a, "損益額(円)":p_a, "損益(%)":pp_a, "規律":r_a, "メモ":m_a}])
+                pd.concat([nd_a, aar_df_v]).to_csv(A_FILE, index=False); st.rerun()
 
     with col_a2:
-        if not aar_df.empty:
-            aar_df["損益額(円)"] = pd.to_numeric(aar_df["損益額(円)"], errors='coerce')
-            tot_p = aar_df["損益額(円)"].sum()
-            wins = len(aar_df[aar_df["損益額(円)"] > 0])
-            losses = len(aar_df[aar_df["損益額(円)"] < 0])
-            win_r = (wins / len(aar_df)) * 100
+        if not aar_df_v.empty:
+            aar_df_v["損益額(円)"] = pd.to_numeric(aar_df_v["損益額(円)"], errors='coerce')
+            t_p_v = aar_df_v["損益額(円)"].sum(); w_v = len(aar_df_v[aar_df_v["損益額(円)"] > 0]); w_r_v = (w_v / len(aar_df_v)) * 100
+            g_p_v = aar_df_v[aar_df_v["損益額(円)"] > 0]["損益額(円)"].sum(); g_l_v = abs(aar_df_v[aar_df_v["損益額(円)"] < 0]["損益額(円)"].sum())
+            pf_v = round(g_p_v / g_l_v, 2) if g_l_v > 0 else 9.99
+            adh_v = (len(aar_df_v[aar_df_v["規律"] == "遵守"]) / len(aar_df_v)) * 100
+            m1_v, m2_v, m3_v, m4_v = st.columns(4); m1_v.metric("総損益", f"{int(t_p_v):,}円"); m2_v.metric("勝率", f"{w_r_v:.1f}%"); m3_v.metric("PF", pf_v); m4_v.metric("規律遵守率", f"{adh_v:.1f}%")
             
-            # PF（プロフィットファクター）算出
-            gross_p = aar_df[aar_df["損益額(円)"] > 0]["損益額(円)"].sum()
-            gross_l = abs(aar_df[aar_df["損益額(円)"] < 0]["損益額(円)"].sum())
-            pf = round(gross_p / gross_l, 2) if gross_l > 0 else 9.99
-            
-            # 規律遵守率
-            adherence = (len(aar_df[aar_df["規律"] == "遵守"]) / len(aar_df)) * 100
+            import plotly.express as px
+            aar_df_v['決済日'] = pd.to_datetime(aar_df_v['決済日']); tdf_v = aar_df_v.sort_values('決済日'); tdf_v['累積'] = tdf_v['損益額(円)'].cumsum()
+            fig_a = px.line(tdf_v, x='決済日', y='累積', title="実資産推移 (Real Equity Curve)", markers=True)
+            fig_a.update_traces(line_color='#26a69a'); fig_a.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=300); st.plotly_chart(fig_a, use_container_width=True)
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("総損益", f"{int(tot_p):,}円"); m2.metric("勝率", f"{win_r:.1f}%"); m3.metric("PF", pf); m4.metric("規律遵守率", f"{adherence:.1f}%")
-            
-            # 実資産損益曲線
-            aar_df['決済日'] = pd.to_datetime(aar_df['決済日'])
-            tdf = aar_df.sort_values('決済日'); tdf['累積'] = tdf['損益額(円)'].cumsum()
-            fig = px.line(tdf, x='決済日', y='累積', title="実資産推移 (Real Equity Curve)", markers=True)
-            fig.update_traces(line_color='#26a69a'); fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=300)
-            st.plotly_chart(fig, use_container_width=True)
-
-    st.dataframe(aar_df, use_container_width=True)
+    st.dataframe(aar_df_v, use_container_width=True)
