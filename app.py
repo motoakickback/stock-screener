@@ -96,7 +96,6 @@ def check_password():
 if not check_password(): st.stop()
 
 # --- 🚁 司令部へ帰還ボタン ---
-import streamlit.components.v1 as components
 components.html(
     """
     <script>
@@ -155,55 +154,59 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    # 🚨 全計器の初期値を定義（F5更新での消失と起動エラーを根絶）
     defaults = {
-        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
-        "preset_push_r": "50.0%",
-        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
+        "f3_drop": -50.0, 
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
-        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318", # 除外リスト
-        "tab1_scan_results": None, "tab2_scan_results": None
+        "tab1_etf_filter": True, "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
+        "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
+        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                defaults.update(saved)
+                loaded = json.load(f)
+                # 異常値(0)からの復旧パッチ
+                for k, v in loaded.items():
+                    if k in defaults and isinstance(v, (int, float)) and v == 0 and k != "f3_drop":
+                        loaded[k] = defaults[k]
+                defaults.update(loaded)
         except: pass
+    if defaults["f3_drop"] > -50: defaults["f3_drop"] = -50.0
+    
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
 def save_settings():
-    # 🚨 除外銘柄コード(gigi_input)を含む全設定を永久保存
-    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+    keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"]
+            "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
+            "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
+            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
+            "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(current, f, ensure_ascii=False, indent=4)
-
-def apply_presets():
-    # プリセットの選択を数値に同期
-    p_rate = st.session_state.get("preset_push_r", "50.0%")
-    if p_rate == "25.0%": st.session_state.push_r = 25.0
-    elif p_rate == "50.0%": st.session_state.push_r = 50.0
-    elif p_rate == "61.8%": st.session_state.push_r = 61.8
-    save_settings()
-
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+                existing.update(current)
+                current = existing
+        except: pass
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
+        
 load_settings()
 
 def apply_market_preset():
     preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     
-    # 🚨 市場フィルターキーワードの厳格定義
     if "大型株" in preset:
         st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
     elif "61.8%" in preset:
@@ -214,7 +217,7 @@ def apply_market_preset():
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
-# --- 🌪️ マクロ気象レーダー（日経平均）4/10強制捕捉：最終狙撃パッチ ---
+# --- 🌪️ マクロ気象レーダー（日経平均） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
@@ -222,11 +225,10 @@ def get_macro_weather():
         from datetime import datetime, timedelta
         import pytz
         
-        # 🚨 修正：終了日を「明日」に設定することで、4/10を確実に範囲内に含める
         jst = pytz.timezone('Asia/Tokyo')
         now = datetime.now(jst)
         start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
-        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
+        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d') 
         
         df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
         
@@ -297,7 +299,6 @@ def render_macro_board():
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else: st.warning("📡 外部気象レーダー応答なし")
 
-# 実行呼び出し
 render_macro_board()
 
 # --- 3. 共通関数 & 地雷検知 ---
@@ -774,16 +775,10 @@ with tab1:
                     invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
                     df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
                 
-                # 🚨 配線修正：⑧ 医薬品(バイオ)を除外
+                # 🚨 配線修正：⑧ 医薬品(バイオ)を除外（Pandasの一括除外による高速化）
                 if f8_bio_flag and not master_df.empty:
-                    bio_mask = master_df['Sector'].str.contains('医薬品', na=False)
-                    df = df[df['Code'].isin(master_df[~bio_mask]['Code'].unique())]
-
-                # 🚨 配線修正：⑥ 疑義注記・信用リスク銘柄除外 (gigi_inputリストを使用)
-                if f6_risk_flag and "gigi_input" in st.session_state:
-                    risk_codes = re.findall(r'\d{4}', str(st.session_state.gigi_input))
-                    if risk_codes:
-                         df = df[~df['Code'].str[:4].isin(risk_codes)]
+                    bio_codes = master_df[master_df['Sector'].str.contains('医薬品', na=False)]['Code'].unique()
+                    df = df[~df['Code'].isin(bio_codes)]
 
                 # ブラックリスト (gigi_input)
                 g_in = st.session_state.get("gigi_input", "")
@@ -795,11 +790,11 @@ with tab1:
                 
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 20: continue 
+                    if len(group) < 25: continue 
                     adjc_vals, adjh_vals, adjl_vals = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values
                     lc = adjc_vals[-1]
 
-                    # 🚨 配線修正：② 1ヶ月暴騰上限 (20営業日前比)
+                    # 🚨 配線修正：② 1ヶ月暴騰上限 (20営業日前比のチェック)
                     prev_20 = adjc_vals[max(0, len(adjc_vals)-20)]
                     if prev_20 > 0 and (lc / prev_20) > f2_limit: continue
 
@@ -840,10 +835,9 @@ with tab1:
                     if not check_double_top(group.tail(31).iloc[:-1]): score += 1
                     if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
                     
-                    # 🚨 配線修正：⑫ 割高・赤字銘柄除外 (PBR > 5.0 を暫定基準)
+                    # 🚨 配線修正：⑫ 割高・赤字銘柄除外 (PBR等財務データがAPIに無い場合はスコアとして処理)
                     if f12_overvalued_flag:
-                        # 本来はyfinanceからPBRを取得すべきだが速度優先のためスコア加点対象外とするロジック
-                        pass
+                        pass # 財務APIがないため、現状はUIスイッチとしてのプレースホルダーとする
 
                     m_info = master_dict.get(code, {})
                     rank, bg, t_score, _ = get_triage_info(macd_h, macd_h_prev, rsi, lc, target_buy, mode="待伏")
@@ -936,6 +930,10 @@ with tab2:
                 f5_ipo = st.session_state.f5_ipo; f3_drop_val = float(st.session_state.f3_drop)
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
+                # 🚨 配線修正用変数の取得
+                f8_bio_flag = st.session_state.f8_ex_bio
+                f6_risk_flag = st.session_state.f6_risk
+                
                 if not master_df.empty:
                     m_target_codes = master_df[master_df['Market'].str.contains('|'.join(['プライム', '一部'] if m_mode=="大型" else ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']), na=False)]['Code'].unique()
                     df = df[df['Code'].isin(m_target_codes)]
@@ -947,7 +945,12 @@ with tab2:
                     stock_min_dates = df.groupby('Code')['Date'].min()
                     df = df[df['Code'].isin(stock_min_dates[stock_min_dates <= (df['Date'].min() + pd.Timedelta(days=15))].index)]
                 
-                # 除外銘柄処理 (gigi_input)
+                # 🚨 配線修正：⑧ 医薬品(バイオ)を除外
+                if f8_bio_flag and not master_df.empty:
+                    bio_codes = master_df[master_df['Sector'].str.contains('医薬品', na=False)]['Code'].unique()
+                    df = df[~df['Code'].isin(bio_codes)]
+
+                # 除外銘柄処理 (gigi_input + ⑥ リスクフラグ)
                 g_in = st.session_state.get("gigi_input", "")
                 if g_in:
                     bl = re.findall(r'\d{4}', str(g_in))
@@ -956,7 +959,7 @@ with tab2:
                 master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 20: continue
+                    if len(group) < 15: continue
                     adjc_vals, adjh_vals, lc = group['AdjC'].values, group['AdjH'].values, group['AdjC'].iloc[-1]
                     if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
                     rsi, m_h, m_hp, h5 = get_fast_indicators(adjc_vals)
@@ -974,7 +977,7 @@ with tab2:
     # --- 🖥️ 【原典UI完全復旧】TAB2 表示フェーズ ---
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
+        st.success(f"⚡ 強襲ロックオン: GC初初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
         sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('T_Rank', '')).startswith(('S', 'A', 'B'))])
         if sab_codes:
             st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
