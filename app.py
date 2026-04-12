@@ -549,7 +549,7 @@ with tab1:
                 # 🚫 IPO除外
                 if f5_ipo and not df.empty:
                     stock_min_dates = df.groupby('Code').min()
-                    df = df[df['Code'].isin(stock_min_dates.min() + pd.Timedelta(days=15))].index)]
+                    df = df[df['Code'].isin(stock_min_dates.min() + pd.Timedelta(days=15))].index)
 
                 # 🚫 ETF/REIT除外
                 if f7_ex_etf and not master_df.empty:
