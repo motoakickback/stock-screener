@@ -571,7 +571,7 @@ with tab1:
                     bl = re.findall(r'\d{4}', str(g_in))
                     if bl: df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
 
-                # 🚀 財務データの並列取得（追加）
+                # 🚀 財務データの並列取得
                 target_codes_for_fund = df['Code'].unique()
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
                     fund_map = {code: fund for code, fund in zip(target_codes_for_fund, exe.map(get_fundamentals, target_codes_for_fund))}
@@ -580,11 +580,12 @@ with tab1:
                 
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 25: continue 
+                    # 🚨 原典の「15」に完全復元
+                    if len(group) < 15: continue 
                     adjc_vals, adjh_vals, adjl_vals = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values
                     lc = adjc_vals[-1]
 
-                    # 🚨 配線修正：② 1ヶ月暴騰上限 (20営業日前比)
+                    # 🚨 配線修正：② 1ヶ月暴騰上限 (20営業日前比、データ不足時は起点を参照)
                     prev_20_val = adjc_vals[max(0, len(adjc_vals)-20)]
                     if prev_20_val > 0 and (lc / prev_20_val) > f2_limit: continue
 
@@ -619,7 +620,9 @@ with tab1:
 
                     # 🏅 掟スコア計算 (原典通り /9 ＋ 財務加点で/10へ)
                     row_latest = group.iloc[-1]
-                    rsi, macd_h, macd_h_prev = row_latest['RSI'], row_latest['MACD_Hist'], group.iloc[-2]['MACD_Hist']
+                    rsi = row_latest['RSI']
+                    macd_h = row_latest['MACD_Hist']
+                    macd_h_prev = group.iloc[-2]['MACD_Hist'] if len(group) >= 2 else 0
                     
                     score = 4 
                     if 1.3 <= wave_height <= 2.0: score += 1
@@ -627,7 +630,7 @@ with tab1:
                     if not check_double_top(group.tail(31).iloc[:-1]): score += 1
                     if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
                     
-                    # 💎 財務加点ロジック（追加）
+                    # 💎 財務加点・警告ロジック
                     fund = fund_map.get(code)
                     if fund:
                         if fund.get('roe') and fund['roe'] > 10: score += 1
@@ -775,11 +778,13 @@ with tab2:
                 master_dict = master_df.set_index(master_df['Code'].astype(str))[['CompanyName', 'Market', 'Sector', 'Scale']].to_dict('index') if not master_df.empty else {}
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 20: continue
+                    # 🚨 原典の「15」に完全復元
+                    if len(group) < 15: continue
                     adjc_vals, adjh_vals = group['AdjC'].values, group['AdjH'].values; lc = adjc_vals[-1]
                     if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
                     
-                    row_latest = group.iloc[-1]; hist_vals = group['MACD_Hist'].values
+                    row_latest = group.iloc[-1]
+                    hist_vals = group['MACD_Hist'].values[-5:] if len(group) >= 5 else group['MACD_Hist'].values
                     rsi = row_latest['RSI']
                     if rsi > rsi_limit_val: continue
                     
@@ -792,7 +797,7 @@ with tab2:
                     # 🏅 強襲トリアージ
                     t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=False)
                     
-                    # 💎 財務加点・警告ロジック（追加）
+                    # 💎 財務加点・警告ロジック
                     fund = fund_map.get(code)
                     if fund:
                         if fund.get('roe') and fund['roe'] > 10: t_score += 10
