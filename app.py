@@ -499,7 +499,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='#42a5f5', width=1.5)))
     if 'MA75' in df.columns:
         fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='#ab47bc', width=1.5)))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dot')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side="right"))
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
@@ -532,7 +532,7 @@ def load_settings():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    # 💎 物理固定：f3_dropは必ず-50.0を維持する
+    # 💎 物理固定：f3_dropは必ず-50.0を維持する。
     st.session_state.f3_drop = -50.0
 
 def save_settings():
