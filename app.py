@@ -1228,93 +1228,39 @@ with tab3:
 
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
-    
-    # --- 🚨 セーフティ・ガード：初期値とモード切替時の挙動制御 ---
     if "bt_mode_sim_v2" not in st.session_state:
         st.session_state.bt_mode_sim_v2 = "🌐 【待伏】鉄の掟 (押し目狙撃)"
-
-    current_mode = st.session_state.bt_mode_sim_v2
-    if "prev_mode_for_defaults" not in st.session_state:
-        st.session_state.prev_mode_for_defaults = current_mode
-
-    # モード切替時の「買い期限」連動（強襲=3日 / 待伏=4日）
-    if st.session_state.prev_mode_for_defaults != current_mode:
-        if "待伏" in current_mode:
-            st.session_state.sim_sell_d_val = 10
-            st.session_state.sim_limit_d_val = 4
-        else:
-            st.session_state.sim_sell_d_val = 5
-            st.session_state.sim_limit_d_val = 3
-        st.session_state.prev_mode_for_defaults = current_mode
-
-    # JSONに「0」が保存されてしまった場合の自動修復（リカバリー）
-    if st.session_state.get("sim_tp_val", 0) == 0: st.session_state.sim_tp_val = 10
-    if st.session_state.get("sim_sl_val", 0) == 0: st.session_state.sim_sl_val = 8
-    if st.session_state.get("sim_limit_d_val", 0) == 0: st.session_state.sim_limit_d_val = 4
-    if st.session_state.get("sim_sell_d_val", 0) == 0: st.session_state.sim_sell_d_val = 10
-    if st.session_state.get("sim_push_r_val", 0) == 0: st.session_state.sim_push_r_val = st.session_state.get("push_r", 50.0)
-    if st.session_state.get("sim_pass_req_val", 0) == 0: st.session_state.sim_pass_req_val = 7
-    if st.session_state.get("sim_rsi_lim_ambush_val", 0) == 0: st.session_state.sim_rsi_lim_ambush_val = 45
-    if st.session_state.get("sim_rsi_lim_assault_val", 0) == 0: st.session_state.sim_rsi_lim_assault_val = 70
-    if st.session_state.get("sim_time_risk_val", 0) == 0: st.session_state.sim_time_risk_val = 5
     
-    # プリセット（サイドバー）の変更を検知して連動
-    current_sidebar_push_r = st.session_state.get("push_r", 50.0)
-    if "last_sidebar_push_r" not in st.session_state or st.session_state.last_sidebar_push_r != current_sidebar_push_r:
-        st.session_state.sim_push_r_val = current_sidebar_push_r
-        st.session_state.last_sidebar_push_r = current_sidebar_push_r
-
-    # 🚨 双方向同期機構：Store(実データ) -> UI用Key へ値を強制セット (連動問題の完全解決)
-    st.session_state['_ui_tp'] = int(st.session_state.sim_tp_val)
-    st.session_state['_ui_sl'] = int(st.session_state.sim_sl_val)
-    st.session_state['_ui_lim'] = int(st.session_state.sim_limit_d_val)
-    st.session_state['_ui_sell'] = int(st.session_state.sim_sell_d_val)
-    st.session_state['_ui_push'] = float(st.session_state.sim_push_r_val)
-    st.session_state['_ui_req'] = int(st.session_state.sim_pass_req_val)
-    st.session_state['_ui_rsi_am'] = int(st.session_state.sim_rsi_lim_ambush_val)
-    st.session_state['_ui_rsi_as'] = int(st.session_state.sim_rsi_lim_assault_val)
-    st.session_state['_ui_risk'] = int(st.session_state.sim_time_risk_val)
-
+    # 🚨 双方向同期リカバリー
+    def sync_p(ui_k, st_k): st.session_state[st_k] = st.session_state[ui_k]; save_settings()
+    st.session_state['_ui_tp'] = int(st.session_state.get("sim_tp_val", 10))
+    st.session_state['_ui_sl'] = int(st.session_state.get("sim_sl_val", 8))
+    st.session_state['_ui_lim'] = int(st.session_state.get("sim_limit_d_val", 4))
+    st.session_state['_ui_sell'] = int(st.session_state.get("sim_sell_d_val", 10))
+    st.session_state['_ui_push'] = float(st.session_state.get("sim_push_r_val", 50.0))
+    
     col_b1, col_b2 = st.columns([1, 1.8])
-    T4_FILE = f"saved_t4_codes_{user_id}.txt"
-    default_t4 = "7839\n6614"
+    T4_FILE = f"saved_t4_codes_{user_id}.txt"; default_t4 = "7839\n6614"
     if os.path.exists(T4_FILE):
         with open(T4_FILE, "r", encoding="utf-8") as f: default_t4 = f.read()
 
-    with col_b1: 
+    with col_b1:
         st.markdown("🔍 **検証戦術**")
         st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
-        bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, key="bt_codes_sim_v2")
+        bt_c_in = st.text_area("検証対象コード（TAB1/2からコピー）", value=default_t4, height=100, key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True)
-        optimize_bt = st.button("🚀 戦術の黄金比率を抽出 (最適化)", use_container_width=True)
-        
+        optimize_bt = st.button("🚀 戦術最適化レポート (Heatmap)", use_container_width=True)
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※ 戦術切替時、売り期限は自動で「待伏:10日 / 強襲:5日」に再装填されます。")
         cp1, cp2, cp3, cp4 = st.columns(4)
-        
-        # 🚨 UI -> Store への同期コールバック (value属性を削除し、純粋にkeyで状態を管理)
-        def sync_param(ui_key, store_key):
-            st.session_state[store_key] = st.session_state[ui_key]
-            save_settings()
-
-        cp1.number_input("🎯 利確目標(%)", step=1, key="_ui_tp", on_change=sync_param, args=("_ui_tp", "sim_tp_val"))
-        cp2.number_input("🛡️ 損切目安(%)", step=1, key="_ui_sl", on_change=sync_param, args=("_ui_sl", "sim_sl_val"))
-        cp3.number_input("⏳ 買い期限(日)", step=1, key="_ui_lim", on_change=sync_param, args=("_ui_lim", "sim_limit_d_val"))
-        cp4.number_input("⏳ 売り期限(日)", step=1, key="_ui_sell", on_change=sync_param, args=("_ui_sell", "sim_sell_d_val"))
-        
+        cp1.number_input("🎯 利確(%)", step=1, key="_ui_tp", on_change=sync_p, args=("_ui_tp", "sim_tp_val"))
+        cp2.number_input("🛡️ 損切(%)", step=1, key="_ui_sl", on_change=sync_p, args=("_ui_sl", "sim_sl_val"))
+        cp3.number_input("買い猶予", step=1, key="_ui_lim", on_change=sync_p, args=("_ui_lim", "sim_limit_d_val"))
+        cp4.number_input("売り期限", step=1, key="_ui_sell", on_change=sync_p, args=("_ui_sell", "sim_sell_d_val"))
         st.divider()
-        if "待伏" in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
-            ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="_ui_push", on_change=sync_param, args=("_ui_push", "sim_push_r_val"))
-            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="_ui_req", on_change=sync_param, args=("_ui_req", "sim_pass_req_val"))
-            ct3.number_input("RSI上限 (過熱感)", step=5, key="_ui_rsi_am", on_change=sync_param, args=("_ui_rsi_am", "sim_rsi_lim_ambush_val"))
-        else:
-            st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
-            ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI上限 (過熱感)", step=5, key="_ui_rsi_as", on_change=sync_param, args=("_ui_rsi_as", "sim_rsi_lim_assault_val"))
-            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="_ui_risk", on_change=sync_param, args=("_ui_risk", "sim_time_risk_val"))
+        st.markdown("##### 🌐 待伏/強襲・固有設定")
+        ct1, ct2 = st.columns(2)
+        ct1.number_input("📉 期待押し目(%)", step=0.1, key="_ui_push", on_change=sync_p, args=("_ui_push", "sim_push_r_val"))
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
