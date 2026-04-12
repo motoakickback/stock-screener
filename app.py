@@ -877,13 +877,18 @@ with tab3:
 
     def load_t3_text(file_path):
         if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f: return f.read()
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
         return ""
 
-    if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
-    if "t3_am_daily" not in st.session_state: st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
-    if "t3_as_watch" not in st.session_state: st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
-    if "t3_as_daily" not in st.session_state: st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
+    if "t3_am_watch" not in st.session_state:
+        st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
+    if "t3_am_daily" not in st.session_state:
+        st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
+    if "t3_as_watch" not in st.session_state:
+        st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
+    if "t3_as_daily" not in st.session_state:
+        st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
@@ -903,7 +908,7 @@ with tab3:
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
-        # 💎 物理再編：垂直リスト形式バナー
+        # 💎 物理再編：垂直リスト形式バナー（視認性向上）
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush: 
             st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
@@ -933,17 +938,21 @@ with tab3:
             """, unsafe_allow_html=True)
 
     if run_scope:
-        # ファイル保存
+        # ファイル保存ロジック（物理永続化）
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
-                with open(f, "w", encoding="utf-8") as file: file.write(d)
-            st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
+                with open(f, "w", encoding="utf-8") as file:
+                    file.write(d)
+            st.session_state.t3_am_watch = watch_in
+            st.session_state.t3_am_daily = daily_in
         else:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
-                with open(f, "w", encoding="utf-8") as file: file.write(d)
-            st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
+                with open(f, "w", encoding="utf-8") as file:
+                    file.write(d)
+            st.session_state.t3_as_watch = watch_in
+            st.session_state.t3_as_daily = daily_in
 
-        # コード抽出
+        # 全入力コードの抽出（正規表現）
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in + " " + daily_in)]))
         
         if t_codes:
@@ -957,51 +966,87 @@ with tab3:
                         import yfinance as yf
                         tk = yf.Ticker(c + ".T")
                         info = tk.info
-                        per, pbr, mcap = info.get('trailingPE'), info.get('priceToBook'), info.get('marketCap')
-                        if info.get('returnOnEquity'): roe_res = info['returnOnEquity'] * 100
-                    except: pass
+                        per = info.get('trailingPE')
+                        pbr = info.get('priceToBook')
+                        mcap = info.get('marketCap')
+                        roe_res = info.get('returnOnEquity') * 100 if info.get('returnOnEquity') else None
+                    except:
+                        pass
                     return c, data, per, pbr, mcap, roe_res
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_parallel, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
-                        raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
+                        raw_data_dict[res_c] = {
+                            "data": res_data, 
+                            "per": res_per, 
+                            "pbr": res_pbr, 
+                            "mcap": res_mcap, 
+                            "roe": res_roe
+                        }
 
                 scope_results = []
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
-                    if not raw_s or not raw_s["data"]: continue
+                    if not raw_s or not raw_s["data"]:
+                        continue
+                        
                     df_s = clean_df(pd.DataFrame(raw_s["data"].get("bars", [])))
-                    if len(df_s) < 35: continue
+                    if len(df_s) < 35:
+                        continue
+                        
                     df_chart = calc_technicals(df_s.copy())
-                    latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]; lc = latest['AdjC']
-                    rsi_v, atr_v = latest.get('RSI', 50), int(latest.get('ATR', 0))
-                    win_14 = df_s.tail(15).iloc[:-1]; h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min(); ur = h14 - l14
-                    is_dt = check_double_top(df_s.tail(31).iloc[:-1]); is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1])
+                    latest = df_chart.iloc[-1]
+                    prev = df_chart.iloc[-2]
+                    lc = latest['AdjC']
+                    rsi_v = latest.get('RSI', 50)
+                    atr_v = int(latest.get('ATR', 0))
+                    
+                    win_14 = df_s.tail(15).iloc[:-1]
+                    h14 = win_14['AdjH'].max()
+                    l14 = win_14['AdjL'].min()
+                    ur = h14 - l14
+                    
+                    is_dt = check_double_top(df_s.tail(31).iloc[:-1])
+                    is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1])
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
                         dist_pct = ((lc / bt_val) - 1) * 100
-                        # 💎 判定緩和
-                        if dist_pct < -10.0: rank, bg = "圏外💀", "#d32f2f"
-                        elif dist_pct <= 2.0: rank, bg = ("S🔥", "#2e7d32") if rsi_v <= 45 else ("A⚡", "#ed6c02")
-                        elif dist_pct <= 10.0: rank, bg = ("B📈", "#0288d1")
-                        else: rank, bg = ("C👁️", "#616161")
+                        # 判定緩和（-10%まで許容）
+                        if dist_pct < -10.0:
+                            rank, bg = "圏外💀", "#d32f2f"
+                        elif dist_pct <= 2.0:
+                            if rsi_v <= 45:
+                                rank, bg = "S🔥", "#2e7d32"
+                            else:
+                                rank, bg = "A⚡", "#ed6c02"
+                        elif dist_pct <= 10.0:
+                            rank, bg = "B📈", "#0288d1"
+                        else:
+                            rank, bg = "C👁️", "#616161"
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
                         h_p_macd = df_chart['MACD_Hist'].tail(5).values
-                        gc_days = 1 if h_p_macd[-2] < 0 and h_p_macd[-1] >= 0 else 2 if h_p_macd[-3] < 0 and h_p_macd[-1] >= 0 else 0
+                        gc_days = 0
+                        if len(h_p_macd) >= 2 and h_p_macd[-2] < 0 and h_p_macd[-1] >= 0:
+                            gc_days = 1
+                        elif len(h_p_macd) >= 3 and h_p_macd[-3] < 0 and h_p_macd[-1] >= 0:
+                            gc_days = 2
+                            
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
 
-                    c_name, c_market = f"銘柄 {c}", "不明"
+                    c_name = f"銘柄 {c}"
+                    c_market = "不明"
                     if not master_df.empty:
                         target_5 = c + "0"
                         m_row = master_df[master_df['Code'] == target_5]
                         if not m_row.empty:
-                            c_name, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Market']
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_market = m_row.iloc[0]['Market']
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
@@ -1010,12 +1055,11 @@ with tab3:
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'market': c_market
                     })
 
-                rank_order = {"S🔥": 4, "S": 4, "A⚡": 3, "A": 3, "B📈": 2, "B": 2, "C👁️": 1, "C": 1}
+                rank_order = {"S🔥": 4, "S": 4, "A⚡": 3, "A": 3, "B📈": 2, "B": 2, "C👁️": 1, "C": 1, "圏外💀": 0, "圏外": 0}
                 scope_results = sorted(scope_results, key=lambda x: (rank_order.get(x['rank'], 0), x['reach_val']), reverse=True)
 
                 for r in scope_results:
                     st.divider()
-                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_l = str(r['market']).lower()
                     if 'プライム' in m_l or '一部' in m_l: 
                         m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
@@ -1024,28 +1068,35 @@ with tab3:
                     else: 
                         m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
 
-                    s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+                    s_badge_color = '#42a5f5' if '監視' in r['source'] else '#ffa726'
+                    s_badge = f"<span style='background-color:{s_badge_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
                     st.markdown(f"### {s_badge} ({r['code'][:4]}) {r['name']}\n<div style='margin-bottom: 0.8rem;'>{m_badge}{t_badge} <span style='background-color:rgba(38,166,154,0.15); color:#26a69a; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:10px;'>RSI: {r['rsi']:.1f}%</span><span style='background-color:rgba(255,215,0,0.1); color:#FFD700; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:5px;'>到達度: {r['reach_val']:.1f}%</span></div>", unsafe_allow_html=True)
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ等）を検知。")
+                    if r['is_dt'] or r['is_hs']: 
+                        st.error("🚨 【警告】危険波形（三尊/Wトップ等）を検知。")
                     
-                    # 💎 UI黄金比レイアウト
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
-                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("最新終値", f"{int(r['lc']):,}円")
+                        c_m1, c_m2 = st.columns(2)
+                        c_m1.metric("直近高値", f"{int(r['h14']):,}円")
+                        c_m2.metric("最新終値", f"{int(r['lc']):,}円")
                         st.metric("🌪️ 1ATR", f"{int(atr_now):,}円", f"ボラ: {(atr_now/r['lc'])*100:.1f}%", delta_color="off")
                     
                     with sc_m:
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
-                        # TypeError物理ガード
-                        pv, pbv, rv = (f"{r['per']:.1f}倍", f"{r['pbr']:.2f}倍", f"{r['roe']:.1f}%") if all(v is not None for v in [r['per'], r['pbr'], r['roe']]) else ("N/A", "N/A", "N/A")
-                        mc_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "N/A"
                         
+                        # 💎 物理修復：個別判定ロジック（一つでもあれば表示）
+                        pv = f"{r['per']:.1f}倍" if r['per'] else "-"
+                        pbv = f"{r['pbr']:.2f}倍" if r['pbr'] else "-"
+                        rv = f"{r['roe']:.1f}%" if r['roe'] else "-"
+                        mc_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] else "-"
+                        
+                        box_title = '🎯 買値目標' if is_ambush else '🎯 トリガー'
                         h_metrics = f"""
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
                                 <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{pv}</div></div>
@@ -1055,35 +1106,68 @@ with tab3:
                             <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
                                 <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mc_v}</div>
                             </div>"""
-                        st.markdown(f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{'🎯 買値目標' if is_ambush else '🎯 トリガー'}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{h_metrics}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_title}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{h_metrics}</div>", unsafe_allow_html=True)
 
                     with sc_r:
-                        c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
-                        vol_sig = (atr_ref / r['lc']) * 100; wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
+                        c_t = r['bt_val']
+                        atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
+                        vol_sig = (atr_ref / r['lc']) * 100
+                        wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
                         tn_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
-                        # 💡 T/N比ロジカル推奨
-                        rec_tp_atr = 3.0 if tn_ratio >= 5.0 else 2.0 if tn_ratio >= 2.5 else 1.0
                         
-                        html_mat = f"<div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div><div style='display:flex; gap:20px;'><div style='flex:1;'>"
-                        html_mat += "<div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"
+                        if tn_ratio >= 5.0:
+                            rec_tp_atr = 3.0
+                        elif tn_ratio >= 2.5:
+                            rec_tp_atr = 2.0
+                        else:
+                            rec_tp_atr = 1.0
+                        
+                        html_mat = f"""
+                        <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
+                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div>
+                            <div style='display:flex; gap:20px;'>
+                                <div style='flex:1;'>
+                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
-                            val = int(c_t + (atr_ref * m)); diff_p = ((val / c_t) - 1) * 100
+                            val = int(c_t + (atr_ref * m))
+                            diff_p = ((val / c_t) - 1) * 100
                             style = "background:rgba(38,166,154,0.15); border-radius:4px; padding:2px 4px;" if m == rec_tp_atr else "padding:2px 4px;"
-                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>+{m}ATR{ ' ⭐' if m == rec_tp_atr else ''}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>(+{diff_p:.1f}%)</span></b></div>"
-                        html_mat += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:10px; font-size:14px; font-weight:bold;'>【防衛目安】</div>"
+                            star = ' ⭐' if m == rec_tp_atr else ''
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>+{m}ATR{star}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>(+{diff_p:.1f}%)</span></b></div>"
+                        
+                        html_mat += """</div><div style='flex:1;'>
+                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:10px; font-size:14px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
-                            val = int(c_t - (atr_ref * m)); diff_p = ((val / c_t) - 1) * 100
+                            val = int(c_t - (atr_ref * m))
+                            diff_p = ((val / c_t) - 1) * 100
                             style = "background:rgba(239,83,80,0.15); border:1px solid rgba(239,83,80,0.5); border-radius:4px; padding:2px 4px;" if m == 1.0 else "padding:2px 4px;"
-                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>-{m}ATR{ ' 🛡️' if m == 1.0 else ''}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>({diff_p:.1f}%)</span></b></div>"
+                            shield = ' 🛡️' if m == 1.0 else ''
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>-{m}ATR{shield}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>({diff_p:.1f}%)</span></b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
                     st.markdown("---")
-                    df_p = r['df_chart'].tail(100).copy(); df_p['d_str'] = df_p['Date'].dt.strftime('%m/%d')
+                    df_p = r['df_chart'].tail(100).copy()
+                    df_p['d_str'] = df_p['Date'].dt.strftime('%m/%d')
                     fig = go.Figure(data=[go.Candlestick(x=df_p['d_str'], open=df_p['AdjO'], high=df_p['AdjH'], low=df_p['AdjL'], close=df_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350')])
-                    for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]: fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
+                    
+                    for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
+                        fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
+                    
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
-                    # 💎 凡例高度を黄金比 y=-0.22 に固定
-                    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5))
+                    
+                    # 💎 物理配線：凡例高度を黄金比 y=-0.22 に固定
+                    fig.update_layout(
+                        height=450, 
+                        margin=dict(l=0, r=0, t=10, b=50), 
+                        xaxis_rangeslider_visible=False, 
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        hovermode="x unified", 
+                        yaxis=dict(side='right', tickformat=",.0f"), 
+                        xaxis=dict(type='category', dtick=5),
+                        showlegend=True, 
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5)
+                    )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
 with tab4:
