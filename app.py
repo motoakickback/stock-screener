@@ -1022,7 +1022,6 @@ with tab3:
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
                         dist_pct = ((lc / bt_val) - 1) * 100
-                        # 💎 物理修正：圏外判定の緩和（-10%まで許容）
                         if dist_pct < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
                         elif dist_pct <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
                         elif dist_pct <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
@@ -1075,8 +1074,9 @@ with tab3:
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
-                    # カラムバランス調整
-                    sc_l, sc_m, sc_r = st.columns([2.2, 4.0, 4.8])
+                    # 💎 物理配線：カラムバランスの再構築 (右翼のATRマトリクスを拡張)
+                    sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
+                    
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
                         c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("最新終値", f"{int(r['lc']):,}円")
@@ -1109,26 +1109,27 @@ with tab3:
                         vol_sig = (atr_ref / r['lc']) * 100
                         rec_tp_atr = 3.0 if vol_sig > 5.0 else 2.0 if vol_sig > 2.5 else 1.0
                         
+                        # 💎 物理復元：フォントを全体的に拡大し、バランスを最適化
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:15px; color:#aaa; margin-bottom:12px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
-                            <div style='display:flex; gap:15px;'>
+                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
+                            <div style='display:flex; gap:20px;'>
                                 <div style='flex:1;'>
-                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-size:12px; font-weight:bold;'>【利確目安】</div>"""
+                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
                             val = int(c_t + (atr_ref * m))
                             diff_p = ((val / c_t) - 1) * 100
-                            style = "background:rgba(38,166,154,0.15); border-radius:3px; padding:0 3px;" if m == rec_tp_atr else ""
+                            style = "background:rgba(38,166,154,0.15); border-radius:4px; padding:2px 4px;" if m == rec_tp_atr else "padding:2px 4px;"
                             label = f"+{m}ATR" + (" ⭐" if m == rec_tp_atr else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:10px; font-weight:normal; color:#888; margin-left:4px;'>(+{diff_p:.1f}%)</span></b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>(+{diff_p:.1f}%)</span></b></div>"
                         html_mat += """</div><div style='flex:1;'>
-                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-size:12px; font-weight:bold;'>【防衛目安】</div>"""
+                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:10px; font-size:14px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
                             val = int(c_t - (atr_ref * m))
                             diff_p = ((val / c_t) - 1) * 100
-                            style = "background:rgba(239,83,80,0.15); border-radius:3px; padding:0 3px;" if m == 1.0 else ""
+                            style = "background:rgba(239,83,80,0.15); border:1px solid rgba(239,83,80,0.5); border-radius:4px; padding:2px 4px;" if m == 1.0 else "padding:2px 4px;"
                             label = f"-{m}ATR" + (" 🛡️" if m == 1.0 else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:10px; font-weight:normal; color:#888; margin-left:4px;'>({diff_p:.1f}%)</span></b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>({diff_p:.1f}%)</span></b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
                     st.markdown("---")
@@ -1140,8 +1141,7 @@ with tab3:
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- ⚙️ 個別バックテスト演算（物理復元：描画導通確認済み） ---
-                    st.markdown(f"#### ⚙️ 銘柄 {r['code']} 過去1年の戦術介入シミュレーション")
+                    st.markdown(f"#### ⚙️ 銘柄 {r['code'][:4]} 過去1年の戦術介入シミュレーション")
                     lot_bt, tp_bt, sli_bt, slc_bt, max_d_bt, lim_d_bt = st.session_state.bt_lot, st.session_state.bt_tp/100.0, st.session_state.bt_sl_i/100.0, st.session_state.bt_sl_c/100.0, st.session_state.bt_sell_d, st.session_state.limit_d
                     df_bt = r['df_chart'].copy(); sim_h = []; b_cnt, b_wins, b_pnl = 0, 0, 0
                     for i_bt in range(50, len(df_bt)-5):
