@@ -120,7 +120,20 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- ⚙️ 設定の永続化 ---
+# --- ⏱️ 19:00 完全自動パージ機構 ---
+import pytz
+jst = pytz.timezone('Asia/Tokyo')
+now = datetime.now(jst)
+if 'last_auto_purge_date' not in st.session_state: st.session_state.last_auto_purge_date = None
+if now.hour >= 19:
+    today_str = now.strftime('%Y-%m-%d')
+    if st.session_state.last_auto_purge_date != today_str:
+        st.cache_data.clear()
+        st.session_state.tab1_scan_results = None
+        st.session_state.tab2_scan_results = None
+        st.session_state.last_auto_purge_date = today_str
+
+# --- ⚙️ システム全体設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
@@ -175,7 +188,6 @@ load_settings()
 def get_macro_weather():
     try:
         import yfinance as yf
-        import pytz
         jst = pytz.timezone('Asia/Tokyo')
         now = datetime.now(jst)
         start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
@@ -318,7 +330,6 @@ def check_double_bottom(df_sub):
         return False
     except: return False
 
-# 🏅 財務生体スキャン・エンジン（復元）
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
@@ -343,8 +354,8 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
             df['Code'] = df['Code'].astype(str) + "0"
             return df
     except: pass
@@ -480,6 +491,7 @@ st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
 st.sidebar.divider()
+st.sidebar.header("⚙️ システム管理")
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear(); st.session_state.tab1_scan_results = None; st.session_state.tab2_scan_results = None; st.rerun()
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
