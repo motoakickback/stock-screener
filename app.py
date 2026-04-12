@@ -963,7 +963,7 @@ with tab3:
             """, unsafe_allow_html=True)
 
     if run_scope:
-        # ファイル保存ロジック（原典）
+        # ファイル保存ロジック
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file:
@@ -1121,7 +1121,7 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # --- 🏅 ROE生体スキャンパネル（進撃判定） ---
+                    # --- 🏅 ROE生体スキャンパネル（ボスの要求：進撃判定） ---
                     roe_v = r.get('roe')
                     if roe_v is not None:
                         roe_color = "#26a69a" if roe_v >= 10 else "#ef5350"
