@@ -33,7 +33,7 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            # 🚨 JavaScript 狙撃パッチ
+            # 🚨 JavaScript 狙撃パッチ：指紋認証完了後の自動クリックを強化
             components.html(
                 """
                 <script>
@@ -161,8 +161,7 @@ def load_settings():
                         defaults[k] = v
         except: pass
     for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        if k not in st.session_state: st.session_state[k] = v
         else:
             if k in defaults and isinstance(st.session_state[k], (int, float)) and st.session_state[k] == 0 and k != "f3_drop":
                 st.session_state[k] = defaults[k]
@@ -223,7 +222,7 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- 3. 共通関数 & 財務統合エンジン ---
+# --- 3. 共通関数 & 財務統合高速演算エンジン ---
 def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
@@ -257,19 +256,9 @@ def calc_vector_indicators(df):
     df['ATR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1).groupby(df['Code']).transform(lambda x: x.rolling(14).mean())
     return df
 
-@st.cache_data(ttl=86400)
-def load_master():
-    try:
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
-            df['Code'] = df['Code'].astype(str) + "0"
-            return df
-    except: pass
-    return pd.DataFrame()
+def calc_technicals(df):
+    """ 🛡️ TAB3-6との互換性維持用の個別計算ブリッジ """
+    return calc_vector_indicators(df)
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_fundamentals(code):
@@ -294,6 +283,20 @@ def get_fundamentals(code):
                 }
     except: pass
     return None
+
+@st.cache_data(ttl=86400)
+def load_master():
+    try:
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except: pass
+    return pd.DataFrame()
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=3):
@@ -349,37 +352,23 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-def check_double_top(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
-        if len(v) < 6: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
-        if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
-        return False
-    except: return False
-
-def check_head_shoulders(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
-        if len(v) < 8: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
-        return False
-    except: return False
+def get_fast_indicators(prices):
+    """ (互換性のために維持) """
+    if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
+    a12, a26, a9 = 2.0/13.0, 2.0/27.0, 2.0/10.0
+    e12, e26 = prices[0], prices[0]
+    macd_arr = np.zeros(len(prices))
+    for i in range(len(prices)):
+        e12 = a12 * prices[i] + (1 - a12) * e12
+        e26 = a26 * prices[i] + (1 - a26) * e26
+        macd_arr[i] = e12 - e26
+    signal = macd_arr[0]; hist_arr = np.zeros(len(prices))
+    for i in range(len(prices)):
+        signal = a9 * macd_arr[i] + (1 - a9) * signal
+        hist_arr[i] = macd_arr[i] - signal
+    rs = np.sum(np.maximum(np.diff(prices[-14:]), 0)) / (np.sum(np.abs(np.minimum(np.diff(prices[-14:]), 0))) + 1e-10)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi, hist_arr[-1], hist_arr[-2], hist_arr[-5:]
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
@@ -388,33 +377,26 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     else: macd_t = "減衰"
     if mode == "強襲":
         if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
-        if gc_days == 1:
-            if rsi <= 50: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
-            else: return "A⚡", "#ed6c02", 4, "GC直後(1日目)"
+        if gc_days == 1: return ("S🔥", "#2e7d32", 5, "GC直後(1日目)") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後(1日目)")
         else: return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
     if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
     dist_pct = ((lc / bt) - 1) * 100 
     if dist_pct < -2.0: return "圏外💀", "#d32f2f", 0, macd_t
-    elif dist_pct <= 2.0:
-        if rsi <= 45: return "S🔥", "#2e7d32", 5, macd_t
-        else: return "A⚡", "#ed6c02", 4.5, macd_t 
-    elif dist_pct <= 5.0:
-        if rsi <= 50: return "A🪤", "#0288d1", 4.0, macd_t 
-        else: return "B📈", "#0288d1", 3, macd_t
+    elif dist_pct <= 2.0: return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
+    elif dist_pct <= 5.0: return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
     else: return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     if gc_days <= 0 or df_chart is None or df_chart.empty: return "圏外 💀", "#424242", 0, ""
-    latest = df_chart.iloc[-1]; ma25 = latest.get('MA25', 0)
-    score = 50 
+    latest = df_chart.iloc[-1]; ma25 = latest.get('MA25', 0); score = 50 
     if ma25 > 0:
         if lc >= ma25 * 0.95: score += 10
         if lc >= ma25: score += 10
     if 50 <= rsi_v <= 70: score += 10
-    if score >= 80: rank = "S"; bg = "#d32f2f"
-    elif score >= 60: rank = "A"; bg = "#f57c00"
-    elif score >= 40: rank = "B"; bg = "#fbc02d"
-    else: rank = "C 💀"; bg = "#424242"
+    if score >= 80: rank, bg = "S", "#d32f2f"
+    elif score >= 60: rank, bg = "A", "#f57c00"
+    elif score >= 40: rank, bg = "B", "#fbc02d"
+    else: rank, bg = "C 💀", "#424242"
     return rank, bg, score, "GC発動中"
 
 # --- 4. サイドバー UI ---
@@ -423,62 +405,48 @@ st.sidebar.header("📍 ターゲット選別")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
 st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
 st.sidebar.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
-
 st.sidebar.divider()
 st.sidebar.header("🔍 ピックアップルール")
-c_f1_1, c_f1_2 = st.sidebar.columns(2)
-c_f1_1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-c_f1_2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
+c_f1, c_f2 = st.sidebar.columns(2)
+c_f1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
+c_f2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
 st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
-
 c_f9_1, c_f9_2 = st.sidebar.columns(2)
 c_f9_1.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
 c_f9_2.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
-
 st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
 st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
 st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
-
 st.sidebar.divider()
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
 st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
-
 st.sidebar.header("💰 売りルール")
 st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
-c_sl_1, c_sl_2 = st.sidebar.columns(2)
-c_sl_1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
-c_sl_2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
+c_sl1, c_sl2 = st.sidebar.columns(2)
+c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
+c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
 st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
-
 st.sidebar.divider()
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
 st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
-
 st.sidebar.divider()
 st.sidebar.header("⚙️ システム管理")
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    st.cache_data.clear()
-    st.session_state.tab1_scan_results = None
-    st.session_state.tab2_scan_results = None
-    st.rerun()
+    st.cache_data.clear(); st.session_state.tab1_scan_results = None; st.rerun()
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
-    save_settings()
-    st.toast("全設定を永久保存した。")
+    save_settings(); st.toast("全設定を永久保存した。")
 
 # ==========================================
 # 5. タブ再構成
 # ==========================================
 master_df = load_master()
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", 
-    "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"
-])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"])
 
 with tab1:
     st.markdown('<h3 style="font-size: 24px;">🎯 【待伏】鉄の掟・半値押しレーダー (財務統合版)</h3>', unsafe_allow_html=True)
