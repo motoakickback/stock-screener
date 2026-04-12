@@ -112,7 +112,7 @@ components.html(
     """, height=0, width=0
 )
 
-# --- 2. 認証・通信設定 ---
+# --- 2. 認証・通信・グローバル定数 ---
 user_id = st.session_state["current_user"]
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
@@ -120,42 +120,47 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
-# --- ⏱️ 19:00 完全自動パージ機構 ---
-import pytz
-jst = pytz.timezone('Asia/Tokyo')
-now = datetime.now(jst)
-if 'last_auto_purge_date' not in st.session_state: st.session_state.last_auto_purge_date = None
-if now.hour >= 19:
-    today_str = now.strftime('%Y-%m-%d')
-    if st.session_state.last_auto_purge_date != today_str:
-        st.cache_data.clear()
-        st.session_state.tab1_scan_results = None
-        st.session_state.tab2_scan_results = None
-        st.session_state.last_auto_purge_date = today_str
+# 💎 物理固定：SETTINGS_FILEをグローバルに定義
+SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 # --- 🌪️ マクロ気象レーダー（日経平均） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
+        import pytz
         jst = pytz.timezone('Asia/Tokyo')
         now = datetime.now(jst)
         start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
         end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
         df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
         if not df_raw.empty:
-            if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
+            if isinstance(df_raw.columns, pd.MultiIndex):
+                df_raw.columns = df_raw.columns.get_level_values(0)
             df_ni = df_raw.reset_index()
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
             df_ni = df_ni.dropna(subset=['Close']).tail(65)
-            latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
-            return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest['Date'].strftime('%m/%d')}}
-    except: return None
+            latest = df_ni.iloc[-1]
+            prev = df_ni.iloc[-2]
+            return {
+                "nikkei": {
+                    "price": latest['Close'],
+                    "diff": latest['Close'] - prev['Close'],
+                    "pct": ((latest['Close'] / prev['Close']) - 1) * 100,
+                    "df": df_ni,
+                    "date": latest['Date'].strftime('%m/%d')
+                }
+            }
+    except:
+        return None
 
 def render_macro_board():
     data = get_macro_weather()
     if data and "nikkei" in data:
-        ni = data["nikkei"]; df = ni["df"]; color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"; sign = "+" if ni['diff'] >= 0 else ""
+        ni = data["nikkei"]
+        df = ni["df"]
+        color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"
+        sign = "+" if ni['diff'] >= 0 else ""
         c1, c2 = st.columns([1, 2.5])
         with c1:
             st.markdown(f'<div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;"><div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div><div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div><div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div></div>', unsafe_allow_html=True)
@@ -167,7 +172,8 @@ def render_macro_board():
             fig.update_layout(height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'), xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=12)]))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
-    else: st.warning("📡 外部気象レーダー応答なし")
+    else:
+        st.warning("📡 外部気象レーダー応答なし")
 
 render_macro_board()
 
