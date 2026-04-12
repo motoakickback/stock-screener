@@ -668,16 +668,16 @@ st.sidebar.divider()
 
 # --- 2. ピックアップルール ---
 st.sidebar.header("🔍 ピックアップルール")
-c1, c2 = st.sidebar.columns(2)
-c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
+c_f1_1, c_f1_2 = st.sidebar.columns(2)
+c_f1_1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
+c_f1_2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.get("f3_drop", -50.0)), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
 
-# 🚨 波高の設定をIPOより上に配置
-c3, c4 = st.sidebar.columns(2)
-c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+# 波高の設定
+c_f9_1, c_f9_2 = st.sidebar.columns(2)
+c_f9_1.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
+c_f9_2.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
 
 st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
@@ -693,9 +693,9 @@ st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d
 
 st.sidebar.header("💰 売りルール")
 st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
-c5, c6 = st.sidebar.columns(2)
-c5.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
-c6.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
+c_sl_1, c_sl_2 = st.sidebar.columns(2)
+c_sl_1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
+c_sl_2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
 st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
 
 st.sidebar.divider()
@@ -705,8 +705,7 @@ st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
-# 🚨 雑なコピペから4桁コードを抜くための受皿
-st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings, help="サイトの銘柄一覧を丸ごと貼れば、4桁数字だけを抽出して除外します。")
+st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
 
 st.sidebar.divider()
 
@@ -714,11 +713,14 @@ st.sidebar.divider()
 st.sidebar.header("⚙️ システム管理")
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
+    st.session_state.tab1_scan_results = None
+    st.session_state.tab2_scan_results = None
     st.rerun()
+
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings()
-    st.toast("設定を保存した。")
-
+    st.toast("全設定を永久保存した。")
+    
 # ==========================================
 # 5. タブ再構成
 # ==========================================
