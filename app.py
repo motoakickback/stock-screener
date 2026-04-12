@@ -18,13 +18,12 @@ import pytz
 # --- 0. UI神聖不可侵パッチ (Streamlit 1.55+ 対応) ---
 st.set_page_config(page_title="戦術スコープ『鉄の掟』v2.1", layout="wide", page_icon="🎯")
 
+# 2026年標準：st.metricの文字切れ防止とフォント密度最適化
 st.markdown("""
     <style>
-    /* メトリック値の強調とフォントサイズ最適化 */
     [data-testid="stMetricValue"] > div { text-overflow: clip!important; overflow: visible!important; white-space: nowrap!important; }
     [data-testid="stMetricValue"] { font-size: clamp(1.1rem, 2.5vw, 1.6rem)!important; font-weight: 800!important; }
-    /* 掟スコア用タクティカルカード */
-  .tactical-card {
+   .tactical-card {
         background: rgba(255, 255, 255, 0.04);
         border-radius: 12px;
         padding: 1.2rem;
@@ -32,12 +31,12 @@ st.markdown("""
         margin-bottom: 1rem;
         box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
-  .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: rgba(255, 255, 255, 0.03); border-radius: 4px 4px 0 0; }
+   .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: rgba(255, 255, 255, 0.03); border-radius: 4px 4px 0 0; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 認証・通信・ゲートキーパー ---
-# ボス、代入漏れを完全に修正しました。
+# --- 1. 認証・ゲートキーパーエンジン ---
+# 秘密情報の定義を物理的に完結 [11]
 ALLOWED_PASSWORDS =
 API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
@@ -121,9 +120,10 @@ def get_macro_weather():
     try:
         jst = pytz.timezone('Asia/Tokyo')
         now = datetime.now(jst)
-        df_raw = yf.download("^N225", start=(now - timedelta(days=100)).strftime('%Y-%m-%d'), progress=False)
+        df_raw = yf.download("^N225", start=(now - timedelta(days=110)).strftime('%Y-%m-%d'), progress=False)
         if not df_raw.empty:
             df_ni = df_raw.reset_index()
+            df_ni = pd.to_datetime(df_ni).dt.tz_localize(None)
             latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
             return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], 
                                "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest.strftime('%m/%d')}}
@@ -143,27 +143,27 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- 4. 共通関数 & 演算エンジン (Pandas 3.0 完全ベクトル化) ---
+# --- 4. 共通演算エンジン (Pandas 3.0 完全ベクトル化) ---
 def calculate_indicators_bulk(df):
-    """行列演算による指標算出。ループを廃止し全銘柄一括処理。 [12]"""
+    """行列演算による指標算出。ループを廃止し全銘柄一括処理。 """
     if df.empty: return df
     df = df.copy()
-    # カラム名正規化 (J-Quants V2)
+    # J-Quants V2 カラム名正規化 [1]
     df = df.rename(columns={'AdjC': 'Close', 'AdjH': 'High', 'AdjL': 'Low', 'Vo': 'Volume'})
     
-    # RSI (Wilder方式)
+    # RSI (Wilder方式) [12]
     delta = df.groupby('Code')['Close'].diff()
     gain = delta.clip(lower=0); loss = -delta.clip(upper=0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
     
-    # MACD
+    # MACD [13]
     ema12 = df.groupby('Code')['Close'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
     ema26 = df.groupby('Code')['Close'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
-    macd = ema12 - ema26
-    signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
-    df = (macd - signal).astype('float32')
+    df = (ema12 - ema26).astype('float32')
+    df = df.groupby('Code').ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
+    df = (df - df).astype('float32')
     
     # ATR & MA
     tr = pd.concat([df['High']-df['Low'], (df['High']-df.groupby('Code')['Close'].shift(1)).abs(), (df['Low']-df.groupby('Code')['Close'].shift(1)).abs()], axis=1).max(axis=1)
@@ -174,7 +174,7 @@ def calculate_indicators_bulk(df):
     return df
 
 def check_double_top(df_sub):
-    """ボスのオリジナルのダブルトップ判定ロジックを復元"""
+    """ボスのオリジナルのダブルトップ判定ロジック [14]"""
     try:
         v_h = df_sub['High'].values; v_c = df_sub['Close'].values
         if len(v_h) < 6: return False
@@ -185,14 +185,14 @@ def check_double_top(df_sub):
         return False
     except: return False
 
-# --- 5. サイドバー UI (st.fragment による独立実行 [10]) ---
+# --- 5. サイドバー UI (st.fragment による独立実行 ) ---
 @st.fragment
 def render_tactical_sidebar():
     with st.sidebar:
         st.title("🛠️ 戦術コンソール")
         with st.expander("📍 ターゲット選別", expanded=True):
             st.selectbox("市場ターゲット", ["🏢 大型株 (プライム)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
-            st.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r")
+            st.selectbox("押し目率", ["25.0%", "50.0%", "61.8%"], key="preset_push_r")
             st.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
         
         with st.expander("🔍 ピックアップルール", expanded=True):
@@ -218,13 +218,12 @@ def render_tactical_sidebar():
 
 render_tactical_sidebar()
 
-# --- 6. メイン・インターフェース (全6タブ完全復旧) ---
+# --- 6. メイン・インターフェース (全6タブ完全復元 [15]) ---
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", 
     "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"
 ])
 
-# データマスター取得 (JPX V2仕様 [1])
 @st.cache_data(ttl=86400)
 def load_master():
     try:
@@ -233,7 +232,7 @@ def load_master():
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '市場・商品区分', '33業種区分']]
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns =
             df['Code'] = df['Code'].astype(str) + "0"
             return df
@@ -255,7 +254,6 @@ with tab1:
                     df_raw = pd.DataFrame(r.json().get("data",))
                     if not df_raw.empty:
                         df_p = calculate_indicators_bulk(df_raw)
-                        # ボスの戦術フィルタ適用
                         results = df_p[(df_p['Close'] >= st.session_state.f1_min) & (df_p['Close'] <= st.session_state.f1_max) & (df_p <= 45)].head(15)
                         st.success(f"待伏シグナルに合致する {len(results)} 銘柄を捕捉。")
                         for _, row in results.iterrows():
@@ -263,8 +261,7 @@ with tab1:
                                 c1, c2, c3, c4 = st.columns([1.5, 1, 1, 2])
                                 c1.metric(f"({row['Code'][:4]}) ターゲット捕捉", f"¥{row['Close']:,.0f}", "待伏: S🔥")
                                 c2.metric("RSI", f"{row:.1f}%")
-                                c3.metric("ATRボラ", f"¥{row:,.0f}")
-                                # 2026最新: st.metricのchart_dataによるスパークライン [4]
+                                c3.metric("ATRボラ", f"¥{row:.0f}")
                                 dummy_history = [row['Close']*(1+np.random.uniform(-0.02, 0.02)) for _ in range(15)]
                                 c4.metric("短期トレンド", "調整完了", chart_data=dummy_history, border=True)
                 else: st.error("API応答なし。J-Quants認証を確認せよ。")
@@ -318,9 +315,9 @@ with tab5:
     st.markdown("### 📡 交戦モニター (全軍生存圏レーダー)")
     @st.fragment(run_every=60)
     def monitor_fragment():
-        st.caption(f"最終同期: {datetime.now().strftime('%H:%M:%S')} (60秒自動更新) [10]")
+        st.caption(f"最終同期: {datetime.now().strftime('%H:%M:%S')} (60秒自動更新) ")
         df_mon = pd.DataFrame([{"銘柄": "7203", "買値": 2100, "現在値": 2150, "損益": "+2.3%", "状態": "🟢 巡航"}])
-        st.data_editor(df_mon, use_container_width=True, num_rows="dynamic", key="monitor_editor_final")
+        st.data_editor(df_mon, use_container_width=True, num_rows="dynamic", key="monitor_editor_final_restored")
     monitor_fragment()
 
 with tab6:
