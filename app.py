@@ -22,8 +22,8 @@ st.set_page_config(
     initial_sidebar_state=320 # 320pxに固定 
 )
 
-# パスワード定義の復旧
-ALLOWED_PASSWORDS =
+    # パスワード定義の復旧
+    ALLOWED_PASSWORDS =
 
 # カスタムCSS: 2026年テーマ変数を使用した視認性向上
 st.markdown("""
