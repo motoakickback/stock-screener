@@ -567,7 +567,7 @@ with tab1:
                     bl = re.findall(r'\d{4}', str(g_in))
                     if bl: df = df[~df['Code'].str.extract(r'(\d{4})').isin(bl)]
 
-                master_dict = master_df.set_index('Code')].to_dict('index') if not master_df.empty else {}
+                master_dict = master_df.set_index('Code').to_dict('index') if not master_df.empty else {}
                 results =
                 for code, group in df.groupby('Code'):
                     if len(group) < 15: continue 
