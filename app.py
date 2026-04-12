@@ -184,36 +184,33 @@ def load_settings():
         if k not in st.session_state: st.session_state[k] = v
 
 def save_settings():
-    keys = ["preset_target", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
-            "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
-            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
-            "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val"]
+            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-                existing.update(current)
-                current = existing
-        except: pass
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False)
-        
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=4)
+
+# 🚨 ここから下の apply_presets() が漏れています。必ず追加してください。
+def apply_presets():
+    p_rate = st.session_state.get("preset_push_r", "50.0%")
+    if p_rate == "25.0%": st.session_state.push_r = 25.0
+    elif p_rate == "50.0%": st.session_state.push_r = 50.0
+    elif p_rate == "61.8%": st.session_state.push_r = 61.8
+    save_settings()
+
 load_settings()
 
 def apply_market_preset():
     preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    
     if "大型株" in preset:
         st.session_state.push_r = 25.0 if "バランス" in tactics else 45.0
     elif "61.8%" in preset:
         st.session_state.push_r = 61.8
     else:
         st.session_state.push_r = 50.0
-    
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
 
