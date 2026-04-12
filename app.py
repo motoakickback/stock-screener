@@ -1183,101 +1183,136 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
+    FRONTLINE_FILE_PATH = f"saved_frontline_{user_id}.csv"
     
+    # 1. データの初期化
     if 'frontline_df' not in st.session_state:
-        if os.path.exists(FRONTLINE_FILE):
+        if os.path.exists(FRONTLINE_FILE_PATH):
             try:
-                st.session_state.frontline_df = pd.read_csv(FRONTLINE_FILE)
+                st.session_state.frontline_df = pd.read_csv(FRONTLINE_FILE_PATH)
                 st.session_state.frontline_df["銘柄"] = st.session_state.frontline_df["銘柄"].astype(str)
             except:
                 st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
         else:
             st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
 
+    # 2. 同期ボタン
     if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
         import yfinance as yf
-        updated = False
-        for idx, row in st.session_state.frontline_df.iterrows():
-            code = str(row['銘柄'])[:4]
-            if len(code) == 4:
-                tk = yf.Ticker(code + ".T"); h = tk.history(period="1d")
-                if not h.empty:
-                    st.session_state.frontline_df.at[idx, '現在値'] = round(h['Close'].iloc[-1], 1)
-                    updated = True
-        if updated:
-            st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
+        updated_fr_sync = False
+        for idx_fr, row_fr in st.session_state.frontline_df.iterrows():
+            c_fr_sync = str(row_fr['銘柄']).strip()
+            if len(c_fr_sync) >= 4:
+                try:
+                    tk_fr_sync = yf.Ticker(c_fr_sync[:4] + ".T")
+                    h_fr_sync = tk_fr_sync.history(period="1d")
+                    if not h_fr_sync.empty:
+                        st.session_state.frontline_df.at[idx_fr, '現在値'] = round(h_fr_sync['Close'].iloc[-1], 1)
+                        updated_fr_sync = True
+                except: pass
+        if updated_fr_sync:
+            st.session_state.frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
             st.rerun()
 
-    edited_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="frontline_editor_v24_final")
-    if not edited_df.equals(st.session_state.frontline_df):
-        st.session_state.frontline_df = edited_df
-        edited_df.to_csv(FRONTLINE_FILE, index=False)
+    # 3. エディタ表示
+    edited_frontline_df = st.data_editor(
+        st.session_state.frontline_df, 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        key="frontline_editor_v43_fix"
+    )
+    
+    if not edited_frontline_df.equals(st.session_state.frontline_df):
+        st.session_state.frontline_df = edited_frontline_df
+        edited_frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
         st.rerun()
 
-    st.markdown("---")
-    # 💎 物理修復：バーを表示させるための強制数値変換と描画
-    df_render = edited_df.copy()
+    # 💎 物理修復：数値変換の強制
+    df_render = edited_frontline_df.copy()
     for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
-        df_render[col] = pd.to_numeric(df_render[col], errors='coerce')
+        if col in df_render.columns:
+            df_render[col] = pd.to_numeric(df_render[col], errors='coerce')
 
-    for _, r in df_render.iterrows():
-        t_m = str(r.get('銘柄', ''))
-        b, tp1, tp2, sl, cur = r['買値'], r['第1利確'], r['第2利確'], r['損切'], r['現在値']
-        if not t_m or pd.isna(b) or pd.isna(cur): continue
+    st.markdown("---")
+    # 4. 個別インジケーター描画ループ
+    for idx_mon, r_mon in df_render.iterrows():
+        t_m = str(r_mon.get('銘柄', ''))
+        b_m, tp1_m, tp2_m, s_m, c_m = r_mon.get('買値'), r_mon.get('第1利確'), r_mon.get('第2利確'), r_mon.get('損切'), r_mon.get('現在値')
+        
+        if not t_m or pd.isna(b_m) or pd.isna(c_m):
+            continue
             
-        col_m, txt_m = ("#ef5350", "💀 被弾") if cur <= sl else ("#ff9800", "⚠️ 警戒") if cur < b else ("#26a69a", "🟢 巡航")
-        if tp1 > 0 and cur >= tp1: col_m, txt_m = "#42a5f5", "🛡️ 第1到達"
-        if tp2 > 0 and cur >= tp2: col_m, txt_m = "#ab47bc", "🏆 任務完了"
+        # ステータス判定
+        if c_m <= s_m: col_m, txt_m = "#ef5350", "💀 被弾（防衛線突破）"
+        elif c_m < b_m: col_m, txt_m = "#ff9800", "⚠️ 警戒（損切圏内）"
+        elif tp1_m > 0 and c_m < tp1_m: col_m, txt_m = "#26a69a", "🟢 巡航（第1目標へ）"
+        elif tp2_m > 0 and c_m < tp2_m: col_m, txt_m = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
+        else: col_m, txt_m = "#ab47bc", "🏆 任務完了（利確推奨）"
         
-        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_m}; margin-bottom: 5px;"><strong>部隊 [{t_m}]</strong> {txt_m} ｜ 現在: ¥{int(cur):,} (買: ¥{int(b):,})</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_m}; margin-bottom: 5px;"><strong>部隊 [{t_m}]</strong> {txt_m} ｜ 現在: ¥{int(c_m):,} (買: ¥{int(b_m):,})</div>', unsafe_allow_html=True)
         
-        fig = go.Figure()
-        # ターゲット（点）
-        fig.add_trace(go.Scatter(x=[sl, b, tp1, tp2], y=[0,0,0,0], mode='markers', marker=dict(size=14, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標"))
+        # 💎 物理修復：Plotly描画（Range計算を廃止し、確実にバーを出す）
+        fig_mon = go.Figure()
+        # 目標（点）
+        fig_mon.add_trace(go.Scatter(
+            x=[s_m, b_m, tp1_m, tp2_m], y=[0, 0, 0, 0], 
+            mode='markers', 
+            marker=dict(size=14, color=['#ef5350', '#ffca28', '#26a69a', '#42a5f5']),
+            name="目標"
+        ))
         # 現在地（十字）
-        fig.add_trace(go.Scatter(x=[cur], y=[0], mode='markers', marker=dict(size=26, symbol='cross-thin', line=dict(width=4, color=col_m)), name="現在地"))
+        fig_mon.add_trace(go.Scatter(
+            x=[c_m], y=[0], 
+            mode='markers', 
+            marker=dict(size=26, symbol='cross-thin', line=dict(width=4, color=col_m)),
+            name="現在地"
+        ))
         
-        # 💎 バーを消さないための物理スケール固定
-        fig.update_layout(
-            height=70, margin=dict(l=10, r=10, t=5, b=20),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.05)',
-            yaxis=dict(visible=False),
+        fig_mon.update_layout(
+            height=70, margin=dict(l=10, r=10, t=5, b=25), 
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.05)', 
+            yaxis=dict(visible=False), 
             xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', tickformat=",.0f", zeroline=False)
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
         
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
-    AAR_FILE = f"saved_aar_log_{user_id}.csv"
+    AAR_LOG_FILE = f"saved_aar_log_{user_id}.csv"
     
-    if os.path.exists(AAR_FILE):
-        aar_df = pd.read_csv(AAR_FILE)
+    # 1. データの初期ロード
+    if os.path.exists(AAR_LOG_FILE):
+        try:
+            aar_df_final = pd.read_csv(AAR_LOG_FILE)
+            aar_df_final['決済日'] = aar_df_final['決済日'].astype(str)
+            aar_df_final['銘柄'] = aar_df_final['銘柄'].astype(str)
+        except:
+            aar_df_final = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
     else:
-        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
+        aar_df_final = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
-    # 💎 物理復元：Turn 18式のシンプルなCSVインポーター
+    # 💎 物理復元：Turn 18式のシンプルなCSVインポート
     st.markdown("#### 📥 過去ログの物理結合")
-    uploaded_aar = st.file_uploader("戦績CSVを選択（自動解析対応）", type="csv", key="aar_upload_gate")
+    uploaded_aar = st.file_uploader("戦績CSVを選択", type="csv", key="aar_upload_gate_v18")
     if uploaded_aar is not None:
         if st.button("💾 CSVをシステムへ同期", use_container_width=True):
             try:
                 up_df = pd.read_csv(uploaded_aar)
-                # 既存データと単純結合し、重複のみ排除するボスの「原典」ロジック
-                aar_df = pd.concat([up_df, aar_df]).drop_duplicates().reset_index(drop=True)
-                aar_df.to_csv(AAR_FILE, index=False)
-                st.success("物理同期完了。全戦績を読み込んだ。")
+                # 既存データと単純結合し、重複のみ排除
+                aar_df_final = pd.concat([up_df, aar_df_final]).drop_duplicates().reset_index(drop=True)
+                aar_df_final.to_csv(AAR_LOG_FILE, index=False)
+                st.success("物理同期完了。")
                 st.rerun()
             except Exception as e:
-                st.error(f"同期失敗：{e}")
+                st.error(f"読み込み失敗：{e}")
 
     st.divider()
     # 💎 物理復元：左右二分割の原典レイアウト
-    col_a1, col_a2 = st.columns([1, 2.2])
+    col_aar1, col_aar2 = st.columns([1, 2.2])
     
-    with col_a1:
+    with col_aar1:
         st.markdown("#### 📝 新規戦果報告")
-        with st.form("aar_form_v18_revival"):
+        with st.form("aar_form_v18_final"):
             d_aar = st.date_input("決済日")
             c_aar = st.text_input("銘柄コード")
             t_aar = st.selectbox("戦術", ["待伏", "強襲", "他"])
@@ -1288,19 +1323,20 @@ with tab6:
             m_aar = st.text_input("メモ")
             
             if st.form_submit_button("記録を保存"):
-                p_aar = int((s_aar - b_aar) * l_aar)
-                pp_aar = round(((s_aar / b_aar) - 1) * 100, 2) if b_aar != 0 else 0
-                nd = pd.DataFrame([{"決済日": d_aar, "銘柄": c_aar, "戦術": t_aar, "買値": b_aar, "売値": s_aar, "株数": l_aar, "損益額(円)": p_aar, "損益(%)": pp_aar, "規律": r_aar, "メモ": m_aar}])
-                pd.concat([nd, aar_df]).to_csv(AAR_FILE, index=False)
-                st.rerun()
+                if c_aar and b_aar > 0:
+                    p_aar = int((s_aar - b_aar) * l_aar)
+                    pp_aar = round(((s_aar / b_aar) - 1) * 100, 2)
+                    nd = pd.DataFrame([{"決済日": d_aar.strftime("%Y-%m-%d"), "銘柄": c_aar, "戦術": t_aar, "買値": b_aar, "売値": s_aar, "株数": l_aar, "損益額(円)": p_aar, "損益(%)": pp_aar, "規律": r_aar, "メモ": m_aar}])
+                    pd.concat([nd, aar_df_final]).to_csv(AAR_LOG_FILE, index=False)
+                    st.rerun()
 
-    with col_a2:
-        if not aar_df.empty:
+    with col_aar2:
+        if not aar_df_final.empty:
             # 数値変換の安全配線
-            aar_df["損益額(円)"] = pd.to_numeric(aar_df["損益額(円)"], errors='coerce')
-            tot_p = aar_df["損益額(円)"].sum()
-            w_rate = (len(aar_df[aar_df["損益額(円)"] > 0]) / len(aar_df)) * 100
-            adh_rate = (len(aar_df[aar_df["規律"] == "遵守"]) / len(aar_df)) * 100
+            aar_df_final["損益額(円)"] = pd.to_numeric(aar_df_final["損益額(円)"], errors='coerce')
+            tot_p = aar_df_final["損益額(円)"].sum()
+            w_rate = (len(aar_df_final[aar_df_final["損益額(円)"] > 0]) / len(aar_df_final)) * 100
+            adh_rate = (len(aar_df_final[aar_df_final["規律"] == "遵守"]) / len(aar_df_final)) * 100
 
             m1, m2, m3 = st.columns(3)
             m1.metric("総損益", f"{int(tot_p):,}円")
@@ -1308,7 +1344,7 @@ with tab6:
             m3.metric("規律遵守率", f"{adh_rate:.1f}%")
             
             import plotly.express as px
-            df_curve = aar_df.copy()
+            df_curve = aar_df_final.copy()
             df_curve['決済日'] = pd.to_datetime(df_curve['決済日'])
             tdf_c = df_curve.sort_values('決済日')
             tdf_c['累積'] = tdf_c['損益額(円)'].cumsum()
@@ -1318,5 +1354,5 @@ with tab6:
             fig_curve.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=280, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig_curve, use_container_width=True)
 
-    # 戦歴ログ表示
-    st.dataframe(aar_df, use_container_width=True)
+    # 戦歴ログ表示（キル・ログ）
+    st.dataframe(aar_df_final, use_container_width=True)
