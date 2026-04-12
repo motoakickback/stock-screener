@@ -1331,6 +1331,7 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     FRONTLINE_FILE_PATH = f"saved_frontline_{user_id}.csv"
     
+    # データの初期化および読み込み
     if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE_PATH):
             try:
@@ -1341,6 +1342,7 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
 
+    # 物理配線：yfinanceによる現在値同期
     if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
         import yfinance as yf
         updated_fr_sync = False
@@ -1356,15 +1358,28 @@ with tab5:
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
             st.rerun()
 
-    edited_frontline_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="frontline_editor_v24_final")
+    # データエディタの展開
+    edited_frontline_df = st.data_editor(
+        st.session_state.frontline_df, 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        key="frontline_editor_v24_final"
+    )
     
+    # 変更の永続化
     if not edited_frontline_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_frontline_df
         edited_frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
         st.rerun()
 
+    # 💎 描画エンジンの物理修復：型の安全性を確保
+    df_render = edited_frontline_df.copy()
+    for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
+        if col in df_render.columns:
+            df_render[col] = pd.to_numeric(df_render[col], errors='coerce')
+
     st.markdown("---")
-    for idx_mon, r_mon in edited_frontline_df.iterrows():
+    for idx_mon, r_mon in df_render.iterrows():
         t_m = str(r_mon.get('銘柄', ''))
         b_m = r_mon.get('買値')
         tp1_m = r_mon.get('第1利確')
@@ -1372,9 +1387,11 @@ with tab5:
         s_m = r_mon.get('損切')
         c_m = r_mon.get('現在値')
         
+        # データの不在を検知してスキップ
         if not t_m or pd.isna(b_m) or pd.isna(c_m):
             continue
             
+        # ステータス判定（被弾・警戒・巡航・無敵・完了）
         if c_m <= s_m:
             col_m, txt_m = "#ef5350", "💀 被弾（防衛線突破）"
         elif c_m < b_m:
@@ -1388,7 +1405,9 @@ with tab5:
         
         st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_m}; margin-bottom: 5px;"><strong>部隊 [{t_m}]</strong> {txt_m} ｜ 現在: ¥{int(c_m):,} (買: ¥{int(b_m):,})</div>', unsafe_allow_html=True)
         
+        # 物理インジケーター（Plotly Bar/Scatter）
         fig_mon = go.Figure()
+        # 目標ポイントの描画
         fig_mon.add_trace(go.Scatter(
             x=[s_m, b_m, tp1_m, tp2_m], 
             y=[0, 0, 0, 0], 
@@ -1396,6 +1415,7 @@ with tab5:
             marker=dict(size=12, color=['#ef5350', '#ffca28', '#26a69a', '#42a5f5']), 
             name="目標"
         ))
+        # 現在値クロスの描画
         fig_mon.add_trace(go.Scatter(
             x=[c_m], 
             y=[0], 
@@ -1409,7 +1429,7 @@ with tab5:
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(0,0,0,0)', 
             yaxis=dict(visible=False), 
-            xaxis=dict(showgrid=False, zeroline=False)
+            xaxis=dict(showgrid=False, zeroline=False, tickformat=",.0f")
         )
         st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
 
