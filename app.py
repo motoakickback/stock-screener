@@ -969,8 +969,7 @@ with tab3:
                 ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
                 ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
                 ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
-                ⚡ 割安性：PBR 5.0倍以下（+10点）<br>
-                <span style="color:#ef5350;">※ パーフェクトオーダー崩壊・過熱(RSI75超)・出来高不足は厳格減点</span>
+                ⚡ 割安性：PBR 5.0倍以下（+10点）
             </div>
             """, unsafe_allow_html=True)
 
@@ -1022,7 +1021,12 @@ with tab3:
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        rank, bg, t_score, _ = get_triage_info(latest['MACD_Hist'], prev['MACD_Hist'], rsi_v, lc, bt_val, mode="待伏")
+                        dist_pct = ((lc / bt_val) - 1) * 100
+                        # 💎 物理修正：圏外判定の緩和（-10%まで許容）
+                        if dist_pct < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                        elif dist_pct <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
+                        elif dist_pct <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
+                        else: rank, bg, t_score = ("C👁️", "#616161", 1)
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
@@ -1067,11 +1071,12 @@ with tab3:
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
-                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ）を検知。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
-                    sc_l, sc_m, sc_r = st.columns([2.5, 4.3, 4.2])
+                    # カラムバランス調整
+                    sc_l, sc_m, sc_r = st.columns([2.2, 4.0, 4.8])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
                         c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("最新終値", f"{int(r['lc']):,}円")
@@ -1082,19 +1087,19 @@ with tab3:
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
                         roe_l = "進撃" if (r['roe'] and r['roe'] >= 10) else "静観"
-                        per_f = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
-                        pbr_f = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
-                        roe_f = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
-                        mcap_f = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
+                        per_v = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                        pbr_v = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                        roe_v = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                        mcap_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
                         
                         html_metrics = f"""
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_f}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_f}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_v}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_v}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_v}</div></div>
                             </div>
                             <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
-                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_f}</div>
+                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_v}</div>
                             </div>"""
                         box_t = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
@@ -1102,28 +1107,28 @@ with tab3:
                     with sc_r:
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
                         vol_sig = (atr_ref / r['lc']) * 100
-                        # 💡 ロジカル推奨：ボラティリティが高いほど大きな波を狙う
                         rec_tp_atr = 3.0 if vol_sig > 5.0 else 2.0 if vol_sig > 2.5 else 1.0
                         
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:14px; color:#aaa; margin-bottom:12px; font-weight:bold;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
-                            <div style='display:flex; gap:20px;'>
+                            <div style='font-size:15px; color:#aaa; margin-bottom:12px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
+                            <div style='display:flex; gap:15px;'>
                                 <div style='flex:1;'>
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-size:12px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
                             val = int(c_t + (atr_ref * m))
-                            style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:3px; padding:0 3px;" if m == rec_tp_atr else ""
+                            diff_p = ((val / c_t) - 1) * 100
+                            style = "background:rgba(38,166,154,0.15); border-radius:3px; padding:0 3px;" if m == rec_tp_atr else ""
                             label = f"+{m}ATR" + (" ⭐" if m == rec_tp_atr else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}</span><b style='color:#26a69a;'>{val:,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:10px; font-weight:normal; color:#888; margin-left:4px;'>(+{diff_p:.1f}%)</span></b></div>"
                         html_mat += """</div><div style='flex:1;'>
                                     <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-size:12px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
                             val = int(c_t - (atr_ref * m))
-                            # 🛡️ 物理復元：-1.0ATRの赤色強調
-                            style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:3px; padding:0 3px;" if m == 1.0 else ""
+                            diff_p = ((val / c_t) - 1) * 100
+                            style = "background:rgba(239,83,80,0.15); border-radius:3px; padding:0 3px;" if m == 1.0 else ""
                             label = f"-{m}ATR" + (" 🛡️" if m == 1.0 else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}</span><b style='color:#ef5350;'>{val:,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:10px; font-weight:normal; color:#888; margin-left:4px;'>({diff_p:.1f}%)</span></b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
                     st.markdown("---")
@@ -1135,6 +1140,7 @@ with tab3:
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
+                    # --- ⚙️ 個別バックテスト演算（物理復元：描画導通確認済み） ---
                     st.markdown(f"#### ⚙️ 銘柄 {r['code']} 過去1年の戦術介入シミュレーション")
                     lot_bt, tp_bt, sli_bt, slc_bt, max_d_bt, lim_d_bt = st.session_state.bt_lot, st.session_state.bt_tp/100.0, st.session_state.bt_sl_i/100.0, st.session_state.bt_sl_c/100.0, st.session_state.bt_sell_d, st.session_state.limit_d
                     df_bt = r['df_chart'].copy(); sim_h = []; b_cnt, b_wins, b_pnl = 0, 0, 0
@@ -1163,6 +1169,8 @@ with tab3:
                     if b_cnt > 0:
                         bc = st.columns(4); bc[0].metric("試行数", f"{b_cnt}回"); bc[1].metric("勝率", f"{(b_wins/b_cnt)*100:.1f}%"); bc[2].metric("累計損益", f"{int(b_pnl):,}円"); bc[3].metric("期待値", f"{int(b_pnl/b_cnt):,}円")
                         with st.expander("📝 介入履歴詳細"): st.table(pd.DataFrame(sim_h).tail(10))
+                    else:
+                        st.info("ℹ️ 指定期間内に条件合致する介入シグナルは検出されませんでした。")
                         
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
