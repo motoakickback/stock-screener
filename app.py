@@ -315,7 +315,7 @@ def render_macro_board():
                 height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, 
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, 
                 hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'), 
-                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=.min(), df.max() + pd.Timedelta(hours=12)])
+                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=.min(), df.max() + pd.Timedelta(hours=12))
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
