@@ -182,7 +182,8 @@ def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
-        if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
@@ -191,7 +192,8 @@ def clean_df(df):
 def calc_vector_indicators(df):
     df = df.copy()
     delta = df.groupby('Code')['AdjC'].diff()
-    gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
@@ -212,71 +214,83 @@ def calc_technicals(df):
 
 def check_event_mines(code, event_data=None):
     alerts = []
-    c = str(code)[:4]; today = datetime.utcnow() + timedelta(hours=9); today_date = today.date()
+    c = str(code)[:4]
+    today = datetime.utcnow() + timedelta(hours=9)
+    today_date = today.date()
     max_warning_date = today_date + timedelta(days=14)
     critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
     if c in critical_mines:
         try:
             event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            if (event_date - timedelta(days=14)) <= today_date <= event_date: alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
-        except: pass
-    if not event_data: return alerts
+            if (event_date - timedelta(days=14)) <= today_date <= event_date:
+                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
+        except:
+            pass
+    if not event_data:
+        return alerts
     for item in event_data.get("dividend", []):
         d_str = str(item.get("RecordDate", ""))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})"); break
-            except: pass
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
+                    break
+            except:
+                pass
     for item in event_data.get("earnings", []):
-        if str(item.get("Code", ""))[:4] != c: continue
+        if str(item.get("Code", ""))[:4] != c:
+            continue
         d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
-            except: pass
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
+                    break
+            except:
+                pass
     return alerts
-    
-    def check_double_top(df_sub):
-        try:
-            v = df_sub['AdjH'].values
-            c = df_sub['AdjC'].values
-            l = df_sub['AdjL'].values
-            if len(v) < 6: return False
-            peaks = []
-            for i in range(1, len(v)-1):
-                if v[i] == max(v[i-1:i+2]):
-                    if not peaks or (i - peaks[-1][0] > 1):
-                        peaks.append((i, v[i]))
-            if len(v) >= 2 and v[-1] > v[-2]:
-                if not peaks or (len(v)-1 - peaks[-1][0] > 1):
-                    peaks.append((len(v)-1, v[-1]))
-            if len(peaks) >= 2:
-                p2_idx, p2_val = peaks[-1]
-                p1_idx, p1_val = peaks[-2]
-                if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                    valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                    if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
-                        return True
-            return False
-        except:
-            return False
+
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values
+        c = df_sub['AdjC'].values
+        l = df_sub['AdjL'].values
+        if len(v) < 6: return False
+        pk = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not pk or (i - pk[-1][0] > 1):
+                    pk.append((i, v[i]))
+        if len(v) >= 2 and v[-1] > v[-2]:
+            if not pk or (len(v)-1 - pk[-1][0] > 1):
+                pk.append((len(v)-1, v[-1]))
+        if len(pk) >= 2:
+            p2_idx, p2_val = pk[-1]
+            p1_idx, p1_val = pk[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
+                    return True
+        return False
+    except:
+        return False
 
 def check_head_shoulders(df_sub):
     try:
         v = df_sub['AdjH'].values
         c = df_sub['AdjC'].values
         if len(v) < 8: return False
-        peaks = []
+        pk = []
         for i in range(1, len(v)-1):
             if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1):
-                    peaks.append((i, v[i]))
-        if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]
-            p2_idx, p2_val = peaks[-2]
-            p1_idx, p1_val = peaks[-3]
+                if not pk or (i - pk[-1][0] > 1):
+                    pk.append((i, v[i]))
+        if len(pk) >= 3:
+            p3_idx, p3_val = pk[-1]
+            p2_idx, p2_val = pk[-2]
+            p1_idx, p1_val = pk[-3]
             if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97:
                 return True
         return False
@@ -329,7 +343,7 @@ def get_fundamentals(code):
     except:
         pass
     return None
-
+    
 @st.cache_data(ttl=86400)
 def load_master():
     try:
