@@ -381,6 +381,7 @@ def get_hist_data_cached():
             if res:
                 rows.extend(res)
     return rows
+    
 def get_fast_indicators(prices):
     if len(prices) < 15:
         return 50.0, 0.0, 0.0, np.zeros(5)
