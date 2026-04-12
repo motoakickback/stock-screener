@@ -1067,7 +1067,7 @@ with tab3:
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
-                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ）を検知。")
                     
@@ -1078,34 +1078,32 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{int(atr_now):,}円", f"ボラ: {(atr_now/r['lc'])*100:.1f}%", delta_color="off")
                     
                     with sc_m:
-                        # 💎 物理復元：財務統合ボックス（フォントサイズをPERに完全同期）
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
                         roe_l = "進撃" if (r['roe'] and r['roe'] >= 10) else "静観"
-                        per_v = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
-                        pbr_v = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
-                        roe_v = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
-                        mcap_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
+                        per_f = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                        pbr_f = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                        roe_f = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                        mcap_f = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
                         
                         html_metrics = f"""
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_v}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_v}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_v}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_f}</div></div>
                             </div>
                             <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
-                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_v}</div>
+                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_f}</div>
                             </div>"""
                         box_t = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
 
                     with sc_r:
-                        # 💎 物理復元：動的ATRマトリクス（ボラティリティ連動の推奨強調 ＆ 防衛線の赤強調）
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
-                        vol_sig = (atr_ref / c_t) * 100
-                        # 💡 推奨ATRの決定ロジック：ボラが大きければ高い目標を推奨
-                        rec_tp_atr = 3.0 if vol_sig > 6.0 else 2.0 if vol_sig > 3.0 else 1.0
+                        vol_sig = (atr_ref / r['lc']) * 100
+                        # 💡 ロジカル推奨：ボラティリティが高いほど大きな波を狙う
+                        rec_tp_atr = 3.0 if vol_sig > 5.0 else 2.0 if vol_sig > 2.5 else 1.0
                         
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
@@ -1115,57 +1113,50 @@ with tab3:
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-size:12px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
                             val = int(c_t + (atr_ref * m))
-                            style = "background:rgba(38,166,154,0.2); border:1px solid #26a69a; border-radius:3px; padding:0 4px;" if m == rec_tp_atr else ""
-                            label = "⭐" if m == rec_tp_atr else f"+{m}"
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}ATR</span><b style='color:#26a69a;'>{val:,}</b></div>"
+                            style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:3px; padding:0 3px;" if m == rec_tp_atr else ""
+                            label = f"+{m}ATR" + (" ⭐" if m == rec_tp_atr else "")
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}</span><b style='color:#26a69a;'>{val:,}</b></div>"
                         html_mat += """</div><div style='flex:1;'>
                                     <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-size:12px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
                             val = int(c_t - (atr_ref * m))
-                            # 🛡️ 防衛目安（-1.0ATR）を赤く強調表示
-                            style = "background:rgba(239,83,80,0.2); border:1px solid #ef5350; border-radius:3px; padding:0 4px;" if m == 1.0 else ""
-                            label = "🛡️" if m == 1.0 else f"-{m}"
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}ATR</span><b style='color:#ef5350;'>{val:,}</b></div>"
+                            # 🛡️ 物理復元：-1.0ATRの赤色強調
+                            style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:3px; padding:0 3px;" if m == 1.0 else ""
+                            label = f"-{m}ATR" + (" 🛡️" if m == 1.0 else "")
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px; {style}'><span>{label}</span><b style='color:#ef5350;'>{val:,}</b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
-                    # 💎 物理復元：原典色彩ローソク足チャート
                     st.markdown("---")
                     df_p = r['df_chart'].tail(100).copy(); df_p['d_str'] = df_p['Date'].dt.strftime('%m/%d')
-                    fig = go.Figure(data=[go.Candlestick(
-                        x=df_p['d_str'], open=df_p['AdjO'], high=df_p['AdjH'], low=df_p['AdjL'], close=df_p['AdjC'],
-                        name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-                    )])
+                    fig = go.Figure(data=[go.Candlestick(x=df_p['d_str'], open=df_p['AdjO'], high=df_p['AdjH'], low=df_p['AdjL'], close=df_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350')])
                     for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
                         fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- ⚙️ 個別バックテスト演算 ---
-                    st.markdown(f"#### ⚙️ 銘柄 {r['code'][:4]} 過去1年の戦術介入シミュレーション")
-                    lot_bt = st.session_state.bt_lot; tp_bt = st.session_state.bt_tp / 100.0
-                    sli_bt = st.session_state.bt_sl_i / 100.0; slc_bt = st.session_state.bt_sl_c / 100.0
-                    max_d_bt = st.session_state.bt_sell_d; lim_d_bt = st.session_state.limit_d
-                    df_bt = r['df_chart'].copy(); sim_h = []; b_cnt = 0; b_wins = 0; b_pnl = 0
+                    st.markdown(f"#### ⚙️ 銘柄 {r['code']} 過去1年の戦術介入シミュレーション")
+                    lot_bt, tp_bt, sli_bt, slc_bt, max_d_bt, lim_d_bt = st.session_state.bt_lot, st.session_state.bt_tp/100.0, st.session_state.bt_sl_i/100.0, st.session_state.bt_sl_c/100.0, st.session_state.bt_sell_d, st.session_state.limit_d
+                    df_bt = r['df_chart'].copy(); sim_h = []; b_cnt, b_wins, b_pnl = 0, 0, 0
                     for i_bt in range(50, len(df_bt)-5):
-                        sub = df_bt.iloc[:i_bt+1]; cur = sub.iloc[-1]; h_v = sub['AdjH'].values; l_v = sub['AdjL'].values
+                        sub = df_bt.iloc[:i_bt+1]; cur = sub.iloc[-1]; h_v, l_v = sub['AdjH'].values, sub['AdjL'].values
                         entry = False; entry_p = 0
                         if is_ambush:
                             r4h = h_v[-4:]; h4 = r4h.max(); gi = len(h_v)-4+r4h.argmax(); l14 = l_v[max(0, gi-14):gi+1].min()
                             if l14 > 0 and (h4/l14) >= st.session_state.f9_min14:
                                 t_v = h4 - ((h4-l14)*(st.session_state.push_r/100.0))
-                                if cur['AdjC'] <= t_v and (len(h_v)-1-gi) <= lim_d_bt: entry = True; entry_p = cur['AdjC']
+                                if cur['AdjC'] <= t_v and (len(h_v)-1-gi) <= lim_d_bt: entry, entry_p = True, cur['AdjC']
                         else:
                             hist = sub['MACD_Hist'].values
-                            if hist[-2] < 0 and hist[-1] >= 0 and cur['AdjC'] >= h_v[-14:].max(): entry = True; entry_p = cur['AdjC']
+                            if hist[-2] < 0 and hist[-1] >= 0 and cur['AdjC'] >= h_v[-14:].max(): entry, entry_p = True, cur['AdjC']
                         if entry:
-                            b_cnt += 1; stop_p = entry_p * (1 - sli_bt); take_p = entry_p * (1 + tp_bt); exit_p = 0; hold = 0
+                            b_cnt += 1; stop_p, take_p, exit_p, hold = entry_p*(1-sli_bt), entry_p*(1+tp_bt), 0, 0
                             for j in range(i_bt+1, min(i_bt+max_d_bt+1, len(df_bt))):
                                 nxt = df_bt.iloc[j]; hold += 1
-                                if nxt['AdjH'] >= take_p: exit_p = take_p; b_wins += 1; break
+                                if nxt['AdjH'] >= take_p: exit_p, b_wins = take_p, b_wins+1; break
                                 if nxt['AdjL'] <= stop_p: exit_p = stop_p; break
                                 if hold >= max_d_bt: exit_p = nxt['AdjC']; break
-                                stop_p = max(stop_p, nxt['AdjC'] * (1 - slc_bt))
+                                stop_p = max(stop_p, nxt['AdjC']*(1-slc_bt))
                             if exit_p > 0:
                                 p = (exit_p - entry_p) * lot_bt; b_pnl += p
                                 sim_h.append({"日付": sub.iloc[-1]['Date'].strftime('%m/%d'), "保有": f"{hold}日", "買値": int(entry_p), "売値": int(exit_p), "損益": int(p)})
