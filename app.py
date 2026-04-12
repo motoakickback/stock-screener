@@ -917,6 +917,17 @@ with tab2:
             st.caption(f"🏭 {r['Sector']} ｜ 🏢 {r['Market']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
 
 with tab3:
+    # 📱 モバイル表示時の右側切れを物理排除する緊急パッチ
+    st.markdown("""
+        <style>
+        @media (max-width: 768px) {
+            .stMain { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+            div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
+            div[style*="border-left"] { border-left: 3px solid #FFD700 !important; padding: 0.8rem !important; }
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
     # --- 🖥️ 【原典UI完全復旧】 二層式ターゲット入力セクション ---
@@ -1063,7 +1074,7 @@ with tab3:
                     if 'プライム' in m_l or '一部' in m_l: 
                         m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: 
-                        # 💎 物理配線：「🚀 中小型」へ短縮
+                        # 💎 物理配線：ラベルを「🚀 中小型」へシンプル化
                         m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 中小型</span>'
                     else: 
                         m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
@@ -1075,6 +1086,7 @@ with tab3:
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
+                    # 💎 モバイル最適化：カラム比率
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
@@ -1113,7 +1125,7 @@ with tab3:
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
                             <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div>
-                            <div style='display:flex; gap:20px;'>
+                            <div style='display:flex; gap:15px;'>
                                 <div style='flex:1;'>
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
@@ -1139,14 +1151,14 @@ with tab3:
                         fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     
-                    # 💎 物理配線：凡例をチャートの下（y=-0.25）へ強制移動。日付との重なりを排除。
+                    # 💎 物理配線：凡例をより上位（y=-0.18）へ移動。余白も短縮（b=50）。
                     fig.update_layout(
-                        height=450, margin=dict(l=0, r=0, t=10, b=100), 
+                        height=450, margin=dict(l=0, r=0, t=10, b=50), 
                         xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                         hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), 
                         xaxis=dict(type='category', dtick=5),
                         showlegend=True,
-                        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5)
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
