@@ -124,13 +124,13 @@ BASE_URL = "https://api.jquants.com/v2"
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    """設定をロードし、0.0による索敵不能（f3_drop）を物理的に回避する"""
+    """設定をロードし、0.0による機能不全を物理的に強制回避する"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
         "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0, # 💎 初期値を-50.0へ
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
@@ -138,21 +138,31 @@ def load_settings():
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
+
+    # 1. 保存ファイルからデータを読み込み、defaultsを更新
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
                 for k, v in saved.items():
                     if k in defaults:
-                        # 0.0トラップ回避：価格下限以外で0が入っている場合はデフォルトを優先
-                        if k not in ["f1_min"] and isinstance(v, (int, float)) and v == 0: continue
+                        # 価格下限(f1_min)以外で、保存値が0の場合は無視（デフォルトを採用）
+                        if k != "f1_min" and isinstance(v, (int, float)) and v == 0:
+                            continue
                         defaults[k] = v
-        except: pass
-        
+        except:
+            pass
+            
+    # 2. session_state を defaults で初期化（既に0が入っている場合も強制リカバリー）
     for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
+        if k not in st.session_state:
+            st.session_state[k] = v
+        else:
+            # 物理リカバリー：既に存在する値が「意図せぬ0」である場合、デフォルトで上書き
+            if k != "f1_min" and isinstance(st.session_state[k], (int, float)) and st.session_state[k] == 0:
+                st.session_state[k] = v
     
-    # 💎 物理固定：1年最高値からの下落除外が0だと全銘柄が消えるため、強制的にリカバリー
+    # 💎 物理固定：1年最高値からの下落除外を-50.0%に再装填
     if st.session_state.f3_drop == 0:
         st.session_state.f3_drop = -50.0
 
@@ -246,49 +256,17 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
-def check_event_mines(code, event_data=None):
-    alerts = []
-    c = str(code)[:4]; today = datetime.utcnow() + timedelta(hours=9); today_date = today.date()
-    max_warning_date = today_date + timedelta(days=14)
-    critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
-    if c in critical_mines:
-        try:
-            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            if (event_date - timedelta(days=14)) <= today_date <= event_date: alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
-        except: pass
-    if not event_data: return alerts
-    for item in event_data.get("dividend", []):
-        d_str = str(item.get("RecordDate", ""))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})"); break
-            except: pass
-    for item in event_data.get("earnings", []):
-        if str(item.get("Code", ""))[:4] != c: continue
-        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
-            except: pass
-    return alerts
-
+# --- 💎 波形解析エンジン（Turn 43完全踏襲） ---
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
         if len(v) < 6: return False
-        peaks = []
+        pk = []
         for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
-        if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
+            if v[i] == max(v[i-1:i+2]): pk.append((i, v[i]))
+        if len(pk) >= 2:
+            p2_idx, p2_val = pk[-1]; p1_idx, p1_val = pk[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05 and c[-1] < p2_val * 0.97: return True
         return False
     except: return False
 
@@ -296,106 +274,14 @@ def check_head_shoulders(df_sub):
     try:
         v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
         if len(v) < 8: return False
-        peaks = []
+        pk = []
         for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
+            if v[i] == max(v[i-1:i+2]): pk.append((i, v[i]))
+        if len(pk) >= 3:
+            p3_idx, p3_val = pk[-1]; p2_idx, p2_val = pk[-2]; p1_idx, p1_val = pk[-3]
+            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10: return True
         return False
     except: return False
-
-def check_double_bottom(df_sub):
-    try:
-        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
-        if len(l) < 6: return False
-        valleys = []
-        for i in range(1, len(l)-1):
-            if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
-        if len(valleys) >= 2:
-            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
-            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
-                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
-        return False
-    except: return False
-
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
-def get_fundamentals(code):
-    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    url = f"{BASE_URL}/fins/statements?code={api_code}"
-    try:
-        r = requests.get(url, headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json().get("statements", [])
-            if data:
-                latest = data[0]; roe = None
-                if latest.get("NetIncome") and latest.get("Equity"):
-                    try: roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
-                    except: pass
-                return {"op": latest.get("OperatingProfit"), "er": latest.get("EquityRatio"), "roe": roe}
-    except: pass
-    return None
-
-@st.cache_data(ttl=86400)
-def load_master():
-    try:
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            df['Code'] = df['Code'].astype(str) + "0"
-            return df
-    except: pass
-    return pd.DataFrame()
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_single_data(code, yrs=1):
-    base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
-    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"; url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200: result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except: pass
-    return result
-
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-def get_hist_data_cached():
-    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    while len(dates) < 45:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
-        days += 1
-    rows = []
-    def fetch(dt):
-        try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json().get("data", [])
-        except: pass
-        return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result(); rows.extend(res if res else [])
-    return rows
-
-def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if gc_days <= 0 or df_chart is None or df_chart.empty: return "圏外 💀", "#424242", 0, ""
-    row = df_chart.iloc[-1]; ma25 = row.get('MA25', 0); score = 50 
-    if ma25 > 0:
-        if lc >= ma25 * 0.95: score += 10
-        if lc >= ma25: score += 10
-    if 50 <= rsi_v <= 70: score += 10
-    if score >= 80: rank, bg = "S🔥", "#d32f2f"
-    elif score >= 60: rank, bg = "A⚡", "#f57c00"
-    elif score >= 40: rank, bg = "B📈", "#fbc02d"
-    else: rank, bg = "C👁️", "#424242"
-    return rank, bg, score, "GC発動中"
 
 # --- 4. サイドバー UI詳細設計（物理導通・0化回避） ---
 st.sidebar.title("🛠️ 戦術コンソール")
