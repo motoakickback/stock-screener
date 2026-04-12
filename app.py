@@ -211,9 +211,79 @@ def calc_vector_indicators(df):
 
 def calc_technicals(df): return calc_vector_indicators(df)
 
-# --- 💎 物理同期エンジン（デグレ防止） ---
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
+def get_fundamentals(code):
+    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    url = f"{BASE_URL}/fins/statements?code={api_code}"
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            data = r.json().get("statements", [])
+            if data:
+                latest = data[0]
+                roe = None
+                if latest.get("NetIncome") and latest.get("Equity"):
+                    try: roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
+                    except: pass
+                return {"op": latest.get("OperatingProfit"), "er": latest.get("EquityRatio"), "roe": roe}
+    except: pass
+    return None
+
+@st.cache_data(ttl=86400)
+def load_master():
+    try:
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except: pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_single_data(code, yrs=1):
+    base = datetime.utcnow() + timedelta(hours=9)
+    f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
+    t_d = base.strftime('%Y%m%d')
+    result = {"bars": []}
+    try:
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        r_bars = requests.get(url, headers=headers, timeout=10)
+        if r_bars.status_code == 200:
+            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
+    except: pass
+    return result
+
+@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+def get_hist_data_cached():
+    base = datetime.utcnow() + timedelta(hours=9)
+    dates = []
+    days = 0
+    while len(dates) < 45:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
+        days += 1
+    rows = []
+    def fetch(dt):
+        try:
+            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
+            if r.status_code == 200: return r.json().get("data", [])
+        except: pass
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        futs = [exe.submit(fetch, dt) for dt in dates]
+        for f in concurrent.futures.as_completed(futs):
+            res = f.result()
+            if res: rows.extend(res)
+    return rows
+
+# --- 💎 物理同期エンジン（デグレ・0化防止） ---
 def load_settings():
-    """設定を強制ロードし、0リセットを物理的に阻止する。"""
+    """設定を強制ロードし、0リセットを物理的に阻止。"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
@@ -224,21 +294,18 @@ def load_settings():
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
-    
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
-
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
                 for k, v in saved.items():
                     if k in defaults and v is not None:
-                        # 0化デグレ対策：デフォルトが0でないのに保存値が0の場合は無視
                         if isinstance(v, (int, float)) and v == 0 and defaults[k] != 0: continue
                         st.session_state[k] = v
         except: pass
-    st.session_state.f3_drop = -50.0 # ボス指定の絶対固定値
+    st.session_state.f3_drop = -50.0
 
 def save_settings():
     keys = list(st.session_state.keys())
@@ -255,7 +322,7 @@ def apply_presets():
 
 load_settings()
 
-# --- 4. サイドバー UI詳細設計（物理キー導通） ---
+# --- 4. サイドバー UI詳細設計（物理キー導通・Value指定） ---
 st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
 st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
