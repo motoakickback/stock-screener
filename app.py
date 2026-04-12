@@ -504,6 +504,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 def load_settings():
+    """全パラメータをsession_stateへ物理同期し、0リセットを阻止する。"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
@@ -520,22 +521,28 @@ def load_settings():
         "sim_push_r_val": 50.0, "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
         "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
+    
+    # 1. 未定義のキーにデフォルト値を装填
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    # 2. 保存ファイルが存在すれば、値を強制的に session_state へ上書き
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
                 for k, v in saved.items():
-                    if k in defaults:
-                        defaults[k] = v
+                    if k in defaults and v is not None:
+                        st.session_state[k] = v
         except:
             pass
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-    # 💎 物理固定：f3_dropは必ず-50.0を維持する。
+
+    # 💎 物理固定：f3_dropは必ず-50.0を維持
     st.session_state.f3_drop = -50.0
 
 def save_settings():
+    """現在の全設定を物理ファイルへ永久保存。"""
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
@@ -556,7 +563,7 @@ def apply_presets():
 
 load_settings()
 
-# --- 4. サイドバー UI詳細設計 ---
+# --- 4. サイドバー UI詳細設計（物理同期パッチ適用） ---
 st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.header("📍 ターゲット選別")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
@@ -566,38 +573,38 @@ st.sidebar.divider()
 
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
-c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
-st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+c1.number_input("価格下限(円)", step=100, key="f1_min", value=st.session_state.f1_min, on_change=save_settings)
+c2.number_input("価格上限(円)", step=100, key="f1_max", value=st.session_state.f1_max, on_change=save_settings)
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", value=st.session_state.f2_m30, on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", value=st.session_state.f3_drop, on_change=save_settings)
 
 c3, c4 = st.sidebar.columns(2)
-c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
+c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", value=st.session_state.f9_min14, on_change=save_settings)
+c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", value=st.session_state.f9_max14, on_change=save_settings)
 
-st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
-st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
-st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", value=st.session_state.f5_ipo, on_change=save_settings)
+st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", value=st.session_state.f6_risk, on_change=save_settings)
+st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", value=st.session_state.f11_ex_wave3, on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", value=st.session_state.f12_ex_overvalued, on_change=save_settings)
 st.sidebar.divider()
 
 st.sidebar.header("🎯 買いルール")
-st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
-st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", value=st.session_state.bt_lot, on_change=save_settings)
+st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", value=st.session_state.limit_d, on_change=save_settings)
 
 st.sidebar.header("💰 売りルール")
-st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
+st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", value=st.session_state.bt_tp, on_change=save_settings)
 c_sl1, c_sl2 = st.sidebar.columns(2)
-c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
-c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
-st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
+c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", value=st.session_state.bt_sl_i, on_change=save_settings)
+c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", value=st.session_state.bt_sl_c, on_change=save_settings)
+st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", value=st.session_state.bt_sell_d, on_change=save_settings)
 st.sidebar.divider()
 
 st.sidebar.header("🚫 特殊除外フィルター")
-st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
-st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
-st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
-st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
+st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", value=st.session_state.f7_ex_etf, on_change=save_settings)
+st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", value=st.session_state.f8_ex_bio, on_change=save_settings)
+st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", value=st.session_state.f10_ex_knife, on_change=save_settings)
+st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", value=st.session_state.gigi_input, on_change=save_settings)
 st.sidebar.divider()
 
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
@@ -608,7 +615,7 @@ if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings()
     st.toast("全設定を永久保存した。")
-
+    
 # --- 5. タブ構成の開始 ---
 master_df = load_master()
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"])
@@ -917,13 +924,14 @@ with tab2:
             st.caption(f"🏭 {r['Sector']} ｜ 🏢 {r['Market']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
 
 with tab3:
-    # 📱 モバイル表示時の右側切れを物理排除する緊急パッチ
+    # 📱 モバイル表示時の右側切れを物理排除し、パディングを最適化するレスポンシブパッチ
     st.markdown("""
         <style>
         @media (max-width: 768px) {
             .stMain { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
             div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
             div[style*="border-left"] { border-left: 3px solid #FFD700 !important; padding: 0.8rem !important; }
+            .stMetric { min-width: 70px !important; }
         }
         </style>
     """, unsafe_allow_html=True)
@@ -948,15 +956,19 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
+        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
+        
+        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
+            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
@@ -985,6 +997,7 @@ with tab3:
             """, unsafe_allow_html=True)
 
     if run_scope:
+        # ファイル保存ロジック（物理永続化）
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
@@ -994,6 +1007,7 @@ with tab3:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
             st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
 
+        # 全入力コードの抽出（正規表現）
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in + " " + daily_in)]))
         
         if t_codes:
@@ -1032,10 +1046,11 @@ with tab3:
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        dist_p = ((lc / bt_val) - 1) * 100
-                        if dist_p < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
-                        elif dist_p <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
-                        elif dist_p <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
+                        dist_pct = ((lc / bt_val) - 1) * 100
+                        # 💎 判定基準の見直し（圏外判定の緩和）
+                        if dist_pct < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                        elif dist_pct <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
+                        elif dist_pct <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
                         else: rank, bg, t_score = ("C👁️", "#616161", 1)
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
@@ -1045,6 +1060,7 @@ with tab3:
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
 
+                    # 物理特定：完全一致検索（コード誤認を排除）
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
                         target_5 = c + "0"
@@ -1061,20 +1077,20 @@ with tab3:
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
                     })
 
-                rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
+                # --- 判定順ソート ---
+                rank_order = {"S🔥": 4, "S": 4, "A⚡": 3, "A": 3, "B📈": 2, "B": 2, "C👁️": 1, "C": 1, "圏外💀": 0, "圏外": 0}
                 for res in scope_results:
-                    clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
-                    res['r_val'] = rank_order.get(clean_rank, 0)
+                    res['r_val'] = rank_order.get(res['rank'], 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['reach_val']), reverse=True)
 
                 for r in scope_results:
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_l = str(r['market']).lower()
+                    
                     if 'プライム' in m_l or '一部' in m_l: 
                         m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: 
-                        # 💎 物理配線：ラベルを「🚀 中小型」へシンプル化
                         m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 中小型</span>'
                     else: 
                         m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
@@ -1084,9 +1100,9 @@ with tab3:
                     
                     st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形を検知。")
                     
-                    # 💎 モバイル最適化：カラム比率
+                    # 💎 UI黄金比レイアウト（カラム比率の再構築）
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
@@ -1120,12 +1136,15 @@ with tab3:
                         vol_sig = (atr_ref / r['lc']) * 100
                         wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
                         tn_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
-                        rec_tp_atr = 3.0 if tn_ratio >= 5.0 else 2.0 if tn_ratio >= 2.5 else 1.0
+                        # 💡 トレンド・ノイズ比に基づく推奨ATRの動的決定
+                        if tn_ratio >= 5.0: rec_tp_atr = 3.0
+                        elif tn_ratio >= 2.5: rec_tp_atr = 2.0
+                        else: rec_tp_atr = 1.0
                         
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
                             <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div>
-                            <div style='display:flex; gap:15px;'>
+                            <div style='display:flex; gap:20px;'>
                                 <div style='flex:1;'>
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
@@ -1151,7 +1170,7 @@ with tab3:
                         fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     
-                    # 💎 物理配線：凡例をより上位（y=-0.18）へ移動。余白も短縮（b=50）。
+                    # 💎 物理配線：凡例の高度調整（y=-0.18）およびモバイルパディング確保
                     fig.update_layout(
                         height=450, margin=dict(l=0, r=0, t=10, b=50), 
                         xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
