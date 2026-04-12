@@ -1330,6 +1330,7 @@ with tab4:
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     FRONTLINE_FILE_PATH = f"saved_frontline_{user_id}.csv"
+    
     if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE_PATH):
             try:
@@ -1356,6 +1357,7 @@ with tab5:
             st.rerun()
 
     edited_frontline_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="frontline_editor_v24_final")
+    
     if not edited_frontline_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_frontline_df
         edited_frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
@@ -1363,19 +1365,52 @@ with tab5:
 
     st.markdown("---")
     for idx_mon, r_mon in edited_frontline_df.iterrows():
-        t_m, b_m, tp1_m, tp2_m, s_m, c_m = str(r_mon.get('銘柄', '')), r_mon['買値'], r_mon['第1利確'], r_mon['第2利確'], r_mon['損切'], r_mon['現在値']
-        if not t_m or pd.isna(b_m) or pd.isna(c_m): continue
-        if c_m <= s_m: col_m, txt_m = "#ef5350", "💀 被弾（防衛線突破）"
-        elif c_m < b_m: col_m, txt_m = "#ff9800", "⚠️ 警戒（損切圏内）"
-        elif tp1_m > 0 and c_m < tp1_m: col_m, txt_m = "#26a69a", "🟢 巡航（第1目標へ）"
-        elif tp2_m > 0 and c_m < tp2_m: col_m, txt_m = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
-        else: col_m, txt_m = "#ab47bc", "🏆 任務完了（利確推奨）"
+        t_m = str(r_mon.get('銘柄', ''))
+        b_m = r_mon.get('買値')
+        tp1_m = r_mon.get('第1利確')
+        tp2_m = r_mon.get('第2利確')
+        s_m = r_mon.get('損切')
+        c_m = r_mon.get('現在値')
+        
+        if not t_m or pd.isna(b_m) or pd.isna(c_m):
+            continue
+            
+        if c_m <= s_m:
+            col_m, txt_m = "#ef5350", "💀 被弾（防衛線突破）"
+        elif c_m < b_m:
+            col_m, txt_m = "#ff9800", "⚠️ 警戒（損切圏内）"
+        elif tp1_m > 0 and c_m < tp1_m:
+            col_m, txt_m = "#26a69a", "🟢 巡航（第1目標へ）"
+        elif tp2_m > 0 and c_m < tp2_m:
+            col_m, txt_m = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
+        else:
+            col_m, txt_m = "#ab47bc", "🏆 任務完了（利確推奨）"
         
         st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_m}; margin-bottom: 5px;"><strong>部隊 [{t_m}]</strong> {txt_m} ｜ 現在: ¥{int(c_m):,} (買: ¥{int(b_m):,})</div>', unsafe_allow_html=True)
+        
         fig_mon = go.Figure()
-        fig_mon.add_trace(go.Scatter(x=[s_m, b_m, tp1_m, tp2_m], y=[0,0,0,0], mode='markers', marker=dict(size=12, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標"))
-        fig_mon.add_trace(go.Scatter(x=[c_m], y=[0], mode='markers', marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col_m)), name="現在地"))
-        fig_mon.update_layout(height=80, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(visible=False), xaxis=dict(showgrid=False, zeroline=False))
+        fig_mon.add_trace(go.Scatter(
+            x=[s_m, b_m, tp1_m, tp2_m], 
+            y=[0, 0, 0, 0], 
+            mode='markers', 
+            marker=dict(size=12, color=['#ef5350', '#ffca28', '#26a69a', '#42a5f5']), 
+            name="目標"
+        ))
+        fig_mon.add_trace(go.Scatter(
+            x=[c_m], 
+            y=[0], 
+            mode='markers', 
+            marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col_m)), 
+            name="現在地"
+        ))
+        fig_mon.update_layout(
+            height=80, 
+            margin=dict(l=10, r=10, t=10, b=10), 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)', 
+            yaxis=dict(visible=False), 
+            xaxis=dict(showgrid=False, zeroline=False)
+        )
         st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
 
 with tab6:
