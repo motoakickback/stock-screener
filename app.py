@@ -211,6 +211,91 @@ def calc_vector_indicators(df):
 
 def calc_technicals(df): return calc_vector_indicators(df)
 
+# --- 💎 波形解析・イベント検知エンジン ---
+def check_event_mines(code, event_data=None):
+    alerts = []
+    c = str(code)[:4]
+    today = datetime.utcnow() + timedelta(hours=9)
+    today_date = today.date()
+    max_warning_date = today_date + timedelta(days=14)
+    critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
+    if c in critical_mines:
+        try:
+            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
+            if (event_date - timedelta(days=14)) <= today_date <= event_date:
+                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
+        except: pass
+    if not event_data: return alerts
+    for item in event_data.get("dividend", []):
+        d_str = str(item.get("RecordDate", ""))[:10]
+        if d_str:
+            try:
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
+                    break
+            except: pass
+    for item in event_data.get("earnings", []):
+        if str(item.get("Code", ""))[:4] != c: continue
+        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
+        if d_str:
+            try:
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date:
+                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
+                    break
+            except: pass
+    return alerts
+
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        if len(v) < 6: return False
+        pk = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not pk or (i - pk[-1][0] > 1): pk.append((i, v[i]))
+        if len(v) >= 2 and v[-1] > v[-2]:
+            if not pk or (len(v)-1 - pk[-1][0] > 1): pk.append((len(v)-1, v[-1]))
+        if len(pk) >= 2:
+            p2_idx, p2_val = pk[-1]; p1_idx, p1_val = pk[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
+        return False
+    except: return False
+
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 8: return False
+        pk = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not pk or (i - pk[-1][0] > 1): pk.append((i, v[i]))
+        if len(pk) >= 3:
+            p3_idx, p3_val = pk[-1]; p2_idx, p2_val = pk[-2]; p1_idx, p1_val = pk[-3]
+            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
+        return False
+    except: return False
+
+def check_double_bottom(df_sub):
+    try:
+        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        if len(l) < 6: return False
+        valleys = []
+        for i in range(1, len(l)-1):
+            if l[i] == min(l[i-1:i+2]):
+                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
+        if len(valleys) >= 2:
+            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
+                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
+                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
+        return False
+    except: return False
+
+# --- 💎 基幹データ取得・財務エンジン ---
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
@@ -220,8 +305,7 @@ def get_fundamentals(code):
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if data:
-                latest = data[0]
-                roe = None
+                latest = data[0]; roe = None
                 if latest.get("NetIncome") and latest.get("Equity"):
                     try: roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
                     except: pass
@@ -281,9 +365,21 @@ def get_hist_data_cached():
             if res: rows.extend(res)
     return rows
 
-# --- 💎 物理同期エンジン（デグレ・0化防止） ---
+def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
+    if gc_days <= 0 or df_chart is None or df_chart.empty: return "圏外 💀", "#424242", 0, ""
+    row = df_chart.iloc[-1]; ma25 = row.get('MA25', 0); score = 50 
+    if ma25 > 0:
+        if lc >= ma25 * 0.95: score += 10
+        if lc >= ma25: score += 10
+    if 50 <= rsi_v <= 70: score += 10
+    if score >= 80: rank, bg = "S", "#d32f2f"
+    elif score >= 60: rank, bg = "A", "#f57c00"
+    elif score >= 40: rank, bg = "B", "#fbc02d"
+    else: rank, bg = "C 💀", "#424242"
+    return rank, bg, score, "GC発動中"
+
+# --- 💎 設定管理・同期エンジン ---
 def load_settings():
-    """設定を強制ロードし、0リセットを物理的に阻止。"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
@@ -309,9 +405,8 @@ def load_settings():
 
 def save_settings():
     keys = list(st.session_state.keys())
-    current = {k: st.session_state[k] for k in keys if not k.startswith("_")}
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(current, f, ensure_ascii=False, indent=4)
+    current = {k: st.session_state[k] for k in keys if not k.startswith("_") and k not in ["tab1_scan_results", "tab2_scan_results"]}
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(current, f, ensure_ascii=False, indent=4)
 
 def apply_presets():
     p_rate = st.session_state.get("preset_push_r", "50.0%")
@@ -322,7 +417,7 @@ def apply_presets():
 
 load_settings()
 
-# --- 4. サイドバー UI詳細設計（物理キー導通・Value指定） ---
+# --- 4. サイドバー UI詳細設計（物理導通） ---
 st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
 st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
