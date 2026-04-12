@@ -850,13 +850,11 @@ with tab3:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
-                # 🚀 並列処理：株価データと財務指標を同時に取得
+                # 🚀 並列処理：株価データと財務指標を同時に高速取得
                 def fetch_single_data_parallel(c):
                     api_code = c if len(c) == 5 else c + "0"
                     data = get_single_data(api_code, 1)
-                    # 💎 ROE情報を取得（機関部に配置したget_fundamentalsを呼び出す）
-                    fund = get_fundamentals(c)
-                    per, pbr, mcap = None, None, None
+                    per, pbr, mcap, roe_res = None, None, None, None
                     try:
                         import yfinance as yf
                         tk = yf.Ticker(c[:4] + ".T")
@@ -864,14 +862,17 @@ with tab3:
                         per = info.get('trailingPE')
                         pbr = info.get('priceToBook')
                         mcap = info.get('marketCap')
+                        # 💎 指示：ROEを取得（0.15形式を%へ変換）
+                        raw_roe = info.get('returnOnEquity')
+                        if raw_roe: roe_res = raw_roe * 100
                     except: pass
-                    return c, data, per, pbr, mcap, fund
+                    return c, data, per, pbr, mcap, roe_res
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_single_data_parallel, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
-                        res_c, res_data, res_per, res_pbr, res_mcap, res_fund = f.result()
-                        raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "fund": res_fund}
+                        res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
+                        raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
 
                 scope_results = []
                 for c in t_codes:
@@ -925,12 +926,14 @@ with tab3:
                     if not master_df.empty:
                         m_row = master_df[master_df['Code'].astype(str).str.contains(c[:4])]
                         if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']; c_sector = m_row.iloc[0]['Sector']; c_market = m_row.iloc[0]['Market']
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_sector = m_row.iloc[0]['Sector']
+                            c_market = m_row.iloc[0]['Market']
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                         'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days if not is_ambush else 0,
-                        'df_chart': df_chart, 'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': mcap_str, 'fund': raw_s['fund'],
+                        'df_chart': df_chart, 'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': mcap_str, 'roe': raw_s['roe'],
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
                     })
 
@@ -943,41 +946,63 @@ with tab3:
                 for r in scope_results:
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
-                    m_info = r.get('market', '不明'); m_lower = str(m_info).lower()
-                    if 'プライム' in m_lower or '一部' in m_lower: m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                    else: m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
+                    
+                    m_info = r.get('market', '不明')
+                    m_lower = str(m_info).lower()
+                    if 'プライム' in m_lower or '一部' in m_lower: 
+                        m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                    else: 
+                        m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info}</span>'
 
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
-                    st.markdown(f'<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r["code"][:4]}) {r["name"]}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r["rsi"]:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r["reach_val"]:.1f}%</span></div></div>', unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="margin-bottom: 0.8rem;">
+                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                                {m_badge}{t_badge}
+                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
+                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                    # --- 🏅 財務生体スキャンパネル（ROE 10%判定） ---
-                    fund_d = r.get('fund')
-                    if fund_d:
-                        roe_val = fund_d.get('roe')
-                        if roe_val is not None:
-                            roe_color = "#2e7d32" if roe_val >= 10 else "#c62828"
-                            roe_bg = "rgba(46, 125, 80, 0.1)" if roe_val >= 10 else "rgba(198, 40, 40, 0.1)"
-                            roe_status = "買い（進撃）" if roe_val >= 10 else "見送り（静観）"
-                            roe_icon = "✅" if roe_val >= 10 else "⚠️"
-                            st.markdown(f"""<div style="background: {roe_bg}; border: 1px solid {roe_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;"><div><span style="font-size: 12px; color: #aaa; font-weight: bold;">💎 財務生体スキャン: </span><strong style="font-size: 18px; color: {roe_color}; margin-left: 8px;">{roe_icon} ROE {roe_val:.1f}% ｜ {roe_status}</strong></div><div style="text-align: right;"><div style="font-size: 11px; color: #888;">営業利益: {int(fund_d.get('op', 0)):,} ｜ 自己資本比率: {fund_d.get('er', 0)*100:.1f}%</div></div></div>""", unsafe_allow_html=True)
-                    
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
-                    if not is_ambush and r['gc_days'] > 0: st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
+                    if r['is_dt'] or r['is_hs']: 
+                        st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。撤退を推奨。")
+                    if not is_ambush and r['gc_days'] > 0: 
+                        st.success(f"🔥 【GC発動】MACDゴールデンクロスから {r['gc_days']}日目")
                     
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
-                        atr_v_calc = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05; atr_pct = (atr_v_calc / r['lc']) * 100
-                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("直近安値", f"{int(r['l14']):,}円")
-                        c_m3, c_m4 = st.columns(2); c_m3.metric("上昇幅", f"{int(r['ur']):,}円"); c_m4.metric("最新終値", f"{int(r['lc']):,}円")
-                        st.metric("🌪️ 1ATR", f"{int(atr_v_calc):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off"); st.caption(f"🏭 {r['sector']}")
+                        atr_v_calc = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
+                        atr_pct = (atr_v_calc / r['lc']) * 100
+                        c_m1, c_m2 = st.columns(2)
+                        c_m1.metric("直近高値", f"{int(r['h14']):,}円")
+                        c_m2.metric("直近安値", f"{int(r['l14']):,}円")
+                        c_m3, c_m4 = st.columns(2)
+                        c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
+                        c_m4.metric("最新終値", f"{int(r['lc']):,}円")
+                        st.metric("🌪️ 1ATR", f"{int(atr_v_calc):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
+                        st.caption(f"🏭 {r['sector']}")
                     
                     with sc_mid:
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"; pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         per_s = f"{r['per']:.1f}倍" if r['per'] else "-"; pbr_s = f"{r['pbr']:.2f}倍" if r['pbr'] else "-"
-                        html_indices = f"""<div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'><div style='flex:1;'><div style='font-size:12px; color:#888;'>📊 PER</div><div style='font-size:1.4rem; color:{per_c}; font-weight:bold;'>{per_s}</div></div><div style='flex:1;'><div style='font-size:12px; color:#888;'>📉 PBR</div><div style='font-size:1.4rem; color:{pbr_c}; font-weight:bold;'>{pbr_s}</div></div></div><div style='text-align:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'><div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.2rem; color:#fff; font-weight:bold;'>{r['mcap']}</div></div>"""
+                        
+                        # 💎 ROE表示ロジック統合（10%境界で色分け・進撃ラベル付与）
+                        roe_v = r.get('roe')
+                        if roe_v is not None:
+                            roe_c = "#26a69a" if roe_v >= 10 else "#ef5350"
+                            roe_s = f"{roe_v:.1f}%"
+                            roe_label = "進撃" if roe_v >= 10 else "静観"
+                        else:
+                            roe_c = "#888"; roe_s = "-"; roe_label = "不明"
+
+                        html_indices = f"""<div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'><div style='flex:1;'><div style='font-size:12px; color:#888;'>📊 PER</div><div style='font-size:1.4rem; color:{per_c}; font-weight:bold;'>{per_s}</div></div><div style='flex:1;'><div style='font-size:12px; color:#888;'>📉 PBR</div><div style='font-size:1.4rem; color:{pbr_c}; font-weight:bold;'>{pbr_s}</div></div><div style='flex:1;'><div style='font-size:12px; color:#888;'>📈 ROE({roe_label})</div><div style='font-size:1.4rem; color:{roe_c}; font-weight:bold;'>{roe_s}</div></div></div><div style='text-align:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'><div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.2rem; color:#fff; font-weight:bold;'>{r['mcap']}</div></div>"""
+                        
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー (14d高値)"
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>{box_title}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div><div style='border-top:1px dashed #444; margin:10px 0;'></div>{html_indices}</div>""", unsafe_allow_html=True)
 
@@ -985,7 +1010,7 @@ with tab3:
                         c_target = r['bt_val']; atr_v = r['atr_val'] if r['atr_val'] > 0 else c_target * 0.05
                         tp_m = [0.5, 1.0, 2.0, 3.0]; sl_m = [0.5, 1.0, 2.0]
                         is_agg = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]); rec_tps = [2.0, 3.0] if is_agg else [0.5, 1.0]
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
+                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円 | 1ATR:{int(atr_v):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:26a69a; margin-bottom:8px;'>【利確目安】</div>"
                         for m in tp_m:
                             val = int(c_target + (atr_v * m)); pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
                             if m in rec_tps: html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;'><span style='color:#80cbc4; font-weight:bold;'>+{m}ATR <span style='font-size:10px;'>({pct:+.1f}%)</span> <span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span></span><b style='font-size:1.1rem; color:#fff;'>{val:,}</b></div>"
