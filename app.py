@@ -485,10 +485,10 @@ if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings(); st.toast("全設定を永久保存した。")
 
-# --- 5. タブ構成 ---
+# --- 5. タブ構成の開始 ---
+# 💎 物理修正：二重ロードを排除し起動速度を向上
 master_df = load_master()
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"])
-master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
@@ -681,7 +681,7 @@ with tab2:
     col_t2_1, col_t2_2 = st.columns(2)
     rsi_limit_val = col_t2_1.number_input("RSI上限（過熱感の足切り）", step=5, key="tab2_rsi_limit", on_change=save_settings)
     vol_limit_val = col_t2_2.number_input("最低出来高（5日平均）", step=5000, key="tab2_vol_limit", on_change=save_settings)
-    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始")
+    run_scan_t2 = st.button("🚀 全軍GC初動スキャン開始", key="btn_assault_scan_trigger")
 
     if run_scan_t2:
         st.toast("🟢 強襲トリガーを確認。索敵開始！", icon="🚀")
@@ -695,27 +695,75 @@ with tab2:
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
+                # 💎 物理配線：サイドバー設定の取得
                 f1_min, f1_max = float(st.session_state.f1_min), float(st.session_state.f1_max)
-                f5_ipo = st.session_state.f5_ipo; f3_drop_val = float(st.session_state.f3_drop)
+                f2_limit = float(st.session_state.f2_m30)
+                f3_drop_val = float(st.session_state.f3_drop)
+                f5_ipo = st.session_state.f5_ipo
+                f7_ex_etf = st.session_state.f7_ex_etf
+                f8_bio_flag = st.session_state.f8_ex_bio
+                f10_ex_knife = st.session_state.f10_ex_knife
+                f11_ex_wave3 = st.session_state.f11_ex_wave3
+                f12_overvalued = st.session_state.f12_ex_overvalued
+                g_in = st.session_state.get("gigi_input", "")
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 
+                # 市場フィルター
                 if not master_df.empty:
                     m_target_codes = master_df[master_df['Market'].str.contains('|'.join(['プライム', '一部'] if m_mode=="大型" else ['スタンダード', 'グロース', '新興', 'マザーズ', 'JASDAQ', '二部']), na=False)]['Code'].unique()
                     df = df[df['Code'].isin(m_target_codes)]
 
+                # 基本足切り（価格・出来高）
                 valid_codes = set(df[df['Date']==df['Date'].max()][(df['AdjC']>=f1_min) & (df['AdjC']<=f1_max)]['Code']).intersection(set(avg_vols[avg_vols>=vol_limit_val].index))
                 df = df[df['Code'].isin(valid_codes)]
 
+                # IPO除外
                 if f5_ipo and not df.empty:
                     stock_min_dates = df.groupby('Code')['Date'].min()
                     df = df[df['Code'].isin(stock_min_dates[stock_min_dates <= (df['Date'].min() + pd.Timedelta(days=15))].index)]
+
+                # 💎 物理配線：ETF/REIT除外
+                if f7_ex_etf and not master_df.empty:
+                    invalid_mask = master_df['Market'].astype(str).str.contains('ETF|REIT', case=False, na=False) | master_df['Sector'].astype(str).str.contains('ETF|REIT|投信', case=False, na=False)
+                    df = df[df['Code'].isin(master_df[~invalid_mask]['Code'].unique())]
+
+                # 💎 物理配線：医薬品(バイオ)除外
+                if f8_bio_flag and not master_df.empty:
+                    bio_codes = master_df[master_df['Sector'].str.contains('医薬品', na=False)]['Code'].unique()
+                    df = df[~df['Code'].isin(bio_codes)]
+
+                # 物理配線：ブラックリスト
+                if g_in:
+                    bl = re.findall(r'\d{4}', str(g_in))
+                    if bl: df = df[~df['Code'].str.extract(r'(\d{4})')[0].isin(bl)]
                 
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 15: continue
-                    adjc_vals, adjh_vals = group['AdjC'].values, group['AdjH'].values; lc = adjc_vals[-1]
+                    if len(group) < 30: continue
+                    
+                    adjc_vals, adjh_vals = group['AdjC'].values, group['AdjH'].values
+                    lc = adjc_vals[-1]
+                    
+                    # 💎 物理配線：1ヶ月暴騰上限 (20日前比)
+                    prev_20_val = adjc_vals[max(0, len(adjc_vals)-20)]
+                    if prev_20_val > 0 and (lc / prev_20_val) > f2_limit: continue
+                    
+                    # 1年最高値からの下落率
                     if lc < adjh_vals.max() * (1 + (f3_drop_val / 100.0)): continue
+
+                    # 💎 物理配線：第3波終了除外
+                    if f11_ex_wave3:
+                        peaks = []
+                        for j in range(5, len(adjh_vals)-5):
+                            if adjh_vals[j] == max(adjh_vals[j-5:j+5]):
+                                if not peaks or adjh_vals[j] > peaks[-1] * 1.15: peaks.append(adjh_vals[j])
+                        if len(peaks) >= 3 and lc < max(peaks) * 0.85: continue
+
+                    # 💎 物理配線：落ちるナイフ除外
+                    if f10_ex_knife:
+                        recent_4d = adjc_vals[-4:]
+                        if len(recent_4d) == 4 and (recent_4d[-1] / recent_4d[0] < 0.85): continue
                     
                     rsi, _, _, hist_vals = get_fast_indicators(adjc_vals)
                     if rsi > rsi_limit_val: continue
@@ -726,13 +774,19 @@ with tab2:
                     ma25 = group['AdjC'].rolling(window=25).mean().iloc[-1]
                     if lc < (ma25 * 0.95): continue
                     
+                    if st.session_state.f6_risk or f12_overvalued:
+                        fund = get_fundamentals(code)
+                        if fund:
+                            if st.session_state.f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0): continue
+                            if f12_overvalued and float(fund.get('op', 1)) < 0: continue
+
                     t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=False)
                     m_i = master_dict.get(code, {})
                     results.append({
-                        'Code':code, 'Name':m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
-                        'Market':m_i.get('Market','不明'), 'Sector':m_i.get('Sector','不明'), 
-                        'lc':lc, 'RSI':rsi, 'avg_vol':int(avg_vols.get(code,0)), 'h14':adjh_vals[-14:].max(), 
-                        'atr':group['AdjH'].values[-14:].max()*0.03, 'T_Rank':t_rank, 'T_Color':t_color, 'T_Score':t_score, 'GC_Days':gc_days
+                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
+                        'Market': m_i.get('Market', '不明'), 'Sector': m_i.get('Sector', '不明'), 
+                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code, 0)), 'h14': adjh_vals[-14:].max(), 
+                        'atr': group['AdjH'].values[-14:].max()*0.03, 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days
                     })
                 
                 st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
