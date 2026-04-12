@@ -1434,40 +1434,57 @@ with tab5:
         st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
 
 with tab6:
-    st.markdown('<h3 style="font-size: 24px;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
     AAR_LOG_FILE = f"saved_aar_log_{user_id}.csv"
+    
+    # ログファイルの読み込み
     if os.path.exists(AAR_LOG_FILE):
         aar_df_final = pd.read_csv(AAR_LOG_FILE)
     else:
         aar_df_final = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
     col_aar1, col_aar2 = st.columns([1, 2.2])
+    
     with col_aar1:
         st.markdown("#### 📝 戦果報告")
         with st.form("aar_form_v24_final"):
             d_aar = st.date_input("決済日")
             c_aar = st.text_input("銘柄コード")
             t_aar = st.selectbox("戦術", ["待伏", "強襲", "他"])
-            b_aar = st.number_input("買値")
-            s_aar = st.number_input("売値")
-            l_aar = st.number_input("株数", step=100)
+            b_aar = st.number_input("買値", min_value=0.0, step=1.0)
+            s_aar = st.number_input("売値", min_value=0.0, step=1.0)
+            l_aar = st.number_input("株数", min_value=0, step=100)
             r_aar = st.radio("規律", ["遵守", "違反"])
             m_aar = st.text_input("メモ")
+            
             if st.form_submit_button("記録を保存"):
                 p_aar = int((s_aar - b_aar) * l_aar)
                 pp_aar = round(((s_aar / b_aar) - 1) * 100, 2) if b_aar != 0 else 0
-                nd_aar = pd.DataFrame([{"決済日":d_aar, "銘柄":c_aar, "戦術":t_aar, "買値":b_aar, "売値":s_aar, "株数":l_aar, "損益額(円)":p_aar, "損益(%)":pp_aar, "規律":r_aar, "メモ":m_aar}])
+                nd_aar = pd.DataFrame([{
+                    "決済日": d_aar, 
+                    "銘柄": c_aar, 
+                    "戦術": t_aar, 
+                    "買値": b_aar, 
+                    "売値": s_aar, 
+                    "株数": l_aar, 
+                    "損益額(円)": p_aar, 
+                    "損益(%)": pp_aar, 
+                    "規律": r_aar, 
+                    "メモ": m_aar
+                }])
+                # 新しい記録を先頭に追加して保存
                 pd.concat([nd_aar, aar_df_final]).to_csv(AAR_LOG_FILE, index=False)
                 st.rerun()
 
     with col_aar2:
         if not aar_df_final.empty:
+            # 数値型への強制変換
             aar_df_final["損益額(円)"] = pd.to_numeric(aar_df_final["損益額(円)"], errors='coerce')
             tot_p_aar = aar_df_final["損益額(円)"].sum()
             w_cnt_aar = len(aar_df_final[aar_df_final["損益額(円)"] > 0])
             w_rate_aar = (w_cnt_aar / len(aar_df_final)) * 100
             
-            # PF（プロフィットファクター）
+            # PF（プロフィットファクター）計算
             gross_p_aar = aar_df_final[aar_df_final["損益額(円)"] > 0]["損益額(円)"].sum()
             gross_l_aar = abs(aar_df_final[aar_df_final["損益額(円)"] < 0]["損益額(円)"].sum())
             pf_aar = round(gross_p_aar / gross_l_aar, 2) if gross_l_aar > 0 else 9.99
@@ -1475,20 +1492,35 @@ with tab6:
             # 規律遵守率
             adh_aar = (len(aar_df_final[aar_df_final["規律"] == "遵守"]) / len(aar_df_final)) * 100
 
+            # 物理メトリクス表示
             m1_a, m2_a, m3_a, m4_a = st.columns(4)
             m1_a.metric("総損益", f"{int(tot_p_aar):,}円")
             m2_a.metric("勝率", f"{w_rate_aar:.1f}%")
             m3_a.metric("PF", pf_aar)
             m4_a.metric("規律遵守率", f"{adh_aar:.1f}%")
             
-            # 実資産損益曲線
+            # 実資産損益曲線 (Real Equity Curve)
             import plotly.express as px
-            aar_df_final['決済日'] = pd.to_datetime(aar_df_final['決済日'])
-            tdf_aar_curve = aar_df_final.sort_values('決済日')
+            df_curve = aar_df_final.copy()
+            df_curve['決済日'] = pd.to_datetime(df_curve['決済日'])
+            tdf_aar_curve = df_curve.sort_values('決済日')
             tdf_aar_curve['累積'] = tdf_aar_curve['損益額(円)'].cumsum()
-            fig_aar_equity = px.line(tdf_aar_curve, x='決済日', y='累積', title="実資産推移 (Real Equity Curve)", markers=True)
+            
+            fig_aar_equity = px.line(
+                tdf_aar_curve, 
+                x='決済日', 
+                y='累積', 
+                title="実資産推移 (Real Equity Curve)", 
+                markers=True
+            )
             fig_aar_equity.update_traces(line_color='#26a69a')
-            fig_aar_equity.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=300, margin=dict(l=0,r=0,t=30,b=0))
+            fig_aar_equity.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0.1)', 
+                height=300, 
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
             st.plotly_chart(fig_aar_equity, use_container_width=True)
 
+    # 戦歴データベースの表示
     st.dataframe(aar_df_final, use_container_width=True)
