@@ -937,15 +937,19 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
+        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
+        
+        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
+            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
@@ -1021,10 +1025,10 @@ with tab3:
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        dist_pct = ((lc / bt_val) - 1) * 100
-                        if dist_pct < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
-                        elif dist_pct <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
-                        elif dist_pct <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
+                        dist_p = ((lc / bt_val) - 1) * 100
+                        if dist_p < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                        elif dist_p <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
+                        elif dist_p <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
                         else: rank, bg, t_score = ("C👁️", "#616161", 1)
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
@@ -1045,8 +1049,8 @@ with tab3:
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                        'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'reach_val': reach_rate, 'gc_days': gc_days if not is_ambush else 0,
-                        'df_chart': df_chart, 'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': raw_s['mcap'], 'roe': raw_s['roe'],
+                        'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'reach_val': reach_rate, 'df_chart': df_chart, 
+                        'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': raw_s['mcap'], 'roe': raw_s['roe'],
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
                     })
 
@@ -1074,6 +1078,7 @@ with tab3:
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
+                    # 💎 UI黄金比レイアウト
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
@@ -1103,20 +1108,15 @@ with tab3:
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
 
                     with sc_r:
-                        # 💎 物理復元：トレンド・ノイズ比に基づく真の推奨ATR演算
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
-                        vol_sig = (atr_ref / c_t) * 100
+                        vol_sig = (atr_ref / r['lc']) * 100
                         wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
-                        trend_noise_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
-                        
-                        # 波の強さが日々のノイズの何倍あるかで利確幅を動的決定
-                        if trend_noise_ratio >= 5.0: rec_tp_atr = 3.0
-                        elif trend_noise_ratio >= 2.5: rec_tp_atr = 2.0
-                        else: rec_tp_atr = 1.0
+                        tn_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
+                        rec_tp_atr = 3.0 if tn_ratio >= 5.0 else 2.0 if tn_ratio >= 2.5 else 1.0
                         
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {trend_noise_ratio:.1f})</div>
+                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div>
                             <div style='display:flex; gap:20px;'>
                                 <div style='flex:1;'>
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
@@ -1144,37 +1144,6 @@ with tab3:
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-                    st.markdown(f"#### ⚙️ 銘柄 {r['code'][:4]} 過去1年の戦術介入シミュレーション")
-                    lot_bt, tp_bt, sli_bt, slc_bt, max_d_bt, lim_d_bt = st.session_state.bt_lot, st.session_state.bt_tp/100.0, st.session_state.bt_sl_i/100.0, st.session_state.bt_sl_c/100.0, st.session_state.bt_sell_d, st.session_state.limit_d
-                    df_bt = r['df_chart'].copy(); sim_h = []; b_cnt, b_wins, b_pnl = 0, 0, 0
-                    for i_bt in range(50, len(df_bt)-5):
-                        sub = df_bt.iloc[:i_bt+1]; cur = sub.iloc[-1]; h_v, l_v = sub['AdjH'].values, sub['AdjL'].values
-                        entry = False; entry_p = 0
-                        if is_ambush:
-                            r4h = h_v[-4:]; h4 = r4h.max(); gi = len(h_v)-4+r4h.argmax(); l14 = l_v[max(0, gi-14):gi+1].min()
-                            if l14 > 0 and (h4/l14) >= st.session_state.f9_min14:
-                                t_v = h4 - ((h4-l14)*(st.session_state.push_r/100.0))
-                                if cur['AdjC'] <= t_v and (len(h_v)-1-gi) <= lim_d_bt: entry, entry_p = True, cur['AdjC']
-                        else:
-                            hist = sub['MACD_Hist'].values
-                            if hist[-2] < 0 and hist[-1] >= 0 and cur['AdjC'] >= h_v[-14:].max(): entry, entry_p = True, cur['AdjC']
-                        if entry:
-                            b_cnt += 1; stop_p, take_p, exit_p, hold = entry_p*(1-sli_bt), entry_p*(1+tp_bt), 0, 0
-                            for j in range(i_bt+1, min(i_bt+max_d_bt+1, len(df_bt))):
-                                nxt = df_bt.iloc[j]; hold += 1
-                                if nxt['AdjH'] >= take_p: exit_p, b_wins = take_p, b_wins+1; break
-                                if nxt['AdjL'] <= stop_p: exit_p = stop_p; break
-                                if hold >= max_d_bt: exit_p = nxt['AdjC']; break
-                                stop_p = max(stop_p, nxt['AdjC']*(1-slc_bt))
-                            if exit_p > 0:
-                                p = (exit_p - entry_p) * lot_bt; b_pnl += p
-                                sim_h.append({"日付": sub.iloc[-1]['Date'].strftime('%m/%d'), "保有": f"{hold}日", "買値": int(entry_p), "売値": int(exit_p), "損益": int(p)})
-                    if b_cnt > 0:
-                        bc = st.columns(4); bc[0].metric("試行数", f"{b_cnt}回"); bc[1].metric("勝率", f"{(b_wins/b_cnt)*100:.1f}%"); bc[2].metric("累計損益", f"{int(b_pnl):,}円"); bc[3].metric("期待値", f"{int(b_pnl/b_cnt):,}円")
-                        with st.expander("📝 介入履歴詳細"): st.table(pd.DataFrame(sim_h).tail(10))
-                    else:
-                        st.info("ℹ️ 指定期間内に条件合致する介入シグナルは検出されませんでした。")
                         
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
