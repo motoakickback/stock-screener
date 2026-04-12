@@ -1314,7 +1314,8 @@ with tab4:
                 c1_s.metric("最高利益額", f"{int(best_sim_final['利益']):,}円")
                 c2_s.metric("期待勝率", f"{best_sim_final['勝率']*100:.1f}%")
                 c3_s.metric("取引回数", f"{best_sim_final['回数']}回")
-                st.dataframe(res_df_sim_final.drop(columns=['data']).style.background_gradient(subset=['利益']), use_container_width=True)
+                # 💎 物理修正：ImportError回避のため .style.background_gradient() を削除したボスの純粋な表示形式
+                st.dataframe(res_df_sim_final.drop(columns=['data']), use_container_width=True)
             elif run_bt and opt_results_sim:
                 tdf_final_exec = opt_results_sim[0]['data'].sort_values('決済日')
                 tdf_final_exec['累積損益'] = tdf_final_exec['損益'].cumsum()
