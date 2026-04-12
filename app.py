@@ -757,7 +757,7 @@ with tab1:
             m_cols[2].metric("最新終値", f"{int(r['lc']):,}円")
             m_cols[3].metric("平均出来高", f"{int(r['avg_vol']):,}株")
             
-            # 🎯 買値目標ボックス（Turn 24仕様）
+            # 🎯 買値目標ボックス
             m_cols[4].markdown(f"""
                 <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
                     <div style="font-size: 13px; color: #aaa;">🎯 買値目標</div>
