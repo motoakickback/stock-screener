@@ -523,14 +523,36 @@ with tab1:
                 master_dict = master_df.set_index('Code')[['CompanyName', 'Market', 'Sector']].to_dict('index') if not master_df.empty else {}
                 results = []
                 
+                # 💎 物理配線：除外リストのパース（ループ外で1回実行）
+                gigi_codes = set([c.strip() for c in st.session_state.gigi_input.replace(',', ' ').split() if c.strip()])
+
+                results = []
                 for code, group in df.groupby('Code'):
-                    if len(group) < 15: continue 
+                    c4 = str(code)[:4]
+                    
+                    # 🚫 物理配線：除外銘柄フィルター（最優先排除）
+                    if c4 in gigi_codes:
+                        continue
+                    
+                    # 🚀 物理配線：IPO除外（上場1年未満/目安250営業日未満を排除）
+                    if st.session_state.f5_ipo and len(group) < 250:
+                        continue
+
+                    if len(group) < 15:
+                        continue 
+
                     adjc, adjh, adjl = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values
                     lc = adjc[-1]
 
-                    if lc / adjc[max(0, len(adjc)-20)] > f2_limit: continue
-                    if lc < adjh.max() * (1 + (f3_drop_val / 100.0)): continue
+                    # 1ヶ月暴騰上限チェック
+                    if lc / adjc[max(0, len(adjc)-20)] > f2_limit:
+                        continue
+                    
+                    # 1年最高値からの下落率チェック
+                    if lc < adjh.max() * (1 + (f3_drop_val / 100.0)):
+                        continue
 
+                    # 上昇第3波終了銘柄の除外
                     if f11_ex_wave3:
                         pk = []
                         for j in range(5, len(adjh)-5):
@@ -540,22 +562,30 @@ with tab1:
                         if len(pk) >= 3 and lc < max(pk) * 0.85:
                             continue
 
+                    # 落ちるナイフ除外
                     if f10_ex_knife and len(adjc) >= 4 and (adjc[-1] / adjc[max(0, len(adjc)-4)] < 0.85):
                         continue
                     
+                    # 4日高値と14日安値の算出
                     r4h = adjh[-4:]; h4 = r4h.max()
                     gi = len(adjh) - 4 + r4h.argmax()
                     l14 = adjl[max(0, gi-14) : gi+1].min()
-                    if l14 <= 0 or h4 <= l14: continue
+                    
+                    if l14 <= 0 or h4 <= l14:
+                        continue
+                    
                     wh = h4 / l14
                     
-                    if not (st.session_state.f9_min14 <= wh <= st.session_state.f9_max14): continue
+                    # 波高制限（1.3倍〜2.0倍等）
+                    if not (st.session_state.f9_min14 <= wh <= st.session_state.f9_max14):
+                        continue
                     
+                    # 買値目標（押し目）の計算
                     bt = h4 - ((h4 - l14) * push_ratio)
                     rr = (bt / lc) * 100
                     rsi, macdh, macdh_p, _ = get_fast_indicators(adjc)
                     
-                    # 🏅 掟スコア計算
+                    # 🏅 掟スコア計算（加点方式）
                     score = 4 
                     if 1.3 <= wh <= 2.0: score += 1
                     if (len(adjh) - 1 - gi) <= limit_d_val: score += 1
@@ -563,21 +593,38 @@ with tab1:
                     if check_double_bottom(group.tail(31).iloc[:-1]): score += 1
                     if bt * 0.85 <= lc <= bt * 1.35: score += 1
 
+                    # 財務リスク・割高チェック
                     if f6_risk or f12_overvalued:
                         fund = get_fundamentals(code)
                         if fund:
-                            if f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0): continue
-                            if f12_overvalued and float(fund.get('op', 1)) < 0: continue
+                            if f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0):
+                                continue
+                            if f12_overvalued and float(fund.get('op', 1)) < 0:
+                                continue
 
+                    # トリアージ判定
                     m_i = master_dict.get(code, {})
                     rank, bg, t_score, _ = get_triage_info(macdh, macdh_p, rsi, lc, bt, mode="待伏")
                     
                     results.append({
-                        'Code': code, 'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 'Sector': m_i.get('Sector', '不明'), 'Market': m_i.get('Market', '不明'), 
-                        'lc': lc, 'RSI': rsi, 'avg_vol': int(avg_vols.get(code, 0)), 'high_4d': h4, 'low_14d': l14, 'target_buy': bt, 'reach_rate': rr, 
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score
+                        'Code': code, 
+                        'Name': m_i.get('CompanyName', f"銘柄 {code[:4]}"), 
+                        'Sector': m_i.get('Sector', '不明'), 
+                        'Market': m_i.get('Market', '不明'), 
+                        'lc': lc, 
+                        'RSI': rsi, 
+                        'avg_vol': int(avg_vols.get(code, 0)), 
+                        'high_4d': h4, 
+                        'low_14d': l14, 
+                        'target_buy': bt, 
+                        'reach_rate': rr, 
+                        'triage_rank': rank, 
+                        'triage_bg': bg, 
+                        't_score': t_score, 
+                        'score': score
                     })
                 
+                # スコア順にソートし、上位30銘柄を保持
                 st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
 
     # --- TAB1 UI表示フェーズ（物理修正：一括コピーボックスと銘柄リスト） ---
