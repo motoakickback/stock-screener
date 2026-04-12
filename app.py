@@ -927,8 +927,7 @@ with tab3:
 
     def load_t3_text(file_path):
         if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read()
+            with open(file_path, "r", encoding="utf-8") as f: return f.read()
         return ""
 
     if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
@@ -957,10 +956,9 @@ with tab3:
             st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
         st.markdown("""
         <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #FFD700;">
-            <b>【精密スコープ・データ整合性プロトコル】</b><br>
-            ✅ JPXマスタ完全一致検索（コード誤認識の物理排除）<br>
-            ✅ 市場別カラーバッジ表示（大型/中小型の視覚判別）<br>
-            ✅ 財務生体スキャン（ROE進撃判定の統合）
+            <b>【精密スコープ・原典復元プロトコル】</b><br>
+            ✅ 市場別完全一致検索 ｜ ✅ ローソク足色彩の原典復帰<br>
+            ✅ ATRマトリクス強調 ｜ ✅ 財務（PER/PBR/ROE）統合
         </div>
         """, unsafe_allow_html=True)
 
@@ -1023,7 +1021,6 @@ with tab3:
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
 
-                    # --- 物理特定：完全一致検索 ---
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
                         target_5 = c + "0"
@@ -1040,7 +1037,6 @@ with tab3:
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
                     })
 
-                # --- 判定順ソート ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
@@ -1051,7 +1047,6 @@ with tab3:
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_l = str(r['market']).lower()
-                    
                     if 'プライム' in m_l or '一部' in m_l: 
                         m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: 
@@ -1062,79 +1057,62 @@ with tab3:
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                {m_badge}{t_badge}
-                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
-                                <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # 🏅 ROE生体スキャン
-                    roe_v = r.get('roe')
-                    if roe_v is not None:
-                        roe_color = "#26a69a" if roe_v >= 10 else "#ef5350"
-                        roe_status = "進撃" if roe_v >= 10 else "静観"
-                        st.markdown(f"""
-                            <div style="background: rgba(255,255,255,0.05); border-left: 4px solid {roe_color}; padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem;">
-                                📡 財務生体スキャン: <strong style="color: {roe_color};">ROE {roe_v:.1f}% ({roe_status})</strong>
-                            </div>
-                        """, unsafe_allow_html=True)
+                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ）を検知。")
                     
-                    sc_l, sc_m, sc_r = st.columns([2.5, 3.5, 5.0])
+                    sc_l, sc_m, sc_r = st.columns([2.5, 4.0, 4.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
-                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("直近安値", f"{int(r['l14']):,}円")
-                        c_m3, c_m4 = st.columns(2); c_m3.metric("上昇幅", f"{int(r['ur']):,}円"); c_m4.metric("最新終値", f"{int(r['lc']):,}円")
+                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("最新終値", f"{int(r['lc']):,}円")
                         st.metric("🌪️ 1ATR", f"{int(atr_now):,}円", f"ボラ: {(atr_now/r['lc'])*100:.1f}%", delta_color="off")
                     
                     with sc_m:
-                        # --- 💎 物理復元：財務彩色ロジック ---
+                        # 💎 物理統合：財務指標ボックス（PER/PBR/ROE）
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
-                        per_fmt = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
-                        pbr_fmt = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
-                        mcap_fmt = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
+                        roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
+                        roe_l = "進撃" if (r['roe'] and r['roe'] >= 10) else "静観"
+                        per_f = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                        pbr_f = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                        roe_f = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                        mcap_f = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
+                        
                         html_metrics = f"""
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
-                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📊 PER</div><div style='font-size:1.4rem; color:{per_c}; font-weight:bold;'>{per_fmt}</div></div>
-                                <div style='flex:1;'><div style='font-size:12px; color:#888;'>📉 PBR</div><div style='font-size:1.4rem; color:{pbr_c}; font-weight:bold;'>{pbr_fmt}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_f}</div></div>
                             </div>
                             <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
-                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.2rem; color:#fff; font-weight:bold;'>{mcap_fmt}</div>
+                                <div style='font-size:11px; color:#888;'>💰 時価総額: <span style='color:#fff; font-weight:bold;'>{mcap_f}</span></div>
                             </div>"""
                         box_t = "🎯 買値目標" if is_ambush else "🎯 トリガー"
-                        st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
+                        st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
 
                     with sc_r:
-                        # --- 💎 物理復元：ATRマトリクス・日本語装飾 ---
+                        # 💎 物理復元：ATRマトリクス装飾
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
                         html_mat = f"""
-                        <div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:14px; color:#aaa; margin-bottom:12px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
-                            <div style='display:flex; gap:30px;'>
+                        <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
+                            <div style='font-size:14px; color:#aaa; margin-bottom:12px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
+                            <div style='display:flex; gap:20px;'>
                                 <div style='flex:1;'>
-                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"""
+                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-size:12px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
-                            html_mat += f"<div style='display:flex; justify-content:space-between;'><span>+{m}ATR</span><b>{int(c_t + (atr_ref * m)):,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px;'><span>+{m}ATR</span><b style='color:#26a69a;'>{int(c_t + (atr_ref * m)):,}</b></div>"
                         html_mat += """</div><div style='flex:1;'>
-                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"""
+                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-size:12px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
-                            html_mat += f"<div style='display:flex; justify-content:space-between;'><span>-{m}ATR</span><b>{int(c_t - (atr_ref * m)):,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px;'><span>-{m}ATR</span><b style='color:#ef5350;'>{int(c_t - (atr_ref * m)):,}</b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
-                    # --- 💎 物理復元：色彩強調ローソク足チャート ---
+                    # 💎 物理復元：原典色彩ローソク足チャート
                     st.markdown("---")
                     df_p = r['df_chart'].tail(100).copy(); df_p['d_str'] = df_p['Date'].dt.strftime('%m/%d')
                     fig = go.Figure(data=[go.Candlestick(
                         x=df_p['d_str'], open=df_p['AdjO'], high=df_p['AdjH'], low=df_p['AdjL'], close=df_p['AdjC'],
-                        name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-                        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+                        name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
                     )])
                     for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
                         fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
@@ -1142,7 +1120,7 @@ with tab3:
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- ⚙️ 個別バックテスト演算 ---
+                    # --- ⚙️ 個別バックテスト演算（省略なし） ---
                     st.markdown(f"#### ⚙️ 銘柄 {r['code']} 過去1年の戦術介入シミュレーション")
                     lot_bt = st.session_state.bt_lot; tp_bt = st.session_state.bt_tp / 100.0
                     sli_bt = st.session_state.bt_sl_i / 100.0; slc_bt = st.session_state.bt_sl_c / 100.0
