@@ -1292,14 +1292,17 @@ with tab4:
             "sim_time_risk_val": 5
         }
         for k, v in initial_keys.items():
-            if k not in s: s[k] = v
+            if k not in s:
+                s[k] = v
+
     force_init_sim_final_v24()
 
-    # UI同期用関数
+    # UI同期用ヘルパー
     def sync_sim_p(ui_key, store_key):
         st.session_state[store_key] = st.session_state[ui_key]
         save_settings()
 
+    # UI側キーの初期化
     st.session_state['_ui4_tp'] = int(st.session_state.sim_tp_val)
     st.session_state['_ui4_sl'] = int(st.session_state.sim_sl_val)
     st.session_state['_ui4_lim'] = int(st.session_state.sim_limit_d_val)
@@ -1310,15 +1313,16 @@ with tab4:
         st.session_state.bt_mode_sim_v2 = "🌐 【待伏】鉄の掟 (押し目狙撃)"
 
     col_b1, col_b2 = st.columns([1, 1.8])
-    T4_FILE = f"saved_t4_codes_{user_id}.txt"
-    default_t4_val = "7839\n6614"
-    if os.path.exists(T4_FILE):
-        with open(T4_FILE, "r", encoding="utf-8") as f: default_t4_val = f.read()
+    T4_CODES_FILE = f"saved_t4_codes_{user_id}.txt"
+    default_t4_codes = "7839\n6614"
+    if os.path.exists(T4_CODES_FILE):
+        with open(T4_CODES_FILE, "r", encoding="utf-8") as f:
+            default_t4_codes = f.read()
 
     with col_b1:
         st.markdown("🔍 **検証戦術**")
-        st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
-        bt_codes_in = st.text_area("検証対象コード (一括入力)", value=default_t4_val, height=100, key="bt_codes_sim_v2")
+        st.radio("戦術モード", ["🌐 【待伏】鉄 of 掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2")
+        bt_codes_in = st.text_area("検証対象コード (一括入力)", value=default_t4_codes, height=100, key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True, type="primary")
         optimize_bt = st.button("🚀 戦術最適化レポート (黄金比抽出)", use_container_width=True)
         
@@ -1333,146 +1337,206 @@ with tab4:
         st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
         ct1, ct2 = st.columns(2)
         ct1.number_input("📉 押し目待ち(%)", step=0.1, key="_ui4_push", on_change=sync_sim_p, args=("_ui4_push", "sim_push_r_val"))
-        st.info("※ ここでの検証は「砂場」であり、実戦環境（TAB1/2）の設定とは独立してパラメータを探索可能。")
+        st.info("※ このタブでの検証は「砂場」であり、実戦環境（TAB1/2）の設定とは独立してパラメータを探索可能。")
 
     if (run_bt or optimize_bt) and bt_codes_in:
-        with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_codes_in)
-        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_codes_in)]))
+        with open(T4_CODES_FILE, "w", encoding="utf-8") as f:
+            f.write(bt_codes_in)
+        t_codes_sim = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_codes_in)]))
         
-        if not t_codes:
+        if not t_codes_sim:
             st.warning("有効なコードが見つかりません。")
         else:
             sim_tp = float(st.session_state.sim_tp_val)
             sim_sl_init = float(st.session_state.sim_sl_val)
             sim_sell_limit = int(st.session_state.sim_sell_d_val)
             is_ambush_mode = "待伏" in st.session_state.bt_mode_sim_v2
-            p1_range_val = range(25, 66, 5) if optimize_bt else [int(st.session_state.sim_push_r_val)]
+            p1_range_sim = range(25, 66, 5) if optimize_bt else [int(st.session_state.sim_push_r_val)]
             
             with st.spinner("過去2年間のデータを解析中..."):
-                preloaded_dfs = {}
-                for code_bt in t_codes:
-                    raw_bt = get_single_data(code_bt + "0", 2)
-                    if raw_bt and raw_bt.get('bars'):
-                        df_bt = clean_df(pd.DataFrame(raw_bt['bars']))
-                        if len(df_bt) >= 35: preloaded_dfs[code_bt] = calc_technicals(df_bt)
+                preloaded_sim_dfs = {}
+                for code_sim in t_codes_sim:
+                    raw_sim = get_single_data(code_sim + "0", 2)
+                    if raw_sim and raw_sim.get('bars'):
+                        df_sim_raw = clean_df(pd.DataFrame(raw_sim['bars']))
+                        if len(df_sim_raw) >= 35:
+                            preloaded_sim_dfs[code_sim] = calc_technicals(df_sim_raw)
             
-            if not preloaded_dfs:
-                st.error("解析可能なデータがありません。"); st.stop()
+            if not preloaded_sim_dfs:
+                st.error("解析可能なデータがありません。")
+                st.stop()
 
-            opt_results = []; p_bar_sim = st.progress(0, "総当たり戦術検証中...")
-            total_it_sim = len(p1_range_val); curr_it_sim = 0
+            opt_results_sim = []
+            p_bar_sim_total = st.progress(0, "総当たり戦術検証中...")
+            total_it_sim_exec = len(p1_range_sim)
+            curr_it_sim_exec = 0
             
-            for t_p_val in p1_range_val:
-                curr_it_sim += 1; trade_logs = []
-                for code_bt, df_bt in preloaded_dfs.items():
-                    position = None
-                    for i in range(35, len(df_bt)):
-                        t_day = df_bt.iloc[i]; p_day = df_bt.iloc[i-1]
-                        if position is None:
-                            h14_sim = df_bt.iloc[i-15:i-1]['AdjH'].max(); l14_sim = df_bt.iloc[i-15:i-1]['AdjL'].min()
+            for t_p_val_sim in p1_range_sim:
+                curr_it_sim_exec += 1
+                trade_logs_sim = []
+                for code_sim, df_sim_exec in preloaded_sim_dfs.items():
+                    pos_sim = None
+                    for i_sim in range(35, len(df_sim_exec)):
+                        t_day_sim = df_sim_exec.iloc[i_sim]
+                        p_day_sim = df_sim_exec.iloc[i_sim-1]
+                        if pos_sim is None:
+                            h14_sim_exec = df_sim_exec.iloc[i_sim-15:i_sim-1]['AdjH'].max()
+                            l14_sim_exec = df_sim_exec.iloc[i_sim-15:i_sim-1]['AdjL'].min()
                             if is_ambush_mode:
-                                bt_trigger = int(h14_sim - ((h14_sim-l14_sim)*(t_p_val/100.0)))
-                                if t_day['AdjL'] <= bt_trigger: 
-                                    position = {'b_i': i, 'b_d': t_day['Date'], 'b_p': min(t_day['AdjO'], bt_trigger)}
+                                bt_trigger_sim = int(h14_sim_exec - ((h14_sim_exec - l14_sim_exec) * (t_p_val_sim / 100.0)))
+                                if t_day_sim['AdjL'] <= bt_trigger_sim: 
+                                    pos_sim = {'b_i': i_sim, 'b_d': t_day_sim['Date'], 'b_p': min(t_day_sim['AdjO'], bt_trigger_sim)}
                             else:
-                                if p_day.get('MACD_Hist', 0) > 0 and df_bt.iloc[i-2].get('MACD_Hist', 0) <= 0 and t_day['AdjH'] >= h14_sim:
-                                    position = {'b_i': i, 'b_d': t_day['Date'], 'b_p': t_day['AdjO']}
+                                if p_day_sim.get('MACD_Hist', 0) > 0 and df_sim_exec.iloc[i_sim-2].get('MACD_Hist', 0) <= 0 and t_day_sim['AdjH'] >= h14_sim_exec:
+                                    pos_sim = {'b_i': i_sim, 'b_d': t_day_sim['Date'], 'b_p': t_day_sim['AdjO']}
                         else:
-                            held_d = i - position['b_i']; b_price = position['b_p']; s_price = 0
-                            tp_price = b_price * (1 + (sim_tp/100.0)); sl_price = b_price * (1 - sim_sl_init/100.0)
-                            if t_day['AdjL'] <= sl_price: s_price = sl_price
-                            elif t_day['AdjH'] >= tp_price: s_price = tp_price
-                            elif held_d >= sim_sell_limit: s_price = t_day['AdjC']
+                            held_d_sim = i_sim - pos_sim['b_i']
+                            b_price_sim = pos_sim['b_p']
+                            s_price_sim = 0
+                            tp_price_sim = b_price_sim * (1 + (sim_tp / 100.0))
+                            sl_price_sim = b_price_sim * (1 - sim_sl_init / 100.0)
                             
-                            if s_price > 0:
-                                trade_logs.append({'銘柄': code_bt, '決済日': t_day['Date'], '買値': int(b_price), '売値': int(s_price), '損益': int((s_price-b_price)*st.session_state.bt_lot), '勝敗': 1 if s_price>b_price else 0})
-                                position = None
+                            if t_day_sim['AdjL'] <= sl_price_sim: s_price_sim = sl_price_sim
+                            elif t_day_sim['AdjH'] >= tp_price_sim: s_price_sim = tp_price_sim
+                            elif held_d_sim >= sim_sell_limit: s_price_sim = t_day_sim['AdjC']
+                            
+                            if s_price_sim > 0:
+                                trade_logs_sim.append({'銘柄': code_sim, '決済日': t_day_sim['Date'], '買値': int(b_price_sim), '売値': int(s_price_sim), '損益': int((s_price_sim - b_price_sim) * st.session_state.bt_lot), '勝敗': 1 if s_price_sim > b_price_sim else 0})
+                                pos_sim = None
                 
-                if trade_logs:
-                    tdf_sim = pd.DataFrame(trade_logs)
-                    opt_results.append({'Push率': t_p_val, '利益': tdf_sim['損益'].sum(), '勝率': tdf_sim['勝敗'].mean(), '回数': len(trade_logs), 'data': tdf_sim})
-                p_bar_sim.progress(curr_it_sim / total_it_sim)
+                if trade_logs_sim:
+                    tdf_sim_res = pd.DataFrame(trade_logs_sim)
+                    opt_results_sim.append({'Push率': t_p_val_sim, '利益': tdf_sim_res['損益'].sum(), '勝率': tdf_sim_res['勝敗'].mean(), '回数': len(trade_logs_sim), 'data': tdf_sim_res})
+                p_bar_sim_total.progress(curr_it_sim_exec / total_it_sim_exec)
             
-            p_bar_sim.empty()
-            if optimize_bt and opt_results:
-                res_df_sim = pd.DataFrame(opt_results).sort_values('利益', ascending=False); best_sim = res_df_sim.iloc[0]
-                st.markdown(f"### 🏆 最適化結果: 推奨Push率 {best_sim['Push率']}%")
-                c1, c2, c3 = st.columns(3); c1.metric("最高利益額", f"{int(best_sim['利益']):,}円"); c2.metric("期待勝率", f"{best_sim['勝率']*100:.1f}%"); c3.metric("取引回数", f"{best_sim['回数']}回")
-                st.dataframe(res_df_sim.drop(columns=['data']).style.background_gradient(subset=['利益']), use_container_width=True)
-            elif run_bt and opt_results:
-                tdf_final = opt_results[0]['data'].sort_values('決済日'); tdf_final['累積損益'] = tdf_final['損益'].cumsum()
-                st.success("🎯 バックテスト完了。"); st.markdown(f"### 総合損益: {tdf_final['損益'].sum():,}円")
-                fig_sim = go.Figure(); fig_sim.add_trace(go.Scatter(x=tdf_final['決済日'], y=tdf_final['累積損益'], mode='lines+markers', name='資産推移', line=dict(color='#FFD700')))
-                fig_sim.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=400); st.plotly_chart(fig_sim, use_container_width=True)
-                st.dataframe(tdf_final.style.format({'買値': '{:,}', '売値': '{:,}', '損益': '{:,}'}), use_container_width=True)
+            p_bar_sim_total.empty()
+            if optimize_bt and opt_results_sim:
+                res_df_sim_final = pd.DataFrame(opt_results_sim).sort_values('利益', ascending=False)
+                best_sim_final = res_df_sim_final.iloc[0]
+                st.markdown(f"### 🏆 最適化結果: 推奨Push率 {best_sim_final['Push率']}%")
+                c1_s, c2_s, c3_s = st.columns(3)
+                c1_s.metric("最高利益額", f"{int(best_sim_final['利益']):,}円")
+                c2_s.metric("期待勝率", f"{best_sim_final['勝率']*100:.1f}%")
+                c3_s.metric("取引回数", f"{best_sim_final['回数']}回")
+                st.dataframe(res_df_sim_final.drop(columns=['data']).style.background_gradient(subset=['利益']), use_container_width=True)
+            elif run_bt and opt_results_sim:
+                tdf_final_exec = opt_results_sim[0]['data'].sort_values('決済日')
+                tdf_final_exec['累積損益'] = tdf_final_exec['損益'].cumsum()
+                st.success("🎯 バックテスト完了。")
+                st.markdown(f"### 総合損益: {tdf_final_exec['損益'].sum():,}円")
+                fig_sim_curve = go.Figure()
+                fig_sim_curve.add_trace(go.Scatter(x=tdf_final_exec['決済日'], y=tdf_final_exec['累積損益'], mode='lines+markers', name='資産推移', line=dict(color='#FFD700')))
+                fig_sim_curve.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=400, margin=dict(l=0,r=0,t=20,b=0))
+                st.plotly_chart(fig_sim_curve, use_container_width=True)
+                st.dataframe(tdf_final_exec.style.format({'買値': '{:,}', '売値': '{:,}', '損益': '{:,}'}), use_container_width=True)
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    FR_FILE = f"saved_frontline_{user_id}.csv"
+    FRONTLINE_FILE_PATH = f"saved_frontline_{user_id}.csv"
     if 'frontline_df' not in st.session_state:
-        if os.path.exists(FR_FILE):
-            try: st.session_state.frontline_df = pd.read_csv(FR_FILE); st.session_state.frontline_df["銘柄"] = st.session_state.frontline_df["銘柄"].astype(str)
-            except: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
-        else: st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+        if os.path.exists(FRONTLINE_FILE_PATH):
+            try:
+                st.session_state.frontline_df = pd.read_csv(FRONTLINE_FILE_PATH)
+                st.session_state.frontline_df["銘柄"] = st.session_state.frontline_df["銘柄"].astype(str)
+            except:
+                st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+        else:
+            st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
 
     if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
-        import yfinance as yf; updated_fr = False
+        import yfinance as yf
+        updated_fr_sync = False
         for idx_fr, row_fr in st.session_state.frontline_df.iterrows():
-            c_fr = str(row_fr['銘柄']).strip()
-            if len(c_fr) >= 4:
-                tk_fr = yf.Ticker(c_fr[:4] + ".T"); h_fr = tk_fr.history(period="1d")
-                if not h_fr.empty: st.session_state.frontline_df.at[idx_fr, '現在値'] = round(h_fr['Close'].iloc[-1], 1); updated_fr = True
-        if updated_fr: st.session_state.frontline_df.to_csv(FR_FILE, index=False); st.rerun()
+            c_fr_sync = str(row_fr['銘柄']).strip()
+            if len(c_fr_sync) >= 4:
+                tk_fr_sync = yf.Ticker(c_fr_sync[:4] + ".T")
+                h_fr_sync = tk_fr_sync.history(period="1d")
+                if not h_fr_sync.empty:
+                    st.session_state.frontline_df.at[idx_fr, '現在値'] = round(h_fr_sync['Close'].iloc[-1], 1)
+                    updated_fr_sync = True
+        if updated_fr_sync:
+            st.session_state.frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
+            st.rerun()
 
-    ed_fr_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="fr_editor_v24")
-    if not ed_fr_df.equals(st.session_state.frontline_df): st.session_state.frontline_df = ed_fr_df; ed_fr_df.to_csv(FR_FILE, index=False); st.rerun()
+    edited_frontline_df = st.data_editor(st.session_state.frontline_df, num_rows="dynamic", use_container_width=True, key="frontline_editor_v24_final")
+    if not edited_frontline_df.equals(st.session_state.frontline_df):
+        st.session_state.frontline_df = edited_frontline_df
+        edited_frontline_df.to_csv(FRONTLINE_FILE_PATH, index=False)
+        st.rerun()
 
     st.markdown("---")
-    for _, r_fr in ed_fr_df.iterrows():
-        t_f, b_f, tp1_f, tp2_f, s_f, c_f = str(r_fr.get('銘柄', '')), r_fr['買値'], r_fr['第1利確'], r_fr['第2利確'], r_fr['損切'], r_fr['現在値']
-        if not t_f or pd.isna(b_f) or pd.isna(c_f): continue
-        if c_f <= s_f: col_f, txt_f = "#ef5350", "💀 被弾（防衛線突破）"
-        elif c_f < b_f: col_f, txt_f = "#ff9800", "⚠️ 警戒（損切圏内）"
-        elif tp1_f > 0 and c_f < tp1_f: col_f, txt_f = "#26a69a", "🟢 巡航（第1目標へ）"
-        elif tp2_f > 0 and c_f < tp2_f: col_f, txt_f = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
-        else: col_f, txt_f = "#ab47bc", "🏆 任務完了（利確推奨）"
+    for idx_mon, r_mon in edited_frontline_df.iterrows():
+        t_m, b_m, tp1_m, tp2_m, s_m, c_m = str(r_mon.get('銘柄', '')), r_mon['買値'], r_mon['第1利確'], r_mon['第2利確'], r_mon['損切'], r_mon['現在値']
+        if not t_m or pd.isna(b_m) or pd.isna(c_m): continue
+        if c_m <= s_m: col_m, txt_m = "#ef5350", "💀 被弾（防衛線突破）"
+        elif c_m < b_m: col_m, txt_m = "#ff9800", "⚠️ 警戒（損切圏内）"
+        elif tp1_m > 0 and c_m < tp1_m: col_m, txt_m = "#26a69a", "🟢 巡航（第1目標へ）"
+        elif tp2_m > 0 and c_m < tp2_m: col_m, txt_m = "#42a5f5", "🛡️ 無敵化（第2目標へ）"
+        else: col_m, txt_m = "#ab47bc", "🏆 任務完了（利確推奨）"
         
-        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_f}; margin-bottom: 5px;"><strong>部隊 [{t_f}]</strong> {txt_f} ｜ 現在: ¥{int(c_f):,} (買: ¥{int(b_f):,})</div>', unsafe_allow_html=True)
-        fig_fr = go.Figure()
-        fig_fr.add_trace(go.Scatter(x=[s_f, b_f, tp1_f, tp2_f], y=[0,0,0,0], mode='markers', marker=dict(size=12, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標"))
-        fig_fr.add_trace(go.Scatter(x=[c_f], y=[0], mode='markers', marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col_f)), name="現在地"))
-        fig_fr.update_layout(height=80, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(visible=False), xaxis=dict(showgrid=False, zeroline=False))
-        st.plotly_chart(fig_fr, use_container_width=True, config={'displayModeBar': False})
+        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {col_m}; margin-bottom: 5px;"><strong>部隊 [{t_m}]</strong> {txt_m} ｜ 現在: ¥{int(c_m):,} (買: ¥{int(b_m):,})</div>', unsafe_allow_html=True)
+        fig_mon = go.Figure()
+        fig_mon.add_trace(go.Scatter(x=[s_m, b_m, tp1_m, tp2_m], y=[0,0,0,0], mode='markers', marker=dict(size=12, color=['#ef5350','#ffca28','#26a69a','#42a5f5']), name="目標"))
+        fig_mon.add_trace(go.Scatter(x=[c_m], y=[0], mode='markers', marker=dict(size=22, symbol='cross-thin', line=dict(width=3, color=col_m)), name="現在地"))
+        fig_mon.update_layout(height=80, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(visible=False), xaxis=dict(showgrid=False, zeroline=False))
+        st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
 
 with tab6:
     st.markdown('<h3 style="font-size: 24px;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
-    A_FILE = f"saved_aar_log_{user_id}.csv"
-    if os.path.exists(A_FILE): aar_df_v = pd.read_csv(A_FILE)
-    else: aar_df_v = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
+    AAR_LOG_FILE = f"saved_aar_log_{user_id}.csv"
+    if os.path.exists(AAR_LOG_FILE):
+        aar_df_final = pd.read_csv(AAR_LOG_FILE)
+    else:
+        aar_df_final = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
-    col_a1, col_a2 = st.columns([1, 2.2])
-    with col_a1:
+    col_aar1, col_aar2 = st.columns([1, 2.2])
+    with col_aar1:
         st.markdown("#### 📝 戦果報告")
-        with st.form("aar_form_v24"):
-            d_a = st.date_input("決済日"); c_a = st.text_input("銘柄コード"); t_a = st.selectbox("戦術", ["待伏", "強襲", "他"])
-            b_a = st.number_input("買値"); s_a = st.number_input("売値"); l_a = st.number_input("株数", step=100); r_a = st.radio("規律", ["遵守", "違反"]); m_a = st.text_input("メモ")
+        with st.form("aar_form_v24_final"):
+            d_aar = st.date_input("決済日")
+            c_aar = st.text_input("銘柄コード")
+            t_aar = st.selectbox("戦術", ["待伏", "強襲", "他"])
+            b_aar = st.number_input("買値")
+            s_aar = st.number_input("売値")
+            l_aar = st.number_input("株数", step=100)
+            r_aar = st.radio("規律", ["遵守", "違反"])
+            m_aar = st.text_input("メモ")
             if st.form_submit_button("記録を保存"):
-                p_a = int((s_a - b_a) * l_a); pp_a = round(((s_a / b_a) - 1) * 100, 2)
-                nd_a = pd.DataFrame([{"決済日":d_a, "銘柄":c_a, "戦術":t_a, "買値":b_a, "売値":s_a, "株数":l_a, "損益額(円)":p_a, "損益(%)":pp_a, "規律":r_a, "メモ":m_a}])
-                pd.concat([nd_a, aar_df_v]).to_csv(A_FILE, index=False); st.rerun()
+                p_aar = int((s_aar - b_aar) * l_aar)
+                pp_aar = round(((s_aar / b_aar) - 1) * 100, 2) if b_aar != 0 else 0
+                nd_aar = pd.DataFrame([{"決済日":d_aar, "銘柄":c_aar, "戦術":t_aar, "買値":b_aar, "売値":s_aar, "株数":l_aar, "損益額(円)":p_aar, "損益(%)":pp_aar, "規律":r_aar, "メモ":m_aar}])
+                pd.concat([nd_aar, aar_df_final]).to_csv(AAR_LOG_FILE, index=False)
+                st.rerun()
 
-    with col_a2:
-        if not aar_df_v.empty:
-            aar_df_v["損益額(円)"] = pd.to_numeric(aar_df_v["損益額(円)"], errors='coerce')
-            t_p_v = aar_df_v["損益額(円)"].sum(); w_v = len(aar_df_v[aar_df_v["損益額(円)"] > 0]); w_r_v = (w_v / len(aar_df_v)) * 100
-            g_p_v = aar_df_v[aar_df_v["損益額(円)"] > 0]["損益額(円)"].sum(); g_l_v = abs(aar_df_v[aar_df_v["損益額(円)"] < 0]["損益額(円)"].sum())
-            pf_v = round(g_p_v / g_l_v, 2) if g_l_v > 0 else 9.99
-            adh_v = (len(aar_df_v[aar_df_v["規律"] == "遵守"]) / len(aar_df_v)) * 100
-            m1_v, m2_v, m3_v, m4_v = st.columns(4); m1_v.metric("総損益", f"{int(t_p_v):,}円"); m2_v.metric("勝率", f"{w_r_v:.1f}%"); m3_v.metric("PF", pf_v); m4_v.metric("規律遵守率", f"{adh_v:.1f}%")
+    with col_aar2:
+        if not aar_df_final.empty:
+            aar_df_final["損益額(円)"] = pd.to_numeric(aar_df_final["損益額(円)"], errors='coerce')
+            tot_p_aar = aar_df_final["損益額(円)"].sum()
+            w_cnt_aar = len(aar_df_final[aar_df_final["損益額(円)"] > 0])
+            w_rate_aar = (w_cnt_aar / len(aar_df_final)) * 100
             
-            import plotly.express as px
-            aar_df_v['決済日'] = pd.to_datetime(aar_df_v['決済日']); tdf_v = aar_df_v.sort_values('決済日'); tdf_v['累積'] = tdf_v['損益額(円)'].cumsum()
-            fig_a = px.line(tdf_v, x='決済日', y='累積', title="実資産推移 (Real Equity Curve)", markers=True)
-            fig_a.update_traces(line_color='#26a69a'); fig_a.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=300); st.plotly_chart(fig_a, use_container_width=True)
+            # PF（プロフィットファクター）
+            gross_p_aar = aar_df_final[aar_df_final["損益額(円)"] > 0]["損益額(円)"].sum()
+            gross_l_aar = abs(aar_df_final[aar_df_final["損益額(円)"] < 0]["損益額(円)"].sum())
+            pf_aar = round(gross_p_aar / gross_l_aar, 2) if gross_l_aar > 0 else 9.99
+            
+            # 規律遵守率
+            adh_aar = (len(aar_df_final[aar_df_final["規律"] == "遵守"]) / len(aar_df_final)) * 100
 
-    st.dataframe(aar_df_v, use_container_width=True)
+            m1_a, m2_a, m3_a, m4_a = st.columns(4)
+            m1_a.metric("総損益", f"{int(tot_p_aar):,}円")
+            m2_a.metric("勝率", f"{w_rate_aar:.1f}%")
+            m3_a.metric("PF", pf_aar)
+            m4_a.metric("規律遵守率", f"{adh_aar:.1f}%")
+            
+            # 実資産損益曲線
+            import plotly.express as px
+            aar_df_final['決済日'] = pd.to_datetime(aar_df_final['決済日'])
+            tdf_aar_curve = aar_df_final.sort_values('決済日')
+            tdf_aar_curve['累積'] = tdf_aar_curve['損益額(円)'].cumsum()
+            fig_aar_equity = px.line(tdf_aar_curve, x='決済日', y='累積', title="実資産推移 (Real Equity Curve)", markers=True)
+            fig_aar_equity.update_traces(line_color='#26a69a')
+            fig_aar_equity.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=300, margin=dict(l=0,r=0,t=30,b=0))
+            st.plotly_chart(fig_aar_equity, use_container_width=True)
+
+    st.dataframe(aar_df_final, use_container_width=True)
