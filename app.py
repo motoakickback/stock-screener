@@ -77,10 +77,10 @@ def check_password():
             with st.form("login_gate"):
                 pw = st.text_input("Access Code", type="password", placeholder="コードを入力せよ")
                 if st.form_submit_button("認証"):
-                    if pw in:
-                        st.session_state.password_correct = True
-                        st.rerun()
-                    else: st.error("🚨 拒絶：アクセス権限がありません。")
+                if pw in:
+                    st.session_state.password_correct = True
+                    st.rerun()
+                else: st.error("🚨 拒絶：アクセス権限がありません。")
         return False
     return True
 
