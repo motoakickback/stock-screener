@@ -774,20 +774,21 @@ with tab2:
             st.caption(f"🏭 {r['Sector']} ｜ 🏢 {r['Market']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
 
 with tab3:
-    # 📱 モバイル対応パッチ（右側切れ防止・パディング最小化）
+    # 📱 モバイル表示時の右側切れを物理排除し、パディングを最適化するレスポンシブパッチ
     st.markdown("""
         <style>
         @media (max-width: 768px) {
             .stMain { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
             div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
             div[style*="border-left"] { border-left: 3px solid #FFD700 !important; padding: 0.8rem !important; }
+            .stMetric { min-width: 70px !important; }
         }
         </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
-    # --- 🖥️ 二層式ターゲット入力 ---
+    # --- 🖥️ 【原典UI完全復旧】 二層式ターゲット入力セクション ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
@@ -805,25 +806,45 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
+        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
+        
+        # 二層式入力枠の出し分け
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
+            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush: 
             st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
-            st.markdown('<div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;"><b>【掟スコア加点基準（最大10点）】</b><br>✅ 基礎モメンタム（MACD/RSI等）<br>✅ 波高1.3〜2.0倍 ｜ ✅ 調整日数規定内<br>✅ 危険波形なし ｜ ✅ 買値目標±15%圏内</div>', unsafe_allow_html=True)
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;">
+                <b>【掟スコア加点基準（最大10点）】</b><br>
+                ✅ 基礎モメンタム（MACD/RSIの優位性：最大+5点）<br>
+                ✅ 波高1.3〜2.0倍（+1点） ｜ ✅ 調整日数が規定内（+1点）<br>
+                ✅ 危険波形(Wトップ等)なし（+1点） ｜ ✅ 買値目標の±15%圏内（+1点）<br>
+                ✅ 割安性：PBR 5.0倍以下（+1点）
+            </div>
+            """, unsafe_allow_html=True)
         else: 
             st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
-            st.markdown('<div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;"><b>【強襲スコア加点基準（最大100点）】</b><br>⚡ GC（ゴールデンクロス）発動<br>⚡ 25日線上抜け ｜ ⚡ 出来高急増<br>⚡ RSI適正過熱感 ｜ ⚡ PBR5倍以下</div>', unsafe_allow_html=True)
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;">
+                <b>【強襲スコア加点基準（最大100点）】</b><br>
+                ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
+                ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
+                ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
+                ⚡ 割安性：PBR 5.0倍以下（+10点）
+            </div>
+            """, unsafe_allow_html=True)
 
     if run_scope:
         if is_ambush:
@@ -873,10 +894,10 @@ with tab3:
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        dist_p = ((lc / bt_val) - 1) * 100
-                        if dist_p < -10.0: rank, bg = "圏外💀", "#d32f2f"
-                        elif dist_p <= 2.0: rank, bg = ("S🔥", "#2e7d32") if rsi_v <= 45 else ("A⚡", "#ed6c02")
-                        elif dist_p <= 10.0: rank, bg = ("B📈", "#0288d1")
+                        dist_pct = ((lc / bt_val) - 1) * 100
+                        if dist_pct < -10.0: rank, bg = "圏外💀", "#d32f2f"
+                        elif dist_pct <= 2.0: rank, bg = ("S🔥", "#2e7d32") if rsi_v <= 45 else ("A⚡", "#ed6c02")
+                        elif dist_pct <= 10.0: rank, bg = ("B📈", "#0288d1")
                         else: rank, bg = ("C👁️", "#616161")
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
@@ -912,9 +933,9 @@ with tab3:
 
                     s_badge = f"<span style='background-color:{'#42a5f5' if '監視' in r['source'] else '#ffa726'}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    st.markdown(f"### {s_badge} ({r['code']}) {r['name']}\n<div style='margin-bottom: 0.8rem;'>{m_badge}{t_badge} <span style='background-color:rgba(38,166,154,0.15); color:#26a69a; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:10px;'>RSI: {r['rsi']:.1f}%</span><span style='background-color:rgba(255,215,0,0.1); color:#FFD700; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:5px;'>到達度: {r['reach_val']:.1f}%</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"### {s_badge} ({r['code'][:4]}) {r['name']}\n<div style='margin-bottom: 0.8rem;'>{m_badge}{t_badge} <span style='background-color:rgba(38,166,154,0.15); color:#26a69a; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:10px;'>RSI: {r['rsi']:.1f}%</span><span style='background-color:rgba(255,215,0,0.1); color:#FFD700; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:5px;'>到達度: {r['reach_val']:.1f}%</span></div>", unsafe_allow_html=True)
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ等）を検知。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形を検知。")
                     
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
@@ -923,10 +944,24 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{int(atr_now):,}円", f"ボラ: {(atr_now/r['lc'])*100:.1f}%", delta_color="off")
                     
                     with sc_m:
+                        # 💎 TypeError 物理防壁：データの有無を判定してから表示
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
-                        h_metrics = f"<div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'><div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{r['per']:.1f}倍</div></div><div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{r['pbr']:.2f}倍</div></div><div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{r['roe']:.1f}%</div></div></div><div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'><div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{int(r['mcap']/1e8):,}億円</div></div>"
+                        per_v = f"{r['per']:.1f}倍" if r['per'] is not None else "N/A"
+                        pbr_v = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "N/A"
+                        roe_v = f"{r['roe']:.1f}%" if r['roe'] is not None else "N/A"
+                        mcap_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "N/A"
+                        
+                        h_metrics = f"""
+                            <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_v}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_v}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_v}</div></div>
+                            </div>
+                            <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
+                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_v}</div>
+                            </div>"""
                         st.markdown(f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{'🎯 買値目標' if is_ambush else '🎯 トリガー'}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{h_metrics}</div>", unsafe_allow_html=True)
 
                     with sc_r:
