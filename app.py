@@ -33,22 +33,48 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            # 🚨 JavaScript 狙撃パッチ：ブラウザの補完が入った瞬間に送信ボタンを自動クリック
+            # 🚨 JavaScript 狙撃パッチ：指紋認証完了後の自動クリックを強化
             components.html(
                 """
                 <script>
                 const doc = window.parent.document;
-                const autoLoginInterval = setInterval(() => {
+                
+                function tryAutoLogin() {
+                    // Streamlitのパスワード入力欄と送信ボタンを特定
                     const input = doc.querySelector('input[type="password"]');
-                    const btn = doc.querySelector('button[data-testid="baseButton-secondaryFormSubmit"]');
+                    const buttons = doc.querySelectorAll('button');
+                    let submitBtn = null;
                     
-                    if (input && btn) {
-                        if (input.value.length > 0) {
-                            btn.click();
-                            clearInterval(autoLoginInterval);
+                    // 「認証」という文字を含むフォーム送信ボタンを探す
+                    for (const btn of buttons) {
+                        if (btn.innerText && btn.innerText.includes("認証")) {
+                            submitBtn = btn;
+                            break;
                         }
                     }
-                }, 500);
+
+                    if (input && submitBtn) {
+                        // ブラウザの補完や指紋認証により、値が入った瞬間を検知
+                        if (input.value.length > 0) {
+                            // ボタンを物理的にクリック
+                            submitBtn.click();
+                            return true; // 成功
+                        }
+                    }
+                    return false;
+                }
+
+                // 指紋認証の時間を考慮し、高頻度（200ms）で監視を継続
+                const monitor = setInterval(() => {
+                    if (tryAutoLogin()) {
+                        clearInterval(monitor); // ログイン実行後に監視停止
+                    }
+                }, 200);
+
+                // 念のため、入力イベントもフックしておく（手動入力・補完両対応）
+                doc.addEventListener('input', (e) => {
+                    if (e.target.type === 'password') tryAutoLogin();
+                });
                 </script>
                 """,
                 height=0,
