@@ -919,7 +919,7 @@ with tab2:
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
-    # --- 🖥️ 二層式ターゲット入力セクション ---
+    # --- 🖥️ 【原典UI完全復旧】 二層式ターゲット入力セクション ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
@@ -937,32 +937,50 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
+        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
+        
+        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
+            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
+        # 💎 物理復元：判定基準バナー（ボスの要求通り判定基準を記述）
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush: 
             st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;">
+                <b>【掟スコア加点基準（最大10点）】</b><br>
+                ✅ 基礎モメンタム（MACD/RSIの優位性：最大+5点）<br>
+                ✅ 波高1.3〜2.0倍（+1点） ｜ ✅ 調整日数が規定内（+1点）<br>
+                ✅ 危険波形(Wトップ等)なし（+1点） ｜ ✅ 買値目標の±15%圏内（+1点）<br>
+                ✅ 割安性：PBR 5.0倍以下（+1点）
+            </div>
+            """, unsafe_allow_html=True)
         else: 
             st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
-        st.markdown("""
-        <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #FFD700;">
-            <b>【精密スコープ・原典復元プロトコル】</b><br>
-            ✅ 市場別完全一致検索 ｜ ✅ ローソク足色彩の原典復帰<br>
-            ✅ ATRマトリクス強調 ｜ ✅ 財務（PER/PBR/ROE）統合
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("""
+            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;">
+                <b>【強襲スコア加点基準（最大100点）】</b><br>
+                ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
+                ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
+                ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
+                ⚡ 割安性：PBR 5.0倍以下（+10点）<br>
+                <span style="color:#ef5350;">※ パーフェクトオーダー崩壊・過熱(RSI75超)・出来高不足は厳格減点</span>
+            </div>
+            """, unsafe_allow_html=True)
 
     if run_scope:
+        # ファイル保存ロジック（原典）
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
@@ -972,6 +990,7 @@ with tab3:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
             st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
 
+        # 全入力コードの抽出
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in + " " + daily_in)]))
         
         if not t_codes:
@@ -1068,7 +1087,7 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{int(atr_now):,}円", f"ボラ: {(atr_now/r['lc'])*100:.1f}%", delta_color="off")
                     
                     with sc_m:
-                        # 💎 物理統合：財務指標ボックス（PER/PBR/ROE）
+                        # 💎 物理統合：財務指標ボックス（ROEを統合）
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
@@ -1082,7 +1101,7 @@ with tab3:
                             <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
                                 <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_f}</div></div>
                                 <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_f}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_f}</div></div>
+                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📈 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_f}</div></div>
                             </div>
                             <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
                                 <div style='font-size:11px; color:#888;'>💰 時価総額: <span style='color:#fff; font-weight:bold;'>{mcap_f}</span></div>
@@ -1091,20 +1110,20 @@ with tab3:
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
 
                     with sc_r:
-                        # 💎 物理復元：ATRマトリクス装飾
+                        # 💎 物理復元：ATRマトリクス装飾（Turn 18仕様）
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
                         html_mat = f"""
-                        <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:14px; color:#aaa; margin-bottom:12px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
-                            <div style='display:flex; gap:20px;'>
+                        <div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
+                            <div style='font-size:14px; color:#aaa; margin-bottom:12px; font-weight:bold;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
+                            <div style='display:flex; gap:30px;'>
                                 <div style='flex:1;'>
-                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-size:12px; font-weight:bold;'>【利確目安】</div>"""
+                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px; font-weight:bold;'>【利確目安】</div>"""
                         for m in [0.5, 1.0, 2.0, 3.0]: 
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px;'><span>+{m}ATR</span><b style='color:#26a69a;'>{int(c_t + (atr_ref * m)):,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between;'><span>+{m}ATR</span><b>{int(c_t + (atr_ref * m)):,}</b></div>"
                         html_mat += """</div><div style='flex:1;'>
-                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-size:12px; font-weight:bold;'>【防衛目安】</div>"""
+                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px; font-weight:bold;'>【防衛目安】</div>"""
                         for m in [0.5, 1.0, 2.0]: 
-                            html_mat += f"<div style='display:flex; justify-content:space-between; font-size:13px;'><span>-{m}ATR</span><b style='color:#ef5350;'>{int(c_t - (atr_ref * m)):,}</b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between;'><span>-{m}ATR</span><b>{int(c_t - (atr_ref * m)):,}</b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
                     # 💎 物理復元：原典色彩ローソク足チャート
@@ -1120,7 +1139,7 @@ with tab3:
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- ⚙️ 個別バックテスト演算（省略なし） ---
+                    # --- ⚙️ 個別バックテスト演算 ---
                     st.markdown(f"#### ⚙️ 銘柄 {r['code']} 過去1年の戦術介入シミュレーション")
                     lot_bt = st.session_state.bt_lot; tp_bt = st.session_state.bt_tp / 100.0
                     sli_bt = st.session_state.bt_sl_i / 100.0; slc_bt = st.session_state.bt_sl_c / 100.0
