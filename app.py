@@ -233,27 +233,27 @@ def check_event_mines(code, event_data=None):
     return alerts
     
     def check_double_top(df_sub):
-    try:
-        v = df_sub['AdjH'].values
-        c = df_sub['AdjC'].values
-        l = df_sub['AdjL'].values
-        if len(v) < 6: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1):
-                    peaks.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1):
-                peaks.append((len(v)-1, v[-1]))
-        if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]
-            p1_idx, p1_val = peaks[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
-                    return True
-        return False
+        try:
+            v = df_sub['AdjH'].values
+            c = df_sub['AdjC'].values
+            l = df_sub['AdjL'].values
+            if len(v) < 6: return False
+            peaks = []
+            for i in range(1, len(v)-1):
+                if v[i] == max(v[i-1:i+2]):
+                    if not peaks or (i - peaks[-1][0] > 1):
+                        peaks.append((i, v[i]))
+            if len(v) >= 2 and v[-1] > v[-2]:
+                if not peaks or (len(v)-1 - peaks[-1][0] > 1):
+                    peaks.append((len(v)-1, v[-1]))
+            if len(peaks) >= 2:
+                p2_idx, p2_val = peaks[-1]
+                p1_idx, p1_val = peaks[-2]
+                if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                    valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                    if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
+                        return True
+            return False
     except:
         return False
 
