@@ -137,14 +137,14 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    # 💎 ボスの絶対命令：f3_dropを-50.0に固定。
+    # 💎 ボスの指示：f3_dropを-50.0に固定。
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
         "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
-        "f3_drop": -50.0, # 🎯 絶対固定
+        "f3_drop": -50.0, # 🎯 固定
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
@@ -152,7 +152,8 @@ def load_settings():
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
         "sim_tp_val": 10.0, "sim_sl_val": 8.0, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
-        "sim_push_r_val": 50.0
+        "sim_push_r_val": 50.0, "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
+        "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -160,18 +161,25 @@ def load_settings():
                 saved = json.load(f)
                 for k, v in saved.items():
                     if k in defaults:
-                        # 🚨 修正：0をスキップする仕様を完全に排除。保存された負の値を正しく読む。
+                        # 🚨 修正：v==0を無視するバグを排除
                         defaults[k] = v
         except: pass
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
+    
+    # 💎 物理固定：初回起動時は必ず-50%
+    if "f3_drop_initialized" not in st.session_state:
+        st.session_state.f3_drop = -50.0
+        st.session_state.f3_drop_initialized = True
 
 def save_settings():
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
             "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
-            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val"]
+            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val",
+            "sim_push_r_val", "sim_pass_req_val", "sim_rsi_lim_ambush_val",
+            "sim_rsi_lim_assault_val", "sim_time_risk_val"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=4)
@@ -468,7 +476,7 @@ c1, c2 = st.sidebar.columns(2)
 c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
 c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-# 💎 ボスの指示：ロード時デフォルト値を-50%に固定
+# 💎 ボスの指示：デフォルト値を-50.0%に完全固定
 st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
 c3, c4 = st.sidebar.columns(2)
 c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
@@ -510,7 +518,7 @@ with tab1:
     run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
 
     if run_scan_t1:
-        st.toast("🟢 待伏トリガーを確認。全軍から精鋭を選別する。", icon="🎯")
+        st.toast("🟢 待伏開始。全軍から精鋭を選別する。", icon="🎯")
         with st.spinner("全銘柄からターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
@@ -520,10 +528,7 @@ with tab1:
                 df = clean_df(pd.DataFrame(raw))
                 df['Code'] = df['Code'].astype(str)
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
-                if v_col:
-                    df[v_col] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
-                    avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
-                else: avg_vols = pd.Series(0, index=df['Code'].unique())
+                avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
                 # --- 物理配線：設定同期 ---
                 f1_min, f1_max = float(st.session_state.f1_min), float(st.session_state.f1_max)
@@ -532,8 +537,7 @@ with tab1:
                 f7_ex_etf, f8_bio_flag = st.session_state.f7_ex_etf, st.session_state.f8_ex_bio
                 f10_ex_knife, f11_ex_wave3 = st.session_state.f10_ex_knife, st.session_state.f11_ex_wave3
                 f12_overvalued = st.session_state.f12_ex_overvalued
-                push_ratio = st.session_state.push_r / 100.0
-                limit_d_val = int(st.session_state.limit_d)
+                push_ratio = st.session_state.push_r / 100.0; limit_d_val = int(st.session_state.limit_d)
 
                 latest_date = df['Date'].max(); latest_df = df[df['Date'] == latest_date]
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -560,7 +564,7 @@ with tab1:
                         for j in range(5, len(adjh)-5):
                             if adjh[j] == max(adjh[j-5:j+5]):
                                 if not pk or adjh[j] > pk[-1] * 1.15: pk.append(adjh[j])
-                        if len(pk) >= 3 and lc < max(pk) * 0.85: continue
+                        if len(peaks) >= 3 and lc < max(pk) * 0.85: continue
 
                     if f10_ex_knife and len(adjc) >= 4 and (adjc[-1] / adjc[max(0, len(adjc)-4)] < 0.85): continue
                     
@@ -594,7 +598,9 @@ with tab1:
                 st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)[:30]
 
     if st.session_state.tab1_scan_results:
-        for r in st.session_state.tab1_scan_results:
+        light_results = st.session_state.tab1_scan_results
+        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄。")
+        for r in light_results:
             st.divider(); c_code = str(r['Code']); m_l = str(r['Market']).lower()
             if 'プライム' in m_l or '一部' in m_l: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_l or 'マザーズ' in m_l: b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
