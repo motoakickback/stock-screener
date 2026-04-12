@@ -558,7 +558,7 @@ with tab1:
                 
                 # 🚫 医薬品(バイオ)除外
                 if f8_bio_flag and not master_df.empty:
-                    bio_codes = master_df.str.contains('医薬品', na=False)]['Code'].unique()
+                    bio_codes = master_df.str.contains('医薬品', na=False)['Code'].unique()
                     df = df[~df['Code'].isin(bio_codes)]
 
                 # 🚫 ブラックリスト (gigi_input)
