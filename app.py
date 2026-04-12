@@ -532,7 +532,7 @@ with tab1:
                 limit_d_val = int(st.session_state.limit_d)
 
                 latest_date = df.max()
-                latest_df = df == latest_date]
+                latest_df = df == latest_date
                 
                 # 市場フィルター
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
