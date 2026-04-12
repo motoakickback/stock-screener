@@ -203,7 +203,7 @@ def render_macro_board():
             fig.add_trace(go.Scatter(x=df, y=df['Close'], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
             fig.add_trace(go.Scatter(x=df, y=df['MA25'], name='25日線', mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'))
             # 物理修正：SyntaxErrorの根源であった括弧不一致を解消
-            fig.update_layout(height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=.min(), df.max() + pd.Timedelta(hours=12)])
+            fig.update_layout(height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=.min(), df.max() + pd.Timedelta(hours=12))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else: st.warning("📡 外部気象レーダー応答なし")
