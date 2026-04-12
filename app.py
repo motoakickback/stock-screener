@@ -154,11 +154,13 @@ if now.hour >= 19:
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
+    # 🚨 参謀が選定した「真のデフォルト値」
     defaults = {
-        "preset_target": "🚀 中小型株 (50%押し・標準)", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
+        "preset_push_r": "50.0%",
+        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, 
-        "f3_drop": -50.0, 
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
         "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
@@ -166,33 +168,45 @@ def load_settings():
         "tab2_ipo_filter": True, "tab2_etf_filter": True, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)", 
         "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10, "sim_push_r_val": 50.0,
-        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
+        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45, "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5,
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
+
+    # 1. まずJSONから読み込み
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                # 異常値(0)からの復旧パッチ
-                for k, v in loaded.items():
-                    if k in defaults and isinstance(v, (int, float)) and v == 0 and k != "f3_drop":
-                        loaded[k] = defaults[k]
-                defaults.update(loaded)
+                saved = json.load(f)
+                # 🚨 異常値（0）の浄化ロジック
+                for k, v in saved.items():
+                    if k in defaults:
+                        # 0 または 空文字 の場合はデフォルト値を採用（f3_drop以外）
+                        if k != "f3_drop" and isinstance(v, (int, float)) and v == 0:
+                            continue
+                        defaults[k] = v
         except: pass
-    if defaults["f3_drop"] > -50: defaults["f3_drop"] = -50.0
     
+    # 2. Session Stateへ展開（0の場合は強制上書き）
     for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
+        if k not in st.session_state:
+            st.session_state[k] = v
+        else:
+            # 既にSession Stateにある値が0の場合も、デフォルト値で叩き直す
+            if k != "f3_drop" and isinstance(st.session_state[k], (int, float)) and st.session_state[k] == 0:
+                st.session_state[k] = v
 
 def save_settings():
     keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
             "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
             "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"]
+            "tab1_etf_filter", "tab2_rsi_limit", "tab2_vol_limit", 
+            "tab2_ipo_filter", "tab2_etf_filter", "t3_scope_mode", "bt_mode_sim_v2", 
+            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val", "sim_push_r_val", 
+            "sim_pass_req_val", "sim_rsi_lim_ambush_val", "sim_rsi_lim_assault_val", "sim_time_risk_val", "gigi_input"]
     current = {k: st.session_state[k] for k in keys if k in st.session_state}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=4)
 
-# 🚨 ここから下の apply_presets() が漏れています。必ず追加してください。
 def apply_presets():
     p_rate = st.session_state.get("preset_push_r", "50.0%")
     if p_rate == "25.0%": st.session_state.push_r = 25.0
@@ -203,6 +217,7 @@ def apply_presets():
 load_settings()
 
 def apply_market_preset():
+    # (既存のプリセット連動ロジック)
     preset = st.session_state.get("preset_target", "🚀 中小型株 (50%押し・標準)")
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     if "大型株" in preset:
@@ -213,7 +228,7 @@ def apply_market_preset():
         st.session_state.push_r = 50.0
     st.session_state.sim_push_r = st.session_state.push_r
     save_settings()
-
+    
 # --- 🌪️ マクロ気象レーダー（日経平均） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
