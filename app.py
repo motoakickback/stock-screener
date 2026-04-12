@@ -209,348 +209,40 @@ def calc_vector_indicators(df):
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
     return df
 
-def calc_technicals(df):
-    return calc_vector_indicators(df)
+def calc_technicals(df): return calc_vector_indicators(df)
 
-def check_event_mines(code, event_data=None):
-    alerts = []
-    c = str(code)[:4]
-    today = datetime.utcnow() + timedelta(hours=9)
-    today_date = today.date()
-    max_warning_date = today_date + timedelta(days=14)
-    critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
-    if c in critical_mines:
-        try:
-            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            if (event_date - timedelta(days=14)) <= today_date <= event_date:
-                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
-        except:
-            pass
-    if not event_data:
-        return alerts
-    for item in event_data.get("dividend", []):
-        d_str = str(item.get("RecordDate", ""))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
-                    break
-            except:
-                pass
-    for item in event_data.get("earnings", []):
-        if str(item.get("Code", ""))[:4] != c:
-            continue
-        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
-                    break
-            except:
-                pass
-    return alerts
-
-def check_double_top(df_sub):
-    try:
-        v = df_sub['AdjH'].values
-        c = df_sub['AdjC'].values
-        l = df_sub['AdjL'].values
-        if len(v) < 6: return False
-        pk = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not pk or (i - pk[-1][0] > 1):
-                    pk.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not pk or (len(v)-1 - pk[-1][0] > 1):
-                pk.append((len(v)-1, v[-1]))
-        if len(pk) >= 2:
-            p2_idx, p2_val = pk[-1]
-            p1_idx, p1_val = pk[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
-                    return True
-        return False
-    except:
-        return False
-
-def check_head_shoulders(df_sub):
-    try:
-        v = df_sub['AdjH'].values
-        c = df_sub['AdjC'].values
-        if len(v) < 8: return False
-        pk = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not pk or (i - pk[-1][0] > 1):
-                    pk.append((i, v[i]))
-        if len(pk) >= 3:
-            p3_idx, p3_val = pk[-1]
-            p2_idx, p2_val = pk[-2]
-            p1_idx, p1_val = pk[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97:
-                return True
-        return False
-    except:
-        return False
-
-def check_double_bottom(df_sub):
-    try:
-        l = df_sub['AdjL'].values
-        c = df_sub['AdjC'].values
-        h = df_sub['AdjH'].values
-        if len(l) < 6: return False
-        valleys = []
-        for i in range(1, len(l)-1):
-            if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 1):
-                    valleys.append((i, l[i]))
-        if len(valleys) >= 2:
-            v2_idx, v2_val = valleys[-1]
-            v1_idx, v1_val = valleys[-2]
-            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
-                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01:
-                    return True
-        return False
-    except:
-        return False
-
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
-def get_fundamentals(code):
-    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    url = f"{BASE_URL}/fins/statements?code={api_code}"
-    try:
-        r = requests.get(url, headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json().get("statements", [])
-            if data:
-                latest = data[0]
-                roe = None
-                if latest.get("NetIncome") and latest.get("Equity"):
-                    try:
-                        roe = (float(latest["NetIncome"]) / float(latest["Equity"])) * 100
-                    except:
-                        pass
-                return {
-                    "op": latest.get("OperatingProfit"),
-                    "er": latest.get("EquityRatio"),
-                    "roe": roe
-                }
-    except:
-        pass
-    return None
-    
-@st.cache_data(ttl=86400)
-def load_master():
-    try:
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
-            df['Code'] = df['Code'].astype(str) + "0"
-            return df
-    except:
-        pass
-    return pd.DataFrame()
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_single_data(code, yrs=1):
-    base = datetime.utcnow() + timedelta(hours=9)
-    f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
-    t_d = base.strftime('%Y%m%d')
-    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200:
-            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except:
-        pass
-    return result
-
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-def get_hist_data_cached():
-    base = datetime.utcnow() + timedelta(hours=9)
-    dates = []
-    days = 0
-    while len(dates) < 45:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5:
-            dates.append(d.strftime('%Y%m%d'))
-        days += 1
-    rows = []
-    def fetch(dt):
-        try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200:
-                return r.json().get("data", [])
-        except:
-            pass
-        return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result()
-            if res:
-                rows.extend(res)
-    return rows
-    
-def get_fast_indicators(prices):
-    if len(prices) < 15:
-        return 50.0, 0.0, 0.0, np.zeros(5)
-    p = np.array(prices, dtype='float32')
-    ema12 = pd.Series(p).ewm(span=12, adjust=False).mean().values
-    ema26 = pd.Series(p).ewm(span=26, adjust=False).mean().values
-    macd = ema12 - ema26
-    signal = pd.Series(macd).ewm(span=9, adjust=False).mean().values
-    hist = macd - signal
-    diff = np.diff(p[-15:])
-    g = np.sum(np.maximum(diff, 0))
-    l = np.sum(np.abs(np.minimum(diff, 0)))
-    rsi = 100 - (100 / (1 + (g / (l + 1e-10))))
-    return rsi, hist[-1], hist[-2], hist[-5:]
-
-def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    if macd_hist > 0 and macd_hist_prev <= 0:
-        macd_t = "GC直後"
-    elif macd_hist > macd_hist_prev:
-        macd_t = "上昇拡大"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev:
-        macd_t = "下落継続"
-    else:
-        macd_t = "減衰"
-
-    if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75:
-            return "圏外🚫", "#d32f2f", 0, macd_t
-        if gc_days == 1:
-            return ("S🔥", "#2e7d32", 5, "GC直後(1日目)") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後(1日目)")
-        else:
-            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
-
-    if bt == 0 or lc == 0:
-        return "C👁️", "#616161", 1, macd_t
-    dist_pct = ((lc / bt) - 1) * 100 
-    if dist_pct < -2.0:
-        return "圏外💀", "#d32f2f", 0, macd_t
-    elif dist_pct <= 2.0:
-        return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
-    elif dist_pct <= 5.0:
-        return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
-    else:
-        return "C👁️", "#616161", 1, macd_t
-
-def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if gc_days <= 0 or df_chart is None or df_chart.empty:
-        return "圏外 💀", "#424242", 0, ""
-    row = df_chart.iloc[-1]
-    ma25 = row.get('MA25', 0)
-    score = 50 
-    if ma25 > 0:
-        if lc >= ma25 * 0.95:
-            score += 10
-        if lc >= ma25:
-            score += 10
-    if 50 <= rsi_v <= 70:
-        score += 10
-    if score >= 80:
-        rank, bg = "S", "#d32f2f"
-    elif score >= 60:
-        rank, bg = "A", "#f57c00"
-    elif score >= 40:
-        rank, bg = "B", "#fbc02d"
-    else:
-        rank, bg = "C 💀", "#424242"
-    return rank, bg, score, "GC発動中"
-
-def render_technical_radar(df, buy_price, tp_pct):
-    if df.empty or len(df) < 2:
-        return ""
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-    rsi = latest.get('RSI', 50)
-    macd_hist = latest.get('MACD_Hist', 0)
-    macd_hist_prev = prev.get('MACD_Hist', 0)
-    atr = latest.get('ATR', 0)
-    rsi_color = "#ef5350" if rsi <= 30 else "#FFD700" if rsi <= 45 else "#888888"
-    rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 低RSI" if rsi <= 45 else "⚖️ 中立"
-    if rsi >= 70:
-        rsi_color = "#26a69a"
-        rsi_text = "⚠️ 買われすぎ"
-    _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
-    bg_glow = "border-left: 4px solid #FFD700;"
-    days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
-    return f'<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}"><div style="font-size: 14px; color: #aaa;">📡 RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: #ef5350;">{macd_t}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (目標まで約{days}日)</div></div>'
-
-def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
-    df = df.copy()
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
-    if 'MA5' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='#ffca28', width=1.5)))
-    if 'MA25' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='#42a5f5', width=1.5)))
-    if 'MA75' in df.columns:
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='#ab47bc', width=1.5)))
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side="right"))
-    st.plotly_chart(fig, use_container_width=True, key=chart_key)
-
+# --- 💎 物理同期エンジン（デグレ防止） ---
 def load_settings():
-    """全パラメータをsession_stateへ物理同期し、0リセットを阻止する。"""
+    """設定を強制ロードし、0リセットを物理的に阻止する。"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
-        "preset_push_r": "50.0%",
-        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "preset_push_r": "50.0%", "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
         "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
         "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
         "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
-        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
-        "f11_ex_wave3": True, "f12_ex_overvalued": True,
-        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
-        "sim_tp_val": 10.0, "sim_sl_val": 8.0, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
-        "sim_push_r_val": 50.0, "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
-        "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
+        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True, "f11_ex_wave3": True, "f12_ex_overvalued": True,
+        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
     
-    # 1. 未定義のキーにデフォルト値を装填
     for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        if k not in st.session_state: st.session_state[k] = v
 
-    # 2. 保存ファイルが存在すれば、値を強制的に session_state へ上書き
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
                 for k, v in saved.items():
                     if k in defaults and v is not None:
+                        # 0化デグレ対策：デフォルトが0でないのに保存値が0の場合は無視
+                        if isinstance(v, (int, float)) and v == 0 and defaults[k] != 0: continue
                         st.session_state[k] = v
-        except:
-            pass
-
-    # 💎 物理固定：f3_dropは必ず-50.0を維持
-    st.session_state.f3_drop = -50.0
+        except: pass
+    st.session_state.f3_drop = -50.0 # ボス指定の絶対固定値
 
 def save_settings():
-    """現在の全設定を物理ファイルへ永久保存。"""
-    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
-            "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
-            "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
-            "sim_tp_val", "sim_sl_val", "sim_limit_d_val", "sim_sell_d_val",
-            "sim_push_r_val", "sim_pass_req_val", "sim_rsi_lim_ambush_val",
-            "sim_rsi_lim_assault_val", "sim_time_risk_val"]
-    current = {k: st.session_state[k] for k in keys if k in st.session_state}
+    keys = list(st.session_state.keys())
+    current = {k: st.session_state[k] for k in keys if not k.startswith("_")}
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=4)
 
@@ -563,9 +255,8 @@ def apply_presets():
 
 load_settings()
 
-# --- 4. サイドバー UI詳細設計（物理同期パッチ適用） ---
+# --- 4. サイドバー UI詳細設計（物理キー導通） ---
 st.sidebar.title("🛠️ 戦術コンソール")
-st.sidebar.header("📍 ターゲット選別")
 st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
 st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
 st.sidebar.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
@@ -612,10 +303,7 @@ if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=
     st.session_state.tab1_scan_results = None
     st.session_state.tab2_scan_results = None
     st.rerun()
-if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
-    save_settings()
-    st.toast("全設定を永久保存した。")
-    
+
 # --- 5. タブ構成の開始 ---
 master_df = load_master()
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 【待伏】広域レーダー", "⚡ 【強襲】GC初動レーダー", "🎯 【照準】精密スコープ", "⚙️ 【演習】戦術シミュレータ", "⛺ 【戦線】交戦モニター", "📁 【戦歴】交戦データベース"])
@@ -924,21 +612,20 @@ with tab2:
             st.caption(f"🏭 {r['Sector']} ｜ 🏢 {r['Market']} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
 
 with tab3:
-    # 📱 モバイル表示時の右側切れを物理排除し、パディングを最適化するレスポンシブパッチ
+    # 📱 モバイル対応パッチ（右側切れ防止・パディング最小化）
     st.markdown("""
         <style>
         @media (max-width: 768px) {
             .stMain { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
             div[data-testid="stHorizontalBlock"] { gap: 0 !important; }
             div[style*="border-left"] { border-left: 3px solid #FFD700 !important; padding: 0.8rem !important; }
-            .stMetric { min-width: 70px !important; }
         }
         </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
     
-    # --- 🖥️ 【原典UI完全復旧】 二層式ターゲット入力セクション ---
+    # --- 🖥️ 二層式ターゲット入力 ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
@@ -956,48 +643,27 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🎯 解析モードの選択
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode", on_change=save_settings)
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
-        
-        # 二層式入力枠の出し分け（監視部隊 / 本日新規部隊）
         if is_ambush:
             watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120)
             daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120)
         else:
             watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120)
             daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120)
-            
         run_scope = st.button("🔫 表示中の全部隊を精密スキャン", use_container_width=True, type="primary")
         
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush: 
             st.info("・【待伏専用】半値押し・黄金比での迎撃判定")
-            st.markdown("""
-            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;">
-                <b>【掟スコア加点基準（最大10点）】</b><br>
-                ✅ 基礎モメンタム（MACD/RSIの優位性：最大+5点）<br>
-                ✅ 波高1.3〜2.0倍（+1点） ｜ ✅ 調整日数が規定内（+1点）<br>
-                ✅ 危険波形(Wトップ等)なし（+1点） ｜ ✅ 買値目標の±15%圏内（+1点）<br>
-                ✅ 割安性：PBR 5.0倍以下（+1点）
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown('<div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;"><b>【掟スコア加点基準（最大10点）】</b><br>✅ 基礎モメンタム（MACD/RSI等）<br>✅ 波高1.3〜2.0倍 ｜ ✅ 調整日数規定内<br>✅ 危険波形なし ｜ ✅ 買値目標±15%圏内</div>', unsafe_allow_html=True)
         else: 
             st.warning("・【強襲専用】ATR/14日高値ベースの動的ブレイクアウト判定")
-            st.markdown("""
-            <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;">
-                <b>【強襲スコア加点基準（最大100点）】</b><br>
-                ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
-                ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
-                ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
-                ⚡ 割安性：PBR 5.0倍以下（+10点）
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown('<div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #ed6c02;"><b>【強襲スコア加点基準（最大100点）】</b><br>⚡ GC（ゴールデンクロス）発動<br>⚡ 25日線上抜け ｜ ⚡ 出来高急増<br>⚡ RSI適正過熱感 ｜ ⚡ PBR5倍以下</div>', unsafe_allow_html=True)
 
     if run_scope:
-        # ファイル保存ロジック（物理永続化）
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
@@ -1007,7 +673,6 @@ with tab3:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
             st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
 
-        # 全入力コードの抽出（正規表現）
         t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', watch_in + " " + daily_in)]))
         
         if t_codes:
@@ -1046,12 +711,11 @@ with tab3:
                     
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        dist_pct = ((lc / bt_val) - 1) * 100
-                        # 💎 判定基準の見直し（圏外判定の緩和）
-                        if dist_pct < -10.0: rank, bg, t_score = "圏外💀", "#d32f2f", 0
-                        elif dist_pct <= 2.0: rank, bg, t_score = ("S🔥", "#2e7d32", 5) if rsi_v <= 45 else ("A⚡", "#ed6c02", 4.5)
-                        elif dist_pct <= 10.0: rank, bg, t_score = ("B📈", "#0288d1", 3)
-                        else: rank, bg, t_score = ("C👁️", "#616161", 1)
+                        dist_p = ((lc / bt_val) - 1) * 100
+                        if dist_p < -10.0: rank, bg = "圏外💀", "#d32f2f"
+                        elif dist_p <= 2.0: rank, bg = ("S🔥", "#2e7d32") if rsi_v <= 45 else ("A⚡", "#ed6c02")
+                        elif dist_p <= 10.0: rank, bg = ("B📈", "#0288d1")
+                        else: rank, bg = ("C👁️", "#616161")
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
@@ -1060,49 +724,36 @@ with tab3:
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
 
-                    # 物理特定：完全一致検索（コード誤認を排除）
-                    c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
+                    c_name, c_market = f"銘柄 {c}", "不明"
                     if not master_df.empty:
                         target_5 = c + "0"
                         m_row = master_df[master_df['Code'] == target_5]
                         if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']
-                            c_sector = m_row.iloc[0]['Sector']
-                            c_market = m_row.iloc[0]['Market']
+                            c_name, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Market']
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                         'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'reach_val': reach_rate, 'df_chart': df_chart, 
                         'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': raw_s['mcap'], 'roe': raw_s['roe'],
-                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'market': c_market
                     })
 
-                # --- 判定順ソート ---
-                rank_order = {"S🔥": 4, "S": 4, "A⚡": 3, "A": 3, "B📈": 2, "B": 2, "C👁️": 1, "C": 1, "圏外💀": 0, "圏外": 0}
-                for res in scope_results:
-                    res['r_val'] = rank_order.get(res['rank'], 0)
-                scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['reach_val']), reverse=True)
+                rank_order = {"S🔥": 4, "S": 4, "A⚡": 3, "A": 3, "B📈": 2, "B": 2, "C👁️": 1, "C": 1}
+                scope_results = sorted(scope_results, key=lambda x: (rank_order.get(x['rank'], 0), x['reach_val']), reverse=True)
 
                 for r in scope_results:
                     st.divider()
-                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_l = str(r['market']).lower()
-                    
-                    if 'プライム' in m_l or '一部' in m_l: 
-                        m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: 
-                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 中小型</span>'
-                    else: 
-                        m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
+                    if 'プライム' in m_l or '一部' in m_l: m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'スタンダード' in m_l or 'グロース' in m_l or 'マザーズ' in m_l: m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 中小型</span>'
+                    else: m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
 
-                    s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+                    s_badge = f"<span style='background-color:{'#42a5f5' if '監視' in r['source'] else '#ffa726'}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    
-                    st.markdown(f"""<h3 style="margin: 0;">{s_badge} ({r['code'][:4]}) {r['name']}</h3><div style="margin-bottom: 0.8rem; margin-top: 0.4rem;">{m_badge}{t_badge} <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 10px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 5px;">到達度: {r['reach_val']:.1f}%</span></div>""", unsafe_allow_html=True)
+                    st.markdown(f"### {s_badge} ({r['code']}) {r['name']}\n<div style='margin-bottom: 0.8rem;'>{m_badge}{t_badge} <span style='background-color:rgba(38,166,154,0.15); color:#26a69a; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:10px;'>RSI: {r['rsi']:.1f}%</span><span style='background-color:rgba(255,215,0,0.1); color:#FFD700; padding:0.1rem 0.5rem; border-radius:4px; font-size:12px; margin-left:5px;'>到達度: {r['reach_val']:.1f}%</span></div>", unsafe_allow_html=True)
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形を検知。")
+                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形（三尊/Wトップ等）を検知。")
                     
-                    # 💎 UI黄金比レイアウト（カラム比率の再構築）
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
@@ -1113,72 +764,33 @@ with tab3:
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_c = "#26a69a" if (r['roe'] and r['roe'] >= 10) else "#ef5350"
-                        roe_l = "進撃" if (r['roe'] and r['roe'] >= 10) else "静観"
-                        per_v = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
-                        pbr_v = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
-                        roe_v = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
-                        mcap_v = f"{int(r['mcap']/1e8):,}億円" if r['mcap'] is not None else "-"
-                        
-                        html_metrics = f"""
-                            <div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{per_v}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{pbr_v}</div></div>
-                                <div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE({roe_l})</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{roe_v}</div></div>
-                            </div>
-                            <div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'>
-                                <div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{mcap_v}</div>
-                            </div>"""
-                        box_t = "🎯 買値目標" if is_ambush else "🎯 トリガー"
-                        st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
+                        h_metrics = f"<div style='display:flex; justify-content:space-between; text-align:center; margin-top:8px;'><div style='flex:1;'><div style='font-size:11px; color:#888;'>📊 PER</div><div style='font-size:1.3rem; color:{per_c}; font-weight:bold;'>{r['per']:.1f}倍</div></div><div style='flex:1;'><div style='font-size:11px; color:#888;'>📉 PBR</div><div style='font-size:1.3rem; color:{pbr_c}; font-weight:bold;'>{r['pbr']:.2f}倍</div></div><div style='flex:1;'><div style='font-size:11px; color:#888;'>📡 ROE</div><div style='font-size:1.3rem; color:{roe_c}; font-weight:bold;'>{r['roe']:.1f}%</div></div></div><div style='text-align:center; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;'><div style='font-size:11px; color:#888;'>💰 時価総額</div><div style='font-size:1.3rem; color:#fff; font-weight:bold;'>{int(r['mcap']/1e8):,}億円</div></div>"
+                        st.markdown(f"<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{'🎯 買値目標' if is_ambush else '🎯 トリガー'}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{h_metrics}</div>", unsafe_allow_html=True)
 
                     with sc_r:
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
-                        vol_sig = (atr_ref / r['lc']) * 100
-                        wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
+                        vol_sig = (atr_ref / r['lc']) * 100; wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
                         tn_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
-                        # 💡 トレンド・ノイズ比に基づく推奨ATRの動的決定
-                        if tn_ratio >= 5.0: rec_tp_atr = 3.0
-                        elif tn_ratio >= 2.5: rec_tp_atr = 2.0
-                        else: rec_tp_atr = 1.0
+                        rec_tp_atr = 3.0 if tn_ratio >= 5.0 else 2.0 if tn_ratio >= 2.5 else 1.0
                         
-                        html_mat = f"""
-                        <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div>
-                            <div style='display:flex; gap:20px;'>
-                                <div style='flex:1;'>
-                                    <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
+                        html_mat = f"<div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'><div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {tn_ratio:.1f})</div><div style='display:flex; gap:20px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"
                         for m in [0.5, 1.0, 2.0, 3.0]: 
-                            val = int(c_t + (atr_ref * m))
-                            diff_p = ((val / c_t) - 1) * 100
+                            val = int(c_t + (atr_ref * m)); diff_p = ((val / c_t) - 1) * 100
                             style = "background:rgba(38,166,154,0.15); border-radius:4px; padding:2px 4px;" if m == rec_tp_atr else "padding:2px 4px;"
-                            label = f"+{m}ATR" + (" ⭐" if m == rec_tp_atr else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>(+{diff_p:.1f}%)</span></b></div>"
-                        html_mat += """</div><div style='flex:1;'>
-                                    <div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:10px; font-size:14px; font-weight:bold;'>【防衛目安】</div>"""
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>+{m}ATR{ ' ⭐' if m == rec_tp_atr else ''}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>(+{diff_p:.1f}%)</span></b></div>"
+                        html_mat += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:10px; font-size:14px; font-weight:bold;'>【防衛目安】</div>"
                         for m in [0.5, 1.0, 2.0]: 
-                            val = int(c_t - (atr_ref * m))
-                            diff_p = ((val / c_t) - 1) * 100
+                            val = int(c_t - (atr_ref * m)); diff_p = ((val / c_t) - 1) * 100
                             style = "background:rgba(239,83,80,0.15); border:1px solid rgba(239,83,80,0.5); border-radius:4px; padding:2px 4px;" if m == 1.0 else "padding:2px 4px;"
-                            label = f"-{m}ATR" + (" 🛡️" if m == 1.0 else "")
-                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>{label}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>({diff_p:.1f}%)</span></b></div>"
+                            html_mat += f"<div style='display:flex; justify-content:space-between; align-items:center; font-size:16px; margin-bottom:4px; {style}'><span>-{m}ATR{ ' 🛡️' if m == 1.0 else ''}</span><b>{val:,}<span style='font-size:12px; font-weight:normal; color:#888; margin-left:6px;'>({diff_p:.1f}%)</span></b></div>"
                         st.markdown(html_mat + "</div></div></div>", unsafe_allow_html=True)
                     
                     st.markdown("---")
                     df_p = r['df_chart'].tail(100).copy(); df_p['d_str'] = df_p['Date'].dt.strftime('%m/%d')
                     fig = go.Figure(data=[go.Candlestick(x=df_p['d_str'], open=df_p['AdjO'], high=df_p['AdjH'], low=df_p['AdjL'], close=df_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350')])
-                    for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
-                        fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
+                    for ma, n, col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]: fig.add_trace(go.Scatter(x=df_p['d_str'], y=df_p[ma], name=n, mode='lines', line=dict(color=col, width=1.5)))
                     fig.add_trace(go.Scatter(x=df_p['d_str'], y=[r['bt_val']]*len(df_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
-                    
-                    # 💎 物理配線：凡例の高度調整（y=-0.18）およびモバイルパディング確保
-                    fig.update_layout(
-                        height=450, margin=dict(l=0, r=0, t=10, b=50), 
-                        xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                        hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), 
-                        xaxis=dict(type='category', dtick=5),
-                        showlegend=True,
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5)
-                    )
+                    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=100), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
 with tab4:
