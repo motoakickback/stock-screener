@@ -778,7 +778,7 @@ with tab2:
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
                 
-                # 市場フィルタリング
+                # 市場フィルタリング（サイドバー設定連動）
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
                     large_kw = ['プライム', '一部']
@@ -804,18 +804,20 @@ with tab2:
                     # ⚡ GC判定ロジック (3日以内)
                     gc_d = 1 if len(h_vals)>=2 and h_vals[-2]<0 and h_vals[-1]>=0 else 2 if len(h_vals)>=3 and h_vals[-3]<0 and h_vals[-1]>=0 else 3 if len(h_vals)>=4 and h_vals[-4]<0 and h_vals[-1]>=0 else 0
                     
-                    # 掟：25日線近辺のフィルタ
+                    # 掟：トレンド維持フィルタ（25日線近辺）
                     if gc_d == 0 or lc < (group['AdjC'].rolling(window=25).mean().iloc[-1] * 0.95):
                         continue
                     
-                    # 🚀 物理配線：財務フィルタ（信用・赤字）
+                    # 🚀 物理配線：財務フィルタ（信用リスク・赤字除外）
                     if st.session_state.f6_risk or st.session_state.f12_ex_overvalued:
                         fund = get_fundamentals(code)
                         if fund:
-                            if st.session_state.f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0): continue
-                            if st.session_state.f12_ex_overvalued and float(fund.get('op', 1)) < 0: continue
+                            if st.session_state.f6_risk and (float(fund.get('er', 1)) < 0.20 or float(fund.get('op', 1)) < 0): 
+                                continue
+                            if st.session_state.f12_ex_overvalued and float(fund.get('op', 1)) < 0: 
+                                continue
                     
-                    # トリアージ実行
+                    # 強襲トリアージ実行
                     t_rank, t_color, t_score, _ = get_assault_triage_info(gc_d, lc, rsi, group, is_strict=False)
                     m_i = master_dict.get(code, {})
                     
@@ -837,26 +839,36 @@ with tab2:
                 
                 st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
 
-    # --- TAB2 UI表示フェーズ ---
+    # --- TAB2 UI表示フェーズ（不退転の物理復元） ---
     if st.session_state.tab2_scan_results:
         light_results = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄。")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(light_results)} 銘柄を確認。")
         
-        # 📋 一括コピー用コード
+        # 📋 物理復元：銘柄コード一括コピーエリア
         sab_codes = " ".join([str(r['Code'])[:4] for r in light_results if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
         if sab_codes:
-            st.info("📋 以下のコードをコピーして照準（TAB3）に投入せよ。")
+            st.info("📋 以下のコードをコピーして、照準（TAB3）の『新規部隊』に投入せよ。")
             st.code(sab_codes, language="text")
         
         for r in light_results:
             st.divider()
-            t_b = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
+            m_l = str(r['Market']).lower()
+            
+            # 🏢 物理復元：市場バッジの動的生成
+            if 'プライム' in m_l or '一部' in m_l: 
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_l or 'マザーズ' in m_l: 
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["Market"]}</span>'
+            
+            t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
             
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: 24px; font-weight: bold; margin: 0;">({str(r["Code"])[:4]}) {r["Name"]}</h3>
+                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({str(r["Code"])[:4]}) {r["Name"]}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {t_b}
+                        {badge_html}{t_badge}
                         <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r.get("GC_Days")}日目</span>
                     </div>
                 </div>
@@ -870,6 +882,7 @@ with tab2:
             m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
             m_cols[2].metric("ボラ(推定)", f"{int(atr_v):,}円")
             
+            # 🛡️ 防衛線ボックス
             m_cols[3].markdown(f"""
                 <div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;">
                     <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div>
@@ -877,6 +890,7 @@ with tab2:
                 </div>
             """, unsafe_allow_html=True)
             
+            # 🎯 トリガーボックス
             m_cols[4].markdown(f"""
                 <div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;">
                     <div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div>
