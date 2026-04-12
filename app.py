@@ -1074,9 +1074,7 @@ with tab3:
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】危険波形を検知。")
                     
-                    # 💎 物理配線：カラムバランスの再構築 (右翼のATRマトリクスを拡張)
                     sc_l, sc_m, sc_r = st.columns([2.0, 3.5, 5.5])
-                    
                     with sc_l:
                         atr_now = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
                         c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("最新終値", f"{int(r['lc']):,}円")
@@ -1105,14 +1103,20 @@ with tab3:
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color:#FFD700;'>{box_t}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>{html_metrics}</div>""", unsafe_allow_html=True)
 
                     with sc_r:
+                        # 💎 物理復元：トレンド・ノイズ比に基づく真の推奨ATR演算
                         c_t = r['bt_val']; atr_ref = r['atr_val'] if r['atr_val'] > 0 else c_t * 0.05
-                        vol_sig = (atr_ref / r['lc']) * 100
-                        rec_tp_atr = 3.0 if vol_sig > 5.0 else 2.0 if vol_sig > 2.5 else 1.0
+                        vol_sig = (atr_ref / c_t) * 100
+                        wave_sig = (r['ur'] / r['l14']) * 100 if r['l14'] > 0 else 0
+                        trend_noise_ratio = wave_sig / vol_sig if vol_sig > 0 else 0
                         
-                        # 💎 物理復元：フォントを全体的に拡大し、バランスを最適化
+                        # 波の強さが日々のノイズの何倍あるかで利確幅を動的決定
+                        if trend_noise_ratio >= 5.0: rec_tp_atr = 3.0
+                        elif trend_noise_ratio >= 2.5: rec_tp_atr = 2.0
+                        else: rec_tp_atr = 1.0
+                        
                         html_mat = f"""
                         <div style='background:rgba(255,255,255,0.03); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700;'>
-                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円)</div>
+                            <div style='font-size:16px; color:#aaa; margin-bottom:14px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:6px;'>📊 動的ATRマトリクス (基準:{int(c_t):,}円 | T/N比: {trend_noise_ratio:.1f})</div>
                             <div style='display:flex; gap:20px;'>
                                 <div style='flex:1;'>
                                     <div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:10px; font-size:14px; font-weight:bold;'>【利確目安】</div>"""
