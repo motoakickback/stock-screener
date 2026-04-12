@@ -254,8 +254,8 @@ def check_event_mines(code, event_data=None):
                     if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97:
                         return True
             return False
-    except:
-        return False
+        except:
+            return False
 
 def check_head_shoulders(df_sub):
     try:
