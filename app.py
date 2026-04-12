@@ -709,7 +709,7 @@ with tab2:
 
                 # 基本足切り
                 latest_date = df.max()
-                latest_df = df == latest_date]
+                latest_df = df == latest_date
                 valid_price_codes = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
                 valid_vol_codes = avg_vols[avg_vols >= vol_limit_val].index
                 df = df[df['Code'].isin(set(valid_price_codes).intersection(set(valid_vol_codes)))]
