@@ -535,6 +535,7 @@ def apply_presets():
     save_settings()
 
 load_settings()
+
 # --- 4. サイドバー UI詳細設計 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 st.sidebar.header("📍 ターゲット選別")
@@ -548,6 +549,7 @@ c1, c2 = st.sidebar.columns(2)
 c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
 c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
 st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
+# 💎 ボスの指示：デフォルト値を-50.0%に完全固定（Part3のload_settingsと連動）
 st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
 
 c3, c4 = st.sidebar.columns(2)
@@ -601,11 +603,11 @@ with tab1:
     run_scan_t1 = st.button("🚀 最新データで待伏スキャン開始")
 
     if run_scan_t1:
-        st.toast("🟢 待伏トリガーを確認。索敵開始！", icon="🎯")
+        st.toast("🟢 待伏開始。全軍から精鋭を選別する。", icon="🎯")
         with st.spinner("全銘柄からターゲットを索敵中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("データの取得に失敗した。APIキーまたはネットワークを確認せよ。")
+                st.error("データの取得に失敗した。APIキーまたは通信環境を確認せよ。")
                 st.session_state.tab1_scan_results = None
             else:
                 df = clean_df(pd.DataFrame(raw))
@@ -613,7 +615,7 @@ with tab1:
                 v_col = next((col for col in df.columns if col in ['Volume', 'AdjVo', 'Vo', 'AdjustmentVolume']), None)
                 avg_vols = df.groupby('Code').tail(5).groupby('Code')[v_col].mean() if v_col else pd.Series(0, index=df['Code'].unique())
 
-                # --- 設定のローカル変数化 ---
+                # --- 物理配線：設定の同期 ---
                 f1_min, f1_max = float(st.session_state.f1_min), float(st.session_state.f1_max)
                 f2_limit, f3_drop_val = float(st.session_state.f2_m30), float(st.session_state.f3_drop)
                 f5_ipo, f6_risk = st.session_state.f5_ipo, st.session_state.f6_risk
@@ -626,7 +628,7 @@ with tab1:
                 latest_date = df['Date'].max()
                 latest_df = df[df['Date'] == latest_date]
                 
-                # 市場フィルタ
+                # 市場フィルタリング
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 if not master_df.empty:
                     large_kw = ['プライム', '一部']
@@ -634,7 +636,7 @@ with tab1:
                     m_codes = master_df[master_df['Market'].str.contains('|'.join(large_kw if m_mode == "大型" else small_kw), na=False)]['Code'].unique()
                     df = df[df['Code'].isin(m_codes)]
 
-                # 価格・出来高の基本足切り
+                # 価格・出来高の基礎足切り
                 valid_p = latest_df[(latest_df['AdjC'] >= f1_min) & (latest_df['AdjC'] <= f1_max)]['Code'].unique()
                 valid_v = avg_vols[avg_vols >= 10000].index
                 df = df[df['Code'].isin(set(valid_p).intersection(set(valid_v)))]
@@ -647,7 +649,7 @@ with tab1:
                     adjc, adjh, adjl = group['AdjC'].values, group['AdjH'].values, group['AdjL'].values
                     lc = adjc[-1]
 
-                    # 掟：暴騰・暴落チェック
+                    # 掟：暴騰制限・高値圏除外
                     if lc / adjc[max(0, len(adjc)-20)] > f2_limit: continue
                     if lc < adjh.max() * (1 + (f3_drop_val / 100.0)): continue
 
@@ -672,7 +674,7 @@ with tab1:
                     if l14 <= 0 or h4 <= l14: continue
                     wh = h4 / l14
                     
-                    # 波高フィルタ導通
+                    # 掟：波高フィルタ導通
                     if not (st.session_state.f9_min14 <= wh <= st.session_state.f9_max14): continue
                     
                     bt = h4 - ((h4 - l14) * push_ratio)
