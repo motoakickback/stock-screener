@@ -231,7 +231,7 @@ def check_event_mines(code, event_data=None):
                 if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
             except: pass
     return alerts
-
+    
     def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values
