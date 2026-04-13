@@ -985,13 +985,32 @@ with tab2:
                             if res: results.append(res)
                         except: pass
                 
-                st.session_state.tab2_scan_results = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))[:30]
+                # --- 🛡️ 5. セクター分散フィルター（新規追加） ---
+                sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
+                filtered_results = []
+                sector_counts = {}
+                
+                for r in sorted_raw:
+                    c_code = str(r['Code'])
+                    m_info = master_map_t2.get(c_code, {})
+                    sector = m_info.get('Sector', '不明')
+                    
+                    # 同一セクターが3未満の場合のみリストに追加（繰り上げ方式）
+                    if sector_counts.get(sector, 0) < 3:
+                        filtered_results.append(r)
+                        sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                        
+                    # 30銘柄に到達したら打ち切り
+                    if len(filtered_results) >= 30:
+                        break
+                        
+                st.session_state.tab2_scan_results = filtered_results
                 del df; gc.collect()
 
-    # --- 💎 5. 神聖不可侵UI描画ブロック ---
+    # --- 💎 6. 神聖不可侵UI描画ブロック ---
     if st.session_state.tab2_scan_results:
         res_list = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(res_list)} 銘柄。")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
         
         # 🚨 物理修復：language="text" 指定で色化けを完全封殺
         sab_codes = " ".join([str(r['Code'])[:4] for r in res_list if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
@@ -1007,12 +1026,13 @@ with tab2:
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
             
             t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
+            sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
             
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{t_badge}
+                        {badge_html}{t_badge}{sector_badge}
                         <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r['GC_Days']}日目</span>
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                     </div>
@@ -1030,7 +1050,6 @@ with tab2:
             m_cols[2].metric("ボラ(推定)", f"{int(atr_v):,}円")
             m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}円</div></div>', unsafe_allow_html=True)
             m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}円</div></div>', unsafe_allow_html=True)
-            st.caption(f"🏭 {m_info.get('Sector', '不明')} ｜ 📊 平均出来高: {int(r['avg_vol']):,}株")
             
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術別・独立索敵）</h3>', unsafe_allow_html=True)
