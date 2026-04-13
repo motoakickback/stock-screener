@@ -482,47 +482,93 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     fig.update_layout(height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), yaxis=dict(tickformat=",.0f", side="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
 
-# --- 4. サイドバー UI ---
+# --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
+
 st.sidebar.header("📍 ターゲット選別")
-st.sidebar.selectbox("市場ターゲット", ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], key="preset_market", on_change=save_settings)
-st.sidebar.selectbox("押し目プリセット", ["25.0%", "50.0%", "61.8%"], key="preset_push_r", on_change=apply_presets)
-st.sidebar.selectbox("戦術アルゴリズム", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], key="sidebar_tactics", on_change=save_settings)
+
+# セレクトボックス用オプション定義
+market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    options=market_options, 
+    index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1,
+    key="preset_market", 
+    on_change=save_settings
+)
+
+push_r_options = ["25.0%", "50.0%", "61.8%"]
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    options=push_r_options, 
+    index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1,
+    key="preset_push_r", 
+    on_change=apply_presets
+)
+
+tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
+st.sidebar.selectbox(
+    "戦術アルゴリズム", 
+    options=tactics_options, 
+    index=tactics_options.index(st.session_state.sidebar_tactics) if st.session_state.sidebar_tactics in tactics_options else 0,
+    key="sidebar_tactics", 
+    on_change=save_settings
+)
+
 st.sidebar.divider()
+
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
-c1.number_input("価格下限(円)", step=100, key="f1_min", on_change=save_settings)
-c2.number_input("価格上限(円)", step=100, key="f1_max", on_change=save_settings)
-st.sidebar.number_input("1ヶ月暴騰上限(倍)", step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("1年最高値からの下落除外(%)", step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+# 💎 物理ロック：value=st.session_state[key] を全項目に適用
+c1.number_input("価格下限(円)", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
+c2.number_input("価格上限(円)", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=save_settings)
+
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.f2_m30), step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.f3_drop), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+
 c3, c4 = st.sidebar.columns(2)
-c3.number_input("波高下限(倍)", step=0.1, key="f9_min14", on_change=save_settings)
-c4.number_input("波高上限(倍)", step=0.1, key="f9_max14", on_change=save_settings)
-st.sidebar.checkbox("IPO除外(上場1年未満)", key="f5_ipo", on_change=save_settings)
-st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=save_settings)
-st.sidebar.checkbox("上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+c3.number_input("波高下限(倍)", value=float(st.session_state.f9_min14), step=0.1, key="f9_min14", on_change=save_settings)
+c4.number_input("波高上限(倍)", value=float(st.session_state.f9_max14), step=0.1, key="f9_max14", on_change=save_settings)
+
+st.sidebar.checkbox("IPO除外(上場1年未満)", value=bool(st.session_state.f5_ipo), key="f5_ipo", on_change=save_settings)
+st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.f6_risk), key="f6_risk", on_change=save_settings)
+st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.f11_ex_wave3), key="f11_ex_wave3", on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.f12_ex_overvalued), key="f12_ex_overvalued", on_change=save_settings)
+
 st.sidebar.divider()
+
 st.sidebar.header("🎯 買いルール")
-st.sidebar.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=save_settings)
-st.sidebar.number_input("目標到達の猶予期限(日)", step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.bt_lot), step=100, key="bt_lot", on_change=save_settings)
+st.sidebar.number_input("目標到達の猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=save_settings)
+
 st.sidebar.header("💰 売りルール")
-st.sidebar.number_input("利確目標(%)", step=1, key="bt_tp", on_change=save_settings)
+st.sidebar.number_input("利確目標(%)", value=int(st.session_state.bt_tp), step=1, key="bt_tp", on_change=save_settings)
+
 c_sl1, c_sl2 = st.sidebar.columns(2)
-c_sl1.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=save_settings)
-c_sl2.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=save_settings)
-st.sidebar.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=save_settings)
+c_sl1.number_input("初期損切(%)", value=int(st.session_state.bt_sl_i), step=1, key="bt_sl_i", on_change=save_settings)
+c_sl2.number_input("現在損切(%)", value=int(st.session_state.bt_sl_c), step=1, key="bt_sl_c", on_change=save_settings)
+
+st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.bt_sell_d), step=1, key="bt_sell_d", on_change=save_settings)
+
 st.sidebar.divider()
+
 st.sidebar.header("🚫 特殊除外フィルター")
-st.sidebar.checkbox("ETF・REIT等を除外", key="f7_ex_etf", on_change=save_settings)
-st.sidebar.checkbox("医薬品(バイオ)を除外", key="f8_ex_bio", on_change=save_settings)
-st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=save_settings)
-st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", key="gigi_input", on_change=save_settings)
+st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_etf), key="f7_ex_etf", on_change=save_settings)
+st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=save_settings)
+st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.f10_ex_knife), key="f10_ex_knife", on_change=save_settings)
+st.sidebar.text_area("除外銘柄コード (雑なコピペ対応)", value=str(st.session_state.gigi_input), key="gigi_input", on_change=save_settings)
+
 st.sidebar.divider()
+
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    st.cache_data.clear(); st.session_state.tab1_scan_results = None; st.session_state.tab2_scan_results = None; st.rerun()
+    st.cache_data.clear()
+    st.session_state.tab1_scan_results = None
+    st.session_state.tab2_scan_results = None
+    st.rerun()
+
 if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
-    save_settings(); st.toast("全設定を永久保存した。")
+    save_settings()
+    st.toast("全設定を永久保存した。")
 
 # --- 5. タブ構成 ---
 master_df = load_master()
