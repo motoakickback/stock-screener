@@ -1316,6 +1316,7 @@ with tab5:
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
+                # 数値変換の強制
                 for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
                     if col in temp_df.columns: temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
@@ -1341,20 +1342,12 @@ with tab5:
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
             st.rerun()
 
-    # 🚨 整数表示への強制換装
+    # データエディタ
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
-        column_config={
-            "銘柄": st.column_config.TextColumn("銘柄", required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%d"),
-            "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
-            "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
-            "損切": st.column_config.NumberColumn("損切", format="%d"),
-            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
-        },
         use_container_width=True,
-        key="frontline_editor"
+        key="frontline_editor_v18_final"
     )
 
     if not edited_df.equals(st.session_state.frontline_df):
@@ -1363,273 +1356,129 @@ with tab5:
         st.rerun()
 
     st.markdown("---")
+    # 💎 物理修復：バー表示エンジン（不発の原因であるrange計算を排除）
+    df_render = edited_df.copy()
+    for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
+        if col in df_render.columns:
+            df_render[col] = pd.to_numeric(df_render[col], errors='coerce')
+
     active_squads = 0
-    for index, row in edited_df.iterrows():
+    for index, row in df_render.iterrows():
         ticker = str(row.get('銘柄', ''))
         if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
-        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
+        buy, tp1, tp2, sl, cur = row['買値'], row['第1利確'], row['第2利確'], row['損切'], row['現在値']
         active_squads += 1
 
-        if cur <= sl: st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
-        elif cur < buy: st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
-        elif tp1 > 0 and cur < tp1: st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
-        elif tp2 > 0 and cur < tp2: st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
-        else: st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
+        # ステータス判定
+        if cur <= sl: st_text, st_color = "💀 被弾", "#ef5350"
+        elif cur < buy: st_text, st_color = "⚠️ 警戒", "#ff9800"
+        elif tp1 > 0 and cur < tp1: st_text, st_color = "🟢 巡航", "#26a69a"
+        else: st_text, st_color = "🏆 到達", "#42a5f5"
 
-        fmt = lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "未設定"
+        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {st_color}; margin-bottom: 5px;"><strong>部隊 [{ticker}]</strong> {st_text} ｜ 現在: ¥{int(cur):,} (買: ¥{int(buy):,})</div>', unsafe_allow_html=True)
         
-        st.markdown(f"""
-        <div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color};">
-            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">損切</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div></div>
-            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ffca28;">買値</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div></div>
-            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};"><div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 24px; color: #fff; font-weight: bold;">{fmt(cur)}</div></div>
-            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div></div>
-            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #42a5f5;">利確2</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div></div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        fig = go.Figure()
-        min_x = min(sl, cur, buy) * 0.98; max_x = max(tp2 if tp2 > 0 else tp1, cur, buy) * 1.02
-        fig.add_shape(type="line", x0=min_x, y0=0, x1=max_x, y1=0, line=dict(color="#444", width=2))
-        fig.add_shape(type="line", x0=buy, y0=0, x1=cur, y1=0, line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=10))
-        
-        points = [
-            (sl, "🛡️ 損切(防衛線)", "#ef5350"),
-            (buy, "🏁 買値(出撃点)", "#ffca28"),
-            (tp1, "🎯 利確1(第1目標)", "#26a69a"),
-            (tp2, "🏆 利確2(最終目標)", "#42a5f5")
-        ]
-        
-        for p_val, p_name, p_color in points:
-            if p_val > 0:
-                fig.add_trace(go.Scatter(
-                    x=[p_val], y=[0], mode="markers",
-                    name=p_name, 
-                    marker=dict(size=12, color=p_color),
-                    hovertemplate=f"<b>{p_name}</b><br>価格: ¥%{{x:,.1f}}<extra></extra>"
-                ))
-
-        fig.add_trace(go.Scatter(
-            x=[cur], y=[0], mode="markers",
-            name="🔴 現在地",
-            marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)),
-            hovertemplate=f"<b>🔴 現在地</b><br>価格: ¥%{{x:,.1f}}<extra></extra>"
+        # 物理インジケーター（Plotly）
+        fig_mon = go.Figure()
+        # 目標マーカー（点）
+        fig_mon.add_trace(go.Scatter(
+            x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode='markers',
+            marker=dict(size=14, color=['#ef5350', '#ffca28', '#26a69a', '#42a5f5']),
+            name="目標"
+        ))
+        # 現在値（十字）
+        fig_mon.add_trace(go.Scatter(
+            x=[cur], y=[0], mode='markers',
+            marker=dict(size=26, symbol='cross-thin', line=dict(width=4, color=st_color)),
+            name="現在地"
         ))
         
-        fig.update_layout(
-            height=80, showlegend=False, 
-            yaxis=dict(showticklabels=False, range=[-1, 1]), 
-            xaxis=dict(showgrid=False, range=[min_x, max_x], tickfont=dict(color="#888"), tickformat=",.0f"), 
-            margin=dict(l=10, r=10, t=5, b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
+        fig_mon.update_layout(
+            height=70, margin=dict(l=10, r=10, t=5, b=25),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.05)',
+            yaxis=dict(visible=False),
+            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', tickformat=",.0f", zeroline=False)
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
+        st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
 
     if active_squads == 0: st.info("展開中の部隊はありません。")
         
 with tab6:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
-    st.caption("※実際の交戦記録（トレード履歴）を記録し、自身の戦績と「規律遵守度（メンタル）」を可視化・分析します。")
-    
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 総合戦績</h3>', unsafe_allow_html=True)
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
-    
-    def get_scale_for_code(code):
-        api_code = str(code) if len(str(code)) == 5 else str(code) + "0"
-        if not master_df.empty:
-            m_row = master_df[master_df['Code'] == api_code]
-            if not m_row.empty:
-                scale_val = str(m_row.iloc[0].get('Scale', ''))
-                return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
-        return "不明"
     
     if os.path.exists(AAR_FILE):
         try:
             aar_df = pd.read_csv(AAR_FILE)
-            if "規模" not in aar_df.columns:
-                aar_df.insert(2, "規模", aar_df["銘柄"].apply(get_scale_for_code))
-                aar_df.to_csv(AAR_FILE, index=False)
-            
             aar_df['決済日'] = aar_df['決済日'].astype(str)
             aar_df['銘柄'] = aar_df['銘柄'].astype(str)
-            aar_df['買値'] = pd.to_numeric(aar_df['買値'], errors='coerce')
-            aar_df['売値'] = pd.to_numeric(aar_df['売値'], errors='coerce')
-            aar_df['株数'] = pd.to_numeric(aar_df['株数'], errors='coerce')
-            aar_df['損益額(円)'] = pd.to_numeric(aar_df['損益額(円)'], errors='coerce')
-            aar_df['損益(%)'] = pd.to_numeric(aar_df['損益(%)'], errors='coerce')
-            
-            aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
         except:
-            aar_df = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+            aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
     else:
-        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+        aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
+    # 💎 物理復元：Turn 18式のシンプルなCSVインポーター（余計な解析を全削除）
+    st.markdown("#### 📥 過去ログの物理結合")
+    uploaded_aar = st.file_uploader("戦績CSVを選択", type="csv", key="aar_upload_v18_final")
+    if uploaded_aar is not None:
+        if st.button("💾 CSVをシステムへ同期", use_container_width=True):
+            try:
+                up_df = pd.read_csv(uploaded_aar)
+                # 単純結合・重複排除の原典ロジック
+                aar_df = pd.concat([up_df, aar_df]).drop_duplicates().reset_index(drop=True)
+                aar_df.to_csv(AAR_FILE, index=False)
+                st.success("物理同期完了。全戦績を読み込んだ。")
+                st.rerun()
+            except Exception as e:
+                st.error(f"読み込み失敗：{e}")
+
+    st.divider()
+    # 💎 物理復元：左右二分割の原典レイアウト
     col_a1, col_a2 = st.columns([1, 2.2])
     
     with col_a1:
-        st.markdown("#### 📝 戦果報告フォーム (手動入力)")
-        with st.form(key="aar_form"):
-            c_f1, c_f2 = st.columns(2)
-            import datetime as dt_module
-            aar_date = c_f1.date_input("決済日", dt_module.date.today())
-            aar_code = c_f2.text_input("銘柄コード (4桁)", max_chars=4)
-            aar_tactics = st.selectbox("使用した戦術", ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他 (裁量・妥協)"])
-            c_f3, c_f4, c_f5 = st.columns(3)
-            aar_buy = c_f3.number_input("買値 (円)", min_value=0.0, step=1.0, format="%.1f")
-            aar_sell = c_f4.number_input("売値 (円)", min_value=0.0, step=1.0, format="%.1f")
-            aar_lot = c_f5.number_input("株数", min_value=100, step=100)
+        st.markdown("#### 📝 新規戦果報告")
+        with st.form("aar_form_v18_revival"):
+            d_aar = st.date_input("決済日")
+            c_aar = st.text_input("銘柄コード")
+            t_aar = st.selectbox("戦術", ["待伏", "強襲", "他"])
+            b_aar = st.number_input("買値", min_value=0.0, step=1.0)
+            s_aar = st.number_input("売値", min_value=0.0, step=1.0)
+            l_aar = st.number_input("株数", min_value=0, step=100)
+            r_aar = st.radio("規律", ["遵守", "違反"])
+            m_aar = st.text_input("メモ")
             
-            st.markdown("**⚖️ 自己評価（メンタル・チェック）**")
-            aar_rule = st.radio("ボスの『鉄の掟』を完全に遵守して撃ちましたか？", ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"], horizontal=False)
-            aar_memo = st.text_input("特記事項 (なぜそのルールを破ったか、または勝因など)")
-            submit_aar = st.form_submit_button("💾 記録をデータバンクへ保存", use_container_width=True)
-            
-        if submit_aar:
-            if aar_code and len(aar_code) >= 4 and aar_buy > 0 and aar_sell > 0:
-                profit = int((aar_sell - aar_buy) * aar_lot)
-                profit_pct = round(((aar_sell / aar_buy) - 1) * 100, 2)
-                new_data = pd.DataFrame([{
-                    "決済日": aar_date.strftime("%Y-%m-%d"), "銘柄": aar_code, "規模": get_scale_for_code(aar_code),
-                    "戦術": aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
-                    "買値": aar_buy, "売値": aar_sell, "株数": aar_lot, "損益額(円)": profit, "損益(%)": profit_pct,
-                    "規律": "遵守" if "遵守" in aar_rule else "違反", "敗因/勝因メモ": aar_memo
-                }])
-                aar_df = pd.concat([new_data, aar_df], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
-                aar_df.to_csv(AAR_FILE, index=False)
-                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録完了。")
-                st.rerun()
-            else: st.error("銘柄コード、買値、売値を正しく入力せよ。")
-        
-        with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
-            st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。（※重複データは自動排除されます）")
-            uploaded_csv = st.file_uploader("約定履歴CSVファイルをアップロード", type=["csv"], key="aar_csv_uploader")
-            if uploaded_csv is not None:
-                if st.button("⚙️ CSVから戦果を自動解析して追加", use_container_width=True, key="btn_parse_csv"):
-                    try:
-                        import io
-                        try: content = uploaded_csv.getvalue().decode('utf-8')
-                        except UnicodeDecodeError: content = uploaded_csv.getvalue().decode('shift_jis', errors='replace')
-                        lines = content.splitlines()
-                        header_idx = -1
-                        for i, line in enumerate(lines):
-                            if "約定日" in line and "銘柄" in line:
-                                header_idx = i; break
-                                
-                        if header_idx != -1:
-                            csv_data = "\n".join(lines[header_idx:])
-                            df_csv = pd.read_csv(io.StringIO(csv_data))
-                            df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
-                            records = []
-                            for code, group in df_csv.groupby('銘柄コード'):
-                                buys, sells = [], []
-                                for _, row in group.iterrows():
-                                    item = {'date': str(row['約定日']).replace('/', '-'), 'qty': int(row['約定数量']), 'price': float(row['約定単価']), 'code': str(code)}
-                                    if "買" in str(row['取引']): buys.append(item)
-                                    elif "売" in str(row['取引']): sells.append(item)
-                                buys.sort(key=lambda x: x['date']); sells.sort(key=lambda x: x['date'])
-                                for s in sells:
-                                    sell_qty = s['qty']; matched_qty, matched_buy_amount = 0, 0
-                                    while sell_qty > 0 and len(buys) > 0:
-                                        b = buys[0]
-                                        if b['qty'] <= sell_qty:
-                                            matched_qty += b['qty']; matched_buy_amount += b['price'] * b['qty']; sell_qty -= b['qty']; buys.pop(0)
-                                        else:
-                                            matched_qty += sell_qty; matched_buy_amount += b['price'] * sell_qty; b['qty'] -= sell_qty; sell_qty = 0
-                                    if matched_qty > 0:
-                                        avg_buy_price = matched_buy_amount / matched_qty
-                                        profit = (s['price'] - avg_buy_price) * matched_qty
-                                        profit_pct = ((s['price'] / avg_buy_price) - 1) * 100
-                                        records.append({
-                                            "決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析",
-                                            "買値": round(avg_buy_price, 1), "売値": round(s['price'], 1), "株数": int(matched_qty),
-                                            "損益額(円)": int(profit), "損益(%)": round(profit_pct, 2), "規律": "不明(要修正)", "敗因/勝因メモ": "CSV自動取り込み"
-                                        })
-                            if records:
-                                new_df = pd.DataFrame(records)
-                                aar_df = pd.concat([aar_df, new_df], ignore_index=True)
-                                aar_df['決済日'] = aar_df['決済日'].astype(str)
-                                aar_df['銘柄'] = aar_df['銘柄'].astype(str)
-                                aar_df['買値'] = aar_df['買値'].astype(float).round(1)
-                                aar_df['売値'] = aar_df['売値'].astype(float).round(1)
-                                aar_df['株数'] = aar_df['株数'].astype(int)
-                                aar_df = aar_df.drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"], keep='first').reset_index(drop=True)
-                                aar_df = aar_df.sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
-                                aar_df.to_csv(AAR_FILE, index=False)
-                                st.success(f"🎯 新規の戦果のみを抽出し、既存の記録と統合完了。")
-                                st.rerun()
-                            else: st.warning("解析可能な決済済みペア（買いと売りのセット）が確認できなかった。")
-                        else: st.error("CSVフォーマットが認識不能。「約定日」「銘柄」を含むヘッダ行が必須だ。")
-                    except Exception as e: st.error(f"解析エラー: {e}")
-
-        if not aar_df.empty:
-            if st.button("🗑️ 全記録を消去 (データベース初期化)", key="reset_aar", use_container_width=True):
-                os.remove(AAR_FILE)
-                st.rerun()
+            if st.form_submit_button("記録を保存"):
+                if c_aar and b_aar > 0:
+                    p_aar = int((s_aar - b_aar) * l_aar)
+                    pp_aar = round(((s_aar / b_aar) - 1) * 100, 2) if b_aar != 0 else 0
+                    nd = pd.DataFrame([{"決済日": d_aar.strftime("%Y-%m-%d"), "銘柄": c_aar, "戦術": t_aar, "買値": b_aar, "売値": s_aar, "株数": l_aar, "損益額(円)": p_aar, "損益(%)": pp_aar, "規律": r_aar, "メモ": m_aar}])
+                    pd.concat([nd, aar_df]).to_csv(AAR_FILE, index=False)
+                    st.rerun()
 
     with col_a2:
-        st.markdown("#### 📊 司令部 総合戦績ダッシュボード")
-        if aar_df.empty: st.warning("現在、交戦記録（データ）がない。左のフォームから入力するか、CSVをアップロードせよ。")
-        else:
-            tot_trades = len(aar_df)
-            wins = len(aar_df[aar_df['損益額(円)'] > 0])
-            losses = len(aar_df[aar_df['損益額(円)'] <= 0])
-            win_rate = round((wins / tot_trades) * 100, 1) if tot_trades > 0 else 0
-            
-            tot_profit = aar_df['損益額(円)'].sum()
-            gross_profit = aar_df[aar_df['損益額(円)'] > 0]['損益額(円)'].sum()
-            gross_loss = abs(aar_df[aar_df['損益額(円)'] < 0]['損益額(円)'].sum())
-            pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
-            
-            rule_adherence = round((len(aar_df[aar_df['規律'] == '遵守']) / tot_trades) * 100, 1) if tot_trades > 0 else 0
-            
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("総交戦回数", f"{tot_trades} 回")
-            m2.metric("実戦 勝率", f"{win_rate}%", f"{wins}勝 {losses}敗", delta_color="off")
-            m3.metric("総合 実損益", f"{int(tot_profit):,} 円", f"実戦PF: {pf}")
-            m4.metric("⚖️ 規律遵守率", f"{rule_adherence}%", "感情排除のバロメーター", delta_color="off")
-            
-            st.markdown("##### 💰 現実の資産推移 (Real Equity Curve)")
-            aar_df_sorted = aar_df.sort_values('決済日', ascending=True).reset_index(drop=True)
-            aar_df_sorted['累積損益(円)'] = aar_df_sorted['損益額(円)'].cumsum()
+        if not aar_df.empty:
+            # 数値変換の安全配線
+            aar_df["損益額(円)"] = pd.to_numeric(aar_df["損益額(円)"], errors='coerce')
+            tot_p = aar_df["損益額(円)"].sum()
+            w_rate = (len(aar_df[aar_df["損益額(円)"] > 0]) / len(aar_df)) * 100
+            adh_rate = (len(aar_df[aar_df["規律"] == "遵守"]) / len(aar_df)) * 100
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("総損益", f"{int(tot_p):,}円")
+            m2.metric("勝率", f"{w_rate:.1f}%")
+            m3.metric("規律遵守率", f"{adh_rate:.1f}%")
             
             import plotly.express as px
-            fig_real_eq = px.line(aar_df_sorted, x='決済日', y='累積損益(円)', markers=True, color_discrete_sequence=["#26a69a"])
-            fig_real_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=10, b=20), xaxis_title="", yaxis_title="実損益額 (円)", height=250, hovermode="x unified")
-            st.plotly_chart(fig_real_eq, use_container_width=True)
+            df_curve = aar_df.copy()
+            df_curve['決済日'] = pd.to_datetime(df_curve['決済日'])
+            tdf_c = df_curve.sort_values('決済日')
+            tdf_c['累積'] = tdf_c['損益額(円)'].cumsum()
             
-            def color_pnl(val):
-                if isinstance(val, (int, float)):
-                    color = '#26a69a' if val > 0 else '#ef5350' if val < 0 else 'white'
-                    return f'color: {color}; font-weight: bold;'
-                return ''
-                
-            def color_rule(val):
-                if val == '違反': return 'color: #ef5350; font-weight: bold; background-color: rgba(239, 83, 80, 0.1);'
-                elif '不明' in str(val): return 'color: #9e9e9e;'
-                return 'color: #26a69a;'
+            fig_curve = px.line(tdf_c, x='決済日', y='累積', title="実資産推移", markers=True)
+            fig_curve.update_traces(line_color='#26a69a')
+            fig_curve.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=280, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig_curve, use_container_width=True)
 
-            st.markdown("##### 📜 詳細交戦記録（キル・ログ）")
-            st.caption("※表のセルを直接ダブルクリックすると、「戦術」「規律」「メモ」を直接編集（上書き保存）可能。")
-
-            styled_df = aar_df.style.map(color_pnl, subset=['損益額(円)', '損益(%)']).map(color_rule, subset=['規律'])
-
-            edited_df = st.data_editor(
-                styled_df,
-                column_config={
-                    "規模": st.column_config.TextColumn("規模", disabled=True),
-                    "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
-                    "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明(要修正)"], required=True),
-                    "敗因/勝因メモ": st.column_config.TextColumn("敗因/勝因メモ", max_chars=200),
-                    "買値": st.column_config.NumberColumn("買値", format="%.1f"),
-                    "売値": st.column_config.NumberColumn("売値", format="%.1f"),
-                    "株数": st.column_config.NumberColumn("株数", format="%d"),
-                    "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="%d"),
-                    "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f"),
-                },
-                disabled=["決済日", "銘柄", "規模", "買値", "売値", "株数", "損益額(円)", "損益(%)"],
-                hide_index=True, use_container_width=True, key="aar_data_editor"
-            )
-            
-            if not edited_df.equals(aar_df):
-                edited_df.to_csv(AAR_FILE, index=False)
-                st.rerun()
+    # 戦歴ログ（キル・ログ）
+    st.markdown("##### 📜 詳細交戦記録")
+    st.dataframe(aar_df, use_container_width=True)
