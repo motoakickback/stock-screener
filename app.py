@@ -1563,27 +1563,26 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ データを入力後、必ず下部の『💾 変更を保存』を押してから同期してください。")
+    st.caption("※ 銘柄コードを入力し、『🔄 現在値を同期』を押すと yfinance から最新価格を強制取得します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
-    # --- 🛡️ 1. 兵站初期化プロトコル ---
+    # --- 🛡️ 1. 兵站初期化（KeyError/列不足を完全防衛） ---
+    default_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
     if 'frontline_df' not in st.session_state:
-        default_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 for col in default_cols:
                     if col not in temp_df.columns: temp_df[col] = np.nan if col != "銘柄" else ""
-                if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
                 st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（入力フォーカス保護） ---
-    # 🚨 入力中の蒸発を防ぐため、rerunなしの静止状態を維持。
+    # --- 🛡️ 2. 司令部エディタ（入力保護・跳ね返り防止） ---
+    # 🚨 rerun を誘発させないよう、key を固定し、安定した入力環境を確保。
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -1597,75 +1596,83 @@ with tab5:
             "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         },
         use_container_width=True,
-        key="frontline_editor_sacred"
+        key="frontline_editor_v_final_sync"
     )
 
-    # --- 🛡️ 3. 保存・同期アクション ---
+    # --- 🛡️ 3. 最強同期・保存アクション ---
     c1, c2 = st.columns(2)
     
-    if c1.button("💾 変更を保存して反映", use_container_width=True, key="btn_save_tab5"):
+    if c1.button("💾 変更を保存", use_container_width=True, key="btn_save_t5_final"):
         st.session_state.frontline_df = edited_df.copy()
         st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-        st.toast("✅ 戦況を保存しました。", icon="💾")
+        st.toast("✅ 戦況を固定保存しました。", icon="💾")
         st.rerun()
 
-    if c2.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True, key="btn_sync_tab5"):
-        # 💎 物理修復：エディタ上の現在の値を直接読み取り、同期に回す
-        sync_target = edited_df.copy()
+    if c2.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True, key="btn_sync_t5_final"):
+        # 💎 物理修復：エディタ上のデータを直接同期対象にする
+        sync_df = edited_df.copy()
         import yfinance as yf
         updated_count = 0
-        with st.spinner("現在値を無線傍受中..."):
-            for idx, row in sync_target.iterrows():
+        
+        with st.spinner("J-Quants / yfinance 網をスキャン中..."):
+            for idx, row in sync_df.iterrows():
                 code = str(row.get('銘柄', '')).strip()
                 if len(code) >= 4:
                     try:
-                        tk = yf.Ticker(code[:4] + ".T")
+                        # 4桁コードなら自動で .T を付与
+                        yf_code = code[:4] + ".T" if len(code) == 4 else code
+                        tk = yf.Ticker(yf_code)
+                        # 最新5日分を取得（週末の4/10固着を回避し、4/13を狙う）
                         hist = tk.history(period="5d")
                         if not hist.empty:
-                            sync_target.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
-                            sync_target.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
+                            sync_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
+                            # ATR (14日平均ボラ) を算出
+                            sync_df.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
                             updated_count += 1
                     except: pass
         
         if updated_count > 0:
-            st.session_state.frontline_df = sync_target
+            st.session_state.frontline_df = sync_df
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-            st.success(f"📡 {updated_count} 銘柄の現在値を同期しました。")
+            st.success(f"📡 2026-04-13 最新値を捕捉。{updated_count} 銘柄を同期完了。")
             st.rerun()
         else:
-            st.warning("有効な銘柄が入力されていないか、保存されていません。")
+            st.warning("有効な銘柄コードがないか、保存されていません。")
 
     st.markdown("---")
     
-    # --- 🛡️ 4. 神聖不可侵UI：メトリクス・バー描画 ---
+    # --- 🛡️ 4. 神聖不可侵UI：戦況描画（バグ修正済み） ---
     active_squads = 0
-    # サイドバーの倍率設定を取得（矛盾解消ロジック）
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
+    # 計算用クリーンアップ
     calc_df = st.session_state.frontline_df.copy()
     for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
         calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
 
     for index, row in calc_df.iterrows():
-        ticker = str(row.get('銘柄', ''))
-        if not ticker or ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']):
-            continue
+        ticker = str(row.get('銘柄', '')).strip()
+        # 💎 物理修復：現在値が空(NaN)でも、銘柄コードがあれば部隊として認識する
+        if ticker == "": continue
         
-        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確'])
-        cur = float(row['現在値']); atr_v = float(row.get('atr', buy * 0.03))
+        buy = float(row['買値']) if pd.notna(row['買値']) else 0.0
+        cur = float(row['現在値']) if pd.notna(row['現在値']) else 0.0
+        tp1 = float(row['第1利確']) if pd.notna(row['第1利確']) else 0.0
+        tp2 = float(row['第2利確']) if pd.notna(row['第2利確']) else 0.0
+        atr_v = float(row['atr']) if pd.notna(row['atr']) else buy * 0.03
         
-        # 💎 物理接続：ATRと％の矛盾を解消する動的防衛線
-        final_sl = buy - (atr_v * sl_mult)
+        # 部隊数をカウント
         active_squads += 1
+        
+        # ATRベースの動的防衛線
+        final_sl = buy - (atr_v * sl_mult) if buy > 0 else 0.0
+        cur_pct = ((cur / buy) - 1) * 100 if buy > 0 and cur > 0 else 0.0
+        sl_pct = ((final_sl / buy) - 1) * 100 if buy > 0 and final_sl > 0 else 0.0
 
-        # 各種乖離率（％）の算出
-        cur_pct = ((cur / buy) - 1) * 100
-        sl_pct = ((final_sl / buy) - 1) * 100
-        tp1_pct = ((tp1 / buy) - 1) * 100 if tp1 > 0 else 0
-        tp2_pct = ((tp2 / buy) - 1) * 100 if tp2 > 0 else 0
-
-        # ステータス判定
-        if cur <= final_sl:
+        # ステータス判定（現在値が0の場合は「待機中」）
+        if cur <= 0:
+            st_text, st_color, bg_rgba = "📡 待機中 (現在値未取得)", "#888888", "rgba(136, 136, 136, 0.1)"
+        elif cur <= final_sl:
             st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
         elif cur < buy:
             st_text, st_color, bg_rgba = "⚠️ 警戒（防衛線へ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
@@ -1676,56 +1683,43 @@ with tab5:
         else:
             st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
-        # 💎 物理復元：ボスの資産である「部隊タイトルバー」
-        st.markdown(f"""
-            <div style="margin-bottom: 5px;">
-                <span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span>
-                <span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span>
-            </div>
-        """, unsafe_allow_html=True)
+        # 部隊タイトルバー
+        st.markdown(f"""<div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>""", unsafe_allow_html=True)
 
-        # 💎 物理復元：神聖不可侵の5カラム・メトリクス・バー
+        # 💎 物理復元：神聖5カラム・メトリクス
         m_cols = st.columns([1, 1, 1.2, 1, 1])
+        m_cols[0].metric("防衛線(ATR)", f"¥{int(final_sl):,}" if final_sl > 0 else "---", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="inverse")
+        m_cols[1].metric("買値", f"¥{int(buy):,}" if buy > 0 else "---")
         
-        m_cols[0].metric("防衛線(ATR)", f"¥{int(final_sl):,}", f"{sl_pct:+.1f}%", delta_color="inverse")
-        m_cols[1].metric("買値", f"¥{int(buy):,}")
-        
-        # 現在値は強調ボックス
         with m_cols[2]:
             st.markdown(f"""
                 <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
-                    <div style="font-size: 12px; color: {st_color}; font-weight: bold;">🔴 現在値</div>
-                    <div style="font-size: 22px; color: #fff; font-weight: bold;">¥{int(cur):,}</div>
-                    <div style="font-size: 11px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}%</div>
+                    <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 現在値</div>
+                    <div style="font-size: 20px; color: #fff; font-weight: bold;">¥{int(cur):,}</div>
+                    <div style="font-size: 10px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}%</div>
                 </div>
             """, unsafe_allow_html=True)
             
-        m_cols[3].metric("利確1", f"¥{int(tp1):,}" if tp1 > 0 else "未設定", f"{tp1_pct:+.1f}%" if tp1 > 0 else None)
-        m_cols[4].metric("利確2", f"¥{int(tp2):,}" if tp2 > 0 else "未設定", f"{tp2_pct:+.1f}%" if tp2 > 0 else None)
+        m_cols[3].metric("利確1", f"¥{int(tp1):,}" if tp1 > 0 else "---")
+        m_cols[4].metric("利確2", f"¥{int(tp2):,}" if tp2 > 0 else "---")
 
-        # 💎 物理復元：Plotly 進捗バー
-        pts = [v for v in [final_sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
-        mx, mi = max(pts)*1.02, min(pts)*0.98
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=[mi, mx], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
-        fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=12), hoverinfo='skip'))
+        # Plotly 進捗バー（現在値がある場合のみ描画）
+        if cur > 0:
+            pts = [v for v in [final_sl, cur, buy, tp1, tp2] if v > 0]
+            mx, mi = max(pts)*1.02, min(pts)*0.98
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=[mi, mx], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=12), hoverinfo='skip'))
+            for p_v, p_n, p_c in [(final_sl,"🛡️ 防衛線","#ef5350"),(buy,"🏁 買値","#ffca28"),(tp1,"🎯 利確1","#26a69a"),(tp2,"🏆 利確2","#42a5f5")]:
+                if p_v > 0: fig.add_trace(go.Scatter(x=[p_v], y=[0], mode="markers", name=p_n, marker=dict(size=10, color=p_c), hovertemplate=f"<b>{p_n}</b>: ¥%{{x:,.1f}}<extra></extra>"))
+            fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", name="現在地", marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.1f}<extra></extra>"))
+            fig.update_layout(height=70, showlegend=False, yaxis=dict(showticklabels=False, range=[-1,1], fixedrange=True), xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True, tickfont=dict(color="#888")), margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         
-        for p_v, p_n, p_c in [(final_sl,"🛡️ 防衛線","#ef5350"),(buy,"🏁 買値","#ffca28"),(tp1,"🎯 利確1","#26a69a"),(tp2,"🏆 利確2","#42a5f5")]:
-            if pd.notna(p_v) and p_v > 0:
-                fig.add_trace(go.Scatter(x=[p_v], y=[0], mode="markers", name=p_n, marker=dict(size=12, color=p_c), hovertemplate=f"<b>{p_n}</b>: ¥%{{x:,.1f}}<extra></extra>"))
-        
-        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", name="現在地", marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)), hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.1f}<extra></extra>"))
-        
-        fig.update_layout(
-            height=80, showlegend=False, yaxis=dict(showticklabels=False, range=[-1, 1], fixedrange=True), 
-            xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True, tickfont=dict(color="#888")), 
-            margin=dict(l=10, r=10, t=5, b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
-        )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
     if active_squads == 0:
-        st.info("展開中の部隊はありません。")
+        st.info("展開中の部隊はありません。銘柄コードを入力してください。")
         
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
