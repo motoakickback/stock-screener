@@ -213,47 +213,52 @@ load_settings()
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
     """
-    週末・週明けのデータ遅延を物理的に回避し、
-    常に最新の営業日（4/13月曜等）の終値を反映させる。
+    過去の成功ロジック（JST基準での強制日付指定）を復元し、
+    yfinanceの週末・更新遅延バグを物理的に突破する回路。
     """
     try:
         import yfinance as yf
         import pandas as pd
+        from datetime import datetime, timedelta
+        import pytz
         
-        # 🛡️ 物理修復：期間指定（period）に切り替え。日付計算の時差バグを無効化。
-        # 65日分のチャートを維持するため、余裕を持って6ヶ月分を取得。
-        ticker = yf.Ticker("^N225")
-        df_raw = ticker.history(period="6mo")
+        # 🛡️ 物理修復：JST（日本時間）を基準に日付を強制計算
+        jst = pytz.timezone('Asia/Tokyo')
+        now = datetime.now(jst)
+        
+        # 過去110日分 〜 明後日までを強制指定（未来日を入れることで最新日を確実に引く）
+        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
+        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        # yf.downloadによる確実な範囲取得
+        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
         
         if not df_raw.empty:
-            # 💎 物理修復：MultiIndexのカラム平坦化（最新yfinance対策）
+            # 💎 物理修復：最新yfinanceのMultiIndexを平坦化（エラー回避）
             if isinstance(df_raw.columns, pd.MultiIndex):
                 df_raw.columns = df_raw.columns.get_level_values(0)
             
-            # インデックス（Date）を列に戻し、タイムゾーンを削除
             df_ni = df_raw.reset_index()
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
             
-            # 欠損値排除とチャート用期間（65日）の切り出し
+            # 欠損値をパージしてチャート用（65日分）に整形
             df_ni = df_ni.dropna(subset=['Close'])
             df_ni_tail = df_ni.tail(65)
             
-            # 🚨 物理修復：絶対最新行（4/13）と前日（4/10）を特定
+            # 絶対最新行と前日を取得
             latest = df_ni_tail.iloc[-1]
             prev = df_ni_tail.iloc[-2]
             
-            # 戻り値の構造を完全維持（他TABへの導通を確保）
             return {
                 "nikkei": {
                     "price": float(latest['Close']),
                     "diff": float(latest['Close'] - prev['Close']),
                     "pct": float(((latest['Close'] / prev['Close']) - 1) * 100),
-                    "df": df_ni_tail, # チャート描画用
-                    "date": latest['Date'].strftime('%m/%d') # ここが「04/13」になる
+                    "df": df_ni_tail,
+                    "date": latest['Date'].strftime('%m/%d')
                 }
             }
     except Exception as e:
-        # ログ出力（必要に応じて）
         return None
 
 def render_macro_board():
