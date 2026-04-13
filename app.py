@@ -1563,11 +1563,11 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ データを入力後、必ず下部の『💾 変更を保存して反映』を押してください。")
+    st.caption("※ 銘柄を入力し、『🔄 全軍の現在値を同期』を押すと yfinance から最新値を一括取得します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
-    # --- 🛡️ 1. 初期化プロトコル（初回のみ実行） ---
+    # --- 🛡️ 1. 兵站初期化プロトコル ---
     if 'frontline_df' not in st.session_state:
         default_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
         if os.path.exists(FRONTLINE_FILE):
@@ -1582,8 +1582,8 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（物理フォーカス保護） ---
-    # 🚨 rerun を誘発する自動保存を完全に停止。key を固定し、ユーザーの入力を保護する。
+    # --- 🛡️ 2. 司令部エディタ（入力保護仕様） ---
+    # 🚨 rerun を誘発する自動保存を行わず、入力を完全に保護。
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -1597,46 +1597,48 @@ with tab5:
             "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         },
         use_container_width=True,
-        key="frontline_editor_v_stable"
+        key="frontline_editor_v_ultimate"
     )
 
-    # --- 🛡️ 3. 指令実行ボタン（手動トリガー） ---
+    # --- 🛡️ 3. 最強同期・保存プロトコル ---
     c1, c2 = st.columns(2)
     
-    # 💾 保存ボタン：エディタの内容を session_state と CSV に物理定着させる
-    if c1.button("💾 変更を保存して戦況に反映", use_container_width=True, key="btn_save_frontline"):
+    # 💾 手動保存ボタン
+    if c1.button("💾 変更を保存", use_container_width=True, key="btn_save_v_ult"):
         st.session_state.frontline_df = edited_df.copy()
         st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-        st.toast("✅ 戦況を保存しました。", icon="💾")
+        st.toast("✅ 戦況を固定しました。", icon="💾")
         st.rerun()
 
-    # 🔄 同期ボタン：エディタの内容を読み取り、yfinanceから現在値を取得する
-    if c2.button("🔄 全軍の現在値を同期", use_container_width=True, key="btn_sync_frontline"):
-        # 🚨 物理修復：ボタンを押した瞬間のエディタの状態を正しく取得
-        current_data = edited_df.copy()
+    # 🔄 最強同期ボタン（yfinance 直結）
+    if c2.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True, key="btn_sync_v_ult"):
+        # 💎 物理修復：ボタンを押した瞬間のエディタ上の銘柄リストをターゲットにする
+        sync_target_df = edited_df.copy()
         import yfinance as yf
         updated_count = 0
-        with st.spinner("現在値を無線傍受中..."):
-            for idx, row in current_data.iterrows():
+        
+        with st.spinner("J-Quants / yfinance 通信網を傍受中..."):
+            for idx, row in sync_target_df.iterrows():
                 code = str(row.get('銘柄', '')).strip()
                 if len(code) >= 4:
                     try:
+                        # 4.10を飛び越え4.13(月)を捕まえる period="5d" 方式
                         tk = yf.Ticker(code[:4] + ".T")
                         hist = tk.history(period="5d")
                         if not hist.empty:
-                            current_data.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
-                            # ATR更新（14日平均ボラ）
-                            current_data.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
+                            sync_target_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
+                            # ATR (直近14日平均ボラティリティ) を即時算出
+                            sync_target_df.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
                             updated_count += 1
                     except: pass
         
         if updated_count > 0:
-            st.session_state.frontline_df = current_data
+            st.session_state.frontline_df = sync_target_df
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-            st.toast(f"✅ {updated_count} 銘柄の現在値を更新しました。", icon="🔄")
+            st.success(f"📡 2026-04-13 最新値を同期。{updated_count} 銘柄を更新。")
             st.rerun()
         else:
-            st.warning("有効な銘柄コードが見つからないか、データが取得できません。")
+            st.warning("有効な銘柄コードがないか、通信エラーです。")
 
     st.markdown("---")
     
@@ -1644,10 +1646,9 @@ with tab5:
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
-    # 計算用DFの作成
+    # 数値計算用クリーンアップ
     calc_df = st.session_state.frontline_df.copy()
-    target_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
-    for col in target_cols:
+    for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
         if col in calc_df.columns:
             calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
         else:
@@ -1664,7 +1665,6 @@ with tab5:
         # ATRベースの動的防衛線
         final_sl = buy - (atr_v * sl_mult)
         active_squads += 1
-
         cur_pct = ((cur / buy) - 1) * 100
         
         if cur <= final_sl:
@@ -1695,9 +1695,9 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
         
-        # Plotly 進捗バー
-        points = [v for v in [final_sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
-        mx, mi = max(points)*1.02, min(points)*0.98
+        # Plotly ガントチャート風バー
+        pts = [v for v in [final_sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
+        mx, mi = max(pts)*1.02, min(pts)*0.98
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=[mi, mx], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
         fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=12), hoverinfo='skip'))
