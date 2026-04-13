@@ -430,33 +430,102 @@ def get_fast_indicators(prices):
     rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
+    """
+    【待伏・強襲 共通格付けエンジン】
+    サイドバーの「戦術アルゴリズム」および「現在損切%」を物理反映。
+    """
+    # 🚨 サイドバー設定のリアルタイム取得
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    is_assault_mode = "狙撃優先" in tactics
+    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
+
+    # MACDトレンド判定
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
+
+    # --- ⚡ 強襲（GC）モードの判定 ---
     if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
-        if gc_days == 1: return ("S🔥", "#2e7d32", 5, "GC直後(1日目)") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後(1日目)")
-        else: return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
-    if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
+        if macd_t == "下落継続" or rsi >= 75: 
+            return "圏外🚫", "#d32f2f", 0, macd_t
+        
+        # 狙撃優先モード：RSIの過熱感を許容し、勢いを重視
+        if is_assault_mode:
+            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
+            return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
+        else:
+            # バランスモード：RSIと日数を厳密に判定
+            if gc_days == 1: 
+                return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
+            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+
+    # --- 🌐 待伏（押し目）モードの判定 ---
+    if bt == 0 or lc == 0: 
+        return "C👁️", "#616161", 1, macd_t
+
     dist_pct = ((lc / bt) - 1) * 100 
-    if dist_pct < -2.0: return "圏外💀", "#d32f2f", 0, macd_t
-    elif dist_pct <= 2.0: return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
-    elif dist_pct <= 5.0: return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
-    else: return "C👁️", "#616161", 1, macd_t
+    
+    # 🛡️ 物理防衛線：現在損切%を超えた下落は、どんな好条件でも即「💀圏外」
+    if dist_pct < -sl_limit_pct: 
+        return "圏外💀", "#d32f2f", 0, f"損切突破({dist_pct:.1f}%)"
+
+    # 🏹 ランク評価ロジック
+    if is_assault_mode:
+        # 🎯 狙撃優先：目標価格(bt)への到達度を最優先。RSIが高くても強気にSを付与。
+        if dist_pct <= 2.0: return "S🔥", "#2e7d32", 5.5, macd_t
+        elif dist_pct <= 6.0: return "A⚡", "#ed6c02", 4.5, macd_t
+        elif dist_pct <= 10.0: return "B📈", "#0288d1", 3.5, macd_t
+    else:
+        # ⚖️ バランス：RSIの過熱感を厳密にチェックし、確実性を重視。
+        if dist_pct <= 2.0: 
+            return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
+        elif dist_pct <= 5.0: 
+            return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
+
+    return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if gc_days <= 0 or df_chart is None or df_chart.empty: return "圏外 💀", "#424242", 0, ""
-    row = df_chart.iloc[-1]; ma25 = row.get('MA25', 0); score = 50 
+    """
+    【強襲専用 精密評価エンジン】
+    MA25乖離、RSI、戦術思想を統合して100点満点でスコアリング。
+    """
+    if gc_days <= 0 or df_chart is None or df_chart.empty: 
+        return "圏外 💀", "#424242", 0, ""
+
+    # 🚨 サイドバー設定の取得
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    is_assault_mode = "狙撃優先" in tactics
+    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
+    
+    row = df_chart.iloc[-1]
+    ma25 = row.get('MA25', 0)
+    score = 50 
+
+    # 1. 移動平均線との導通チェック
     if ma25 > 0:
         if lc >= ma25 * 0.95: score += 10
         if lc >= ma25: score += 10
-    if 50 <= rsi_v <= 70: score += 10
-    if score >= 80: rank, bg = "S", "#d32f2f"
-    elif score >= 60: rank, bg = "A", "#f57c00"
-    elif score >= 40: rank, bg = "B", "#fbc02d"
+    
+    # 2. RSIによる加減点（思想により分岐）
+    if is_assault_mode:
+        # 狙撃優先：トレンドが出ている（RSI高め）を肯定
+        if 50 <= rsi_v <= 75: score += 15
+    else:
+        # バランス：過熱感を嫌う
+        if 50 <= rsi_v <= 65: score += 10
+        elif rsi_v > 70: score -= 20
+
+    # 3. 経過日数による減衰
+    score -= (gc_days - 1) * 5
+
+    # 🏅 最終ランク判定
+    if score >= 85 if is_strict else 80: rank, bg = "S🔥", "#2e7d32"
+    elif score >= 65 if is_strict else 60: rank, bg = "A⚡", "#ed6c02"
+    elif score >= 45 if is_strict else 40: rank, bg = "B📈", "#0288d1"
     else: rank, bg = "C 💀", "#424242"
-    return rank, bg, score, "GC発動中"
+
+    return rank, bg, score, f"GC {gc_days}日目"
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
