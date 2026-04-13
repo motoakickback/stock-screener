@@ -11,6 +11,7 @@ import numpy as np
 import concurrent.futures
 import streamlit.components.v1 as components
 import gc
+import pytz
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -209,11 +210,33 @@ def apply_presets():
 # 初期化実行
 load_settings()
 
-# --- 🌪️ マクロ気象・司令部通信 ---
+# --- 🌪️ 1. マクロ気象レーダー（関数定義：必ず一番上に置く） ---
+@st.cache_data(ttl=60, show_spinner=False)
+def get_macro_weather():
+    try:
+        import yfinance as yf
+        import pandas as pd
+        from datetime import datetime, timedelta
+        import pytz
+        jst = pytz.timezone('Asia/Tokyo')
+        now = datetime.now(jst)
+        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
+        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
+        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
+        if not df_raw.empty:
+            if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
+            df_ni = df_raw.reset_index()
+            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
+            df_ni = df_ni.dropna(subset=['Close']).tail(65)
+            latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
+            return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest['Date'].strftime('%m/%d')}}
+    except: return None
+
+# --- 🌪️ 2. マクロ気象・司令部通信（関数定義の後で呼び出す） ---
 weather = get_macro_weather()
 nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
 
-# API遅延対策：サイドバーで手動上書きを可能にする
+# サイドバー：手動介入UI
 st.sidebar.markdown("### 🌪️ マクロ気象・手動介入")
 manual_n_pct = st.sidebar.number_input(
     "日経騰落率（手動上書き %）", 
