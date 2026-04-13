@@ -1573,36 +1573,37 @@ with tab5:
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
-                for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
+                for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
                     if col in temp_df.columns: temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
             except:
-                st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+                st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0, "atr": 20.0}])
         else:
-            st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+            st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0, "atr": 20.0}])
 
-    # --- 🛡️ 2. サイドバー「鉄の掟」の抽出 ---
-    # ボス、ここが物理接続の要です。
-    sidebar_sl_pct = float(st.session_state.get("bt_sl_c", 8.0)) / 100.0
+    # --- 🛡️ 2. サイドバー「鉄の掟 (ATR倍率)」の抽出 ---
+    sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
 
     # --- 同期ボタン ---
-    if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
+    if st.button("🔄 全軍の現在値を同期 (yfinance)", key="btn_frontline_sync"):
         import yfinance as yf
         updated = False
         for idx, row in st.session_state.frontline_df.iterrows():
             code = str(row['銘柄']).strip()
             if len(code) >= 4:
                 try:
-                    tk = yf.Ticker(code[:4] + ".T"); hist = tk.history(period="1d")
+                    tk = yf.Ticker(code[:4] + ".T"); hist = tk.history(period="5d")
                     if not hist.empty:
                         st.session_state.frontline_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
+                        # ATRもついでに更新（直近14日ボラ）
+                        st.session_state.frontline_df.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
                         updated = True
                 except: pass
         if updated:
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
             st.rerun()
 
-    # 🚨 整数表示への強制換装
+    # 🚨 物理修復：st.rerun() を排除し、入力中の事故を防止
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -1611,22 +1612,24 @@ with tab5:
             "買値": st.column_config.NumberColumn("買値", format="%d"),
             "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
             "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
-            "損切": st.column_config.NumberColumn("損切", format="%d"),
+            "損切": st.column_config.NumberColumn("固定損切", format="%d"),
             "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
+            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         },
         use_container_width=True,
-        key="frontline_editor"
+        key="frontline_editor_v2"
     )
 
+    # 💎 物理修復：データが変更されたら、rerunせずにsession_stateとCSVのみ更新
     if not edited_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_df.copy()
         st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-        st.rerun()
+        # 🚨 ここで rerun しないことで、連続入力を可能にする
 
     st.markdown("---")
     active_squads = 0
-    calc_df = edited_df.copy()
-    for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
+    calc_df = st.session_state.frontline_df.copy()
+    for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
         calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
 
     for index, row in calc_df.iterrows():
@@ -1636,20 +1639,21 @@ with tab5:
         buy = float(row['買値'])
         tp1 = float(row['第1利確'])
         tp2 = float(row['第2利確'])
-        sl_static = float(row['損切']) # CSV上の固定値
         cur = float(row['現在値'])
+        atr_v = float(row.get('atr', buy * 0.03)) # ATRがなければ暫定3%
+        
+        # 💎 物理接続：ATRベースの動的防衛線
+        final_sl = buy - (atr_v * sl_mult)
         active_squads += 1
 
-        # 💎 物理接続：サイドバーの現在損切%に基づく「動的防衛線」を算出
-        sl_dynamic = buy * (1.0 - sidebar_sl_pct)
-        # 最終的な防衛線は、CSV設定とサイドバー設定の「より厳しい方」を採用
-        final_sl = min(sl_static, sl_dynamic) if sl_static > 0 else sl_dynamic
+        # ％の算出（ボスの視覚補佐）
+        cur_pct = ((cur / buy) - 1) * 100
+        sl_pct = ((final_sl / buy) - 1) * 100
 
-        # --- ステータス判定回路 (サイドバー連動) ---
+        # --- ステータス判定回路 ---
         if cur <= final_sl:
             st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
         elif cur < buy:
-            # 買値を下回っている場合、サイドバーの損切ラインまでの距離で警告
             st_text, st_color, bg_rgba = "⚠️ 警戒（防衛線へ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
         elif tp1 > 0 and cur < tp1:
             st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
@@ -1658,53 +1662,41 @@ with tab5:
         else:
             st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
-        fmt = lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "未設定"
+        fmt_with_pct = lambda val, b: f"¥{int(val):,} ({((val/b)-1)*100:+.1f}%)" if val > 0 else "未設定"
         
         st.markdown(f"""
         <div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>
         <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color};">
-            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">防衛線(掟)</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(final_sl)}</div></div>
-            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ffca28;">買値</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div></div>
-            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};"><div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 24px; color: #fff; font-weight: bold;">{fmt(cur)}</div></div>
-            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div></div>
-            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #42a5f5;">利確2</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div></div>
+            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">防衛線(ATR)</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt_with_pct(final_sl, buy)}</div></div>
+            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ffca28;">買値</div><div style="font-size: 16px; color: #fff; font-weight: bold;">¥{int(buy):,}</div></div>
+            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};">
+                <div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div>
+                <div style="font-size: 24px; color: #fff; font-weight: bold;">¥{int(cur):,}</div>
+                <div style="font-size: 12px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}%</div>
+            </div>
+            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt_with_pct(tp1, buy)}</div></div>
+            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #42a5f5;">利確2</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt_with_pct(tp2, buy)}</div></div>
         </div>
         """, unsafe_allow_html=True)
         
-        # 💎 物理修復：描画レンジの安全算出
+        # --- Plotly描画回路 ---
         points_to_eval = [v for v in [final_sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
         min_x = min(points_to_eval) * 0.98 if points_to_eval else 0
         max_x = max(points_to_eval) * 1.02 if points_to_eval else 100
-        
         fig = go.Figure()
-        
-        # 背景線
         fig.add_trace(go.Scatter(x=[min_x, max_x], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
-        
-        # 進捗バー（買値から現在地まで）
         bar_color = "rgba(38,166,154,0.6)" if cur >= buy else "rgba(239,83,80,0.6)"
         fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color=bar_color, width=12), hoverinfo='skip'))
         
-        # ターゲットマーカー（final_slを採用）
         pts = [(final_sl, "🛡️ 防衛線", "#ef5350"), (buy, "🏁 買値", "#ffca28"), (tp1, "🎯 利確1", "#26a69a"), (tp2, "🏆 利確2", "#42a5f5")]
         for p_val, p_name, p_color in pts:
             if pd.notna(p_val) and p_val > 0:
-                fig.add_trace(go.Scatter(
-                    x=[p_val], y=[0], mode="markers", name=p_name,
-                    marker=dict(size=12, color=p_color),
-                    hovertemplate=f"<b>{p_name}</b>: ¥%{{x:,.1f}}<extra></extra>"
-                ))
+                fig.add_trace(go.Scatter(x=[p_val], y=[0], mode="markers", name=p_name, marker=dict(size=12, color=p_color), hovertemplate=f"<b>{p_name}</b>: ¥%{{x:,.1f}}<extra></extra>"))
 
-        # 現在地
-        fig.add_trace(go.Scatter(
-            x=[cur], y=[0], mode="markers", name="現在地",
-            marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)),
-            hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.1f}<extra></extra>"
-        ))
+        fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", name="現在地", marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)), hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.1f}<extra></extra>"))
         
         fig.update_layout(
-            height=80, showlegend=False, 
-            yaxis=dict(showticklabels=False, range=[-1, 1], fixedrange=True), 
+            height=80, showlegend=False, yaxis=dict(showticklabels=False, range=[-1, 1], fixedrange=True), 
             xaxis=dict(showgrid=False, range=[min_x, max_x], tickfont=dict(color="#888"), tickformat=",.0f", fixedrange=True), 
             margin=dict(l=10, r=10, t=5, b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
         )
