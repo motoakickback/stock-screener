@@ -851,105 +851,118 @@ with tab2:
         m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
+
+    # 💎 物理修復1：消去してしまったUIスロットを完全復元（AttributeError回避）
+    col_t2_1, col_t2_2 = st.columns(2)
+    if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
+    if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
     
+    rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final")
+    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_v2026_final")
+
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro"):
         st.session_state.tab2_scan_results = None
         gc.collect()
 
         with st.spinner("地合いによる過熱感を検知中..."):
-            raw = get_hist_data_cached()
-            if not raw:
-                st.error("J-Quants APIからの応答が途絶。")
-            else:
-                full_df = clean_df(pd.DataFrame(raw))
-                full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
-                for col in ['AdjC', 'AdjH', 'AdjL']:
-                    if col in full_df.columns:
-                        full_df[col] = full_df[col].astype('float32')
+            # 💎 物理修復4：コンテナ自体のクラッシュを防ぐ防護シールド
+            try:
+                raw = get_hist_data_cached()
+                if not raw:
+                    st.error("J-Quants APIからの応答が途絶。")
+                else:
+                    full_df = clean_df(pd.DataFrame(raw))
+                    full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+                    for col in ['AdjC', 'AdjH', 'AdjL']:
+                        if col in full_df.columns:
+                            full_df[col] = full_df[col].astype('float32')
 
-                # 💎 改修2：地合いが悪い時はRSIの上限を自動で引き下げる
-                rsi_penalty = st.session_state.get('rsi_penalty', 0)
-                base_rsi_limit = float(st.session_state.tab2_rsi_limit)
-                effective_rsi_limit = base_rsi_limit - rsi_penalty
-                
-                config_t2 = {
-                    "f1_min": float(st.session_state.f1_min),
-                    "f1_max": float(st.session_state.f1_max),
-                    "rsi_lim": effective_rsi_limit, # 厳戒態勢
-                    "vol_lim": float(st.session_state.tab2_vol_limit),
-                    "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                    "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス")
-                }
-                
-                # 💎 物理修復：KeyErrorの封殺 ＆ 出来高の先行ベクトル計算
-                v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
-                avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean().astype('int32')
-                
-                # 市場ターゲットの先行ベクトル抽出
-                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
-                target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
-                m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
-                
-                # ピラミッド・フィルタ（最速の足切り）
-                latest_date = full_df['Date'].max()
-                mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
-                valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets)).intersection(set(avg_vols_series[avg_vols_series >= config_t2["vol_lim"]].index))
-                
-                df = full_df[full_df['Code'].isin(valid_codes)]
-                del full_df; gc.collect()
+                    rsi_penalty = st.session_state.get('rsi_penalty', 0)
+                    effective_rsi_limit = float(rsi_lim) - rsi_penalty
+                    
+                    config_t2 = {
+                        "f1_min": float(st.session_state.f1_min),
+                        "f1_max": float(st.session_state.f1_max),
+                        "rsi_lim": effective_rsi_limit, 
+                        "vol_lim": float(vol_lim),
+                        "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
+                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス")
+                    }
+                    
+                    # 💎 物理修復2：出来高のNaNエラー（ValueError）とKeyErrorを完全封殺
+                    v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
+                    if v_col not in full_df.columns: full_df[v_col] = 100000
+                    
+                    # fillna(0)でNaNを潰してから整数化し、計算崩壊を防ぐ
+                    avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean().fillna(0).astype(int)
+                    
+                    m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
+                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
+                    m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
+                    
+                    latest_date = full_df['Date'].max()
+                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
+                    valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets)).intersection(set(avg_vols_series[avg_vols_series >= config_t2["vol_lim"]].index))
+                    
+                    df = full_df[full_df['Code'].isin(valid_codes)]
+                    del full_df; gc.collect()
 
-                def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                    c_vals = group['AdjC'].values
-                    lc = c_vals[-1]
-                    rsi, _, _, hist = get_fast_indicators(c_vals)
-                    
-                    # 💎 動的ブレーキ：調整後のRSI上限で足切り
-                    if rsi > cfg["rsi_lim"]: return None
-                    
-                    gc_days = 0
-                    if len(hist) >= 4:
-                        if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-                        elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-                        elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-                    if gc_days == 0: return None
+                    def scan_unit_t2_parallel(code, group, cfg, v_avg):
+                        c_vals = group['AdjC'].values
+                        lc = c_vals[-1]
+                        rsi, _, _, hist = get_fast_indicators(c_vals)
+                        
+                        if rsi > cfg["rsi_lim"]: return None
+                        
+                        gc_days = 0
+                        if len(hist) >= 4:
+                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
+                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
+                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+                        if gc_days == 0: return None
 
-                    if cfg["f12_ex_overvalued"]:
-                        f_data = get_fundamentals(code[:4])
-                        if f_data and (f_data.get("op", 0) or 0) < 0: return None
-                    
-                    is_assault = "狙撃優先" in cfg["tactics"]
-                    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-                    
-                    h_vals = group['AdjH'].values
-                    h14 = h_vals[-14:].max()
-                    atr = h14 * 0.03
-                    
-                    return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
+                        if cfg["f12_ex_overvalued"]:
+                            f_data = get_fundamentals(code[:4])
+                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        
+                        is_assault = "狙撃優先" in cfg["tactics"]
+                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+                        
+                        h_vals = group['AdjH'].values
+                        h14 = h_vals[-14:].max()
+                        atr = h14 * 0.03
+                        
+                        return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
 
-                results = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
-                    for f in concurrent.futures.as_completed(futures):
-                        try:
-                            res = f.result(); 
-                            if res: results.append(res)
-                        except: pass
-                
-                # 💎 改修3：セクター分散フィルター
-                sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
-                filtered_results = []
-                sector_counts = {}
-                for r in sorted_raw:
-                    sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
-                    if sector_counts.get(sector, 0) < 3:
-                        filtered_results.append(r)
-                        sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                    if len(filtered_results) >= 30: break
-                st.session_state.tab2_scan_results = filtered_results
+                    results = []
+                    # 💎 物理修復3：OOM（メモリ枯渇）回避のためワーカー数を10から5へ制限
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
+                        for f in concurrent.futures.as_completed(futures):
+                            try:
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
+                    
+                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
+                    filtered_results = []
+                    sector_counts = {}
+                    for r in sorted_raw:
+                        sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
+                        if sector_counts.get(sector, 0) < 3:
+                            filtered_results.append(r)
+                            sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                        if len(filtered_results) >= 30: break
+                    
+                    st.session_state.tab2_scan_results = filtered_results
+
+            except Exception as e:
+                # アプリ全体を落とさず、画面にエラー理由だけを表示して止まる
+                st.error(f"🚨 スキャン中に内部エラーが発生しました。処理を安全に中断しました。\n詳細: {str(e)}")
 
     if st.session_state.tab2_scan_results:
         res_list = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初初動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
+        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
         
         sab_codes = " ".join([str(r['Code'])[:4] for r in res_list if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
