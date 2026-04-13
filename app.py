@@ -1524,7 +1524,7 @@ with tab6:
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
-    # --- 🛡️ 1. 物理初期化・永続化回路 ---
+    # --- 🛡️ 1. 物理初期化回路 ---
     def get_scale_for_code(code):
         api_code = str(code) if len(str(code)) == 5 else str(code) + "0"
         if not master_df.empty:
@@ -1534,17 +1534,18 @@ with tab6:
                 return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
         return "不明"
 
-    # セッションステートへの完全隔離（順序をメモリ内で物理固定）
+    # メモリ内データの安定化ロード
     if 'aar_df_stable' not in st.session_state:
         if os.path.exists(AAR_FILE):
             try:
-                df_load = pd.read_csv(AAR_FILE)
-                df_load['決済日'] = df_load['決済日'].astype(str)
-                df_load['銘柄'] = df_load['銘柄'].astype(str)
+                df_l = pd.read_csv(AAR_FILE)
+                df_l['決済日'] = df_l['決済日'].astype(str)
+                df_l['銘柄'] = df_l['銘柄'].astype(str)
+                # 🚨 物理修復：NaNを0で埋め、数値を安定化させる
                 for c in ['買値', '売値', '株数', '損益額(円)', '損益(%)']:
-                    if c in df_load.columns: df_load[c] = pd.to_numeric(df_load[c], errors='coerce')
-                # 🚨 物理修復：ここでのみソートを行い、表示ループ内では絶対に行わない（フォーカス飛び防止）
-                st.session_state.aar_df_stable = df_load.sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
+                    if c in df_l.columns:
+                        df_l[c] = pd.to_numeric(df_l[c], errors='coerce').fillna(0)
+                st.session_state.aar_df_stable = df_l.sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
             except:
                 st.session_state.aar_df_stable = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
         else:
@@ -1565,7 +1566,7 @@ with tab6:
     
     with col_a1:
         st.markdown("#### 📝 戦果報告フォーム")
-        with st.form(key="aar_form_fixed_v4", clear_on_submit=False):
+        with st.form(key="aar_form_silent_v5", clear_on_submit=False):
             c_f1, c_f2 = st.columns(2)
             f_date = c_f1.date_input("決済日", key="aar_form_date")
             f_code = c_f2.text_input("銘柄コード", max_chars=4, key="aar_form_code")
@@ -1581,21 +1582,20 @@ with tab6:
             f_memo = st.text_input("特記事項", key="aar_form_memo")
             if st.form_submit_button("💾 記録を保存", use_container_width=True):
                 if f_code and f_buy > 0 and f_sell > 0:
-                    profit = int((f_sell - f_buy) * f_lot); p_pct = round(((f_sell / f_buy) - 1) * 100, 2)
+                    profit = int((f_sell - f_buy) * f_lot)
+                    p_pct = round(((f_sell / f_buy) - 1) * 100, 2)
                     new_entry = pd.DataFrame([{
                         "決済日": f_date.strftime("%Y-%m-%d"), "銘柄": f_code, "規模": get_scale_for_code(f_code),
                         "戦術": f_tactics, "買値": f_buy, "売値": f_sell, "株数": f_lot,
                         "損益額(円)": profit, "損益(%)": p_pct, "規律": "遵守" if "遵守" in f_rule else "違反", "敗因/勝因メモ": f_memo
                     }])
-                    # メモリ内データを更新・ソートして保存
                     st.session_state.aar_df_stable = pd.concat([new_entry, st.session_state.aar_df_stable], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
                     st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-                    # 入力欄の一部をクリア
                     st.session_state.aar_form_code = ""; st.session_state.aar_form_buy = 0.0; st.session_state.aar_form_sell = 0.0; st.session_state.aar_form_memo = ""
                     st.rerun()
         
         with st.expander("📥 CSV一括登録"):
-            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v4")
+            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v5")
             if uploaded_csv is not None:
                 if st.button("⚙️ 解析・統合", use_container_width=True):
                     try:
@@ -1650,23 +1650,28 @@ with tab6:
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=250, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- 📜 詳細交戦記録 (物理フォーカス固定・完全色分け回路) ---
+    # --- 📜 詳細交戦記録 (0円白固定・完全消音版) ---
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
     
-    # 💎 物理修復：色分けロジック
-    def apply_color(val):
-        color = '#26a69a' if val > 0 else '#ef5350' if val < 0 else 'inherit'
-        return f'color: {color}; font-weight: bold;'
+    # 💎 物理修復：色分けロジック（0円時は白を強制）
+    def apply_color_v5(val):
+        # 1円未満の微差（誤差）を切り捨てて判定
+        if val >= 1: return 'color: #26a69a; font-weight: bold;'
+        elif val <= -1: return 'color: #ef5350; font-weight: bold;'
+        else: return 'color: #ffffff;' # 0円時は白
 
-    def apply_rule_color(val):
-        color = '#26a69a' if val == '遵守' else '#ef5350' if val == '違反' else 'inherit'
-        return f'color: {color};'
+    def apply_rule_color_v5(val):
+        if val == '遵守': return 'color: #26a69a;'
+        elif val == '違反': return 'color: #ef5350;'
+        else: return 'color: #ffffff;'
 
-    # 🚨 物理修復：画面全体のリフレッシュを抑えつつ、色分けを適用
-    # 1. 編集用データと表示用スタイルの分離はせず、Stylerを通したまま st.data_editor に投入
-    # 2. ただし、インデックスを物理固定することでフォーカス飛びを防止
-    styled_df = st.session_state.aar_df_stable.style.map(apply_color, subset=['損益額(円)', '損益(%)']).map(apply_rule_color, subset=['規律'])
+    # 表示用データの作成（編集中の安定性を保つためNaNを0に徹底変換）
+    display_df = st.session_state.aar_df_stable.fillna(0)
+    
+    # 🚨 物理修復：Stylerを通したまま st.data_editor に渡すが、
+    # 変更があっても st.rerun() を呼ばないことで画面全体の更新（点滅）を物理封殺
+    styled_df = display_df.style.map(apply_color_v5, subset=['損益額(円)', '損益(%)']).map(apply_rule_color_v5, subset=['規律'])
 
     edited_log_df = st.data_editor(
         styled_df, 
@@ -1680,12 +1685,11 @@ with tab6:
             "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="¥%,d", disabled=True),
             "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%", disabled=True),
         },
-        hide_index=True, use_container_width=True, key="aar_editor_no_refresh_final"
+        hide_index=True, use_container_width=True, key="aar_editor_silent_v5"
     )
 
-    # 💎 物理修復：変更の保存（st.rerunを呼ばないことで、入力中の画面更新を物理封殺）
+    # 💎 物理修復：メモリ保存（画面のチラつきを抑えるため、rerunなしでバックグラウンド保存）
     if not edited_log_df.equals(st.session_state.aar_df_stable):
-        # メモリ上のデータを更新（ここでのソートは行わない）
         st.session_state.aar_df_stable = edited_log_df
         st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-        # 次回のリロードまたは別操作時に反映される
+        # 次回のアクション（タブ変更等）で完全に反映。入力中の点滅はこれで止まる。
