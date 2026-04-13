@@ -896,7 +896,6 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🚨 物理ロック：session_stateと直結
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
@@ -916,10 +915,8 @@ with tab3:
             <div style="font-size: 13px; color: #bbb; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; border-left: 3px solid #2e7d32;">
                 <b>【掟スコア加点基準（最大10点）】</b><br>
                 ✅ 基礎モメンタム（MACD/RSIの優位性：最大+5点）<br>
-                ✅ 波高1.3〜2.0倍（+1点）<br>
-                ✅ 調整日数が規定内（+1点）<br>
-                ✅ 危険波形(Wトップ等)なし（+1点）<br>
-                ✅ 買値目標の±15%圏内（+1点）<br>
+                ✅ 波高1.3〜2.0倍（+1点） ｜ ✅ 調整日数が規定内（+1点）<br>
+                ✅ 危険波形(Wトップ等)なし（+1点） ｜ ✅ 買値目標の±15%圏内（+1点）<br>
                 ✅ 割安性：PBR 5.0倍以下（+1点）
             </div>
             """, unsafe_allow_html=True)
@@ -930,8 +927,7 @@ with tab3:
                 <b>【強襲スコア加点基準（最大100点）】</b><br>
                 ⚡ GC（ゴールデンクロス）発動（基礎+50点）<br>
                 ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
-                ⚡ 出来高の急増（+10点）<br>
-                ⚡ RSIの適正過熱感（+10点）<br>
+                ⚡ 出来高の急増（+10点） ｜ ⚡ RSIの適正過熱感（+10点）<br>
                 ⚡ 割安性：PBR 5.0倍以下（+10点）
             </div>
             """, unsafe_allow_html=True)
@@ -1065,13 +1061,12 @@ with tab3:
                         st.caption(f"🏭 {r['sector']}")
                     
                     with sc_mid:
-                        # 💎 物理修復：財務三連装砲のレイアウト復元 & 桁数制御
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
                         pbr_c = "#26a69a" if (r['pbr'] and r['pbr'] <= 5.0) else "#ef5350"
                         roe_v = r.get('roe')
                         if roe_v is not None:
                             roe_c = "#26a69a" if roe_v >= 10 else "#ef5350"
-                            roe_s = f"{roe_v:.1f}%" # 🚨 物理修復：桁数を固定
+                            roe_s = f"{roe_v:.1f}%"
                             roe_label = "進撃" if roe_v >= 10 else "静観"
                         else:
                             roe_c, roe_s, roe_label = "#888", "-", "不明"
@@ -1100,7 +1095,6 @@ with tab3:
                         st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px;'>{box_title}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div><div style='border-top:1px dashed #444; margin:10px 0;'></div>{html_indices}</div>""", unsafe_allow_html=True)
 
                     with sc_right:
-                        # 💎 物理修復：リッチなATRマトリクス・レイアウトの完全復元
                         c_target = r['bt_val']
                         atr_v = r['atr_val'] if r['atr_val'] > 0 else c_target * 0.05
                         tp_m = [0.5, 1.0, 2.0, 3.0]
@@ -1144,7 +1138,20 @@ with tab3:
                     for m_c, m_n, m_col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
                         fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
-                    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=50), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side='right', tickformat=",.0f"), xaxis=dict(type='category', dtick=5))
+                    
+                    # 💎 物理修復：凡例をグラフ下部（日付の下）へ水平移動
+                    fig.update_layout(
+                        height=450, 
+                        margin=dict(l=0, r=0, t=10, b=80), 
+                        xaxis_rangeslider_visible=False, 
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        hovermode="x unified", 
+                        yaxis=dict(side='right', tickformat=",.0f"), 
+                        xaxis=dict(type='category', dtick=5),
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+                    )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                         
 with tab4:
