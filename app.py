@@ -1567,14 +1567,21 @@ with tab5:
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
-    # --- 🛡️ 1. 状態初期化プロトコル ---
+    # --- 🛡️ 1. 状態初期化プロトコル（列の存在保証） ---
     if 'frontline_df' not in st.session_state:
+        # デフォルトの空枠定義
+        default_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
+                # 💎 物理修復：古いCSVに新設列（atr等）がない場合、自動で追加する
+                for col in default_cols:
+                    if col not in temp_df.columns:
+                        temp_df[col] = np.nan if col != "銘柄" else ""
+                
                 if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
                 for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
-                    if col in temp_df.columns: temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
+                    temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0, "atr": 20.0}])
@@ -1585,7 +1592,7 @@ with tab5:
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
 
     # --- 同期ボタン ---
-    if st.button("🔄 全軍の現在値を同期 (yfinance)", key="btn_frontline_sync"):
+    if st.button("🔄 全軍の現在値を同期 (yfinance)", key="btn_frontline_sync_v2"):
         import yfinance as yf
         updated = False
         for idx, row in st.session_state.frontline_df.iterrows():
@@ -1595,7 +1602,7 @@ with tab5:
                     tk = yf.Ticker(code[:4] + ".T"); hist = tk.history(period="5d")
                     if not hist.empty:
                         st.session_state.frontline_df.at[idx, '現在値'] = round(hist['Close'].iloc[-1], 1)
-                        # ATRもついでに更新（直近14日ボラ）
+                        # ATRも更新（直近14日ボラ平均）
                         st.session_state.frontline_df.at[idx, 'atr'] = round((hist['High'] - hist['Low']).rolling(14).mean().iloc[-1], 1)
                         updated = True
                 except: pass
@@ -1603,7 +1610,7 @@ with tab5:
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
             st.rerun()
 
-    # 🚨 物理修復：st.rerun() を排除し、入力中の事故を防止
+    # エディタ（rerunなしの非同期更新仕様）
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -1617,19 +1624,21 @@ with tab5:
             "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         },
         use_container_width=True,
-        key="frontline_editor_v2"
+        key="frontline_editor_v3"
     )
 
-    # 💎 物理修復：データが変更されたら、rerunせずにsession_stateとCSVのみ更新
     if not edited_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_df.copy()
         st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-        # 🚨 ここで rerun しないことで、連続入力を可能にする
 
     st.markdown("---")
     active_squads = 0
+    # 💎 物理修復：計算前に全カラムの存在を再保証（KeyError対策の決定打）
     calc_df = st.session_state.frontline_df.copy()
-    for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
+    target_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
+    for col in target_cols:
+        if col not in calc_df.columns:
+            calc_df[col] = np.nan
         calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
 
     for index, row in calc_df.iterrows():
@@ -1640,17 +1649,15 @@ with tab5:
         tp1 = float(row['第1利確'])
         tp2 = float(row['第2利確'])
         cur = float(row['現在値'])
-        atr_v = float(row.get('atr', buy * 0.03)) # ATRがなければ暫定3%
+        atr_v = float(row.get('atr', buy * 0.03)) 
         
-        # 💎 物理接続：ATRベースの動的防衛線
+        # ATRベースの動的防衛線
         final_sl = buy - (atr_v * sl_mult)
         active_squads += 1
 
-        # ％の算出（ボスの視覚補佐）
         cur_pct = ((cur / buy) - 1) * 100
         sl_pct = ((final_sl / buy) - 1) * 100
 
-        # --- ステータス判定回路 ---
         if cur <= final_sl:
             st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
         elif cur < buy:
