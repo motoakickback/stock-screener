@@ -1316,7 +1316,6 @@ with tab5:
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 if "銘柄" in temp_df.columns: temp_df["銘柄"] = temp_df["銘柄"].astype(str)
-                # 数値変換の強制
                 for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
                     if col in temp_df.columns: temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce')
                 st.session_state.frontline_df = temp_df
@@ -1342,12 +1341,20 @@ with tab5:
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
             st.rerun()
 
-    # データエディタ
+    # 🚨 整数表示への強制換装
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
+        column_config={
+            "銘柄": st.column_config.TextColumn("銘柄", required=True),
+            "買値": st.column_config.NumberColumn("買値", format="%d"),
+            "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
+            "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
+            "損切": st.column_config.NumberColumn("損切", format="%d"),
+            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
+        },
         use_container_width=True,
-        key="frontline_editor_v18_final"
+        key="frontline_editor"
     )
 
     if not edited_df.equals(st.session_state.frontline_df):
@@ -1356,49 +1363,76 @@ with tab5:
         st.rerun()
 
     st.markdown("---")
-    # 💎 物理修復：バー表示エンジン（不発の原因であるrange計算を排除）
-    df_render = edited_df.copy()
-    for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
-        if col in df_render.columns:
-            df_render[col] = pd.to_numeric(df_render[col], errors='coerce')
-
     active_squads = 0
-    for index, row in df_render.iterrows():
+    # 💎 物理修復：数値計算の安全性を確保
+    calc_df = edited_df.copy()
+    for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
+        calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
+
+    for index, row in calc_df.iterrows():
         ticker = str(row.get('銘柄', ''))
         if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
-        buy, tp1, tp2, sl, cur = row['買値'], row['第1利確'], row['第2利確'], row['損切'], row['現在値']
+        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
         active_squads += 1
 
-        # ステータス判定
-        if cur <= sl: st_text, st_color = "💀 被弾", "#ef5350"
-        elif cur < buy: st_text, st_color = "⚠️ 警戒", "#ff9800"
-        elif tp1 > 0 and cur < tp1: st_text, st_color = "🟢 巡航", "#26a69a"
-        else: st_text, st_color = "🏆 到達", "#42a5f5"
+        if cur <= sl: st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
+        elif cur < buy: st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
+        elif tp1 > 0 and cur < tp1: st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
+        elif tp2 > 0 and cur < tp2: st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
+        else: st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
-        st.markdown(f'<div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border-left: 5px solid {st_color}; margin-bottom: 5px;"><strong>部隊 [{ticker}]</strong> {st_text} ｜ 現在: ¥{int(cur):,} (買: ¥{int(buy):,})</div>', unsafe_allow_html=True)
+        fmt = lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "未設定"
         
-        # 物理インジケーター（Plotly）
-        fig_mon = go.Figure()
-        # 目標マーカー（点）
-        fig_mon.add_trace(go.Scatter(
-            x=[sl, buy, tp1, tp2], y=[0, 0, 0, 0], mode='markers',
-            marker=dict(size=14, color=['#ef5350', '#ffca28', '#26a69a', '#42a5f5']),
-            name="目標"
-        ))
-        # 現在値（十字）
-        fig_mon.add_trace(go.Scatter(
-            x=[cur], y=[0], mode='markers',
-            marker=dict(size=26, symbol='cross-thin', line=dict(width=4, color=st_color)),
-            name="現在地"
+        st.markdown(f"""
+        <div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color};">
+            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">損切</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div></div>
+            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ffca28;">買値</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div></div>
+            <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};"><div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 24px; color: #fff; font-weight: bold;">{fmt(cur)}</div></div>
+            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div></div>
+            <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #42a5f5;">利確2</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp2)}</div></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 💎 物理修復：描画レンジの安全算出
+        points_to_eval = [v for v in [sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
+        min_x = min(points_to_eval) * 0.98 if points_to_eval else 0
+        max_x = max(points_to_eval) * 1.02 if points_to_eval else 100
+        
+        fig = go.Figure()
+        
+        # 💎 物理修復：不発の原因「add_shape」を捨て、確実に描画される「Scatter Trace」へ換装
+        # 背景線（全体レンジ）
+        fig.add_trace(go.Scatter(x=[min_x, max_x], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
+        # 進捗バー（買値から現在地まで）
+        bar_color = "rgba(38,166,154,0.6)" if cur >= buy else "rgba(239,83,80,0.6)"
+        fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color=bar_color, width=12), hoverinfo='skip'))
+        
+        # ターゲットマーカー
+        pts = [(sl, "🛡️ 損切", "#ef5350"), (buy, "🏁 買値", "#ffca28"), (tp1, "🎯 利確1", "#26a69a"), (tp2, "🏆 利確2", "#42a5f5")]
+        for p_val, p_name, p_color in pts:
+            if pd.notna(p_val) and p_val > 0:
+                fig.add_trace(go.Scatter(
+                    x=[p_val], y=[0], mode="markers", name=p_name,
+                    marker=dict(size=12, color=p_color),
+                    hovertemplate=f"<b>{p_name}</b>: ¥%{{x:,.1f}}<extra></extra>"
+                ))
+
+        # 現在地
+        fig.add_trace(go.Scatter(
+            x=[cur], y=[0], mode="markers", name="現在地",
+            marker=dict(size=22, symbol="cross-thin", line=dict(width=3, color=st_color)),
+            hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.1f}<extra></extra>"
         ))
         
-        fig_mon.update_layout(
-            height=70, margin=dict(l=10, r=10, t=5, b=25),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.05)',
-            yaxis=dict(visible=False),
-            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', tickformat=",.0f", zeroline=False)
+        fig.update_layout(
+            height=80, showlegend=False, 
+            yaxis=dict(showticklabels=False, range=[-1, 1], fixedrange=True), 
+            xaxis=dict(showgrid=False, range=[min_x, max_x], tickfont=dict(color="#888"), tickformat=",.0f", fixedrange=True), 
+            margin=dict(l=10, r=10, t=5, b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
         )
-        st.plotly_chart(fig_mon, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
 
     if active_squads == 0: st.info("展開中の部隊はありません。")
         
