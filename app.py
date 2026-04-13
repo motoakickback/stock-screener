@@ -648,7 +648,7 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【待伏】鉄の掟・半値押しレーダー</h3>', unsafe_allow_html=True)
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
-    run_scan_t1 = st.button("🚀 超高速スキャン開始 (並列エンジン)")
+    run_scan_t1 = st.button("🚀 超高速スキャン開始 (並列エンジン)", key="btn_scan_tab1_parallel")
 
     if run_scan_t1:
         st.toast("🟢 高速索敵エンジン始動。ターゲットを補足します。", icon="🎯")
@@ -763,7 +763,7 @@ with tab2:
     rsi_lim = col_t2_1.number_input("RSI上限", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_opt")
     vol_lim = col_t2_2.number_input("最低出来高", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_opt")
     
-    if st.button("🚀 超高速スキャン開始 (並列エンジン)"):
+    if st.button("🚀 超高速スキャン開始 (並列エンジン)", key="btn_scan_tab2_parallel"):
         with st.spinner("索敵中..."):
             raw = get_hist_data_cached()
             if raw:
