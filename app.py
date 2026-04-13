@@ -1499,6 +1499,7 @@ with tab5:
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
+    # --- 🛡️ 1. 状態初期化プロトコル ---
     if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE):
             try:
@@ -1511,6 +1512,10 @@ with tab5:
                 st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
         else:
             st.session_state.frontline_df = pd.DataFrame([{"銘柄": "4259", "買値": 668.0, "第1利確": 688.0, "第2利確": 714.0, "損切": 627.0, "現在値": 681.0}])
+
+    # --- 🛡️ 2. サイドバー「鉄の掟」の抽出 ---
+    # ボス、ここが物理接続の要です。
+    sidebar_sl_pct = float(st.session_state.get("bt_sl_c", 8.0)) / 100.0
 
     # --- 同期ボタン ---
     if st.button("🔄 全軍の現在値を同期 (yfinance)", use_container_width=True):
@@ -1547,12 +1552,11 @@ with tab5:
 
     if not edited_df.equals(st.session_state.frontline_df):
         st.session_state.frontline_df = edited_df.copy()
-        edited_df.to_csv(FRONTLINE_FILE, index=False)
+        st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
         st.rerun()
 
     st.markdown("---")
     active_squads = 0
-    # 💎 物理修復：数値計算の安全性を確保
     calc_df = edited_df.copy()
     for col in ["買値", "第1利確", "第2利確", "損切", "現在値"]:
         calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
@@ -1560,21 +1564,38 @@ with tab5:
     for index, row in calc_df.iterrows():
         ticker = str(row.get('銘柄', ''))
         if ticker.strip() == "" or pd.isna(row['買値']) or pd.isna(row['現在値']): continue
-        buy = float(row['買値']); tp1 = float(row['第1利確']); tp2 = float(row['第2利確']); sl = float(row['損切']); cur = float(row['現在値'])
+        
+        buy = float(row['買値'])
+        tp1 = float(row['第1利確'])
+        tp2 = float(row['第2利確'])
+        sl_static = float(row['損切']) # CSV上の固定値
+        cur = float(row['現在値'])
         active_squads += 1
 
-        if cur <= sl: st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
-        elif cur < buy: st_text, st_color, bg_rgba = "⚠️ 警戒（損切ラインへ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
-        elif tp1 > 0 and cur < tp1: st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
-        elif tp2 > 0 and cur < tp2: st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
-        else: st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
+        # 💎 物理接続：サイドバーの現在損切%に基づく「動的防衛線」を算出
+        sl_dynamic = buy * (1.0 - sidebar_sl_pct)
+        # 最終的な防衛線は、CSV設定とサイドバー設定の「より厳しい方」を採用
+        final_sl = min(sl_static, sl_dynamic) if sl_static > 0 else sl_dynamic
+
+        # --- ステータス判定回路 (サイドバー連動) ---
+        if cur <= final_sl:
+            st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
+        elif cur < buy:
+            # 買値を下回っている場合、サイドバーの損切ラインまでの距離で警告
+            st_text, st_color, bg_rgba = "⚠️ 警戒（防衛線へ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
+        elif tp1 > 0 and cur < tp1:
+            st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
+        elif tp2 > 0 and cur < tp2:
+            st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
+        else:
+            st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
         fmt = lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "未設定"
         
         st.markdown(f"""
         <div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>
         <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 8px; border-left: 5px solid {st_color};">
-            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">損切</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(sl)}</div></div>
+            <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ef5350;">防衛線(掟)</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(final_sl)}</div></div>
             <div style="flex: 1; text-align: left;"><div style="font-size: 12px; color: #ffca28;">買値</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(buy)}</div></div>
             <div style="flex: 1.5; text-align: center; background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color};"><div style="font-size: 13px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 24px; color: #fff; font-weight: bold;">{fmt(cur)}</div></div>
             <div style="flex: 1; text-align: right;"><div style="font-size: 12px; color: #26a69a;">利確1</div><div style="font-size: 16px; color: #fff; font-weight: bold;">{fmt(tp1)}</div></div>
@@ -1583,21 +1604,21 @@ with tab5:
         """, unsafe_allow_html=True)
         
         # 💎 物理修復：描画レンジの安全算出
-        points_to_eval = [v for v in [sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
+        points_to_eval = [v for v in [final_sl, cur, buy, tp1, tp2] if pd.notna(v) and v > 0]
         min_x = min(points_to_eval) * 0.98 if points_to_eval else 0
         max_x = max(points_to_eval) * 1.02 if points_to_eval else 100
         
         fig = go.Figure()
         
-        # 💎 物理修復：不発の原因「add_shape」を捨て、確実に描画される「Scatter Trace」へ換装
-        # 背景線（全体レンジ）
+        # 背景線
         fig.add_trace(go.Scatter(x=[min_x, max_x], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
+        
         # 進捗バー（買値から現在地まで）
         bar_color = "rgba(38,166,154,0.6)" if cur >= buy else "rgba(239,83,80,0.6)"
         fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color=bar_color, width=12), hoverinfo='skip'))
         
-        # ターゲットマーカー
-        pts = [(sl, "🛡️ 損切", "#ef5350"), (buy, "🏁 買値", "#ffca28"), (tp1, "🎯 利確1", "#26a69a"), (tp2, "🏆 利確2", "#42a5f5")]
+        # ターゲットマーカー（final_slを採用）
+        pts = [(final_sl, "🛡️ 防衛線", "#ef5350"), (buy, "🏁 買値", "#ffca28"), (tp1, "🎯 利確1", "#26a69a"), (tp2, "🏆 利確2", "#42a5f5")]
         for p_val, p_name, p_color in pts:
             if pd.notna(p_val) and p_val > 0:
                 fig.add_trace(go.Scatter(
