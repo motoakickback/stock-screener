@@ -1450,20 +1450,86 @@ with tab6:
     else:
         aar_df = pd.DataFrame(columns=["決済日", "銘柄", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "メモ"])
 
-    # 💎 物理復元：Turn 18式のシンプルなCSVインポーター（余計な解析を全削除）
+    # 💎 物理修復：レイアウトを変えず、読込ロジックのみを「証券会社CSV対応」に強化
     st.markdown("#### 📥 過去ログの物理結合")
     uploaded_aar = st.file_uploader("戦績CSVを選択", type="csv", key="aar_upload_v18_final")
     if uploaded_aar is not None:
         if st.button("💾 CSVをシステムへ同期", use_container_width=True):
             try:
-                up_df = pd.read_csv(uploaded_aar)
-                # 単純結合・重複排除の原典ロジック
-                aar_df = pd.concat([up_df, aar_df]).drop_duplicates().reset_index(drop=True)
-                aar_df.to_csv(AAR_FILE, index=False)
-                st.success("物理同期完了。全戦績を読み込んだ。")
-                st.rerun()
+                import io
+                raw_binary = uploaded_aar.getvalue()
+                try:
+                    content = raw_binary.decode('utf-8')
+                except UnicodeDecodeError:
+                    content = raw_binary.decode('shift_jis', errors='replace')
+                
+                lines = content.splitlines()
+                header_idx = -1
+                for i, line in enumerate(lines):
+                    if "約定日" in line and "銘柄" in line:
+                        header_idx = i
+                        break
+                
+                if header_idx != -1:
+                    # 証券会社形式の解析（買/売ペアリング）
+                    df_raw = pd.read_csv(io.StringIO("\n".join(lines[header_idx:])))
+                    df_raw = df_raw[df_raw['取引'].astype(str).str.contains('現物')].copy()
+                    parsed_records = []
+                    
+                    for code, group in df_raw.groupby('銘柄コード'):
+                        buys, sells = [], []
+                        for _, row in group.iterrows():
+                            item = {
+                                'date': str(row['約定日']).replace('/', '-'),
+                                'qty': int(row['約定数量']),
+                                'price': float(row['約定単価']),
+                                'code': str(code)
+                            }
+                            if "買" in str(row['取引']): buys.append(item)
+                            elif "売" in str(row['取引']): sells.append(item)
+                        
+                        buys.sort(key=lambda x: x['date'])
+                        sells.sort(key=lambda x: x['date'])
+                        
+                        for s in sells:
+                            s_qty = s['qty']
+                            m_qty, m_amt = 0, 0
+                            while s_qty > 0 and len(buys) > 0:
+                                b = buys[0]
+                                if b['qty'] <= s_qty:
+                                    m_qty += b['qty']; m_amt += b['price'] * b['qty']
+                                    s_qty -= b['qty']; buys.pop(0)
+                                else:
+                                    m_qty += s_qty; m_amt += b['price'] * s_qty
+                                    b['qty'] -= s_qty; s_qty = 0
+                            
+                            if m_qty > 0:
+                                avg_b = m_amt / m_qty
+                                profit = int((s['price'] - avg_b) * m_qty)
+                                p_pct = round(((s['price'] / avg_b) - 1) * 100, 2)
+                                parsed_records.append({
+                                    "決済日": s['date'], "銘柄": s['code'], "戦術": "自動解析",
+                                    "買値": round(avg_b, 1), "売値": round(s['price'], 1), "株数": int(m_qty),
+                                    "損益額(円)": profit, "損益(%)": p_pct, "規律": "不明", "メモ": "CSVインポート"
+                                })
+                    
+                    if parsed_records:
+                        new_aar = pd.DataFrame(parsed_records)
+                        aar_df = pd.concat([new_aar, aar_df]).drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).reset_index(drop=True)
+                        aar_df.to_csv(AAR_FILE, index=False)
+                        st.success(f"物理同期完了。{len(parsed_records)}件の決済を統合した。")
+                        st.rerun()
+                    else:
+                        st.warning("決済済み（買と売のペア）が確認できない。")
+                else:
+                    # 通常の単純結合（バックアップ等）
+                    up_df = pd.read_csv(io.StringIO(content))
+                    aar_df = pd.concat([up_df, aar_df]).drop_duplicates().reset_index(drop=True)
+                    aar_df.to_csv(AAR_FILE, index=False)
+                    st.success("バックアップデータを同期した。")
+                    st.rerun()
             except Exception as e:
-                st.error(f"読み込み失敗：{e}")
+                st.error(f"読込失敗：{e}")
 
     st.divider()
     # 💎 物理復元：左右二分割の原典レイアウト
