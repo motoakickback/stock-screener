@@ -123,7 +123,14 @@ BASE_URL = "https://api.jquants.com/v2"
 # --- ⚙️ 設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
+# --- ⚙️ 設定管理エンジン (絶対永続化プロトコル搭載) ---
+
 def load_settings():
+    """
+    JSONファイルから値を読み込み、st.session_stateを物理的に固定する。
+    値が0やNaNになる不具合を検知した場合、即座にデフォルト値で補完する。
+    """
+    # 1. 物理デフォルト値の定義
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
@@ -137,37 +144,69 @@ def load_settings():
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
+
+    # 2. JSONファイルからの物理ロード
+    saved_data = {}
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                for k, v in saved.items():
-                    if k in defaults:
-                        if k != "f3_drop" and isinstance(v, (int, float)) and v == 0: continue
-                        defaults[k] = v
-        except: pass
+                saved_data = json.load(f)
+        except Exception as e:
+            pass # 読み込み失敗時は無視してデフォルトを使用
+
+    # 3. SessionStateへの注入（物理ロック）
     for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
+        # JSONに保存されている値があればそれを採用
+        target_val = saved_data.get(k, v)
+        
+        # 🚨 物理リカバリー回路：数値が不正な0やNoneになっている場合はデフォルトで保護
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if target_val == 0 and k != "f1_min": # 価格下限以外で0は異常値と判定
+                target_val = v
+        
+        # st.session_stateに値を強制固定
+        if k not in st.session_state:
+            st.session_state[k] = target_val
         else:
-            if k != "f3_drop" and isinstance(st.session_state[k], (int, float)) and st.session_state[k] == 0:
-                st.session_state[k] = defaults[k]
+            # ページリロード時に値が消えかかっている場合のみ再セット
+            if st.session_state[k] is None:
+                st.session_state[k] = target_val
 
 def save_settings():
-    keys = ["preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
-            "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
-            "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-            "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"]
-    current = {k: st.session_state[k] for k in keys if k in st.session_state}
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(current, f, ensure_ascii=False, indent=4)
+    """
+    現在メモリ(session_state)にある値を抽出し、物理ストレージへ保存する。
+    """
+    # defaultsにあるキーのみを抽出対象とする
+    keys_to_save = [
+        "preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+        "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
+        "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
+        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"
+    ]
+    
+    current_settings = {}
+    for k in keys_to_save:
+        if k in st.session_state:
+            current_settings[k] = st.session_state[k]
+    
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
+    except:
+        pass
 
 def apply_presets():
+    """
+    プリセット選択時に数値を即時同期させ、かつ保存する。
+    """
     p_rate = st.session_state.get("preset_push_r", "50.0%")
     if p_rate == "25.0%": st.session_state.push_r = 25.0
     elif p_rate == "50.0%": st.session_state.push_r = 50.0
     elif p_rate == "61.8%": st.session_state.push_r = 61.8
+    # 同期後、即座に物理保存
     save_settings()
 
+# 初期化実行
 load_settings()
 
 # --- 🌪️ マクロ気象レーダー（日経平均） ---
