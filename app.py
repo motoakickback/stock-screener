@@ -212,22 +212,49 @@ load_settings()
 # --- 🌪️ マクロ気象レーダー（日経平均） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
+    """
+    週末・週明けのデータ遅延を物理的に回避し、
+    常に最新の営業日（4/13月曜等）の終値を反映させる。
+    """
     try:
         import yfinance as yf
-        import pytz
-        jst = pytz.timezone('Asia/Tokyo')
-        now = datetime.now(jst)
-        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
-        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
-        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
+        import pandas as pd
+        
+        # 🛡️ 物理修復：期間指定（period）に切り替え。日付計算の時差バグを無効化。
+        # 65日分のチャートを維持するため、余裕を持って6ヶ月分を取得。
+        ticker = yf.Ticker("^N225")
+        df_raw = ticker.history(period="6mo")
+        
         if not df_raw.empty:
-            if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
+            # 💎 物理修復：MultiIndexのカラム平坦化（最新yfinance対策）
+            if isinstance(df_raw.columns, pd.MultiIndex):
+                df_raw.columns = df_raw.columns.get_level_values(0)
+            
+            # インデックス（Date）を列に戻し、タイムゾーンを削除
             df_ni = df_raw.reset_index()
             df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
-            df_ni = df_ni.dropna(subset=['Close']).tail(65)
-            latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
-            return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest['Date'].strftime('%m/%d')}}
-    except: return None
+            
+            # 欠損値排除とチャート用期間（65日）の切り出し
+            df_ni = df_ni.dropna(subset=['Close'])
+            df_ni_tail = df_ni.tail(65)
+            
+            # 🚨 物理修復：絶対最新行（4/13）と前日（4/10）を特定
+            latest = df_ni_tail.iloc[-1]
+            prev = df_ni_tail.iloc[-2]
+            
+            # 戻り値の構造を完全維持（他TABへの導通を確保）
+            return {
+                "nikkei": {
+                    "price": float(latest['Close']),
+                    "diff": float(latest['Close'] - prev['Close']),
+                    "pct": float(((latest['Close'] / prev['Close']) - 1) * 100),
+                    "df": df_ni_tail, # チャート描画用
+                    "date": latest['Date'].strftime('%m/%d') # ここが「04/13」になる
+                }
+            }
+    except Exception as e:
+        # ログ出力（必要に応じて）
+        return None
 
 def render_macro_board():
     data = get_macro_weather()
