@@ -812,6 +812,9 @@ with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
+    # ⬇️ 物理修復：私が欠落させたこの1行を必ず追加してください！
+    if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
+    
     master_map_t2 = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
