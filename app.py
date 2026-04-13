@@ -1524,6 +1524,22 @@ with tab6:
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
+    # --- 🛡️ 状態初期化・物理ロック回路 (TAB6専用) ---
+    import datetime as dt_module
+    aar_defaults = {
+        "aar_form_date": dt_module.date.today(),
+        "aar_form_code": "",
+        "aar_form_tactics": "🌐 待伏 (押し目)",
+        "aar_form_buy": 0.0,
+        "aar_form_sell": 0.0,
+        "aar_form_lot": 100,
+        "aar_form_rule": "✅ 遵守した (冷徹な狙撃)",
+        "aar_form_memo": ""
+    }
+    for k, v in aar_defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
     def get_scale_for_code(code):
         api_code = str(code) if len(str(code)) == 5 else str(code) + "0"
         if not master_df.empty:
@@ -1558,37 +1574,79 @@ with tab6:
     
     with col_a1:
         st.markdown("#### 📝 戦果報告フォーム (手動入力)")
-        with st.form(key="aar_form"):
+        # 🚨 clear_on_submit=False により、送信後の自動リセットを物理封殺
+        with st.form(key="aar_form", clear_on_submit=False):
             c_f1, c_f2 = st.columns(2)
-            import datetime as dt_module
-            aar_date = c_f1.date_input("決済日", dt_module.date.today())
-            aar_code = c_f2.text_input("銘柄コード (4桁)", max_chars=4)
-            aar_tactics = st.selectbox("使用した戦術", ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他 (裁量・妥協)"])
+            
+            # 💎 物理ロック：value/indexをsession_stateと直結
+            aar_date = c_f1.date_input("決済日", value=st.session_state.aar_form_date, key="aar_form_date")
+            aar_code = c_f2.text_input("銘柄コード (4桁)", value=st.session_state.aar_form_code, max_chars=4, key="aar_form_code")
+            
+            tactics_opts = ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他 (裁量・妥協)"]
+            aar_tactics = st.selectbox(
+                "使用した戦術", 
+                options=tactics_opts, 
+                index=tactics_opts.index(st.session_state.aar_form_tactics) if st.session_state.aar_form_tactics in tactics_opts else 0,
+                key="aar_form_tactics"
+            )
+            
             c_f3, c_f4, c_f5 = st.columns(3)
-            aar_buy = c_f3.number_input("買値 (円)", min_value=0.0, step=1.0, format="%.1f")
-            aar_sell = c_f4.number_input("売値 (円)", min_value=0.0, step=1.0, format="%.1f")
-            aar_lot = c_f5.number_input("株数", min_value=100, step=100)
+            aar_buy = c_f3.number_input("買値 (円)", value=float(st.session_state.aar_form_buy), min_value=0.0, step=1.0, format="%.1f", key="aar_form_buy")
+            aar_sell = c_f4.number_input("売値 (円)", value=float(st.session_state.aar_form_sell), min_value=0.0, step=1.0, format="%.1f", key="aar_form_sell")
+            aar_lot = c_f5.number_input("株数", value=int(st.session_state.aar_form_lot), min_value=100, step=100, key="aar_form_lot")
             
             st.markdown("**⚖️ 自己評価（メンタル・チェック）**")
-            aar_rule = st.radio("ボスの『鉄の掟』を完全に遵守して撃ちましたか？", ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"], horizontal=False)
-            aar_memo = st.text_input("特記事項 (なぜそのルールを破ったか、または勝因など)")
+            rule_opts = ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"]
+            aar_rule = st.radio(
+                "ボスの『鉄の掟』を完全に遵守して撃ちましたか？", 
+                options=rule_opts,
+                index=rule_opts.index(st.session_state.aar_form_rule) if st.session_state.aar_form_rule in rule_opts else 0,
+                horizontal=False,
+                key="aar_form_rule"
+            )
+            
+            aar_memo = st.text_input("特記事項 (なぜそのルールを破ったか、または勝因など)", value=st.session_state.aar_form_memo, key="aar_form_memo")
+            
             submit_aar = st.form_submit_button("💾 記録をデータバンクへ保存", use_container_width=True)
             
         if submit_aar:
-            if aar_code and len(aar_code) >= 4 and aar_buy > 0 and aar_sell > 0:
-                profit = int((aar_sell - aar_buy) * aar_lot)
-                profit_pct = round(((aar_sell / aar_buy) - 1) * 100, 2)
+            # 入力値をローカル変数に固定（session_stateから取得）
+            c_code = st.session_state.aar_form_code
+            c_buy = st.session_state.aar_form_buy
+            c_sell = st.session_state.aar_form_sell
+            c_lot = st.session_state.aar_form_lot
+
+            if c_code and len(c_code) >= 4 and c_buy > 0 and c_sell > 0:
+                profit = int((c_sell - c_buy) * c_lot)
+                profit_pct = round(((c_sell / c_buy) - 1) * 100, 2)
+                
                 new_data = pd.DataFrame([{
-                    "決済日": aar_date.strftime("%Y-%m-%d"), "銘柄": aar_code, "規模": get_scale_for_code(aar_code),
-                    "戦術": aar_tactics.split(" ")[1] if " " in aar_tactics else aar_tactics,
-                    "買値": aar_buy, "売値": aar_sell, "株数": aar_lot, "損益額(円)": profit, "損益(%)": profit_pct,
-                    "規律": "遵守" if "遵守" in aar_rule else "違反", "敗因/勝因メモ": aar_memo
+                    "決済日": st.session_state.aar_form_date.strftime("%Y-%m-%d"), 
+                    "銘柄": c_code, 
+                    "規模": get_scale_for_code(c_code),
+                    "戦術": st.session_state.aar_form_tactics.split(" ")[1] if " " in st.session_state.aar_form_tactics else st.session_state.aar_form_tactics,
+                    "買値": c_buy, 
+                    "売値": c_sell, 
+                    "株数": c_lot, 
+                    "損益額(円)": profit, 
+                    "損益(%)": profit_pct,
+                    "規律": "遵守" if "遵守" in st.session_state.aar_form_rule else "違反", 
+                    "敗因/勝因メモ": st.session_state.aar_form_memo
                 }])
+                
                 aar_df = pd.concat([new_data, aar_df], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[True, True]).reset_index(drop=True)
                 aar_df.to_csv(AAR_FILE, index=False)
-                st.success(f"銘柄 {aar_code} の戦果を司令部データベースに記録完了。")
+                
+                # 💎 送信成功時のみ、銘柄コードと金額系のみをクリア（日付や戦術は連続入力のために保持）
+                st.session_state.aar_form_code = ""
+                st.session_state.aar_form_buy = 0.0
+                st.session_state.aar_form_sell = 0.0
+                st.session_state.aar_form_memo = ""
+                
+                st.success(f"銘柄 {c_code} の戦果を司令部データベースに記録完了。")
                 st.rerun()
-            else: st.error("銘柄コード、買値、売値を正しく入力せよ。")
+            else:
+                st.error("銘柄コード、買値、売値を正しく入力せよ。")
         
         with st.expander("📥 証券会社の取引履歴(CSV)から自動一括登録", expanded=True):
             st.caption("アップロードされたCSVから「現物買」と「現物売」を自動でペアリングし、損益を算出してデータベースへ一括登録します。")
