@@ -1078,7 +1078,7 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（英数字コード・無敵補完モード）..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（反転波形・全戦術アラート展開）..."):
                 raw_data_dict = {}
                 def fetch_parallel_t3(c):
                     try:
@@ -1092,28 +1092,13 @@ with tab3:
                                 tk = yf.Ticker(c + ".T")
                                 hist = tk.history(period="1y")
                                 if not hist.empty:
-                                    bars = []
-                                    for dt, row in hist.iterrows():
-                                        bars.append({
-                                            'Code': api_code,  # 💎 物理修復：KeyErrorを封殺（列追加）
-                                            'Date': dt.strftime('%Y-%m-%d'),
-                                            'AdjO': float(row['Open']),
-                                            'AdjH': float(row['High']),
-                                            'AdjL': float(row['Low']),
-                                            'AdjC': float(row['Close']),
-                                            'Volume': float(row['Volume'])
-                                        })
-                                    if data is None: data = {}
-                                    data["bars"] = bars
+                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 'AdjO': float(row['Open']), 'AdjH': float(row['High']), 'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
+                                    data = {"bars": bars}
                             except: pass
 
                         try:
                             f_data = get_fundamentals(c)
-                            if f_data:
-                                per = f_data.get('per')
-                                pbr = f_data.get('pbr')
-                                mcap = f_data.get('mcap')
-                                roe_res = f_data.get('roe')
+                            if f_data: per, pbr, mcap, roe_res = f_data.get('per'), f_data.get('pbr'), f_data.get('mcap'), f_data.get('roe')
                         except: pass
                         
                         if per is None or pbr is None:
@@ -1129,8 +1114,7 @@ with tab3:
                             except: pass
                             
                         return c, data, per, pbr, mcap, roe_res
-                    except Exception as e:
-                        return c, None, None, None, None, None
+                    except: return c, None, None, None, None, None
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
@@ -1164,11 +1148,10 @@ with tab3:
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                             'is_dt': False, 'is_hs': False, 'rank': '圏外💀(無効)', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
                             'df_chart': pd.DataFrame(), 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'error': True
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                         })
                         continue
 
-                    # 💎 物理修復：データフレーム化の直前に欠損を強制補完
                     df_bars = pd.DataFrame(bars)
                     if 'Code' not in df_bars.columns: 
                         df_bars['Code'] = c + "0"
@@ -1185,6 +1168,12 @@ with tab3:
                     prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
 
                     lc = float(latest.get('AdjC', 0))
+                    latest_o = float(latest.get('AdjO', lc))
+                    latest_h = float(latest.get('AdjH', lc))
+                    latest_l = float(latest.get('AdjL', lc))
+                    prev_c = float(prev.get('AdjC', 0))
+                    prev_o = float(prev.get('AdjO', prev_c))
+                    
                     h14 = float(df_14['AdjH'].max()) if 'AdjH' in df_14.columns else lc
                     l14 = float(df_14['AdjL'].min()) if 'AdjL' in df_14.columns else lc
                     ur = h14 - l14
@@ -1225,11 +1214,35 @@ with tab3:
                     
                     if pbr_v and pbr_v <= 5.0: score += 1
 
+                    # 💎 戦術アラート・エンジン（底打ち好機 ＆ 危険波形）
+                    alerts = []
+                    # 好機シグナル
+                    body = abs(lc - latest_o)
+                    shadow_lower = min(lc, latest_o) - latest_l
+                    full_range = latest_h - latest_l
+                    if full_range > 0 and shadow_lower > (body * 2.5) and (shadow_lower / full_range) > 0.6:
+                        if rsi_v < 45: alerts.append("🟢 【好機】たくり足（カラカサ）を検知。強力な底打ち反転シグナル。")
+                    
+                    if rsi_v < 25:
+                        alerts.append("🟢 【好機】陰の極み。極度の売られすぎ（セリング・クライマックス）状態。")
+                    
+                    if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c):
+                        if rsi_v < 50: alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。機関投資家による強い反転サイン。")
+
+                    # 警告シグナル
+                    if lc < bt_val - atr_v: alerts.append("🔴 【警告】第一防衛線（-1ATR）を突破。撤退を推奨。")
+                    if 'MA75' in df_chart.columns and lc < df_chart['MA75'].iloc[-1]: alerts.append("🔴 【警告】長期トレンド崩壊。MA75を下抜け。")
+                    if len(df_s) >= 3:
+                        last3 = df_s.tail(3)
+                        if (last3['AdjC'] < last3['AdjO']).all() and (last3['AdjC'] < last3['AdjC'].shift(1)).tail(2).all():
+                            alerts.append("🔴 【警告】三川（三羽烏）を検知。極めて強い下落圧力。")
+                    if is_dt or is_hs: alerts.append("🔴 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
+
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                        'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days if not is_ambush else 0,
+                        'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days if not is_ambush else 0,
                         'df_chart': df_chart, 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
-                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'error': False
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
                     })
 
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
@@ -1265,7 +1278,12 @@ with tab3:
                         st.warning("⚠️ この銘柄はデータソース（J-Quants / yfinance）の両方から有効なチャート履歴を取得できませんでした。")
                         continue
 
-                    if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
+                    # 💎 物理修復：アラートの出力（好機は緑、警告は赤）
+                    for alert in r.get('alerts', []):
+                        if "好機" in alert:
+                            st.success(alert)
+                        else:
+                            st.error(alert)
                     
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
