@@ -310,19 +310,19 @@ def main():
         
         print("【システムログ】全ミッション完了。通信回線を閉じます。")
         
-    # --- 実行トリガー ---
-    if __name__ == "__main__":
-        main()
-    # --- 💾 追加：連続データの保存ロジック ---
-    def save_market_archive(df):
-        """
-        取得したデータを Feather形式（爆速読み込み用）で保存する
-        """
-        # 既存の 'df' は32日分の点なので、本来は get_single_data 等で
-        # 連続データを取得したものを保存するのが理想
-        file_path = "market_data_continuous.feather"
-        df.to_feather(file_path)
-        print(f"【システムログ】弾薬庫（{file_path}）を更新しました。")
-    
-    # main() の最後に実行
-    # save_market_archive(df)
+# --- 実行トリガー ---
+if __name__ == "__main__":
+    main()
+# --- 💾 追加：連続データの保存ロジック ---
+def save_market_archive(df):
+    """
+    取得したデータを Feather形式（爆速読み込み用）で保存する
+    """
+    # 既存の 'df' は32日分の点なので、本来は get_single_data 等で
+    # 連続データを取得したものを保存するのが理想
+    file_path = "market_data_continuous.feather"
+    df.to_feather(file_path)
+    print(f"【システムログ】弾薬庫（{file_path}）を更新しました。")
+
+# main() の最後に実行
+# save_market_archive(df)
