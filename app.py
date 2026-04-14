@@ -1274,6 +1274,18 @@ with tab3:
                         df_mini = df_chart_full.tail(100).copy()
                         del df_chart_full; del df_s; del df_raw
 
+                        # --- 🧬 物理波形解析ユニット：酒田五法エンジン準備 ---
+                        latest = df_chart_full.iloc[-1]
+                        prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
+                        p_prev = df_chart_full.iloc[-3] if len(df_chart_full) > 2 else prev
+                        
+                        # 現在足（latest）
+                        lc, lo, lh, ll = float(latest['AdjC']), float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
+                        # 1日前（prev）
+                        pc, po, ph, pl = float(prev['AdjC']), float(prev['AdjO']), float(prev['AdjH']), float(prev['AdjL'])
+                        # 2日前（p_prev）
+                        ppc, ppo, pph, ppl = float(p_prev['AdjC']), float(p_prev['AdjO']), float(p_prev['AdjH']), float(p_prev['AdjL'])
+                        
                         # --- 3. 索敵：真の強襲 / 待伏ロジック ---
                         score = 0
                         alerts = []
@@ -1287,7 +1299,32 @@ with tab3:
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
                             if pbr_v is not None and pbr_v <= 5.0: score += 2
+                                
+                            # --- 🧬 酒田五法：底打ち反転判定エンジン ---
+                            body_v = abs(lc - lo)
+                            shadow_l = min(lc, lo) - ll
+                            full_rng = lh - ll
                             
+                            # 1. 【たくり足】底値圏での下影小陽線
+                            if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
+                                alerts.append("🟢 【酒田】たくり線（下影小陽線）を検知。底打ち反転の急所。")
+                                score += 5
+                                
+                            # 2. 【三川（明けの明星風）】前々日大陰線→前日極小駒→当日陽線
+                            if ppc < ppo and abs(pc - po) < (abs(ppc - ppo) * 0.3) and lc > lo and lc > pc:
+                                alerts.append("🟢 【酒田】三川（明けの明星）の兆候を捕捉。反転攻勢の開始。")
+                                score += 4
+                                
+                            # 3. 【陰の極み】連続陰線かつ低RSI
+                            if pc < po and lc < lo and rsi_v < 25:
+                                alerts.append("🟢 【酒田】陰の極みを検知。売られすぎによる自律反転間近。")
+                                score += 3
+                                
+                            # 4. 【陽の包み足（抱き線）】前日陰線を当日陽線が完全に飲み込む
+                            if pc < po and lc > lo and lc > po and lo < pc:
+                                alerts.append("🟢 【酒田】陽の包み足（抱き線）を検知。強力な買い転換サイン。")
+                                score += 4
+
                             # 反転サイン判定
                             body_v = abs(lc - latest_o)
                             shadow_l = min(lc, latest_o) - latest_l
@@ -1317,6 +1354,12 @@ with tab3:
                                 elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
                                     gc_days = 3; gc_score = 20
                                 else: gc_score = 5
+
+                            # --- 🚨 酒田五法：天井圏警戒（三尊/三山） ---
+                            # 過去15日間の最高値と比較し、トリプルトップの兆候を監視
+                            if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
+                                alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は既に天井圏。")
+                            # --------------------------------------------------
                             
                             # 出来高サージ
                             vol_surge_score = 0
