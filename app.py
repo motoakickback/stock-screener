@@ -1078,7 +1078,7 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（反転波形・全戦術アラート展開）..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 def fetch_parallel_t3(c):
                     try:
@@ -1214,9 +1214,10 @@ with tab3:
                     
                     if pbr_v and pbr_v <= 5.0: score += 1
 
-                    # 💎 戦術アラート・エンジン（底打ち好機 ＆ 危険波形）
+                    # 💎 戦術アラート・エンジン（待伏 vs 強襲 のコンテキスト分離）
                     alerts = []
-                    # 好機シグナル
+                    
+                    # 🟢 好機シグナル
                     body = abs(lc - latest_o)
                     shadow_lower = min(lc, latest_o) - latest_l
                     full_range = latest_h - latest_l
@@ -1229,13 +1230,18 @@ with tab3:
                     if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c):
                         if rsi_v < 50: alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。機関投資家による強い反転サイン。")
 
-                    # 警告シグナル
+                    # 🔴 警告シグナル ＆ 💎文脈による反転（三川）
                     if lc < bt_val - atr_v: alerts.append("🔴 【警告】第一防衛線（-1ATR）を突破。撤退を推奨。")
                     if 'MA75' in df_chart.columns and lc < df_chart['MA75'].iloc[-1]: alerts.append("🔴 【警告】長期トレンド崩壊。MA75を下抜け。")
+                    
                     if len(df_s) >= 3:
                         last3 = df_s.tail(3)
                         if (last3['AdjC'] < last3['AdjO']).all() and (last3['AdjC'] < last3['AdjC'].shift(1)).tail(2).all():
-                            alerts.append("🔴 【警告】三川（三羽烏）を検知。極めて強い下落圧力。")
+                            if is_ambush:
+                                alerts.append("🟢 【好機】三手陰線（三空叩き込み）を検知。売り尽くしからの強烈な反転の兆し。")
+                            else:
+                                alerts.append("🔴 【警告】三川（三羽烏）を検知。極めて強い下落圧力。")
+                                
                     if is_dt or is_hs: alerts.append("🔴 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
 
                     scope_results.append({
@@ -1278,7 +1284,6 @@ with tab3:
                         st.warning("⚠️ この銘柄はデータソース（J-Quants / yfinance）の両方から有効なチャート履歴を取得できませんでした。")
                         continue
 
-                    # 💎 物理修復：アラートの出力（好機は緑、警告は赤）
                     for alert in r.get('alerts', []):
                         if "好機" in alert:
                             st.success(alert)
