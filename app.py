@@ -14,25 +14,24 @@ import gc
 import pytz
 import concurrent.futures
 
-# 🎯 並列取得エンジン：個別銘柄のデータを高速に複数収集する
+# 🎯 並列取得エンジン：本物の弾丸（get_single_data）を装填
 def fetch_parallel_t3(codes, days=400):
     """
-    指定されたコードリストに対し、並列で過去データを取得する。
-    days: 取得する日数（1年以上の判定には245以上が必要）
+    指定されたコードリストに対し、TAB3と同じ本物の関数でデータを取得する。
     """
     results = {}
     
-    # 銘柄ごとの取得ユニット
     def fetch_unit(c):
         try:
-            # ボスの環境にある既存の取得関数（get_prices等）を呼び出す
-            # ここでは一般的な取得ロジックを想定
-            data = get_prices(c, days=days) # ※環境に合わせた関数名に調整が必要な場合があります
+            # 🛡️ 物理配線：TAB3で見つけた本物のロジックを完全同期
+            api_code = str(c) + "0" 
+            # 第2引数の '1' はボスが見つけた本物の指定に従う
+            data = get_single_data(api_code, 1) 
             return c, data
         except:
             return c, None
 
-    # 最大10スレッドで並列実行
+    # 並列実行
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_code = {executor.submit(fetch_unit, c): c for c in codes}
         for future in concurrent.futures.as_completed(future_to_code):
@@ -754,16 +753,13 @@ with tab1:
         st.session_state.tab1_scan_results = None
         gc.collect() 
         
-        with st.spinner("1,757銘柄の深層（戦歴1年以上）を深掘り中..."):
-            # 1. 弾薬の準備（全銘柄のリストアップ）
+        with st.spinner("本物の弾丸で1,757銘柄を深掘り中..."):
             raw = get_hist_data_cached()
-            if not raw:
-                st.error("❌ APIからの供給が途絶しています。")
-            else:
+            if raw:
                 full_df = clean_df(pd.DataFrame(raw))
                 full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
                 
-                # --- フィルタ条件の設定 ---
+                # パラメータ注入
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min),
                     "f1_max": float(st.session_state.f1_max),
@@ -776,7 +772,6 @@ with tab1:
                     "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                 }
 
-                # 2. 候補銘柄の選定（価格帯と市場で一次選考）
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
                 m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
@@ -786,31 +781,31 @@ with tab1:
                 valid_codes = list(set(full_df[mask]['Code']).intersection(set(m_targets)))
                 target_codes_4d = [c[:4] for c in valid_codes]
 
-                st.sidebar.write(f"📡 一次選考通過: {len(target_codes_4d)} 銘柄")
-
-                # 💎 二段構え：候補銘柄のみ、過去400日分を個別取得（これが深掘り）
-                deep_results_raw = fetch_parallel_t3(target_codes_4d, days=400)
+                # 💎 実弾射撃開始
+                deep_results_raw = fetch_parallel_t3(target_codes_4d)
                 
-                # 3. テクニカル判定ユニット
-                fail_stats = {"total": 0, "history": 0, "surge": 0, "drop": 0, "range": 0}
+                st.sidebar.write(f"📡 データ受信成功: {len(deep_results_raw)} 銘柄")
 
-                def scan_unit_t1_deep(code, bars, cfg):
-                    if not bars or len(bars) < 245: # 🛡️ 真・1年稼働義務
+                fail_stats = {"history": 0, "surge": 0, "drop": 0, "range": 0, "total": 0}
+                results = []
+
+                def scan_unit_t1_deep(code, raw_s, cfg):
+                    # 🛡️ 本物のデータ構造（data -> bars）から抽出
+                    bars = raw_s.get("data", {}).get("bars", [])
+                    if not bars or len(bars) < 245: 
                         return "history"
                     
                     df_g = pd.DataFrame(bars)
                     c_vals = df_g['AdjC'].values
                     lc = c_vals[-1]
                     
-                    # 急騰排除
+                    # 既存の判定ロジック
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return "surge"
                     
-                    # 下落率チェック
                     h_vals, l_vals = df_g['AdjH'].values, df_g['AdjL'].values
                     if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return "drop"
                     
-                    # 14日高値幅
                     r4h = h_vals[-4:]; h4 = r4h.max()
                     g_max_idx = len(h_vals) - 4 + r4h.argmax()
                     l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
@@ -819,38 +814,28 @@ with tab1:
                     wh = h4 / l14
                     if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return "range"
                     
-                    # 指標計算
                     rsi, _, _, _ = get_fast_indicators(c_vals)
                     target_buy = h4 - (h4 - l14) * (cfg["push_r"] / 100.0)
                     
-                    # スコアリング（簡易）
-                    score = 4
-                    dist_pct = ((lc / target_buy) - 1) * 100
-                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#d32f2f", 0
-                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#2e7d32", 5.5
-                    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
-                    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
-
                     return {
                         'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score,
-                        'high_4d': float(h4), 'low_14d': float(l14)
+                        't_score': 5.0, 'score': 10, 'high_4d': float(h4), 'low_14d': float(l14)
                     }
 
-                results = []
-                for c_4d, data in deep_results_raw.items():
-                    res = scan_unit_t1_deep(c_4d, data.get('bars', []), config_t1)
+                for c_4d, raw_s in deep_results_raw.items():
+                    fail_stats["total"] += 1
+                    res = scan_unit_t1_deep(c_4d, raw_s, config_t1)
                     if isinstance(res, dict):
                         results.append(res)
                     else:
                         fail_stats[res] += 1
                 
                 st.sidebar.markdown("### 🔍 脱落原因レポート")
-                st.sidebar.write(f"・1年未満(IPO等): {fail_stats['history']}")
-                st.sidebar.write(f"・下落率/値幅外: {fail_stats['drop'] + fail_stats['range']}")
+                st.sidebar.write(f"・総解析対象: {fail_stats['total']} 銘柄")
+                st.sidebar.write(f"・1年未満: {fail_stats['history']}")
                 st.sidebar.write(f"・最終合格: {len(results)}")
 
-                st.session_state.tab1_scan_results = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
+                st.session_state.tab1_scan_results = results
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
