@@ -1107,9 +1107,7 @@ with tab3:
                 - **突破力**: 直近高値の物理突破（ブレイクアウト）を評価し、上昇加速局面へ同乗。
                 - **品質保証**: ROE 10.0%以上の「稼ぐ力」を条件とし、RSIで過熱感（高値掴み）を監視。
                 - **目的**: 圧倒的な熱量を持つ初動個体を捕捉し、短期間での爆発的利得を狙う攻撃ロジック。
-            """)
-
-    # --- 🛡️ 3. 解析・描画実行エンジン ---
+            """)# --- 🛡️ 3. 解析・描画実行エンジン ---
     if run_scope:
         if is_ambush:
             st.session_state.t3_am_watch = watch_in
@@ -1134,32 +1132,39 @@ with tab3:
         else:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
+                
+                # 🎯 並列取得：物理配線修復（J-Quants + yfinance予備）
                 def fetch_parallel_t3(c):
                     try:
-                        api_code = c + "0"
+                        api_code = str(c) + "0"
+                        # 物理配線：ボスが見つけた本物の関数
                         data = get_single_data(api_code, 1)
                         per, pbr, mcap, roe_res = None, None, None, None
                         
-                        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
+                        # 🛡️ 245日防壁：1年分の戦歴がない銘柄はここで排除
+                        bars = data.get("bars", []) if data else []
+                        if not bars or len(bars) < 245:
+                            # 予備のyfinanceを試みるが、ここでも245日を要求
                             try:
                                 import yfinance as yf
                                 tk = yf.Ticker(c + ".T")
-                                hist = tk.history(period="1y")
-                                if not hist.empty:
+                                hist = tk.history(period="2y") # 余裕を持って2年
+                                if not hist.empty and len(hist) >= 245:
                                     bars = []
                                     for dt, row in hist.iterrows():
                                         bars.append({
-                                            'Code': api_code, 
-                                            'Date': dt.strftime('%Y-%m-%d'), 
-                                            'AdjO': float(row['Open']), 
-                                            'AdjH': float(row['High']), 
-                                            'AdjL': float(row['Low']), 
-                                            'AdjC': float(row['Close']), 
+                                            'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
+                                            'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
+                                            'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
                                             'Volume': float(row['Volume'])
                                         })
                                     data = {"bars": bars}
-                            except: pass
+                                else:
+                                    return c, None, None, None, None, None
+                            except:
+                                return c, None, None, None, None, None
 
+                        # ファンダメンタルズ取得（既存ロジック維持）
                         try:
                             f_data = get_fundamentals(c)
                             if f_data: 
@@ -1179,8 +1184,7 @@ with tab3:
                                     pbr = pbr or info.get('priceToBook')
                                     mcap = mcap or info.get('marketCap')
                                     raw_roe = info.get('returnOnEquity')
-                                    if raw_roe and roe_res is None: 
-                                        roe_res = raw_roe * 100
+                                    if raw_roe and roe_res is None: roe_res = raw_roe * 100
                             except: pass
                             
                         return c, data, per, pbr, mcap, roe_res
@@ -1192,186 +1196,174 @@ with tab3:
                     for f in concurrent.futures.as_completed(futs):
                         try:
                             res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
-                            raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
+                            if res_data:
+                                raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
                         except: pass
 
-                scope_results = []
-                for c in t_codes:
-                    try:
-                        # --- 1. 物理配線：データ抽出 ---
-                        target_key = str(c)
-                        raw_s = raw_data_dict.get(target_key)
-                        if not raw_s: 
-                            continue 
+            scope_results = []
+            for c in t_codes:
+                try:
+                    target_key = str(c)
+                    raw_s = raw_data_dict.get(target_key)
+                    if not raw_s: continue 
 
-                        api_code = target_key + "0"
-                        c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
-                        
-                        if not master_df.empty:
-                            # 物理修復：型の不一致をASTYPEで強制解決し、銘柄情報を紐付け
-                            m_row = master_df[master_df['Code'].astype(str) == api_code]
-                            if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']
-                                c_sector = m_row.iloc[0]['Sector']
-                                c_market = m_row.iloc[0]['Market']
-                        
-                        # 💎 指標の物理抽出（数値 0 を救済するため is not None で判定）
-                        # NaN（非数）が紛れ込むのを防ぐため、抽出時にクリーンアップ
-                        def clean_val(v):
-                            if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
-                                return None
-                            return float(v)
+                    api_code = target_key + "0"
+                    c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
+                    
+                    if not master_df.empty:
+                        m_row = master_df[master_df['Code'].astype(str) == api_code]
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_sector = m_row.iloc[0]['Sector']
+                            c_market = m_row.iloc[0]['Market']
+                    
+                    def clean_val(v):
+                        if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))): return None
+                        return float(v)
 
-                        per_v = clean_val(raw_s.get('per'))
-                        pbr_v = clean_val(raw_s.get('pbr'))
-                        roe_v = clean_val(raw_s.get('roe'))
-                        mcap_raw = raw_s.get("mcap")
-                        
-                        # 時価総額の文字列変換
-                        if mcap_raw is not None and mcap_raw >= 1e12:
-                            mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
-                        elif mcap_raw is not None and mcap_raw >= 1e8:
-                            mcap_str = f"{mcap_raw / 1e8:.0f}億円"
-                        else:
-                            mcap_str = "-"
+                    per_v = clean_val(raw_s.get('per'))
+                    pbr_v = clean_val(raw_s.get('pbr'))
+                    roe_v = clean_val(raw_s.get('roe'))
+                    mcap_raw = raw_s.get("mcap")
+                    
+                    if mcap_raw is not None and mcap_raw >= 1e12: mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
+                    elif mcap_raw is not None and mcap_raw >= 1e8: mcap_str = f"{mcap_raw / 1e8:.0f}億円"
+                    else: mcap_str = "-"
 
-                        bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
-                        
-                        # データ不足時のハンドリング（ここでも指標を確実に渡す）
-                        if not bars or len(bars) < 2:
-                            scope_results.append({
-                                'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
-                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
-                            })
-                            continue
-
-                        # --- 2. 演算：テクニカル解析 ---
-                        df_raw = pd.DataFrame(bars)
-                        if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
-                        df_s = clean_df(df_raw)
-                        try:
-                            df_chart_full = calc_technicals(df_s.copy())
-                        except:
-                            df_chart_full = df_s.copy()
-                        
-                        latest = df_chart_full.iloc[-1]
-                        prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
-                        
-                        # 各値の浮動小数点化とNaN対策
-                        lc = float(latest['AdjC'])
-                        latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
-                        prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
-                        
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
-                        ur_v = h14 - l14
-                        rsi_v = float(latest.get('RSI', 50))
-                        atr_v = float(latest.get('ATR', lc * 0.05))
-                        
-                        # メモリ解放：描画に必要な分だけ保持
-                        df_mini = df_chart_full.tail(100).copy()
-                        del df_chart_full; del df_s; del df_raw
-
-                        # --- 3. 索敵：真の強襲 / 待伏ロジック ---
-                        score = 0
-                        alerts = []
-                        gc_days = 0
-
-                        if is_ambush:
-                            # 🌐 【待伏：黄金比迎撃】
-                            score = 4
-                            bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
-                            m1, m2 = float(latest.get('MACD_Hist', 0)), float(prev.get('MACD_Hist', 0))
-                            _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
-                            score += t_score
-                            if pbr_v is not None and pbr_v <= 5.0: score += 2
-                            
-                            # 反転サイン判定
-                            body_v = abs(lc - latest_o)
-                            shadow_l = min(lc, latest_o) - latest_l
-                            full_rng = latest_h - latest_l
-                            if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
-                                alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転のシグナル。")
-                                score += 3
-                            if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c) and rsi_v < 50:
-                                alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。反転の予兆。")
-                                score += 3
-                            
-                            reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
-                            if score >= 12: rank, bg_c = "S級待伏🔥", "#1b5e20"
-                            elif score >= 8: rank, bg_c = "A級待伏💎", "#2e7d32"
-                            elif score >= 5: rank, bg_c = "B級待伏🛡️", "#4caf50"
-                            else: rank, bg_c = "圏外💀", "#616161"
-                        else:
-                            # ⚡ 【真の強襲：電撃戦】
-                            bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                            hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            gc_score = 0
-                            if len(hist_vals) >= 2:
-                                if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 1; gc_score = 60
-                                elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 2; gc_score = 40
-                                elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 3; gc_score = 20
-                                else: gc_score = 5
-                            
-                            # 出来高サージ
-                            vol_surge_score = 0
-                            if 'Volume' in df_mini.columns and len(df_mini) >= 6:
-                                avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
-                                curr_vol = df_mini['Volume'].iloc[-1]
-                                if avg_vol > 0:
-                                    v_ratio = curr_vol / avg_vol
-                                    if v_ratio >= 2.0:
-                                        vol_surge_score = 20
-                                        alerts.append(f"⚡ 【熱量】出来高が5日平均の {v_ratio:.1f}倍 に急増。大口流入。")
-                                    elif v_ratio >= 1.5:
-                                        vol_surge_score = 10
-                                        alerts.append(f"⚡ 【熱量】出来高活性化（{v_ratio:.1f}倍）。進軍の予兆。")
-
-                            # 突破判定
-                            breakout_score = 0
-                            if lc >= h14:
-                                breakout_score = 20
-                                alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
-                            elif lc >= h14 * 0.98:
-                                breakout_score = 10
-                                alerts.append("⚡ 【射程】14日高値に急接近。防衛線突破間近。")
-
-                            rsi_score = 0
-                            if 50 <= rsi_v <= 75: rsi_score = 10
-                            elif rsi_v > 75:
-                                rsi_score = -10
-                                alerts.append("🔴 【警告】戦域が過熱（RSI高）。高値掴みに警戒。")
-
-                            quality_score = 10 if (roe_v is not None and roe_v >= 10.0) else 0
-                            score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
-                            reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-
-                            if score >= 80: rank, bg_c = "S級強襲⚡", "#d32f2f"
-                            elif score >= 60: rank, bg_c = "A級強襲🔥", "#ed6c02"
-                            elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
-                            else: rank, bg_c = "圏外💀", "#616161"
-
-                        # 共通警告メッセージ
-                        if lc < bt_val - atr_v: 
-                            alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
-                        if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
-                            alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
-
-                        # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
+                    bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
+                    
+                    if not bars or len(bars) < 2:
                         scope_results.append({
-                            'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
-                            'df_chart': df_mini, 
-                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, # 命。
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                            'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                            'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                         })
-                    except:
                         continue
+
+                    # --- 2. 演算：テクニカル解析 ---
+                    df_raw = pd.DataFrame(bars)
+                    if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
+                    df_s = clean_df(df_raw)
+                    try:
+                        df_chart_full = calc_technicals(df_s.copy())
+                    except:
+                        df_chart_full = df_s.copy()
+                    
+                    latest = df_chart_full.iloc[-1]
+                    prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
+                    
+                    lc = float(latest['AdjC'])
+                    latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
+                    prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
+                    
+                    h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                    l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                    ur_v = h14 - l14
+                    rsi_v = float(latest.get('RSI', 50))
+                    atr_v = float(latest.get('ATR', lc * 0.05))
+                    
+                    df_mini = df_chart_full.tail(100).copy()
+                    del df_chart_full; del df_s; del df_raw
+
+                    # --- 3. 索敵：真の強襲 / 待伏ロジック（ボスの神聖アルゴリズム） ---
+                    score = 0
+                    alerts = []
+                    gc_days = 0
+
+                    if is_ambush:
+                        # 🌐 【待伏：黄金比迎撃】
+                        score = 4
+                        bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
+                        m1, m2 = float(latest.get('MACD_Hist', 0)), float(prev.get('MACD_Hist', 0))
+                        _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                        score += t_score
+                        if pbr_v is not None and pbr_v <= 5.0: score += 2
+                        
+                        # 反転サイン判定
+                        body_v = abs(lc - latest_o)
+                        shadow_l = min(lc, latest_o) - latest_l
+                        full_rng = latest_h - latest_l
+                        if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
+                            alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転のシグナル。")
+                            score += 3
+                        if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c) and rsi_v < 50:
+                            alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。反転の予兆。")
+                            score += 3
+                        
+                        reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
+                        if score >= 12: rank, bg_c = "S級待伏🔥", "#1b5e20"
+                        elif score >= 8: rank, bg_c = "A級待伏💎", "#2e7d32"
+                        elif score >= 5: rank, bg_c = "B級待伏🛡️", "#4caf50"
+                        else: rank, bg_c = "圏外💀", "#616161"
+                    else:
+                        # ⚡ 【真の強襲：電撃戦】
+                        bt_val = int(max(h14, lc + (atr_v * 0.5)))
+                        hist_vals = df_mini['MACD_Hist'].tail(5).values
+                        gc_score = 0
+                        if len(hist_vals) >= 2:
+                            if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
+                                gc_days = 1; gc_score = 60
+                            elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
+                                gc_days = 2; gc_score = 40
+                            elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
+                                gc_days = 3; gc_score = 20
+                            else: gc_score = 5
+                        
+                        # 出来高サージ
+                        vol_surge_score = 0
+                        if 'Volume' in df_mini.columns and len(df_mini) >= 6:
+                            avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
+                            curr_vol = df_mini['Volume'].iloc[-1]
+                            if avg_vol > 0:
+                                v_ratio = curr_vol / avg_vol
+                                if v_ratio >= 2.0:
+                                    vol_surge_score = 20
+                                    alerts.append(f"⚡ 【熱量】出来高が5日平均の {v_ratio:.1f}倍 に急増。大口流入。")
+                                elif v_ratio >= 1.5:
+                                    vol_surge_score = 10
+                                    alerts.append(f"⚡ 【熱量】出来高活性化（{v_ratio:.1f}倍）。進軍の予兆。")
+
+                        # 突破判定
+                        breakout_score = 0
+                        if lc >= h14:
+                            breakout_score = 20
+                            alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
+                        elif lc >= h14 * 0.98:
+                            breakout_score = 10
+                            alerts.append("⚡ 【射程】14日高値に急接近。防衛線突破間近。")
+
+                        rsi_score = 0
+                        if 50 <= rsi_v <= 75: rsi_score = 10
+                        elif rsi_v > 75:
+                            rsi_score = -10
+                            alerts.append("🔴 【警告】戦域が過熱（RSI高）。高値掴みに警戒。")
+
+                        quality_score = 10 if (roe_v is not None and roe_v >= 10.0) else 0
+                        score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
+                        reach_rate = (lc / h14) * 100 if h14 > 0 else 0
+
+                        if score >= 80: rank, bg_c = "S級強襲⚡", "#d32f2f"
+                        elif score >= 60: rank, bg_c = "A級強襲🔥", "#ed6c02"
+                        elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
+                        else: rank, bg_c = "圏外💀", "#616161"
+
+                    # 共通警告メッセージ
+                    if lc < bt_val - atr_v: 
+                        alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
+                    if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
+                        alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
+
+                    # 💎 最終格納
+                    scope_results.append({
+                        'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
+                        'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
+                        'df_chart': df_mini, 
+                        'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, 
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                    })
+                except:
+                    continue
                         
                 # --- 4. ランキング処理 ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
