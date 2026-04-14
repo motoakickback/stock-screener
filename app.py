@@ -1404,9 +1404,32 @@ with tab3:
                     
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
-                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{int(r['h14']):,}円"); c_m2.metric("直近安値", f"{int(r['l14']):,}円")
-                        c_m3, c_m4 = st.columns(2); c_m3.metric("上昇幅", f"{int(r['ur']):,}円"); c_m4.metric("最新終値", f"{int(r['lc']):,}円")
-                        st.metric("🌪️ 1ATR", f"{int(r['atr_val']):,}円", f"ボラ: {(r['atr_val']/r['lc']*100 if r['lc']>0 else 0):.1f}%", delta_color="off")
+                        # 💎 防御回路：NaNやNoneを物理的に遮断して整数化
+                        def safe_int(val):
+                            try:
+                                if val is None or pd.isna(val) or np.isinf(val): return 0
+                                return int(val)
+                            except: return 0
+
+                        h14_v = safe_int(r.get('h14'))
+                        l14_v = safe_int(r.get('l14'))
+                        ur_v = safe_int(r.get('ur'))
+                        lc_v = safe_int(r.get('lc'))
+                        atr_v = r.get('atr_val', 0)
+                        
+                        # ボラティリティ計算の安全化
+                        atr_val_int = safe_int(atr_v)
+                        atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
+                        
+                        c_m1, c_m2 = st.columns(2)
+                        c_m1.metric("直近高値", f"{h14_v:,}円")
+                        c_m2.metric("直近安値", f"{l14_v:,}円")
+                        
+                        c_m3, c_m4 = st.columns(2)
+                        c_m3.metric("上昇幅", f"{ur_v:,}円")
+                        c_m4.metric("最新終値", f"{lc_v:,}円")
+                        
+                        st.metric("🌪️ 1ATR", f"{atr_val_int:,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
                     
                     with sc_mid:
                         # 💎 指標別の配色・判定ロジック（is not None判定への換装で 0を救済）
