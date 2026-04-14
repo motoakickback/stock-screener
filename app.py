@@ -1207,10 +1207,12 @@ with tab3:
                     raw_s = raw_data_dict.get(c)
                     if not raw_s: continue 
 
+                    # 💎 物理修復：参照前に api_code を確定させる
+                    api_code = str(c) + "0"
+                    
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
-                        api_c = c + "0"
-                        m_row = master_df[master_df['Code'] == api_code] # 前提：api_code = c + "0"
+                        m_row = master_df[master_df['Code'] == api_code]
                         if not m_row.empty:
                             c_name = m_row.iloc[0]['CompanyName']
                             c_sector = m_row.iloc[0]['Sector']
