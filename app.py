@@ -1070,7 +1070,6 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
-        # 💎 物理修復：全角数字を半角に強制変換（全角トラップの排除）
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text)
@@ -1079,7 +1078,7 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（足切り無効化・全件表示）..."):
                 raw_data_dict = {}
                 def fetch_parallel_t3(c):
                     api_code = c + "0"; data = get_single_data(api_code, 1)
@@ -1115,38 +1114,62 @@ with tab3:
                         raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
 
                 scope_results = []
-                dropped_codes = [] # 💎 物理修復：握り潰された銘柄を記録するリスト
                 
+                # 💎 物理修復：足切り除外を完全撤廃。31件あれば絶対に31件appendする。
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
-                    # 💎 物理修復：サイレント足切りを廃止し、理由を記録
-                    if not raw_s or not raw_s.get("data"): 
-                        dropped_codes.append(f"[{c}] API通信エラーまたは無効なコード")
-                        continue
                     
-                    bars = raw_s["data"].get("bars", [])
-                    if not bars:
-                        dropped_codes.append(f"[{c}] 応答データ空")
-                        continue
-                        
-                    df_s = clean_df(pd.DataFrame(bars))
-                    if len(df_s) < 30: 
-                        dropped_codes.append(f"[{c}] データ不足（直近IPOまたは30日未満）")
-                        continue
-                        
-                    df_chart = calc_technicals(df_s.copy())
-                    df_14 = df_s.tail(15).iloc[:-1]
-                    latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
-                    lc = latest['AdjC']; h14 = df_14['AdjH'].max(); l14 = df_14['AdjL'].min(); ur = h14 - l14
-                    is_dt = check_double_top(df_s.tail(31).iloc[:-1]); is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1])
-                    rsi_v = latest.get('RSI', 50); atr_v = int(latest.get('ATR', 0))
-                    res_mcap = raw_s.get("mcap")
+                    c_name = f"銘柄 {c}"; c_sector = "不明"; c_market = "不明"
+                    if not master_df.empty:
+                        api_c = c + "0"; m_row = master_df[master_df['Code'] == api_c]
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']; c_sector = m_row.iloc[0]['Sector']; c_market = m_row.iloc[0]['Market']
+                    
+                    per_v = raw_s.get('per') if raw_s else None
+                    pbr_v = raw_s.get('pbr') if raw_s else None
+                    roe_v = raw_s.get('roe') if raw_s else None
+                    res_mcap = raw_s.get("mcap") if raw_s else None
                     mcap_str = f"{res_mcap / 1e12:.2f}兆円" if res_mcap and res_mcap >= 1e12 else f"{res_mcap / 1e8:.0f}億円" if res_mcap else "-"
+
+                    bars = raw_s.get("data", {}).get("bars", []) if raw_s and raw_s.get("data") else []
+
+                    # APIエラー等で全くデータが無い場合のセーフティネット（握り潰さず表示する）
+                    if not bars or len(bars) < 2:
+                        scope_results.append({
+                            'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                            'is_dt': False, 'is_hs': False, 'rank': '圏外💀(無効)', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
+                            'df_chart': pd.DataFrame(), 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'error': True
+                        })
+                        continue
+
+                    df_s = clean_df(pd.DataFrame(bars))
+                    try:
+                        df_chart = calc_technicals(df_s.copy())
+                    except:
+                        df_chart = df_s.copy()
+                        
+                    df_14 = df_s.tail(15).iloc[:-1] if len(df_s) > 15 else df_s.copy()
+                    latest = df_chart.iloc[-1]
+                    prev = df_chart.iloc[-2] if len(df_chart) > 1 else latest
+
+                    lc = float(latest.get('AdjC', 0))
+                    h14 = float(df_14['AdjH'].max()) if 'AdjH' in df_14.columns else lc
+                    l14 = float(df_14['AdjL'].min()) if 'AdjL' in df_14.columns else lc
+                    ur = h14 - l14
+                    is_dt = check_double_top(df_s.tail(31).iloc[:-1]) if len(df_s) > 10 else False
+                    is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1]) if len(df_s) > 10 else False
+                    
+                    rsi_v = float(latest.get('RSI', 50))
+                    if pd.isna(rsi_v): rsi_v = 50.0
+                    atr_v = float(latest.get('ATR', 0))
+                    if pd.isna(atr_v): atr_v = lc * 0.05
 
                     score = 4
                     if h14 > 0 and l14 > 0:
-                        r14 = h14 / l14; idxmax = df_14['AdjH'].idxmax()
-                        d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
+                        r14 = h14 / l14
+                        idxmax = df_14['AdjH'].idxmax() if 'AdjH' in df_14.columns else df_14.index[-1]
+                        d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) and 'Date' in df_14.columns else 0
                         if 1.3 <= r14 <= 2.0: score += 1
                         if d_high <= int(st.session_state.limit_d): score += 1
                         if not is_dt: score += 1
@@ -1154,39 +1177,37 @@ with tab3:
 
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        rank, bg, t_score, _ = get_triage_info(latest['MACD_Hist'], prev['MACD_Hist'], rsi_v, lc, bt_val, mode="待伏")
+                        m1 = float(latest.get('MACD_Hist', 0)); m1 = m1 if not pd.isna(m1) else 0
+                        m2 = float(prev.get('MACD_Hist', 0)); m2 = m2 if not pd.isna(m2) else 0
+                        rank, bg, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                        hist_vals = df_chart['MACD_Hist'].tail(5).values
-                        gc_days = 1 if hist_vals[-2] < 0 and hist_vals[-1] >= 0 else 2 if hist_vals[-3] < 0 and hist_vals[-1] >= 0 else 3 if hist_vals[-4] < 0 and hist_vals[-1] >= 0 else 0
+                        hist_vals = df_chart['MACD_Hist'].fillna(0).tail(5).values if 'MACD_Hist' in df_chart.columns else [0]*5
+                        gc_days = 0
+                        if len(hist_vals) >= 4:
+                            if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
+                            elif hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days = 2
+                            elif hist_vals[-4] < 0 and hist_vals[-1] >= 0: gc_days = 3
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
                     
-                    if raw_s['pbr'] and raw_s['pbr'] <= 5.0: score += 1
-
-                    c_name = f"銘柄 {c}"; c_sector = "不明"; c_market = "不明"
-                    if not master_df.empty:
-                        api_c = c + "0"; m_row = master_df[master_df['Code'] == api_c]
-                        if not m_row.empty:
-                            c_name = m_row.iloc[0]['CompanyName']; c_sector = m_row.iloc[0]['Sector']; c_market = m_row.iloc[0]['Market']
+                    if pbr_v and pbr_v <= 5.0: score += 1
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                         'is_dt': is_dt, 'is_hs': is_hs, 'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days if not is_ambush else 0,
-                        'df_chart': df_chart, 'per': raw_s['per'], 'pbr': raw_s['pbr'], 'mcap': mcap_str, 'roe': raw_s['roe'],
-                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market
+                        'df_chart': df_chart, 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'error': False
                     })
 
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
                     res['r_val'] = rank_order.get(clean_rank, 0)
+                
+                # 順位ソート
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
-
-                # 💎 物理修復：消滅した銘柄がある場合は画面に警告を出す
-                if dropped_codes:
-                    st.warning(f"🚨 【報告】以下の銘柄はデータ異常のためスキャンから自動除外されました:\n\n" + "\n".join(dropped_codes))
 
                 for r in scope_results:
                     st.divider()
@@ -1210,6 +1231,11 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
+                    # 💎 物理修復：データ欠損銘柄は警告を出して描画をスキップ（握り潰しはしない）
+                    if r.get('error'):
+                        st.warning("⚠️ この銘柄は直近IPO、上場廃止、またはAPIエラーのため有効なチャートデータが存在しません。")
+                        continue
+
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
                     
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
@@ -1300,7 +1326,8 @@ with tab3:
                     fig = go.Figure()
                     fig.add_trace(go.Candlestick(x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
                     for m_c, m_n, m_col in [('MA5','5日','#ffca28'),('MA25','25日','#42a5f5'),('MA75','75日','#ab47bc')]:
-                        fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
+                        if m_c in d_p.columns:
+                            fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     
                     fig.update_layout(
