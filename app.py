@@ -1070,7 +1070,10 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
-        all_text = watch_in + " " + daily_in
+        # 💎 物理修復：全角数字を半角に強制変換（全角トラップの排除）
+        import unicodedata
+        raw_all_text = watch_in + " " + daily_in
+        all_text = unicodedata.normalize('NFKC', raw_all_text)
         t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![0-9])[0-9]{4}(?![0-9])', all_text)]))
         
         if not t_codes:
@@ -1082,7 +1085,6 @@ with tab3:
                     api_code = c + "0"; data = get_single_data(api_code, 1)
                     per, pbr, mcap, roe_res = None, None, None, None
                     
-                    # 💎 物理修復：既存のget_fundamentalsで安全に取得を試みる（yfinanceの並列制限回避）
                     try:
                         f_data = get_fundamentals(c)
                         if f_data:
@@ -1092,7 +1094,6 @@ with tab3:
                             roe_res = f_data.get('roe')
                     except: pass
                     
-                    # 💎 フォールバック：欠損があればyfinanceで補完
                     if per is None or pbr is None:
                         try:
                             import yfinance as yf
@@ -1114,11 +1115,25 @@ with tab3:
                         raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
 
                 scope_results = []
+                dropped_codes = [] # 💎 物理修復：握り潰された銘柄を記録するリスト
+                
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
-                    if not raw_s or not raw_s["data"]: continue
-                    df_s = clean_df(pd.DataFrame(raw_s["data"].get("bars", [])))
-                    if len(df_s) < 30: continue
+                    # 💎 物理修復：サイレント足切りを廃止し、理由を記録
+                    if not raw_s or not raw_s.get("data"): 
+                        dropped_codes.append(f"[{c}] API通信エラーまたは無効なコード")
+                        continue
+                    
+                    bars = raw_s["data"].get("bars", [])
+                    if not bars:
+                        dropped_codes.append(f"[{c}] 応答データ空")
+                        continue
+                        
+                    df_s = clean_df(pd.DataFrame(bars))
+                    if len(df_s) < 30: 
+                        dropped_codes.append(f"[{c}] データ不足（直近IPOまたは30日未満）")
+                        continue
+                        
                     df_chart = calc_technicals(df_s.copy())
                     df_14 = df_s.tail(15).iloc[:-1]
                     latest = df_chart.iloc[-1]; prev = df_chart.iloc[-2]
@@ -1169,6 +1184,10 @@ with tab3:
                     res['r_val'] = rank_order.get(clean_rank, 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
 
+                # 💎 物理修復：消滅した銘柄がある場合は画面に警告を出す
+                if dropped_codes:
+                    st.warning(f"🚨 【報告】以下の銘柄はデータ異常のためスキャンから自動除外されました:\n\n" + "\n".join(dropped_codes))
+
                 for r in scope_results:
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
@@ -1178,8 +1197,6 @@ with tab3:
                     else: m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    
-                    # 💎 物理修復：業種バッジ（🏭）を生成
                     sec_badge = f"<span style='background-color: #607d8b; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;'>🏭 {r['sector']}</span>"
                     
                     st.markdown(f"""
@@ -1206,7 +1223,6 @@ with tab3:
                         c_m3.metric("上昇幅", f"{int(r['ur']):,}円")
                         c_m4.metric("最新終値", f"{int(r['lc']):,}円")
                         st.metric("🌪️ 1ATR", f"{int(atr_v_calc):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
-                        # 💎 物理修復：重複表示となっていた st.caption(f"🏭 {r['sector']}") をパージ
                     
                     with sc_mid:
                         per_c = "#26a69a" if (r['per'] and r['per'] <= 50) else "#ef5350"
@@ -1287,7 +1303,6 @@ with tab3:
                         fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, mode='lines', line=dict(color=m_col, width=1.5)))
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", mode='lines', line=dict(color='#FFD700', width=2, dash='dot')))
                     
-                    # 💎 物理修復：凡例をグラフ下部（日付の下）へ水平移動
                     fig.update_layout(
                         height=450, 
                         margin=dict(l=0, r=0, t=10, b=80), 
