@@ -1592,12 +1592,12 @@ with tab3:
                         yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888"))
                     )
                     
-                    # 🚀 ID衝突を物理的に遮断する一意キーを装填
+                    # 6. 🚀 描画実行（keyを付与して一本化）
                     st.plotly_chart(
                         fig, 
                         use_container_width=True, 
                         config={'displayModeBar': False}, 
-                        key=f"t3_chart_final_{r['code']}_{index}" # モード・銘柄・ループ番号で完全一意化
+                        key=f"t3_chart_final_{r['code']}_{index}"
                     )
 
                     st.markdown("---")
