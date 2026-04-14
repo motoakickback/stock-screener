@@ -1203,11 +1203,9 @@ with tab3:
                         except: pass
 
                 scope_results = []
-                # --- 1. 精密索敵エンジン：銘柄解析ループ ---
-                scope_results = []
                 for c in t_codes:
                     try:
-                        # 💎 兵站確保：データ抽出
+                        # --- 1. 物理配線：データ抽出 ---
                         target_key = str(c)
                         raw_s = raw_data_dict.get(target_key)
                         if not raw_s: 
@@ -1217,20 +1215,26 @@ with tab3:
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
-                            # 物理修復：型の不一致をASTYPEで強制解決
+                            # 物理修復：型の不一致をASTYPEで強制解決し、銘柄情報を紐付け
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
                         
-                        # 💎 指標の物理抽出（raw_s から確実に抜き出す）
-                        per_v = raw_s.get('per')
-                        pbr_v = raw_s.get('pbr')
-                        roe_v = raw_s.get('roe')
+                        # 💎 指標の物理抽出（数値 0 を救済するため is not None で判定）
+                        # NaN（非数）が紛れ込むのを防ぐため、抽出時にクリーンアップ
+                        def clean_val(v):
+                            if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
+                                return None
+                            return float(v)
+
+                        per_v = clean_val(raw_s.get('per'))
+                        pbr_v = clean_val(raw_s.get('pbr'))
+                        roe_v = clean_val(raw_s.get('roe'))
                         mcap_raw = raw_s.get("mcap")
                         
-                        # 時価総額の物理変換
+                        # 時価総額の文字列変換
                         if mcap_raw is not None and mcap_raw >= 1e12:
                             mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
                         elif mcap_raw is not None and mcap_raw >= 1e8:
@@ -1239,6 +1243,8 @@ with tab3:
                             mcap_str = "-"
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
+                        
+                        # データ不足時のハンドリング（ここでも指標を確実に渡す）
                         if not bars or len(bars) < 2:
                             scope_results.append({
                                 'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1260,6 +1266,7 @@ with tab3:
                         latest = df_chart_full.iloc[-1]
                         prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
                         
+                        # 各値の浮動小数点化とNaN対策
                         lc = float(latest['AdjC'])
                         latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
                         prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
@@ -1270,7 +1277,7 @@ with tab3:
                         rsi_v = float(latest.get('RSI', 50))
                         atr_v = float(latest.get('ATR', lc * 0.05))
                         
-                        # メモリ解放：描画用データのみ保持
+                        # メモリ解放：描画に必要な分だけ保持
                         df_mini = df_chart_full.tail(100).copy()
                         del df_chart_full; del df_s; del df_raw
 
@@ -1288,15 +1295,15 @@ with tab3:
                             score += t_score
                             if pbr_v is not None and pbr_v <= 5.0: score += 2
                             
-                            # 反転サイン加点
+                            # 反転サイン判定
                             body_v = abs(lc - latest_o)
                             shadow_l = min(lc, latest_o) - latest_l
                             full_rng = latest_h - latest_l
                             if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
-                                alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転の極めて強いシグナル。")
+                                alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転のシグナル。")
                                 score += 3
                             if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c) and rsi_v < 50:
-                                alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。強い反転サイン。")
+                                alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。反転の予兆。")
                                 score += 3
                             
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
@@ -1318,7 +1325,7 @@ with tab3:
                                     gc_days = 3; gc_score = 20
                                 else: gc_score = 5
                             
-                            # 出来高サージ判定
+                            # 出来高サージ
                             vol_surge_score = 0
                             if 'Volume' in df_mini.columns and len(df_mini) >= 6:
                                 avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
@@ -1339,15 +1346,15 @@ with tab3:
                                 alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
                             elif lc >= h14 * 0.98:
                                 breakout_score = 10
-                                alerts.append("⚡ 【射程】14日高値に急接近。防衛線突破まで秒読み。")
+                                alerts.append("⚡ 【射程】14日高値に急接近。防衛線突破間近。")
 
                             rsi_score = 0
                             if 50 <= rsi_v <= 75: rsi_score = 10
                             elif rsi_v > 75:
                                 rsi_score = -10
-                                alerts.append("🔴 【警告】戦域が過熱（RSI高）。高値掴みの罠に警戒せよ。")
+                                alerts.append("🔴 【警告】戦域が過熱（RSI高）。高値掴みに警戒。")
 
-                            quality_score = 10 if (roe_v and roe_v >= 10.0) else 0
+                            quality_score = 10 if (roe_v is not None and roe_v >= 10.0) else 0
                             score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
 
@@ -1356,21 +1363,23 @@ with tab3:
                             elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
                             else: rank, bg_c = "圏外💀", "#616161"
 
-                        # 共通警告
+                        # 共通警告メッセージ
                         if lc < bt_val - atr_v: 
                             alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
                         if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
-                            alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関投資家の離散を警戒。")
+                            alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
 
+                        # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                             'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
-                            'df_chart': df_mini, 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'df_chart': df_mini, 
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, # 命。
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
                         })
                     except:
                         continue
-
+                        
                 # --- 4. ランキング処理 ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
