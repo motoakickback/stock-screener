@@ -1209,22 +1209,23 @@ with tab3:
                 # --- 🎯 4. 並列実行エンジン（ raw_data_dict への物理溶接） ---
                 raw_data_dict = {}
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    # 銘柄リスト(t_codes)をスキャン
+                    # 銘柄リスト(t_codes)を並列スキャン
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            # fetch_parallel_t3 から 6つの戻り値を受け取る
-                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
+                            # 🚨 物理配線：fetch_parallel_t3 から 6つの戻り値（c, data, per, pbr, mcap, roe）を正確に受領
+                            res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
                             if res_data:
-                                # raw_data_dict に完全に溶接（UIが探す小文字キーで統一）
+                                # raw_data_dict に完全に溶接（UIが探す小文字キーで統一格納）
                                 raw_data_dict[res_c] = {
                                     "data": res_data,
-                                    "per": r_per,
-                                    "pbr": r_pbr,
-                                    "mcap": r_mcap,
-                                    "roe": r_roe
+                                    "per": res_per,
+                                    "pbr": res_pbr,
+                                    "mcap": res_mcap, # ここは生数値。文字列変換は後のBlock 5で行う
+                                    "roe": res_roe
                                 }
                         except:
+                            # 個別銘柄の通信エラー時は単にパスして次へ
                             pass
 
                         return c, data, res_f
