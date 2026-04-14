@@ -236,24 +236,6 @@ def get_macro_weather():
 weather = get_macro_weather()
 nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
 
-# 実効騰落率の確定
-effective_pct = manual_n_pct if manual_n_pct != 0 else nikkei_pct_api
-st.session_state.effective_nikkei_pct = effective_pct
-
-# 警戒レベルの判定
-if effective_pct <= -2.0:
-    st.session_state.macro_alert = "🔴 厳戒態勢（買値目標+10%深掘り / RSI上限-20）"
-    st.session_state.rsi_penalty = 20
-    st.session_state.push_penalty = 0.10
-elif effective_pct <= -1.0:
-    st.session_state.macro_alert = "🟠 警戒態勢（買値目標+5%深掘り / RSI上限-10）"
-    st.session_state.rsi_penalty = 10
-    st.session_state.push_penalty = 0.05
-else:
-    st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
-    st.session_state.rsi_penalty = 0
-    st.session_state.push_penalty = 0.0
-
 def render_macro_board():
     data = get_macro_weather()
     if data and "nikkei" in data:
