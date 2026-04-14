@@ -1239,14 +1239,23 @@ with tab3:
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
                         # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
-                        # 上場から1年（約245営業日）に満たない「若造」を物理的に抹殺する。
-                        # ※データ提供元から245日分以上の履歴が届いていない銘柄は、即座に除外。
+                        # ここが1249行目：直後の continue は必ずインデント（半角スペース4つ分深く）すること
                         if len(bars) < 245:
                             continue 
 
-                        # データ不足時の最小限のハンドリング（ここは2日以上あれば通過するが、
-                        # 上記の245日フィルターが先に効くため、IPO銘柄はここへ到達できない）
+                        # データ不足時のハンドリング（1年フィルター通過個体のみ）
                         if not bars or len(bars) < 2:
+                            scope_results.append({
+                                'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                                'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
+                            })
+                            continue
+
+                        # --- 2. 演算：テクニカル解析 ---
+                        # ここが1252行目付近：if 文と同じ深さ（列）に戻すこと
+                        df_raw = pd.DataFrame(bars)
 
                         # --- 2. 演算：テクニカル解析 ---
                         df_raw = pd.DataFrame(bars)
