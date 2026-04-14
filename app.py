@@ -940,32 +940,71 @@ with tab2:
                     del full_df; gc.collect()
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                        c_vals = group['AdjC'].values
-                        lc = c_vals[-1]
-                        rsi, _, _, hist = get_fast_indicators(c_vals)
-                        
-                        if rsi > cfg["rsi_lim"]: return None
-                        
-                        gc_days = 0
-                        # 💎 GC発動 1〜3日目までを抽出
-                        if len(hist) >= 4:
-                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-                        if gc_days == 0: return None
+                    # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
+                    # 強襲モードにおいても、1年分の戦歴がない「若造」は即座に除外。
+                    if len(group) < 245:
+                        return None
 
-                        if cfg["f12_ex_overvalued"]:
-                            f_data = get_fundamentals(code[:4])
-                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
-                        
-                        is_assault = "狙撃優先" in cfg["tactics"]
-                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-                        
-                        h_vals = group['AdjH'].values
-                        h14 = h_vals[-14:].max()
-                        atr = h14 * 0.03
-                        
-                        return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
+                    c_vals = group['AdjC'].values
+                    lc = c_vals[-1]
+                    
+                    # 出来高サージ判定（5日平均比）
+                    v_col = next((col for col in group.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
+                    curr_vol = group[v_col].iloc[-1]
+                    vol_ratio = (curr_vol / v_avg) if v_avg > 0 else 0
+                    
+                    # テクニカル指標の高速計算
+                    rsi, m_hist, m_signal, m_line = get_fast_indicators(c_vals)
+                    
+                    # 直近5日のMACDヒストグラムを取得
+                    # 判定に必要なしきい値を設定（GCの鮮度を確認）
+                    m_hist_5d = []
+                    for i in range(1, 6):
+                        if len(c_vals) >= i:
+                            _, h, _, _ = get_fast_indicators(c_vals[:len(c_vals)-(i-1)])
+                            m_hist_5d.insert(0, h)
+                    
+                    # 🎯 強襲判定（MACDゴールデンクロス発生から3日以内）
+                    is_gc = False
+                    gc_days = 0
+                    if len(m_hist_5d) >= 2:
+                        # 当日GC
+                        if m_hist_5d[-2] < 0 and m_hist_5d[-1] >= 0:
+                            is_gc = True; gc_days = 1
+                        # 2日前GC
+                        elif len(m_hist_5d) >= 3 and m_hist_5d[-3] < 0 and m_hist_5d[-1] >= 0:
+                            is_gc = True; gc_days = 2
+                        # 3日前GC
+                        elif len(m_hist_5d) >= 4 and m_hist_5d[-4] < 0 and m_hist_5d[-1] >= 0:
+                            is_gc = True; gc_days = 3
+
+                    if not is_gc: return None
+
+                    # スコアリング（強襲専用）
+                    score = 20 # 基礎点
+                    if vol_ratio >= 2.0: score += 20
+                    elif vol_ratio >= 1.5: score += 10
+                    
+                    # 14日高値突破の確認
+                    h_vals = group['AdjH'].values
+                    h14 = h_vals[max(0, len(h_vals)-15):-1].max()
+                    if lc >= h14: score += 20
+                    elif lc >= h14 * 0.98: score += 10
+
+                    # RSIによる過熱感制限（高値掴み防止）
+                    if 50 <= rsi <= 75: score += 10
+                    elif rsi > 75: score -= 20
+
+                    # ランク判定
+                    if score >= 60: rank, bg, t_score = "S⚡", "#d32f2f", 6.0
+                    elif score >= 40: rank, bg, t_score = "A🔥", "#ed6c02", 5.0
+                    else: rank, bg, t_score = "B📈", "#fbc02d", 4.0
+
+                    return {
+                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'vol_ratio': float(vol_ratio),
+                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score, 
+                        'gc_days': gc_days, 'avg_vol': int(v_avg)
+                    }
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
