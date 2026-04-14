@@ -1501,8 +1501,8 @@ with tab3:
                         fig, 
                         use_container_width=True, 
                         config={'displayModeBar': False},
-                        # 💎 モード名を接頭辞に加えることで、他のタブやモードとの衝突を物理的に遮断
-                        key=f"chart_{'ambush' if is_ambush else 'assault'}_{res['code']}_{index}"
+                        # 💎 最終手段：モード、ソース、コード、インデックスを全て溶接して「唯一無二」にする
+                        key=f"chart_{'amb' if is_ambush else 'ass'}_{res.get('source', 'src')}_{res['code']}_{index}"
                     )
                         
 with tab4:
