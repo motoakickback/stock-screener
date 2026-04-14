@@ -764,7 +764,7 @@ with tab1:
                 # 💎 1. 関数定義（必ず呼び出しより前に置く）
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
                     # 🛡️ 真・IPOフィルター（1年稼働義務）
-                    if len(group) < 245:
+                    if len(group) < 50:
                         return None
                     
                     c_vals = group['AdjC'].values
@@ -926,7 +926,7 @@ with tab2:
                     # 💎 TAB2専用：強襲判定ユニット（GC・突破・出来高サージ）
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
                         # 🛡️ 真・IPOフィルター（1年稼働義務）
-                        if len(group) < 245:
+                        if len(group) < 50:
                             return None
 
                         c_vals = group['AdjC'].values
