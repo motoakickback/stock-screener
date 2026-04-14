@@ -12,35 +12,7 @@ import concurrent.futures
 import streamlit.components.v1 as components
 import gc
 import pytz
-import concurrent.futures
 
-# 🎯 並列取得エンジン：本物の弾丸（get_single_data）を装填
-def fetch_parallel_t3(codes, days=400):
-    """
-    指定されたコードリストに対し、TAB3と同じ本物の関数でデータを取得する。
-    """
-    results = {}
-    
-    def fetch_unit(c):
-        try:
-            # 🛡️ 物理配線：TAB3で見つけた本物のロジックを完全同期
-            api_code = str(c) + "0" 
-            # 第2引数の '1' はボスが見つけた本物の指定に従う
-            data = get_single_data(api_code, 1) 
-            return c, data
-        except:
-            return c, None
-
-    # 並列実行
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_code = {executor.submit(fetch_unit, c): c for c in codes}
-        for future in concurrent.futures.as_completed(future_to_code):
-            c, res = future.result()
-            if res:
-                results[c] = res
-                
-    return results
-    
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
     <style>
@@ -437,25 +409,25 @@ def get_single_data(code, yrs=1):
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
-    """
-    🚀 物理直結：バッチが生成したFeatherファイルから一瞬でデータを読み込む
-    """
-    file_path = "market_data_continuous.feather"
-    
-    if os.path.exists(file_path):
+    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
+    while len(dates) < 45:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
+        days += 1
+    rows = []
+    def fetch(dt):
         try:
-            # 内部処理：Featherを読み込み、アプリが期待する辞書形式に変換
-            df = pd.read_feather(file_path)
-            return df.to_dict('records')
-        except Exception as e:
-            # 万が一の破損時はエラーを表示
-            st.error(f"🚨 弾薬庫の展開に失敗: {e}")
-            return []
-    else:
-        # ファイルがない場合は警告
-        st.error("🚨 弾薬庫（market_data_continuous.feather）が見つかりません。先にバッチを実行してください。")
+            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
+            if r.status_code == 200: return r.json().get("data", [])
+        except: pass
         return []
-        
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        futs = [exe.submit(fetch, dt) for dt in dates]
+        for f in concurrent.futures.as_completed(futs):
+            res = f.result()
+            if res: rows.extend(res)
+    return rows
+
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
     p = np.array(prices, dtype='float32')
@@ -752,23 +724,27 @@ with tab1:
     if run_scan_t1:
         st.session_state.tab1_scan_results = None
         gc.collect() 
-        
-        with st.spinner("本物の弾丸で1,757銘柄を深掘り中..."):
+        with st.spinner("マクロ気象を計算に織り込み中..."):
             raw = get_hist_data_cached()
             if raw:
                 full_df = clean_df(pd.DataFrame(raw))
                 full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
                 
-                # パラメータ注入
+                # --- 🛡️ マクロ連動パラメータの注入 ---
+                push_penalty = st.session_state.get('push_penalty', 0.0)
+                
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min),
                     "f1_max": float(st.session_state.f1_max),
                     "f2_m30": float(st.session_state.f2_m30),
                     "f3_drop": float(st.session_state.f3_drop),
                     "push_r": float(st.session_state.push_r),
+                    "push_penalty": push_penalty, # 改修2：地合いによる深掘り
                     "f9_min14": float(st.session_state.f9_min14),
                     "f9_max14": float(st.session_state.f9_max14),
                     "limit_d": int(st.session_state.limit_d),
+                    "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
+                    "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
                     "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                 }
 
@@ -778,64 +754,79 @@ with tab1:
                 
                 latest_date = full_df['Date'].max()
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
-                valid_codes = list(set(full_df[mask]['Code']).intersection(set(m_targets)))
-                target_codes_4d = [c[:4] for c in valid_codes]
-
-                # 💎 実弾射撃開始
-                deep_results_raw = fetch_parallel_t3(target_codes_4d)
+                valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                 
-                st.sidebar.write(f"📡 データ受信成功: {len(deep_results_raw)} 銘柄")
+                v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
+                avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
-                fail_stats = {"history": 0, "surge": 0, "drop": 0, "range": 0, "total": 0}
-                results = []
+                df = full_df[full_df['Code'].isin(valid_codes)]
 
-                def scan_unit_t1_deep(code, raw_s, cfg):
-                    # 🛡️ 本物のデータ構造（data -> bars）から抽出
-                    bars = raw_s.get("data", {}).get("bars", [])
-                    if not bars or len(bars) < 245: 
-                        return "history"
-                    
-                    df_g = pd.DataFrame(bars)
-                    c_vals = df_g['AdjC'].values
+                def scan_unit_t1_parallel(code, group, cfg, v_avg):
+                    c_vals = group['AdjC'].values
                     lc = c_vals[-1]
-                    
-                    # 既存の判定ロジック
                     p20 = c_vals[max(0, len(c_vals)-20)]
-                    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return "surge"
+                    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                     
-                    h_vals, l_vals = df_g['AdjH'].values, df_g['AdjL'].values
-                    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return "drop"
+                    h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+                    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
                     
                     r4h = h_vals[-4:]; h4 = r4h.max()
                     g_max_idx = len(h_vals) - 4 + r4h.argmax()
                     l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
-                    if l14 <= 0 or h4 <= l14: return "range"
-                    
+
+                    if l14 <= 0 or h4 <= l14: return None
                     wh = h4 / l14
-                    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return "range"
+                    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
+                    
+                    if cfg["f12_ex_overvalued"]:
+                        f_data = get_fundamentals(code[:4])
+                        if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     rsi, _, _, _ = get_fast_indicators(c_vals)
-                    target_buy = h4 - (h4 - l14) * (cfg["push_r"] / 100.0)
+                    # 💎 改修2：地合いが悪い時は、より深い位置（push_penalty分）で指値を待つ
+                    base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
+                    target_buy = h4 - base_push
+                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) # 深掘り補正
                     
+                    score = 4
+                    if 1.3 <= wh <= 2.0: score += 1
+                    if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
+                    if not check_double_top(group.tail(31).iloc[:-1]): score += 1
+                    if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+                    
+                    dist_pct = ((lc / target_buy) - 1) * 100
+                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#2e7d32", 5.5
+                    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
+                    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
+
                     return {
                         'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-                        't_score': 5.0, 'score': 10, 'high_4d': float(h4), 'low_14d': float(l14)
+                        'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
+                        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
                     }
 
-                for c_4d, raw_s in deep_results_raw.items():
-                    fail_stats["total"] += 1
-                    res = scan_unit_t1_deep(c_4d, raw_s, config_t1)
-                    if isinstance(res, dict):
-                        results.append(res)
-                    else:
-                        fail_stats[res] += 1
+                results = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
+                    futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df.groupby('Code')}
+                    for f in concurrent.futures.as_completed(futures):
+                        try:
+                            res = f.result()
+                            if res: results.append(res)
+                        except: pass
                 
-                st.sidebar.markdown("### 🔍 脱落原因レポート")
-                st.sidebar.write(f"・総解析対象: {fail_stats['total']} 銘柄")
-                st.sidebar.write(f"・1年未満: {fail_stats['history']}")
-                st.sidebar.write(f"・最終合格: {len(results)}")
-
-                st.session_state.tab1_scan_results = results
+                # 💎 改修3：セクター分散フィルター
+                sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
+                filtered_results = []
+                sector_counts = {}
+                for r in sorted_raw:
+                    sector = master_map_t1.get(str(r['Code']), {}).get('Sector', '不明')
+                    if sector_counts.get(sector, 0) < 3:
+                        filtered_results.append(r)
+                        sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                    if len(filtered_results) >= 30: break
+                
+                st.session_state.tab1_scan_results = filtered_results
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
@@ -900,7 +891,7 @@ with tab2:
         st.session_state.tab2_scan_results = None
         gc.collect()
 
-        with st.spinner("強襲ターゲットを索敵中..."):
+        with st.spinner("地合いによる過熱感を検知中..."):
             try:
                 raw = get_hist_data_cached()
                 if not raw:
@@ -908,7 +899,10 @@ with tab2:
                 else:
                     full_df = clean_df(pd.DataFrame(raw))
                     full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
-                    
+                    for col in ['AdjC', 'AdjH', 'AdjL']:
+                        if col in full_df.columns:
+                            full_df[col] = full_df[col].astype('float32')
+
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
@@ -917,9 +911,13 @@ with tab2:
                         "f1_max": float(st.session_state.f1_max),
                         "rsi_lim": effective_rsi_limit, 
                         "vol_lim": float(vol_lim),
+                        "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
+                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス")
                     }
                     
                     v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
+                    if v_col not in full_df.columns: full_df[v_col] = 100000
+                    
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean().fillna(0).astype(int)
                     
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -933,67 +931,35 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     del full_df; gc.collect()
 
-                    # 💎 TAB2専用：強襲判定ユニット（GC・突破・出来高サージ）
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                        # 🛡️ 真・IPOフィルター（1年稼働義務）
-                        if len(group) < 50:
-                            return None
-
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
+                        rsi, _, _, hist = get_fast_indicators(c_vals)
                         
-                        # 指標計算
-                        rsi, m_hist, _, _ = get_fast_indicators(c_vals)
-                        if rsi > cfg["rsi_lim"]: return None # 過熱感カット
+                        if rsi > cfg["rsi_lim"]: return None
                         
-                        # GC（ゴールデンクロス）鮮度判定（直近3日以内）
-                        m_hist_prev = []
-                        for i in range(2, 5):
-                            if len(c_vals) >= i:
-                                _, prev_h, _, _ = get_fast_indicators(c_vals[:-i+1])
-                                m_hist_prev.append(prev_h)
-                            else:
-                                m_hist_prev.append(0)
-                        
-                        is_gc = False
                         gc_days = 0
-                        if m_hist_prev[0] < 0 and m_hist >= 0:
-                            is_gc = True; gc_days = 1
-                        elif len(m_hist_prev) > 1 and m_hist_prev[1] < 0 and m_hist >= 0:
-                            is_gc = True; gc_days = 2
-                        elif len(m_hist_prev) > 2 and m_hist_prev[2] < 0 and m_hist >= 0:
-                            is_gc = True; gc_days = 3
+                        # 💎 GC発動 1〜3日目までを抽出
+                        if len(hist) >= 4:
+                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
+                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
+                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+                        if gc_days == 0: return None
 
-                        if not is_gc: return None
-
-                        # スコアリング（強襲仕様）
-                        score = 30 # 基礎点（GC済）
-                        v_col = 'Volume' # 簡易化
-                        curr_vol = group.iloc[-1].get('Volume', 0)
-                        v_ratio = curr_vol / v_avg if v_avg > 0 else 1.0
-                        if v_ratio >= 2.0: score += 20
-                        elif v_ratio >= 1.5: score += 10
+                        if cfg["f12_ex_overvalued"]:
+                            f_data = get_fundamentals(code[:4])
+                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        
+                        is_assault = "狙撃優先" in cfg["tactics"]
+                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
                         
                         h_vals = group['AdjH'].values
-                        h14 = h_vals[max(0, len(h_vals)-15):-1].max()
-                        if lc >= h14: score += 20 # 突破
-                        elif lc >= h14 * 0.98: score += 10 # 射程
+                        h14 = h_vals[-14:].max()
+                        atr = h14 * 0.03
                         
-                        atr = lc * 0.05 # 簡易ATR（J-Quants環境依存回避）
-
-                        if score >= 60: rank, bg, t_score = "S⚡", "#d32f2f", 6.0
-                        elif score >= 40: rank, bg, t_score = "A🔥", "#ed6c02", 5.0
-                        else: rank, bg, t_score = "B📈", "#fbc02d", 4.0
-
-                        # 💎 UI描画側が期待するキー名へ完全同期
-                        return {
-                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
-                            'T_Rank': rank, 'T_Color': bg, 'T_Score': t_score, 
-                            'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr)
-                        }
+                        return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
 
                     results = []
-                    # ThreadPoolExecutorの関数名を scan_unit_t2_parallel に修正
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
@@ -1002,7 +968,6 @@ with tab2:
                                 if res: results.append(res)
                             except: pass
                     
-                    # 描画側で使用しているキー名（T_Score, GC_Days）でソート
                     sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     filtered_results = []
                     sector_counts = {}
@@ -1243,14 +1208,15 @@ with tab3:
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
-                            # 物理修復：型不一致を排除しマスタ照合
+                            # 物理修復：型の不一致をASTYPEで強制解決し、銘柄情報を紐付け
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
                         
-                        # 💎 指標の物理抽出（NaN/0対策を完全溶接）
+                        # 💎 指標の物理抽出（数値 0 を救済するため is not None で判定）
+                        # NaN（非数）が紛れ込むのを防ぐため、抽出時にクリーンアップ
                         def clean_val(v):
                             if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
                                 return None
@@ -1261,6 +1227,7 @@ with tab3:
                         roe_v = clean_val(raw_s.get('roe'))
                         mcap_raw = raw_s.get("mcap")
                         
+                        # 時価総額の文字列変換
                         if mcap_raw is not None and mcap_raw >= 1e12:
                             mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
                         elif mcap_raw is not None and mcap_raw >= 1e8:
@@ -1268,10 +1235,9 @@ with tab3:
                         else:
                             mcap_str = "-"
 
-                        # 🛡️ 物理復旧：TAB3での足切りを撤廃（聖域化）
-                        # スキャン（TAB1/2）を通過した個体は、日数を問わず全て描画プロセスへ通す
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
+                        # データ不足時のハンドリング（ここでも指標を確実に渡す）
                         if not bars or len(bars) < 2:
                             scope_results.append({
                                 'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1293,26 +1259,18 @@ with tab3:
                         latest = df_chart_full.iloc[-1]
                         prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
                         
-                        # 浮動小数点化とNaN防御（1ATRのValueErrorを物理遮断）
-                        def safe_float(val, default=0.0):
-                            try:
-                                if val is None or np.isnan(val) or np.isinf(val): return default
-                                return float(val)
-                            except: return default
-
-                        lc = safe_float(latest.get('AdjC'))
-                        latest_o = safe_float(latest.get('AdjO'))
-                        latest_h = safe_float(latest.get('AdjH'))
-                        latest_l = safe_float(latest.get('AdjL'))
-                        prev_c = safe_float(prev.get('AdjC'))
-                        prev_o = safe_float(prev.get('AdjO'))
+                        # 各値の浮動小数点化とNaN対策
+                        lc = float(latest['AdjC'])
+                        latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
+                        prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
                         
-                        h14 = safe_float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = safe_float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v = h14 - l14
-                        rsi_v = safe_float(latest.get('RSI'), 50.0)
-                        atr_v = safe_float(latest.get('ATR'), lc * 0.05)
+                        rsi_v = float(latest.get('RSI', 50))
+                        atr_v = float(latest.get('ATR', lc * 0.05))
                         
+                        # メモリ解放：描画に必要な分だけ保持
                         df_mini = df_chart_full.tail(100).copy()
                         del df_chart_full; del df_s; del df_raw
 
@@ -1322,11 +1280,10 @@ with tab3:
                         gc_days = 0
 
                         if is_ambush:
-                            # 待伏：黄金比迎撃
+                            # 🌐 【待伏：黄金比迎撃】
                             score = 4
                             bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
-                            m1 = safe_float(latest.get('MACD_Hist'))
-                            m2 = safe_float(prev.get('MACD_Hist'))
+                            m1, m2 = float(latest.get('MACD_Hist', 0)), float(prev.get('MACD_Hist', 0))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
                             if pbr_v is not None and pbr_v <= 5.0: score += 2
@@ -1348,7 +1305,7 @@ with tab3:
                             elif score >= 5: rank, bg_c = "B級待伏🛡️", "#4caf50"
                             else: rank, bg_c = "圏外💀", "#616161"
                         else:
-                            # 強襲：電撃戦
+                            # ⚡ 【真の強襲：電撃戦】
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             gc_score = 0
@@ -1361,6 +1318,7 @@ with tab3:
                                     gc_days = 3; gc_score = 20
                                 else: gc_score = 5
                             
+                            # 出来高サージ
                             vol_surge_score = 0
                             if 'Volume' in df_mini.columns and len(df_mini) >= 6:
                                 avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
@@ -1374,6 +1332,7 @@ with tab3:
                                         vol_surge_score = 10
                                         alerts.append(f"⚡ 【熱量】出来高活性化（{v_ratio:.1f}倍）。進軍の予兆。")
 
+                            # 突破判定
                             breakout_score = 0
                             if lc >= h14:
                                 breakout_score = 20
@@ -1397,18 +1356,18 @@ with tab3:
                             elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
                             else: rank, bg_c = "圏外💀", "#616161"
 
-                        # 警告メッセージ
+                        # 共通警告メッセージ
                         if lc < bt_val - atr_v: 
                             alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
                         if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
                             alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
 
-                        # 💎 最終格納：全指標をUI側へ導通させる
+                        # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                             'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
                             'df_chart': df_mini, 
-                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, # 命。
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
                         })
                     except:
