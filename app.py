@@ -1070,11 +1070,9 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
-        # 💎 物理修復1：英数字コード（130A等）に対応する最強の正規表現
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
-        # 英字混じりの4桁コードを完璧に抽出する
         t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z](?![A-Z0-9])', all_text)]))
         
         if not t_codes:
@@ -1088,7 +1086,6 @@ with tab3:
                         data = get_single_data(api_code, 1)
                         per, pbr, mcap, roe_res = None, None, None, None
                         
-                        # 💎 物理修復2：J-Quantsが沈黙した場合、yfinanceからチャート（bars）を強奪する
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -1098,6 +1095,7 @@ with tab3:
                                     bars = []
                                     for dt, row in hist.iterrows():
                                         bars.append({
+                                            'Code': api_code,  # 💎 物理修復：KeyErrorを封殺（列追加）
                                             'Date': dt.strftime('%Y-%m-%d'),
                                             'AdjO': float(row['Open']),
                                             'AdjH': float(row['High']),
@@ -1132,7 +1130,6 @@ with tab3:
                             
                         return c, data, per, pbr, mcap, roe_res
                     except Exception as e:
-                        # 全体クラッシュを防ぐ絶対防壁
                         return c, None, None, None, None, None
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
@@ -1145,7 +1142,6 @@ with tab3:
 
                 scope_results = []
                 
-                # 💎 足切り完全撤廃：全件確実に描画リストへ叩き込む
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
                     
@@ -1163,7 +1159,6 @@ with tab3:
 
                     bars = raw_s.get("data", {}).get("bars", []) if raw_s and raw_s.get("data") else []
 
-                    # 物理修復3：両APIが全滅しても絶対にUIを崩さず表示する
                     if not bars or len(bars) < 2:
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1173,7 +1168,13 @@ with tab3:
                         })
                         continue
 
-                    df_s = clean_df(pd.DataFrame(bars))
+                    # 💎 物理修復：データフレーム化の直前に欠損を強制補完
+                    df_bars = pd.DataFrame(bars)
+                    if 'Code' not in df_bars.columns: 
+                        df_bars['Code'] = c + "0"
+                        
+                    df_s = clean_df(df_bars)
+                    
                     try:
                         df_chart = calc_technicals(df_s.copy())
                     except:
