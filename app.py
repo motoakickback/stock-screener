@@ -1501,8 +1501,8 @@ with tab3:
                         fig, 
                         use_container_width=True, 
                         config={'displayModeBar': False},
-                        # 💎 最終手段：モード、ソース、コード、インデックスを全て溶接して「唯一無二」にする
-                        key=f"chart_{'amb' if is_ambush else 'ass'}_{res.get('source', 'src')}_{res['code']}_{index}"
+                        # 💎 徹底的に一意にするため、モード(amb/ass)、ソース(監視/新規)、コード、インデックスを全て結合
+                        key=f"ch_{'amb' if is_ambush else 'ass'}_{res.get('source', 'src')[:2]}_{res['code']}_{index}"
                     )
                         
 with tab4:
