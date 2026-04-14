@@ -805,6 +805,26 @@ with tab1:
                         't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
                     }
 
+         with st.spinner("診断プログラム起動中..."):
+             raw = get_hist_data_cached()
+             if not raw:
+                 st.error("❌ 供給源が空です。APIからのデータ取得に失敗しています。")
+             else:
+                 full_df = clean_df(pd.DataFrame(raw))
+                 # 🔍 【監視ポイント1】全銘柄数
+                 st.sidebar.write(f"全データ行数: {len(full_df)}")
+                
+                 # 🔍 【監視ポイント2】カラム名の確認
+                 st.sidebar.write(f"検出カラム: {list(full_df.columns)}")
+ 
+                 # ...（中略：mask計算など）...
+ 
+                 # 🔍 【監視ポイント3】絞り込み後の銘柄数
+                 st.sidebar.write(f"有効銘柄数(valid_codes): {len(valid_codes)}")
+                
+                 if len(valid_codes) == 0:
+                     st.warning("⚠️ フィルタ条件（価格帯・市場・出来高）が厳しすぎて、全滅しています。")
+
                 # 💎 2. 実行部
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
