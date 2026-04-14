@@ -1204,44 +1204,48 @@ with tab3:
 
                 scope_results = []
                 for c in t_codes:
-                    try:
-                        # --- 1. 物理配線：データ抽出（型一致の遮断） ---
-                        target_key = str(c)
-                        raw_s = raw_data_dict.get(target_key)
-                        if not raw_s: 
-                            continue 
+                    # 💎 型の不一致を物理的に遮断（str/int両対応）
+                    target_key = str(c)
+                    raw_s = raw_data_dict.get(target_key)
+                    if not raw_s: continue 
 
-                        api_code = target_key + "0"
-                        c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
-                        if not master_df.empty:
-                            m_row = master_df[master_df['Code'] == api_code]
-                            if not m_row.empty:
-                                c_name = m_row.iloc[0]['CompanyName']
-                                c_sector = m_row.iloc[0]['Sector']
-                                c_market = m_row.iloc[0]['Market']
-                        
-                        # 指標の確実な抽出
-                        per_v = raw_s.get('per')
-                        pbr_v = raw_s.get('pbr')
-                        roe_v = raw_s.get('roe')
-                        res_mcap = raw_s.get("mcap")
-                        
-                        if res_mcap and res_mcap >= 1e12:
-                            mcap_str = f"{res_mcap / 1e12:.2f}兆円"
-                        elif res_mcap and res_mcap >= 1e8:
-                            mcap_str = f"{res_mcap / 1e8:.0f}億円"
-                        else:
-                            mcap_str = "-"
+                    api_code = target_key + "0"
+                    
+                    # 銘柄名・属性の取得（型変換を噛ませて確実にヒットさせる）
+                    c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
+                    if not master_df.empty:
+                        # 物理修復：master_dfのCode列をstr変換して照合
+                        m_row = master_df[master_df['Code'].astype(str) == str(api_code)]
+                        if not m_row.empty:
+                            c_name = m_row.iloc[0]['CompanyName']
+                            c_sector = m_row.iloc[0]['Sector']
+                            c_market = m_row.iloc[0]['Market']
+                    
+                    # 💎 指標の確実な抽出
+                    per_v = raw_s.get('per')
+                    pbr_v = raw_s.get('pbr')
+                    roe_v = raw_s.get('roe')
+                    res_mcap = raw_s.get("mcap")
+                    
+                    # 時価総額変換（兆・億）
+                    if res_mcap is not None and res_mcap >= 1e12:
+                        mcap_str = f"{res_mcap / 1e12:.2f}兆円"
+                    elif res_mcap is not None and res_mcap >= 1e8:
+                        mcap_str = f"{res_mcap / 1e8:.0f}億円"
+                    else:
+                        mcap_str = "-"
 
-                        bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
-                        if not bars or len(bars) < 2:
-                            scope_results.append({
-                                'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
-                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
-                            })
-                            continue
+                    bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
+
+                    # データ不足時のハンドリング（ここでも指標を受け渡す）
+                    if not bars or len(bars) < 2:
+                        scope_results.append({
+                            'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                            'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
+                        })
+                        continue
 
                         # --- 2. 物理演算：テクニカル指標 ---
                         df_raw = pd.DataFrame(bars)
