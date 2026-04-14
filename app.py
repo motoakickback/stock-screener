@@ -1370,6 +1370,34 @@ with tab3:
                             else:
                                 rank, bg_c = "圏外💀", "#616161"
 
+                        # 💎 ここが合流地点：待伏・強襲どちらの判定が終わってもここを通る
+                        # 最終格納：物理配線の最終チェック（res_per等に統一）
+                        scope_results.append({
+                            'code': target_key,   # 銘柄コード
+                            'name': c_name,       # 銘柄名
+                            'lc': lc,             # 最新終値
+                            'h14': h14,           # 14日高値
+                            'l14': l14,           # 14日安値
+                            'ur': ur_v,           # 上昇幅
+                            'bt_val': bt_val,     # 目標買値
+                            'atr_val': atr_v,     # ATR値
+                            'rsi': rsi_v,         # RSI
+                            'rank': rank,         # ランク
+                            'bg': bg_c,           # 背景色
+                            'score': score,       # スコア
+                            'reach_val': reach_rate, # 到達度
+                            'gc_days': gc_days,   # GC経過日数
+                            'df_chart': df_mini,  # チャート用データ
+                            'per': res_per,       # 💎 res_per（Block 4で定義）
+                            'pbr': res_pbr,       # 💎 res_pbr（Block 4で定義）
+                            'roe': res_roe,       # 💎 res_roe（Block 4で定義）
+                            'mcap': res_mcap_str, # 💎 res_mcap_str（Block 4で定義）
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
+                            'sector': c_sector,
+                            'market': c_market,
+                            'alerts': alerts,     # 酒田五法等のメッセージ
+                            'error': False
+                        })
                         # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
                         # 💎 最終格納：計算済み変数（res_per等）を、描画側に渡す辞書へ正確に溶接
                         scope_results.append({
