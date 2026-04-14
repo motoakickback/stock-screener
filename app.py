@@ -1275,22 +1275,23 @@ with tab3:
                         if not is_hs: score += 1
 
                     alerts = []
-                    # 🟢 反転波形（最重要ウェイト+3）
-                    body = abs(lc - latest_o)
-                    shadow_lower = min(lc, latest_o) - latest_l
-                    full_range = latest_h - latest_l
-                    if full_range > 0 and shadow_lower > (body * 2.5) and (shadow_lower / full_range) > 0.6:
+                    # 🟢 反転波形（最優先ウェイト+3：重厚メッセージ版）
+                    body_v = abs(lc - latest_o)
+                    shadow_l = min(lc, latest_o) - latest_l
+                    full_rng = latest_h - latest_l
+                    
+                    if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6:
                         if rsi_v < 45: 
-                            alerts.append("🟢 【好機】たくり足（カラカサ）を検知。強力な底打ち反転シグナル。")
+                            alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転の極めて強いシグナル。")
                             if is_ambush: score += 3
                     
                     if rsi_v < 25:
-                        alerts.append("🟢 【好機】陰の極み。売られすぎ状態。")
+                        alerts.append("🟢 【好機】陰の極み。極度の売られすぎ（セリング・クライマックス）による反発準備局面。")
                         if is_ambush: score += 2
 
                     if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c):
                         if rsi_v < 50: 
-                            alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。強い反転サイン。")
+                            alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。前日の下落を完全に飲み込む強い買い転換サイン。")
                             if is_ambush: score += 3
 
                     if is_ambush:
@@ -1317,19 +1318,24 @@ with tab3:
                         reach_rate = 100 - rsi_v
                         if roe_v and roe_v >= 10.0: score += 10
 
-                    if lc < bt_val - atr_v: alerts.append("🔴 【警告】第一防衛線（-1ATR）を突破。")
-                    if 'MA75' in df_chart_full.columns and lc < df_chart_full['MA75'].iloc[-1]: alerts.append("🔴 【警告】MA75を下抜け。")
+                    # 🔴 警告系メッセージの重厚化
+                    if lc < bt_val - atr_v: 
+                        alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。これ以上の追従は資金壊滅のリスクあり。撤退を推奨。")
+                    
+                    if 'MA75' in df_chart_full.columns and lc < df_chart_full['MA75'].iloc[-1]: 
+                        alerts.append("🔴 【警告】長期トレンド（MA75）を完全下抜け。機関投資家の離散、および長期下降トレンド入りの蓋然性が極めて高い。")
                     
                     if len(df_s) >= 3:
                         last3 = df_s.tail(3)
                         if (last3['AdjC'] < last3['AdjO']).all() and (last3['AdjC'] < last3['AdjC'].shift(1)).tail(2).all():
                             if is_ambush:
-                                alerts.append("🟢 【好機】三手陰線を検知。歴史的な大底圏。")
+                                alerts.append("🟢 【好機】三手陰線（三空叩き込み）を検知。歴史的な投げ売り（セリングクライマックス）による大底圏。")
                                 score += 3
                             else:
-                                alerts.append("🔴 【警告】三羽烏を検知。強い下落圧力。")
+                                alerts.append("🔴 【警告】三川（三羽烏）を検知。強力な下落圧力が継続しており、安易なリバウンド狙いは危険。")
                                 
-                    if is_dt or is_hs: alerts.append("🔴 【警告】三尊/Wトップ検知。")
+                    if is_dt or is_hs: 
+                        alerts.append("🔴 【警告】相場転換の重大な危険波形（三尊/Wトップ）を検知。トレンドの終焉を示唆。")
 
                     # 💎 メモリ最適化：描画用100日分だけ保持
                     df_mini = df_chart_full.tail(100).copy()
