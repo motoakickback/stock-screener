@@ -1377,20 +1377,20 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{int(atr_v_calc):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
                     
                     with sc_mid:
-                        # 💎 指標別の配色・判定ロジック（ボスの戦術基準）
+                        # 💎 指標別の配色・判定ロジック（ボス専用：PBR 5.0倍基準）
                         roe_v = r.get('roe')
                         roe_s = f"{roe_v:.1f}%" if roe_v else "-"
                         roe_c = "#26a69a" if (roe_v and roe_v >= 10.0) else "#ef5350"
                         
                         per_val = r.get('per')
                         per_s = f"{per_val:.1f}倍" if per_val else "-"
-                        # PER 20倍以下を割安（グリーン）と判定
+                        # PER 20倍以下をグリーンと判定
                         per_c = "#26a69a" if (per_val and per_val <= 20.0) else "#ef5350"
                         
                         pbr_val = r.get('pbr')
                         pbr_s = f"{pbr_val:.2f}倍" if pbr_val else "-"
-                        # PBR 1.5倍以下を割安（グリーン）と判定
-                        pbr_c = "#26a69a" if (pbr_val and pbr_val <= 1.5) else "#ef5350"
+                        # 🎯 ボスの指示：PBR 5.0倍までならOK（グリーン）
+                        pbr_c = "#26a69a" if (pbr_val and pbr_val <= 5.0) else "#ef5350"
                         
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         
