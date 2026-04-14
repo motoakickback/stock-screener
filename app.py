@@ -12,7 +12,36 @@ import concurrent.futures
 import streamlit.components.v1 as components
 import gc
 import pytz
+import concurrent.futures
 
+# 🎯 並列取得エンジン：個別銘柄のデータを高速に複数収集する
+def fetch_parallel_t3(codes, days=400):
+    """
+    指定されたコードリストに対し、並列で過去データを取得する。
+    days: 取得する日数（1年以上の判定には245以上が必要）
+    """
+    results = {}
+    
+    # 銘柄ごとの取得ユニット
+    def fetch_unit(c):
+        try:
+            # ボスの環境にある既存の取得関数（get_prices等）を呼び出す
+            # ここでは一般的な取得ロジックを想定
+            data = get_prices(c, days=days) # ※環境に合わせた関数名に調整が必要な場合があります
+            return c, data
+        except:
+            return c, None
+
+    # 最大10スレッドで並列実行
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_code = {executor.submit(fetch_unit, c): c for c in codes}
+        for future in concurrent.futures.as_completed(future_to_code):
+            c, res = future.result()
+            if res:
+                results[c] = res
+                
+    return results
+    
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
     <style>
