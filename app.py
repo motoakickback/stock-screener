@@ -1051,7 +1051,7 @@ with tab3:
                 ⚡ 25日線上抜け / 上昇トレンド維持（最大+20点）<br>
                 ⚡ 出来高の急増（+10点）<br>
                 ⚡ RSIの適正過熱感（+10点）<br>
-                ⚡ 割安性：PBR 5.0倍以下（+10点）
+                ⚡ 稼ぐ力：ROE 10%以上（+10点相当の加点）
             </div>
             """, unsafe_allow_html=True)
 
@@ -1207,12 +1207,14 @@ with tab3:
                         rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=True)
                         reach_rate = 100 - rsi_v
                     
-                    if pbr_v and pbr_v <= 5.0: score += 1
+                    # 💎 戦術別のファンダメンタル加点（矛盾の解消）
+                    if is_ambush:
+                        if pbr_v and pbr_v <= 5.0: score += 1
+                    else:
+                        if roe_v and roe_v >= 10.0: score += 1
 
-                    # 💎 戦術アラート・エンジン（待伏 vs 強襲 のコンテキスト分離）
                     alerts = []
                     
-                    # 🟢 好機シグナル
                     body = abs(lc - latest_o)
                     shadow_lower = min(lc, latest_o) - latest_l
                     full_range = latest_h - latest_l
@@ -1225,7 +1227,6 @@ with tab3:
                     if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c):
                         if rsi_v < 50: alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。機関投資家による強い反転サイン。")
 
-                    # 🔴 警告シグナル ＆ 💎文脈による反転（三川）
                     if lc < bt_val - atr_v: alerts.append("🔴 【警告】第一防衛線（-1ATR）を突破。撤退を推奨。")
                     if 'MA75' in df_chart.columns and lc < df_chart['MA75'].iloc[-1]: alerts.append("🔴 【警告】長期トレンド崩壊。MA75を下抜け。")
                     
