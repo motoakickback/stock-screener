@@ -28,11 +28,16 @@ def clean_df(df):
     return df
 
 # 💎 改造ポイント：32日分ではなく「連続300営業日」を取得するように変更
-def get_continuous_hist_data(days_to_fetch=300):
-    print(f"📡 連続 {days_to_fetch} 営業日のデータを取得開始...")
+def get_continuous_hist_data(days_to_fetch=500):
+    """
+    🎯 供給路の拡張：連続500営業日（約2年分）のデータを一括取得
+    """
+    print(f"📡 連続 {days_to_fetch} 営業日のデータを深掘り開始（2年分の弾薬を装填中）...")
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days_back = 0
+    
+    # 500営業日分の日付リストを作成
     while len(dates) < days_to_fetch:
         d = base - timedelta(days=days_back)
         if d.weekday() < 5: # 土日除外
@@ -42,17 +47,23 @@ def get_continuous_hist_data(days_to_fetch=300):
     rows = []
     def fetch(dt):
         try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json().get("data", [])
-        except: pass
+            # J-Quants API V2: daily bars
+            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=15)
+            if r.status_code == 200: 
+                return r.json().get("data", [])
+        except Exception as e:
+            # 通信エラー時はログを残し、空リストを返す
+            print(f"⚠️ 日付 {dt} の取得に失敗: {e}")
         return []
         
-    # 通信負荷を考慮し、スレッド数を調整
+    # 通信負荷と速度のバランスを考慮（5スレッド）
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
             if res: rows.extend(res)
+            
+    print(f"✅ 取得完了：全 {len(rows)} 行の物資を確保しました。")
     return rows
 
 def save_market_archive(df):
