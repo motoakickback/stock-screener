@@ -1509,8 +1509,6 @@ with tab3:
                         if m_c in d_p.columns: fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hoverinfo='skip'))
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2)))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=80), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5, font=dict(color="#bbb")), xaxis=dict(showgrid=False, tickfont=dict(color="#888"), type='category'), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888")))
-                    
-                    
                         
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
