@@ -599,15 +599,18 @@ if use_macro:
         help="現在の日経平均の騰落率が自動で入っています。暴落シミュレーションをする場合は、この数値をさらに低く書き換えてください。"
     )
 
+    # 4. マクロ気象の判定とペナルティ計算（ボスの厳格ルールに復元）
     if manual_pct <= -2.0:
-        st.session_state.push_penalty = 0.03
-        st.session_state.rsi_penalty = 10
-        st.session_state.macro_alert = f"🔴 暴落警戒（日経 {manual_pct:+.2f}%）: 買値深掘り・RSI厳格化"
+        st.session_state.push_penalty = 0.10  # 待伏：買値目標を10%深掘り
+        st.session_state.rsi_penalty = 20     # 強襲：RSI上限を20厳しく
+        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）: 買値目標+10%深掘り / RSI上限-20"
     elif manual_pct <= -1.0:
-        st.session_state.push_penalty = 0.015
-        st.session_state.rsi_penalty = 5
-        st.session_state.macro_alert = f"⚠️ 軟調地合い（日経 {manual_pct:+.2f}%）: 警戒態勢"
+        st.session_state.push_penalty = 0.05  # 待伏：買値目標を5%深掘り
+        st.session_state.rsi_penalty = 10     # 強襲：RSI上限を10厳しく
+        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）: 買値目標+5%深掘り / RSI上限-10"
     else:
+        st.session_state.push_penalty = 0.0
+        st.session_state.rsi_penalty = 0
         st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）: 通常ロジック稼働"
 
 st.sidebar.divider()
