@@ -1377,32 +1377,44 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{int(atr_v_calc):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
                     
                     with sc_mid:
+                        # 💎 指標別の配色・判定ロジック（ボスの戦術基準）
                         roe_v = r.get('roe')
-                        roe_c = "#26a69a" if (roe_v and roe_v >= 10) else "#ef5350"
+                        roe_s = f"{roe_v:.1f}%" if roe_v else "-"
+                        roe_c = "#26a69a" if (roe_v and roe_v >= 10.0) else "#ef5350"
+                        
+                        per_val = r.get('per')
+                        per_s = f"{per_val:.1f}倍" if per_val else "-"
+                        # PER 20倍以下を割安（グリーン）と判定
+                        per_c = "#26a69a" if (per_val and per_val <= 20.0) else "#ef5350"
+                        
+                        pbr_val = r.get('pbr')
+                        pbr_s = f"{pbr_val:.2f}倍" if pbr_val else "-"
+                        # PBR 1.5倍以下を割安（グリーン）と判定
+                        pbr_c = "#26a69a" if (pbr_val and pbr_val <= 1.5) else "#ef5350"
+                        
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         
                         st.markdown(f"""
-                            <div style='background:rgba(255,215,0,0.05); padding:1rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
-                                <div style='font-size:14px;'>{box_title}</div>
-                                <div style='font-size:2.4rem; font-weight:bold; color:#FFD700;'>{int(r['bt_val']):,}円</div>
-                                <div style='border-top:1px dashed #444; margin:10px 0;'></div>
-                                <div style='display:flex; justify-content:space-between; text-align:center;'>
+                            <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
+                                <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+                                <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div>
+                                <div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'>
                                     <div style='flex:1;'>
-                                        <div style='font-size:12px; color:#888;'>📊 PER</div>
-                                        <div style='font-size:1.2rem; font-weight:bold;'>{f"{r['per']:.1f}倍" if r['per'] else "-"}</div>
+                                        <div style='color:#888; font-size:10px;'>PER</div>
+                                        <div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div>
                                     </div>
                                     <div style='flex:1;'>
-                                        <div style='font-size:12px; color:#888;'>📉 PBR</div>
-                                        <div style='font-size:1.2rem; font-weight:bold;'>{f"{r['pbr']:.2f}倍" if r['pbr'] else "-"}</div>
+                                        <div style='color:#888; font-size:10px;'>PBR</div>
+                                        <div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div>
                                     </div>
                                     <div style='flex:1;'>
-                                        <div style='font-size:12px; color:#888;'>📈 ROE</div>
-                                        <div style='font-size:1.2rem; color:{roe_c}; font-weight:bold;'>{f"{roe_v:.1f}%" if roe_v else "-"}</div>
+                                        <div style='color:#888; font-size:10px;'>ROE</div>
+                                        <div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div>
                                     </div>
                                 </div>
-                                <div style='text-align:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-                                    <div style='font-size:11px; color:#888;'>💰 時価総額</div>
-                                    <div style='font-size:1.1rem; font-weight:bold;'>{r['mcap']}</div>
+                                <div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+                                    <span style='color:#888; font-size:11px;'>時価総額: </span>
+                                    <span style='color:#fff; font-size:11px; font-weight:bold;'>{r['mcap']}</span>
                                 </div>
                             </div>
                         """, unsafe_allow_html=True)
