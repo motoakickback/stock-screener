@@ -1224,32 +1224,47 @@ with tab3:
                             except:
                                 return None
     
-                        # 描画側と完全に同期させるための変数名定義
-                        res_per = prepare_fundamental(raw_s.get('per'))
-                        res_pbr = prepare_fundamental(raw_s.get('pbr'))
-                        res_roe = prepare_fundamental(raw_s.get('roe'))
-                        raw_mcap = raw_s.get("mcap")
+                        # --- 💎 指標の物理自動追跡エンジン（大文字・小文字・別名完全対応） ---
+                        def extract_val(d, keys):
+                            for k in keys:
+                                v = d.get(k)
+                                if v is not None and not (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
+                                    return float(v)
+                            return None
+
+                        # API側のキーの揺れ（per, PER, trailingPE等）を網羅して探索
+                        res_per = extract_val(raw_s, ['per', 'PER', 'trailingPE', 'TrailingPE'])
+                        res_pbr = extract_val(raw_s, ['pbr', 'PBR', 'priceToBook', 'PriceToBook'])
+                        res_roe = extract_val(raw_s, ['roe', 'ROE', 'returnOnEquity', 'ReturnOnEquity'])
                         
-                        # 時価総額の文字列変換（1pxの妥協なき変換）
-                        if raw_mcap is not None and raw_mcap >= 1e12:
-                            res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
-                        elif raw_mcap is not None and raw_mcap >= 1e8:
-                            res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
+                        # ROEが小数(0.12)で来ている場合は100倍して%表記に調整
+                        if res_roe is not None and res_roe < 1.0:
+                            res_roe = res_roe * 100
+                        
+                        # 時価総額の抽出と「兆・億」変換
+                        raw_mcap = extract_val(raw_s, ['mcap', 'MCAP', 'marketCap', 'MarketCap'])
+                        if raw_mcap is not None:
+                            if raw_mcap >= 1e12:
+                                res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
+                            elif raw_mcap >= 1e8:
+                                res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
+                            else:
+                                res_mcap_str = f"{int(raw_mcap):,}"
                         else:
                             res_mcap_str = "-"
-    
+
                         # チャートデータの取得
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
-                        # --- 🛡️ 兵站確保：データ不足時の防護処理（新変数名に溶接） ---
-                        if not bars or len(bars) < 5: # 酒田五法には最低5日分必要
+                        # --- 🛡️ 兵站確保：データ不足時の防護処理（酒田五法5日基準） ---
+                        if not bars or len(bars) < 5:
                             scope_results.append({
                                 'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': res_per,       # 💎 res_per に修正
-                                'pbr': res_pbr,       # 💎 res_pbr に修正
-                                'roe': res_roe,       # 💎 res_roe に修正
-                                'mcap': res_mcap_str, # 💎 res_mcap_str に修正
+                                'per': res_per,       # 抽出したばかりの res_per を装填
+                                'pbr': res_pbr,       # 抽出したばかりの res_pbr を装填
+                                'roe': res_roe,       # 抽出したばかりの res_roe を装填
+                                'mcap': res_mcap_str, # 変換済みの res_mcap_str を装填
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 
                                 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                             })
