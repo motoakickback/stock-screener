@@ -1495,12 +1495,14 @@ with tab3:
                         if m_c in d_p.columns: fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hoverinfo='skip'))
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2)))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=80), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5, font=dict(color="#bbb")), xaxis=dict(showgrid=False, tickfont=dict(color="#888"), type='category'), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888")))
-                    # 🔍 1498行目付近の修正例
+                    
+                    # 🚀 1503行目付近：モード名をキーに強制埋め込み
                     st.plotly_chart(
                         fig, 
                         use_container_width=True, 
                         config={'displayModeBar': False},
-                        key=f"chart_{res['code']}_{index}"  # ✅ 1370行目の index がここに繋がります
+                        # 💎 モード名を接頭辞に加えることで、他のタブやモードとの衝突を物理的に遮断
+                        key=f"chart_{'ambush' if is_ambush else 'assault'}_{res['code']}_{index}"
                     )
                         
 with tab4:
