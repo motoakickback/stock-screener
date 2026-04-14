@@ -1433,8 +1433,8 @@ with tab3:
                             'market': c_market, 
                             'alerts': alerts, 
                             'error': False
-                        })
-                    except:
+                        }) # 👈 ここで辞書 } と appendの ) を確実に閉じる
+                    except: # 👈 この except は、上の try と垂直に揃える
                         continue
                         
                 # --- 🏆 4. ランキング処理（計算ループの外で行う） ---
