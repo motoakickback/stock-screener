@@ -1385,46 +1385,46 @@ with tab3:
                             else:
                                 rank, bg_c = "圏外💀", "#616161"
 
-                        # 最終格納：計算済み変数（res_per等）を、描画側に渡す辞書へ正確に溶接
+                        # 💎 合流地点：ここが正解の位置（ifとelseの垂直線上に揃える）
                         scope_results.append({
-                            'code': target_key,   # 銘柄コード
-                            'name': c_name,       # 銘柄名
-                            'lc': lc,             # 最新終値
-                            'h14': h14,           # 14日高値
-                            'l14': l14,           # 14日安値
-                            'ur': ur_v,           # 上昇幅
-                            'bt_val': bt_val,     # 目標買値
-                            'atr_val': atr_v,     # ATR値
-                            'rsi': rsi_v,         # RSI
-                            'rank': rank,         # ランク
-                            'bg': bg_c,           # 背景色
-                            'score': score,       # スコア
-                            'reach_val': reach_rate, # 到達度
-                            'gc_days': gc_days,   # GC経過日数
-                            'df_chart': df_mini,  # チャート用データ
-                            'per': res_per,       # 💎 res_per（Block 4で定義）
-                            'pbr': res_pbr,       # 💎 res_pbr（Block 4 de定義）
-                            'roe': res_roe,       # 💎 res_roe（Block 4で定義）
-                            'mcap': res_mcap_str, # 💎 res_mcap_str（Block 4で定義）
+                            'code': target_key,
+                            'name': c_name,
+                            'lc': lc,
+                            'h14': h14,
+                            'l14': l14,
+                            'ur': ur_v,
+                            'bt_val': bt_val,
+                            'atr_val': atr_v,
+                            'rsi': rsi_v,
+                            'rank': rank,
+                            'bg': bg_c,
+                            'score': score,
+                            'reach_val': reach_rate,
+                            'gc_days': gc_days,
+                            'df_chart': df_mini, 
+                            'per': res_per,       # 💎 res_per（抽出済みの変数）
+                            'pbr': res_pbr,       # 💎 res_pbr
+                            'roe': res_roe,       # 💎 res_roe
+                            'mcap': res_mcap_str, # 💎 res_mcap_str
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
                             'sector': c_sector,
                             'market': c_market,
-                            'alerts': alerts,     # 酒田五法等のメッセージ
+                            'alerts': alerts,
                             'error': False
                         })
                     except:
                         continue
                         
-                # --- 4. ランキング処理 ---
+                # --- 🏆 4. ランキング処理（計算ループの外で行う） ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
                     res['r_val'] = rank_order.get(clean_rank, 0)
-                
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
 
-                # --- 5. 神聖UI描画（物理復元・1pxの省略なし） ---
-                for r in scope_results:
+                # --- 📺 5. 神聖UI描画エンジン（ID衝突を物理封印） ---
+                # 🚀 修復：enumerate を追加して index を取得
+                for index, r in enumerate(scope_results):
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
@@ -1537,6 +1537,51 @@ with tab3:
                             label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
                             html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
+
+                    # --- UIパーツ：チャート（DuplicateElementId 物理修復版） ---
+                    st.markdown("---")
+                    d_p = r['df_chart'].copy()
+                    # 日付の表示用フォーマット（月/日）
+                    d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
+                    
+                    # チャート本体（配色指定）
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=d_p['display_date'], 
+                        open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], 
+                        name="価格", 
+                        increasing_line_color='#26a69a', 
+                        decreasing_line_color='#ef5350'
+                    )])
+                    
+                    # 移動平均線の描画（MA5, MA25, MA75）
+                    for m_c, m_n, m_col in [('MA5', '5日', '#ffca28'), ('MA25', '25日', '#42a5f5'), ('MA75', '75日', '#ab47bc')]:
+                        if m_c in d_p.columns:
+                            fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hoverinfo='skip'))
+                    
+                    # 目標価格の水平点線
+                    fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2)))
+
+                    # レイアウト微調整（ボスの聖域：ダークテーマ設定）
+                    fig.update_layout(
+                        height=450, 
+                        margin=dict(l=0, r=0, t=10, b=80), 
+                        xaxis_rangeslider_visible=False, 
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        hovermode="x unified", 
+                        template="plotly_dark",
+                        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5, font=dict(color="#bbb")),
+                        xaxis=dict(showgrid=False, tickfont=dict(color="#888"), type='category'),
+                        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888"))
+                    )
+                    
+                    # 🚀 ID衝突を物理的に遮断する一意キーを装填
+                    st.plotly_chart(
+                        fig, 
+                        use_container_width=True, 
+                        config={'displayModeBar': False}, 
+                        key=f"t3_chart_final_{r['code']}_{index}" # モード・銘柄・ループ番号で完全一意化
+                    )
 
                     st.markdown("---")
                     d_p = r['df_chart'].copy(); d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
