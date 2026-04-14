@@ -762,8 +762,15 @@ with tab1:
                 df = full_df[full_df['Code'].isin(valid_codes)]
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
+                    # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
+                    # 兵の熟練度を確認。1年分の戦歴がない銘柄は、この時点で索敵対象から抹殺する。
+                    if len(group) < 245:
+                        return None
+
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
+                    
+                    # 既存の判定ロジック
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                     
@@ -783,6 +790,7 @@ with tab1:
                         if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     rsi, _, _, _ = get_fast_indicators(c_vals)
+                    
                     # 💎 改修2：地合いが悪い時は、より深い位置（push_penalty分）で指値を待つ
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h4 - base_push
@@ -1208,15 +1216,14 @@ with tab3:
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
-                            # 物理修復：型の不一致をASTYPEで強制解決し、銘柄情報を紐付け
+                            # 物理修復：型不一致を排除しマスタ照合
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
                         
-                        # 💎 指標の物理抽出（数値 0 を救済するため is not None で判定）
-                        # NaN（非数）が紛れ込むのを防ぐため、抽出時にクリーンアップ
+                        # 💎 指標の物理抽出（NaN/0対策を完全溶接）
                         def clean_val(v):
                             if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
                                 return None
@@ -1227,7 +1234,6 @@ with tab3:
                         roe_v = clean_val(raw_s.get('roe'))
                         mcap_raw = raw_s.get("mcap")
                         
-                        # 時価総額の文字列変換
                         if mcap_raw is not None and mcap_raw >= 1e12:
                             mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
                         elif mcap_raw is not None and mcap_raw >= 1e8:
@@ -1235,15 +1241,10 @@ with tab3:
                         else:
                             mcap_str = "-"
 
-                        # 💎 兵站確保：データ抽出
+                        # 🛡️ 物理復旧：TAB3での足切りを撤廃（聖域化）
+                        # スキャン（TAB1/2）を通過した個体は、日数を問わず全て描画プロセスへ通す
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
-                        # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
-                        # ここが1249行目：直後の continue は必ずインデント（半角スペース4つ分深く）すること
-                        if len(bars) < 245:
-                            continue 
-
-                        # データ不足時のハンドリング（1年フィルター通過個体のみ）
                         if not bars or len(bars) < 2:
                             scope_results.append({
                                 'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1265,18 +1266,26 @@ with tab3:
                         latest = df_chart_full.iloc[-1]
                         prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
                         
-                        # 各値の浮動小数点化とNaN対策
-                        lc = float(latest['AdjC'])
-                        latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
-                        prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
+                        # 浮動小数点化とNaN防御（1ATRのValueErrorを物理遮断）
+                        def safe_float(val, default=0.0):
+                            try:
+                                if val is None or np.isnan(val) or np.isinf(val): return default
+                                return float(val)
+                            except: return default
+
+                        lc = safe_float(latest.get('AdjC'))
+                        latest_o = safe_float(latest.get('AdjO'))
+                        latest_h = safe_float(latest.get('AdjH'))
+                        latest_l = safe_float(latest.get('AdjL'))
+                        prev_c = safe_float(prev.get('AdjC'))
+                        prev_o = safe_float(prev.get('AdjO'))
                         
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                        h14 = safe_float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                        l14 = safe_float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v = h14 - l14
-                        rsi_v = float(latest.get('RSI', 50))
-                        atr_v = float(latest.get('ATR', lc * 0.05))
+                        rsi_v = safe_float(latest.get('RSI'), 50.0)
+                        atr_v = safe_float(latest.get('ATR'), lc * 0.05)
                         
-                        # メモリ解放：描画に必要な分だけ保持
                         df_mini = df_chart_full.tail(100).copy()
                         del df_chart_full; del df_s; del df_raw
 
@@ -1286,10 +1295,11 @@ with tab3:
                         gc_days = 0
 
                         if is_ambush:
-                            # 🌐 【待伏：黄金比迎撃】
+                            # 待伏：黄金比迎撃
                             score = 4
                             bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
-                            m1, m2 = float(latest.get('MACD_Hist', 0)), float(prev.get('MACD_Hist', 0))
+                            m1 = safe_float(latest.get('MACD_Hist'))
+                            m2 = safe_float(prev.get('MACD_Hist'))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
                             if pbr_v is not None and pbr_v <= 5.0: score += 2
@@ -1311,7 +1321,7 @@ with tab3:
                             elif score >= 5: rank, bg_c = "B級待伏🛡️", "#4caf50"
                             else: rank, bg_c = "圏外💀", "#616161"
                         else:
-                            # ⚡ 【真の強襲：電撃戦】
+                            # 強襲：電撃戦
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             gc_score = 0
@@ -1324,7 +1334,6 @@ with tab3:
                                     gc_days = 3; gc_score = 20
                                 else: gc_score = 5
                             
-                            # 出来高サージ
                             vol_surge_score = 0
                             if 'Volume' in df_mini.columns and len(df_mini) >= 6:
                                 avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
@@ -1338,7 +1347,6 @@ with tab3:
                                         vol_surge_score = 10
                                         alerts.append(f"⚡ 【熱量】出来高活性化（{v_ratio:.1f}倍）。進軍の予兆。")
 
-                            # 突破判定
                             breakout_score = 0
                             if lc >= h14:
                                 breakout_score = 20
@@ -1362,18 +1370,18 @@ with tab3:
                             elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
                             else: rank, bg_c = "圏外💀", "#616161"
 
-                        # 共通警告メッセージ
+                        # 警告メッセージ
                         if lc < bt_val - atr_v: 
                             alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
                         if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
                             alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
 
-                        # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
+                        # 💎 最終格納：全指標をUI側へ導通させる
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
                             'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
                             'df_chart': df_mini, 
-                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, # 命。
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
                         })
                     except:
