@@ -1494,6 +1494,14 @@ with tab3:
                         yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888"))
                     )
                     
+                    # 6. 🚀 描画実行（keyを付与して一本化）
+                    st.plotly_chart(
+                        fig, 
+                        use_container_width=True, 
+                        config={'displayModeBar': False}, 
+                        key=f"t3_chart_final_{r['code']}_{index}"
+                    )
+                    
                     st.markdown("---")
                     d_p = r['df_chart'].copy(); d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
                     fig = go.Figure(data=[go.Candlestick(x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350')])
@@ -1502,13 +1510,7 @@ with tab3:
                     fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2)))
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=80), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5, font=dict(color="#bbb")), xaxis=dict(showgrid=False, tickfont=dict(color="#888"), type='category'), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888")))
                     
-                    # 6. 🚀 描画実行（keyを付与して一本化）
-                    st.plotly_chart(
-                        fig, 
-                        use_container_width=True, 
-                        config={'displayModeBar': False}, 
-                        key=f"t3_chart_final_{r['code']}_{index}"
-                    )
+                    
                         
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
