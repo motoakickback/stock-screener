@@ -724,14 +724,23 @@ with tab1:
     if run_scan_t1:
         st.session_state.tab1_scan_results = None
         gc.collect() 
-        with st.spinner("マクロ気象を計算に織り込み中..."):
+        
+        # 🛡️ 診断プログラム：物理ログの出力
+        with st.spinner("診断プログラム起動中..."):
             raw = get_hist_data_cached()
-            if raw:
+            if not raw:
+                st.error("❌ 供給源が空です。APIからのデータ取得に失敗しています。")
+            else:
+                # 1. データの基本構造チェック
                 full_df = clean_df(pd.DataFrame(raw))
-                # 銘柄コードの正規化（4ケタを5ケタへ）
+                st.sidebar.markdown("### 📡 診断ログ")
+                st.sidebar.write(f"1. 全データ行数: {len(full_df)}")
+                st.sidebar.write(f"2. 検出カラム: {list(full_df.columns)}")
+                
+                # 銘柄コードの正規化
                 full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
                 
-                # --- 🛡️ パラメータの注入 ---
+                # --- 3. フィルタパラメータの確認 ---
                 push_penalty = st.session_state.get('push_penalty', 0.0)
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min),
@@ -753,17 +762,25 @@ with tab1:
                 m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
                 
                 latest_date = full_df['Date'].max()
+                st.sidebar.write(f"3. 最新データ日付: {latest_date}")
+                
+                # 4. マスク処理（条件絞り込み）の実行
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
                 valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
+                
+                st.sidebar.write(f"4. 条件合致銘柄数: {len(valid_codes)}")
+                
+                if len(valid_codes) == 0:
+                    st.warning("⚠️ フィルタ条件（価格帯・市場）で銘柄が全滅しました。")
                 
                 v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
                 avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                 df = full_df[full_df['Code'].isin(valid_codes)]
 
-                # 💎 1. 関数定義（必ず呼び出しより前に置く）
+                # 5. 並列スキャンの実行
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
-                    # 🛡️ 真・IPOフィルター（1年稼働義務）
+                    # テスト用：まずは50日で判定（疎通確認）
                     if len(group) < 50:
                         return None
                     
@@ -805,27 +822,6 @@ with tab1:
                         't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
                     }
 
-         with st.spinner("診断プログラム起動中..."):
-             raw = get_hist_data_cached()
-             if not raw:
-                 st.error("❌ 供給源が空です。APIからのデータ取得に失敗しています。")
-             else:
-                 full_df = clean_df(pd.DataFrame(raw))
-                 # 🔍 【監視ポイント1】全銘柄数
-                 st.sidebar.write(f"全データ行数: {len(full_df)}")
-                
-                 # 🔍 【監視ポイント2】カラム名の確認
-                 st.sidebar.write(f"検出カラム: {list(full_df.columns)}")
- 
-                 # ...（中略：mask計算など）...
- 
-                 # 🔍 【監視ポイント3】絞り込み後の銘柄数
-                 st.sidebar.write(f"有効銘柄数(valid_codes): {len(valid_codes)}")
-                
-                 if len(valid_codes) == 0:
-                     st.warning("⚠️ フィルタ条件（価格帯・市場・出来高）が厳しすぎて、全滅しています。")
-
-                # 💎 2. 実行部
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
                     futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df.groupby('Code')}
@@ -834,6 +830,8 @@ with tab1:
                             res = f.result()
                             if res: results.append(res)
                         except: pass
+                
+                st.sidebar.write(f"5. スキャン通過銘柄数: {len(results)}")
                 
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 filtered_results = []
