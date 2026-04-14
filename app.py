@@ -1205,24 +1205,24 @@ with tab3:
                 scope_results = []
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
-                    if not raw_s: continue # データが全くない場合はスキップ
+                    if not raw_s: continue 
 
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
                         api_c = c + "0"
-                        m_row = master_df[master_df['Code'] == api_c]
+                        m_row = master_df[master_df['Code'] == api_code] # 前提：api_code = c + "0"
                         if not m_row.empty:
                             c_name = m_row.iloc[0]['CompanyName']
                             c_sector = m_row.iloc[0]['Sector']
                             c_market = m_row.iloc[0]['Market']
                     
-                    # 💎 指標の確実な抽出と初期値設定
+                    # 💎 指標の確実な抽出（Noneを徹底排除）
                     per_v = raw_s.get('per')
                     pbr_v = raw_s.get('pbr')
                     roe_v = raw_s.get('roe')
                     res_mcap = raw_s.get("mcap")
                     
-                    # 時価総額の文字列変換（兆・億）
+                    # 時価総額変換ロジック
                     if res_mcap and res_mcap >= 1e12:
                         mcap_str = f"{res_mcap / 1e12:.2f}兆円"
                     elif res_mcap and res_mcap >= 1e8:
@@ -1232,7 +1232,7 @@ with tab3:
 
                     bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                    # データ不足時のハンドリング（ここでも指標を渡す）
+                    # データ不足時のハンドリング
                     if not bars or len(bars) < 2:
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1267,10 +1267,10 @@ with tab3:
                     rsi_v = float(latest.get('RSI', 50))
                     atr_v = float(latest.get('ATR', lc * 0.05))
 
-                    # --- 戦術スコアリング（重厚メッセージ統合済） ---
                     score = 4
                     alerts = []
                     
+                    # 🟢 反転波形（重厚メッセージ版）
                     body_v = abs(lc - latest_o)
                     shadow_l = min(lc, latest_o) - latest_l
                     full_rng = latest_h - latest_l
@@ -1279,7 +1279,7 @@ with tab3:
                         if is_ambush: score += 3
                     
                     if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c) and rsi_v < 50:
-                        alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。前日の下落を完全に飲み込む強い買い転換サイン。")
+                        alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。強い反転サイン。")
                         if is_ambush: score += 3
 
                     if is_ambush:
@@ -1299,9 +1299,9 @@ with tab3:
                         reach_rate = (lc / bt_val) * 100 if bt_val > 0 else 0
 
                     if lc < bt_val - atr_v:
-                        alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。これ以上の追従は資金壊滅のリスクあり。撤退を推奨。")
+                        alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
                     if 'MA75' in df_chart_full.columns and lc < df_chart_full['MA75'].iloc[-1]:
-                        alerts.append("🔴 【警告】長期トレンド（MA75）を完全下抜け。機関投資家の離散、および長期下降トレンド入りの蓋然性が極めて高い。")
+                        alerts.append("🔴 【警告】長期トレンド（MA75）を完全下抜け。長期勢の撤退、および長期下降トレンド入りの蓋然性が極めて高い。")
 
                     # 💎 メモリ管理
                     df_mini = df_chart_full.tail(100).copy()
