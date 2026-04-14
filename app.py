@@ -1070,52 +1070,82 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
+        # 💎 物理修復1：英数字コード（130A等）に対応する最強の正規表現
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
-        all_text = unicodedata.normalize('NFKC', raw_all_text)
-        t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![0-9])[0-9]{4}(?![0-9])', all_text)]))
+        all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
+        # 英字混じりの4桁コードを完璧に抽出する
+        t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z](?![A-Z0-9])', all_text)]))
         
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（足切り無効化・全件表示）..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中（英数字コード・無敵補完モード）..."):
                 raw_data_dict = {}
                 def fetch_parallel_t3(c):
-                    api_code = c + "0"; data = get_single_data(api_code, 1)
-                    per, pbr, mcap, roe_res = None, None, None, None
-                    
                     try:
-                        f_data = get_fundamentals(c)
-                        if f_data:
-                            per = f_data.get('per')
-                            pbr = f_data.get('pbr')
-                            mcap = f_data.get('mcap')
-                            roe_res = f_data.get('roe')
-                    except: pass
-                    
-                    if per is None or pbr is None:
+                        api_code = c + "0"
+                        data = get_single_data(api_code, 1)
+                        per, pbr, mcap, roe_res = None, None, None, None
+                        
+                        # 💎 物理修復2：J-Quantsが沈黙した場合、yfinanceからチャート（bars）を強奪する
+                        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
+                            try:
+                                import yfinance as yf
+                                tk = yf.Ticker(c + ".T")
+                                hist = tk.history(period="1y")
+                                if not hist.empty:
+                                    bars = []
+                                    for dt, row in hist.iterrows():
+                                        bars.append({
+                                            'Date': dt.strftime('%Y-%m-%d'),
+                                            'AdjO': float(row['Open']),
+                                            'AdjH': float(row['High']),
+                                            'AdjL': float(row['Low']),
+                                            'AdjC': float(row['Close']),
+                                            'Volume': float(row['Volume'])
+                                        })
+                                    if data is None: data = {}
+                                    data["bars"] = bars
+                            except: pass
+
                         try:
-                            import yfinance as yf
-                            tk = yf.Ticker(c + ".T"); info = tk.info
-                            if info:
-                                per = per or info.get('trailingPE')
-                                pbr = pbr or info.get('priceToBook')
-                                mcap = mcap or info.get('marketCap')
-                                raw_roe = info.get('returnOnEquity')
-                                if raw_roe and roe_res is None: roe_res = raw_roe * 100
+                            f_data = get_fundamentals(c)
+                            if f_data:
+                                per = f_data.get('per')
+                                pbr = f_data.get('pbr')
+                                mcap = f_data.get('mcap')
+                                roe_res = f_data.get('roe')
                         except: pass
                         
-                    return c, data, per, pbr, mcap, roe_res
+                        if per is None or pbr is None:
+                            try:
+                                import yfinance as yf
+                                tk = yf.Ticker(c + ".T"); info = tk.info
+                                if info:
+                                    per = per or info.get('trailingPE')
+                                    pbr = pbr or info.get('priceToBook')
+                                    mcap = mcap or info.get('marketCap')
+                                    raw_roe = info.get('returnOnEquity')
+                                    if raw_roe and roe_res is None: roe_res = raw_roe * 100
+                            except: pass
+                            
+                        return c, data, per, pbr, mcap, roe_res
+                    except Exception as e:
+                        # 全体クラッシュを防ぐ絶対防壁
+                        return c, None, None, None, None, None
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
-                        res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
-                        raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
+                        try:
+                            res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
+                            raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
+                        except: pass
 
                 scope_results = []
                 
-                # 💎 物理修復：足切り除外を完全撤廃。31件あれば絶対に31件appendする。
+                # 💎 足切り完全撤廃：全件確実に描画リストへ叩き込む
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
                     
@@ -1133,7 +1163,7 @@ with tab3:
 
                     bars = raw_s.get("data", {}).get("bars", []) if raw_s and raw_s.get("data") else []
 
-                    # APIエラー等で全くデータが無い場合のセーフティネット（握り潰さず表示する）
+                    # 物理修復3：両APIが全滅しても絶対にUIを崩さず表示する
                     if not bars or len(bars) < 2:
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1206,7 +1236,6 @@ with tab3:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
                     res['r_val'] = rank_order.get(clean_rank, 0)
                 
-                # 順位ソート
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
 
                 for r in scope_results:
@@ -1231,9 +1260,8 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 💎 物理修復：データ欠損銘柄は警告を出して描画をスキップ（握り潰しはしない）
                     if r.get('error'):
-                        st.warning("⚠️ この銘柄は直近IPO、上場廃止、またはAPIエラーのため有効なチャートデータが存在しません。")
+                        st.warning("⚠️ この銘柄はデータソース（J-Quants / yfinance）の両方から有効なチャート履歴を取得できませんでした。")
                         continue
 
                     if r['is_dt'] or r['is_hs']: st.error("🚨 【警告】相場転換の危険波形（三尊/Wトップ）を検知。")
