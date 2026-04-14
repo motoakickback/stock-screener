@@ -1134,93 +1134,80 @@ with tab3:
         else:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
-                # --- 📡 3. 並列データ収集ユニット（物理配線・構文エラー修復版） ---
+                # --- 📡 3. 並列データ収集ユニット（物理配線・同期完結版） ---
                 def fetch_parallel_t3(c):
                     try:
-                        api_code = c + "0"
-                        # 1. チャートデータの取得
+                        # 1. 銘柄コードの正規化（文字列化）
+                        c_str = str(c)
+                        api_code = c_str + "0"
+                        
+                        # 2. チャートデータ取得（J-Quants）
                         data = get_single_data(api_code, 1)
                         
-                        # 初期化：データが取得できなかった場合のデフォルト値
-                        res_per, res_pbr, res_mcap, res_roe = None, None, None, None
-                        
-                        # 2. yfinance によるバックアップ（チャートデータ不足時）
+                        # チャート不足時の yfinance 補完
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
-                                tk = yf.Ticker(c + ".T")
+                                tk = yf.Ticker(c_str + ".T")
                                 hist = tk.history(period="1y")
                                 if not hist.empty:
-                                    bars = []
-                                    for dt, row in hist.iterrows():
-                                        bars.append({
-                                            'Code': api_code, 
-                                            'Date': dt.strftime('%Y-%m-%d'), 
-                                            'AdjO': float(row['Open']), 
-                                            'AdjH': float(row['High']), 
-                                            'AdjL': float(row['Low']), 
-                                            'AdjC': float(row['Close']), 
-                                            'Volume': float(row['Volume'])
-                                        })
+                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
+                                             'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
+                                             'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
+                                             'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
                                     data = {"bars": bars}
-                            except:
-                                pass # 個別のエラーは握りつぶして次へ
+                            except: pass
 
-                        # 3. ファンダメンタルズ指標の取得（J-Quants / 内部関数）
-                        try:
-                            f_data = get_fundamentals(c)
-                            if f_data:
-                                # キー名の揺れを吸収（大文字・小文字両対応）
-                                res_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
-                                res_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
-                                res_mcap = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
-                                res_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
-                        except:
-                            pass
-
-                        # 4. yfinance による指標補完（欠落時）
-                        if res_per is None or res_pbr is None:
+                        # 3. ファンダメンタルズ取得（J-Quants）
+                        f_data = get_fundamentals(c_str)
+                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
+                        
+                        if f_data:
+                            # 全方位キー検索（大文字・小文字・別名）
+                            r_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
+                            r_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
+                            r_mcap = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
+                            r_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
+                        
+                        # 🚨 指標の最終補完（yfinanceから強制強奪）
+                        # PER、PBR、MCAP、ROEのいずれかが欠けている場合に yfinance 回路を接続
+                        if any(v is None for v in [r_per, r_pbr, r_mcap, r_roe]):
                             try:
                                 import yfinance as yf
-                                tk = yf.Ticker(c + ".T")
+                                tk = yf.Ticker(c_str + ".T")
                                 info = tk.info
                                 if info:
-                                    res_per = res_per or info.get('trailingPE')
-                                    res_pbr = res_pbr or info.get('priceToBook')
-                                    res_mcap = res_mcap or info.get('marketCap')
-                                    if res_roe is None:
+                                    r_per = r_per or info.get('trailingPE')
+                                    r_pbr = r_pbr or info.get('priceToBook')
+                                    r_mcap = r_mcap or info.get('marketCap')
+                                    if r_roe is None:
                                         raw_roe = info.get('returnOnEquity')
-                                        if raw_roe:
-                                            res_roe = raw_roe * 100
-                            except:
-                                pass
+                                        if raw_roe: r_roe = raw_roe * 100
+                            except: pass
 
-                        # 正常終了：取得した全データを返す
-                        return c, data, res_per, res_pbr, res_mcap, res_roe
+                        # 💎 重要：Block 4の受け取り側（6変数展開）と物理同期させる
+                        return c_str, data, r_per, r_pbr, r_mcap, r_roe
 
-                    except Exception as e:
-                        # 🚨 物理修復：特定の例外（Exception）を先に記述し、最後に bare except を置くか、
-                        # もしくはこのように Exception で一括捕捉するのが Python の鉄則です。
-                        return c, None, None, None, None, None
                     except:
-                        # 💎 これが「最後の砦」としての bare except です
-                        return c, None, None, None, None, None
+                        # 🚨 異常系：失敗時も必ず「6つの値」を返してループ崩壊を防ぐ
+                        return str(c), None, None, None, None, None
 
                 # --- 🎯 4. 並列実行エンジン（ raw_data_dict への物理溶接） ---
                 # 🚀 前後の重複した executor や、はぐれた return 文はすべて削除してください
+                # --- 🎯 4. 並列実行エンジン（ raw_data_dict への物理溶接） ---
+                # 🚀 警告：この周辺に stray（はぐれた）な return 文や孤立した except があれば全て削除してください
                 raw_data_dict = {}
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     # 銘柄リスト(t_codes)を並列スキャン
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            # 🚨 物理配線：fetch_parallel_t3 から 6つの戻り値（c, data, per, pbr, mcap, roe）を受領
-                            # ※ fetch_parallel_t3 側も 6つの値を返すように設定されている必要があります
+                            # 🚨 物理同期：fetch_parallel_t3 から 6つの戻り値（c, data, per, pbr, mcap, roe）を正確に受領
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
                             
                             if res_data:
                                 # raw_data_dict に小文字キーで統一して格納
-                                raw_data_dict[res_c] = {
+                                raw_data_dict[str(res_c)] = {
                                     "data": res_data,
                                     "per": r_per,
                                     "pbr": r_pbr,
@@ -1228,7 +1215,8 @@ with tab3:
                                     "roe": r_roe
                                 }
                         except Exception as e:
-                            # 個別銘柄の通信エラー等はスキップ
+                            # 個別銘柄のエラーはログを出して次へ
+                            print(f"Parallel processing error: {e}")
                             continue
 
                 # --- ⚙️ 5. 解析計算ループ（ここから解析開始） ---
