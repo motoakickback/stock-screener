@@ -1205,6 +1205,8 @@ with tab3:
                 scope_results = []
                 for c in t_codes:
                     raw_s = raw_data_dict.get(c)
+                    if not raw_s: continue # データが全くない場合はスキップ
+
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
                         api_c = c + "0"
@@ -1214,136 +1216,100 @@ with tab3:
                             c_sector = m_row.iloc[0]['Sector']
                             c_market = m_row.iloc[0]['Market']
                     
-                    per_v = raw_s.get('per') if raw_s else None
-                    pbr_v = raw_s.get('pbr') if raw_s else None
-                    roe_v = raw_s.get('roe') if raw_s else None
-                    res_mcap = raw_s.get("mcap") if raw_s else None
-                    mcap_str = f"{res_mcap / 1e12:.2f}兆円" if res_mcap and res_mcap >= 1e12 else f"{res_mcap / 1e8:.0f}億円" if res_mcap else "-"
+                    # 💎 指標の確実な抽出と初期値設定
+                    per_v = raw_s.get('per')
+                    pbr_v = raw_s.get('pbr')
+                    roe_v = raw_s.get('roe')
+                    res_mcap = raw_s.get("mcap")
+                    
+                    # 時価総額の文字列変換（兆・億）
+                    if res_mcap and res_mcap >= 1e12:
+                        mcap_str = f"{res_mcap / 1e12:.2f}兆円"
+                    elif res_mcap and res_mcap >= 1e8:
+                        mcap_str = f"{res_mcap / 1e8:.0f}億円"
+                    else:
+                        mcap_str = "-"
 
-                    bars = raw_s.get("data", {}).get("bars", []) if raw_s and raw_s.get("data") else []
+                    bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
+                    # データ不足時のハンドリング（ここでも指標を渡す）
                     if not bars or len(bars) < 2:
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                            'is_dt': False, 'is_hs': False, 'rank': '圏外💀(無効)', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
-                            'df_chart': pd.DataFrame(), 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
+                            'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                         })
                         continue
 
-                    df_bars = pd.DataFrame(bars)
-                    if 'Code' not in df_bars.columns: 
-                        df_bars['Code'] = c + "0"
-                    df_s = clean_df(df_bars)
+                    df_raw = pd.DataFrame(bars)
+                    if 'Code' not in df_raw.columns: df_raw['Code'] = c + "0"
+                    df_s = clean_df(df_raw)
                     
                     try:
                         df_chart_full = calc_technicals(df_s.copy())
                     except:
                         df_chart_full = df_s.copy()
-                        
-                    df_14 = df_s.tail(15).iloc[:-1] if len(df_s) > 15 else df_s.copy()
+                    
                     latest = df_chart_full.iloc[-1]
                     prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
-
-                    lc = float(latest.get('AdjC', 0))
-                    latest_o = float(latest.get('AdjO', lc))
-                    latest_h = float(latest.get('AdjH', lc))
-                    latest_l = float(latest.get('AdjL', lc))
-                    prev_c = float(prev.get('AdjC', 0))
-                    prev_o = float(prev.get('AdjO', prev_c))
                     
-                    h14 = float(df_14['AdjH'].max()) if 'AdjH' in df_14.columns else lc
-                    l14 = float(df_14['AdjL'].min()) if 'AdjL' in df_14.columns else lc
+                    lc = float(latest['AdjC'])
+                    latest_o = float(latest['AdjO'])
+                    latest_h = float(latest['AdjH'])
+                    latest_l = float(latest['AdjL'])
+                    prev_c = float(prev['AdjC'])
+                    prev_o = float(prev['AdjO'])
+                    
+                    h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                    l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                     ur = h14 - l14
-                    is_dt = check_double_top(df_s.tail(31).iloc[:-1]) if len(df_s) > 10 else False
-                    is_hs = check_head_shoulders(df_s.tail(31).iloc[:-1]) if len(df_s) > 10 else False
-                    
                     rsi_v = float(latest.get('RSI', 50))
-                    if pd.isna(rsi_v): rsi_v = 50.0
-                    atr_v = float(latest.get('ATR', 0))
-                    if pd.isna(atr_v): atr_v = lc * 0.05
+                    atr_v = float(latest.get('ATR', lc * 0.05))
 
-                    # 💎 戦術ウェイト統合スコアリング
+                    # --- 戦術スコアリング（重厚メッセージ統合済） ---
                     score = 4
-                    if h14 > 0 and l14 > 0:
-                        r14 = h14 / l14
-                        idxmax = df_14['AdjH'].idxmax() if 'AdjH' in df_14.columns else df_14.index[-1]
-                        d_high = len(df_14[df_14['Date'] > df_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) and 'Date' in df_14.columns else 0
-                        if 1.3 <= r14 <= 2.0: score += 1
-                        if d_high <= int(st.session_state.limit_d): score += 1
-                        if not is_dt: score += 1
-                        if not is_hs: score += 1
-
                     alerts = []
-                    # 🟢 反転波形（最優先ウェイト+3：重厚メッセージ版）
+                    
                     body_v = abs(lc - latest_o)
                     shadow_l = min(lc, latest_o) - latest_l
                     full_rng = latest_h - latest_l
+                    if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
+                        alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転の極めて強いシグナル。")
+                        if is_ambush: score += 3
                     
-                    if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6:
-                        if rsi_v < 45: 
-                            alerts.append("🟢 【好機】たくり足（カラカサ）を検知。底打ち反転の極めて強いシグナル。")
-                            if is_ambush: score += 3
-                    
-                    if rsi_v < 25:
-                        alerts.append("🟢 【好機】陰の極み。極度の売られすぎ（セリング・クライマックス）による反発準備局面。")
-                        if is_ambush: score += 2
-
-                    if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c):
-                        if rsi_v < 50: 
-                            alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。前日の下落を完全に飲み込む強い買い転換サイン。")
-                            if is_ambush: score += 3
+                    if (prev_c < prev_o) and (lc > latest_o) and (lc > prev_o) and (latest_o < prev_c) and rsi_v < 50:
+                        alerts.append("🟢 【好機】陽の包み足（抱き線）を検知。前日の下落を完全に飲み込む強い買い転換サイン。")
+                        if is_ambush: score += 3
 
                     if is_ambush:
                         bt_val = int(h14 - (ur * (st.session_state.push_r / 100.0)))
-                        m1 = float(latest.get('MACD_Hist', 0))
-                        m1 = m1 if not pd.isna(m1) else 0
-                        m2 = float(prev.get('MACD_Hist', 0))
-                        m2 = m2 if not pd.isna(m2) else 0
-                        rank, bg, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                        rank, bg_c, t_score, _ = get_triage_info(latest.get('MACD_Hist',0), prev.get('MACD_Hist',0), rsi_v, lc, bt_val, mode="待伏")
                         score += t_score
+                        if pbr_v and pbr_v <= 5.0: score += 2
                         reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                         gc_days = 0
-                        if pbr_v and pbr_v <= 5.0: score += 2
                     else:
                         bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                        hist_vals = df_chart_full['MACD_Hist'].fillna(0).tail(5).values if 'MACD_Hist' in df_chart_full.columns else [0]*5
-                        gc_days = 0
-                        if len(hist_vals) >= 4:
-                            if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days = 1
-                            elif hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days = 2
-                            elif hist_vals[-4] < 0 and hist_vals[-1] >= 0: gc_days = 3
-                        rank, bg, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart_full, is_strict=True)
+                        hist_vals = df_chart_full['MACD_Hist'].tail(2).values
+                        gc_days = 1 if len(hist_vals)>=2 and hist_vals[-2]<0 and hist_vals[-1]>=0 else 0
+                        rank, bg_c, t_score, _ = get_assault_triage_info(gc_days, lc, rsi_v, df_chart_full, is_strict=True)
                         score += t_score
-                        reach_rate = 100 - rsi_v
                         if roe_v and roe_v >= 10.0: score += 10
+                        reach_rate = (lc / bt_val) * 100 if bt_val > 0 else 0
 
-                    # 🔴 警告系メッセージの重厚化
-                    if lc < bt_val - atr_v: 
+                    if lc < bt_val - atr_v:
                         alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。これ以上の追従は資金壊滅のリスクあり。撤退を推奨。")
-                    
-                    if 'MA75' in df_chart_full.columns and lc < df_chart_full['MA75'].iloc[-1]: 
+                    if 'MA75' in df_chart_full.columns and lc < df_chart_full['MA75'].iloc[-1]:
                         alerts.append("🔴 【警告】長期トレンド（MA75）を完全下抜け。機関投資家の離散、および長期下降トレンド入りの蓋然性が極めて高い。")
-                    
-                    if len(df_s) >= 3:
-                        last3 = df_s.tail(3)
-                        if (last3['AdjC'] < last3['AdjO']).all() and (last3['AdjC'] < last3['AdjC'].shift(1)).tail(2).all():
-                            if is_ambush:
-                                alerts.append("🟢 【好機】三手陰線（三空叩き込み）を検知。歴史的な投げ売り（セリングクライマックス）による大底圏。")
-                                score += 3
-                            else:
-                                alerts.append("🔴 【警告】三川（三羽烏）を検知。強力な下落圧力が継続しており、安易なリバウンド狙いは危険。")
-                                
-                    if is_dt or is_hs: 
-                        alerts.append("🔴 【警告】相場転換の重大な危険波形（三尊/Wトップ）を検知。トレンドの終焉を示唆。")
 
-                    # 💎 メモリ最適化：描画用100日分だけ保持
+                    # 💎 メモリ管理
                     df_mini = df_chart_full.tail(100).copy()
-                    del df_chart_full; del df_s; del df_bars; del bars
+                    del df_chart_full; del df_s; del df_raw
 
                     scope_results.append({
                         'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                        'rank': rank, 'bg': bg, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
+                        'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
                         'df_chart': df_mini, 'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
                         'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
                     })
