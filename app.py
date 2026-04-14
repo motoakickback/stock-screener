@@ -1233,7 +1233,6 @@ with tab3:
 
                 # --- ⚙️ 5. 解析計算ループ（ここから解析開始） ---
                 scope_results = []
-                # (ここから先は既存の for c in t_codes: ループへ続く)
                 for c in t_codes:
                     try:
                         # --- 1. 物理配線：データ抽出 (raw_data_dict からの完全呼び出し) ---
@@ -1246,22 +1245,20 @@ with tab3:
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
-                            # 物理修復：型の不一致を解決し銘柄情報を紐付け
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
 
-                        # --- 💎 指標の物理変換エンジン (ここが消えると「 - 」になる) ---
-                        # Block B で格納した小文字キーから正確に抽出
+                        # --- 💎 指標の物理変換エンジン (ROEの判定ロジックを修正) ---
                         res_per = raw_s.get('per')
                         res_pbr = raw_s.get('pbr')
                         res_roe = raw_s.get('roe')
                         raw_mcap = raw_s.get('mcap')
 
-                        # ROEの%調整
-                        if res_roe is not None and res_roe < 1.0:
+                        # 🚨 ROEの%調整：絶対値が1.0未満（0.15など）の場合のみ100倍する
+                        if res_roe is not None and 0 < abs(res_roe) < 1.0:
                             res_roe = res_roe * 100
 
                         # 時価総額の文字列変換
@@ -1336,52 +1333,23 @@ with tab3:
                             # ⚡ 【強襲モード判定：物理演算エンジン】
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             
-                            # 1. MACDゴールデンクロスの鮮度判定
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            gc_score = 0
-                            gc_days = 0
+                            gc_score, gc_days = 0, 0
                             if len(hist_vals) >= 2:
                                 if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 1
-                                    gc_score = 60
+                                    gc_days, gc_score = 1, 60
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 2
-                                    gc_score = 40
-                                elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 3
-                                    gc_score = 20
+                                    gc_days, gc_score = 2, 40
                                 else:
                                     gc_score = 5
 
-                            # 2. 🚨 酒田五法：天井圏警戒（三尊/三山）
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は既に天井圏。")
+                                alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
+                            if res_roe is not None and res_roe >= 10.0: score += 10
                             
-                            # 3. 出来高サージ判定
-                            vol_surge_score = 0
-                            if 'Volume' in df_mini.columns and len(df_mini) >= 6:
-                                avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
-                                curr_vol = df_mini['Volume'].iloc[-1]
-                                if avg_vol > 0 and (curr_vol / avg_vol) >= 1.5: 
-                                    vol_surge_score = 20
-                                    alerts.append(f"⚡ 【熱量】出来高活性化（{curr_vol/avg_vol:.1f}倍）。大口の進軍。")
-
-                            # 4. 突破（ブレイクアウト）判定
-                            breakout_score = 20 if lc >= h14 else 10 if lc >= h14 * 0.98 else 0
-                            if breakout_score == 20:
-                                alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
-                            
-                            # 5. 過熱感判定
-                            rsi_score = 10 if 50 <= rsi_v <= 75 else -10 if rsi_v > 75 else 0
-                            
-                            # 6. 品質保証（ROE基準）
-                            quality_score = 10 if (res_roe is not None and res_roe >= 10.0) else 0
-                            
-                            # 7. 最終スコア集計
-                            score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
+                            score = gc_score + 10 if (res_roe is not None and res_roe >= 10.0) else gc_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
                             
-                            # 💎 ランク判定（SyntaxError物理修復版）
                             if score >= 80:
                                 rank, bg_c = "S級強襲⚡", "#d32f2f"
                             elif score >= 60:
@@ -1393,32 +1361,13 @@ with tab3:
 
                         # --- 💎 最終格納：変数を scope_results に溶接 ---
                         scope_results.append({
-                            'code': target_key, 
-                            'name': c_name, 
-                            'lc': lc, 
-                            'h14': h14, 
-                            'l14': l14, 
-                            'ur': ur_v, 
-                            'bt_val': bt_val, 
-                            'atr_val': atr_v, 
-                            'rsi': rsi_v,
-                            'rank': rank, 
-                            'bg': bg_c, 
-                            'score': score, 
-                            'reach_val': reach_rate, 
-                            'gc_days': gc_days,
+                            'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
+                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
                             'df_chart': df_mini, 
-                            'per': res_per, 
-                            'pbr': res_pbr, 
-                            'roe': res_roe, 
-                            'mcap': res_mcap_str,
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 
-                            'sector': c_sector, 
-                            'market': c_market, 
-                            'alerts': alerts, 
-                            'error': False
-                        }) # 👈 ここで辞書 } と appendの ) を確実に閉じる
-                    except: # 👈 この except は、上の try と垂直に揃える
+                            'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                        })
+                    except:
                         continue
                         
                 # --- 🏆 4. ランキング処理（計算ループの外で行う） ---
