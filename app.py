@@ -1246,7 +1246,8 @@ with tab3:
                                     "mcap": r_mcap, 
                                     "roe": r_roe
                                 }
-                        except: pass
+                        except: 
+                            pass
 
                 scope_results = []
                 for c in t_codes:
