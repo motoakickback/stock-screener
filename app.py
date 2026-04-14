@@ -1207,50 +1207,33 @@ with tab3:
                         return c, None, None, None, None, None
 
                 # --- 🎯 4. 並列実行エンジン（ raw_data_dict への物理溶接） ---
+                # 🚀 前後の重複した executor や、はぐれた return 文はすべて削除してください
                 raw_data_dict = {}
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     # 銘柄リスト(t_codes)を並列スキャン
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            # 🚨 物理配線：fetch_parallel_t3 から 6つの戻り値（c, data, per, pbr, mcap, roe）を正確に受領
-                            res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
-                            if res_data:
-                                # raw_data_dict に完全に溶接（UIが探す小文字キーで統一格納）
-                                raw_data_dict[res_c] = {
-                                    "data": res_data,
-                                    "per": res_per,
-                                    "pbr": res_pbr,
-                                    "mcap": res_mcap, # ここは生数値。文字列変換は後のBlock 5で行う
-                                    "roe": res_roe
-                                }
-                        except:
-                            # 個別銘柄の通信エラー時は単にパスして次へ
-                            pass
-
-                        return c, data, res_f
-                    except:
-                        return c, None, {"per": None, "pbr": None, "mcap": None, "roe": None}
-                
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
-                    for f in concurrent.futures.as_completed(futs):
-                        try:
-                            # 🚨 ここで6つの変数を正確に受け取る
+                            # 🚨 物理配線：fetch_parallel_t3 から 6つの戻り値（c, data, per, pbr, mcap, roe）を受領
+                            # ※ fetch_parallel_t3 側も 6つの値を返すように設定されている必要があります
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
+                            
                             if res_data:
                                 # raw_data_dict に小文字キーで統一して格納
                                 raw_data_dict[res_c] = {
-                                    "data": res_data, 
-                                    "per": r_per, 
-                                    "pbr": r_pbr, 
-                                    "mcap": r_mcap, 
+                                    "data": res_data,
+                                    "per": r_per,
+                                    "pbr": r_pbr,
+                                    "mcap": r_mcap,
                                     "roe": r_roe
                                 }
-                        except: 
-                            pass
+                        except Exception as e:
+                            # 個別銘柄の通信エラー等はスキップ
+                            continue
 
+                # --- ⚙️ 5. 解析計算ループ（ここから解析開始） ---
                 scope_results = []
+                # (ここから先は既存の for c in t_codes: ループへ続く)
                 for c in t_codes:
                     try:
                         # --- 1. 物理配線：データ抽出 (raw_data_dict からの完全呼び出し) ---
