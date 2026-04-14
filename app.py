@@ -1367,7 +1367,7 @@ with tab3:
                         
                 # --- 4. ランキング処理 ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
-                for res in scope_results:
+                for index, res in enumerate(scope_results):
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
                     res['r_val'] = rank_order.get(clean_rank, 0)
                 
@@ -1500,7 +1500,7 @@ with tab3:
                         fig, 
                         use_container_width=True, 
                         config={'displayModeBar': False},
-                        key=f"chart_{res['code']}_{index}"  # 💎 ここが重要：銘柄コードとインデックスで一意にする
+                        key=f"chart_{res['code']}_{index}"  # ✅ 1370行目の index がここに繋がります
                     )
                         
 with tab4:
