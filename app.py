@@ -236,15 +236,6 @@ def get_macro_weather():
 weather = get_macro_weather()
 nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
 
-# サイドバー：手動介入UI
-st.sidebar.markdown("### 🌪️ マクロ気象・手動介入")
-manual_n_pct = st.sidebar.number_input(
-    "日経騰落率（手動上書き %）", 
-    value=0.0, 
-    step=0.1, 
-    help="APIが4/10で固まっている場合、ここに昨日の騰落率（-1.5等）を入力してください。0以外で優先適用されます。"
-)
-
 # 実効騰落率の確定
 effective_pct = manual_n_pct if manual_n_pct != 0 else nikkei_pct_api
 st.session_state.effective_nikkei_pct = effective_pct
@@ -587,6 +578,59 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
 
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
+
+# ==========================================
+# 🌐 マクロ地合い連動システム
+# ==========================================
+st.sidebar.markdown("### 🌐 マクロ地合い連動")
+use_macro = st.sidebar.toggle("地合い連動を有効化", value=False)
+
+# 初期化（OFFの場合はペナルティゼロの平時モード）
+st.session_state.push_penalty = 0.0
+st.session_state.rsi_penalty = 0
+st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
+
+if use_macro:
+    @st.cache_data(ttl=3600)
+    def get_nikkei_macro():
+        try:
+            import yfinance as yf
+            tk = yf.Ticker("^N225")
+            hist = tk.history(period="5d")
+            if len(hist) >= 2:
+                close_today = hist['Close'].iloc[-1]
+                close_yest = hist['Close'].iloc[-2]
+                pct_change = ((close_today / close_yest) - 1) * 100
+                return round(pct_change, 2)
+            return 0.0
+        except:
+            return 0.0
+            
+    api_nikkei_pct = get_nikkei_macro()
+
+    # APIの値を初期値(value)として代入。ここで手動上書きも可能。
+    manual_pct = st.sidebar.number_input(
+        "日経騰落率（API値自動入力 / 手動変更可 %）", 
+        value=float(api_nikkei_pct), 
+        step=0.1, 
+        format="%.2f",
+        help="現在の日経平均の騰落率が自動で入っています。暴落シミュレーションをする場合は、この数値をさらに低く書き換えてください。"
+    )
+
+    if manual_pct <= -2.0:
+        st.session_state.push_penalty = 0.03
+        st.session_state.rsi_penalty = 10
+        st.session_state.macro_alert = f"🔴 暴落警戒（日経 {manual_pct:+.2f}%）: 買値深掘り・RSI厳格化"
+    elif manual_pct <= -1.0:
+        st.session_state.push_penalty = 0.015
+        st.session_state.rsi_penalty = 5
+        st.session_state.macro_alert = f"⚠️ 軟調地合い（日経 {manual_pct:+.2f}%）: 警戒態勢"
+    else:
+        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）: 通常ロジック稼働"
+
+st.sidebar.divider()
+# ==========================================
+
 st.sidebar.header("📍 ターゲット選別")
 
 # セレクトボックス用オプション定義
