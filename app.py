@@ -1410,11 +1410,14 @@ with tab3:
                         st.warning("⚠️ データの取得に失敗しました。")
                         continue
 
+                    # --- 警告・好機メッセージの描画（色判別ロジック修正） ---
                     for alert in r.get('alerts', []):
-                        if "好機" in alert: st.success(alert)
-                        else: st.error(alert)
-                    
-                    sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                        # 🟢 または ⚡ で始まるメッセージはポジティブ（グリーン）として表示
+                        if any(mark in alert for mark in ["🟢", "⚡"]):
+                            st.success(alert)
+                        else:
+                            # それ以外（🔴 警告）はネガティブ（レッド）として表示
+                            st.error(alert)
                     with sc_left:
                         atr_v_calc = r['atr_val'] if r['atr_val'] > 0 else r['lc'] * 0.05
                         atr_pct = (atr_v_calc / r['lc']) * 100
