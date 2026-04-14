@@ -69,28 +69,30 @@ def send_discord_notify(message):
 
 # --- 3. メインロジック ---
 def main():
-    print("🚀 ミッション開始：全銘柄1年分データの集約")
+    print("🚀 ミッション開始：全銘柄1年分データの集約と保存")
     
-    # 1. データ取得（点ではなく「線」で取得）
+    # 1. データの「線（連続300日）」での一括取得
     raw = get_continuous_hist_data(days_to_fetch=300)
     if not raw:
         print("🚨 データの取得に失敗しました。")
         return
         
-    # 2. クレンジング
+    # 2. クレンジング（カラム名の正規化）
     full_df = clean_df(pd.DataFrame(raw))
     
-    # 3. アプリ用の「連続データ」を保存（★ここが最重要）
-    save_market_archive(full_df)
+    # 3. アプリ用の弾薬庫（Featherファイル）を生成・上書き保存
+    # ※ Feather形式で保存することで、アプリ側の読込をコンマ秒にする
+    file_path = "market_data_continuous.feather"
+    full_df.to_feather(file_path)
+    print(f"✅ 【システムログ】弾薬庫（{file_path}）を連続データで更新しました。")
     
-    # 4. Discord速報用の処理（直近30日に絞って計算）
-    # ※既存のDiscordロジックをここに継続（中略：ボスの既存計算ロジック）
-    print("📬 Discord速報の配信準備中...")
-    # ...（中略：sum_dfの計算など）...
+    # 4. Discord速報用の処理（ボスの既存ロジックを継続）
+    # ※ここから下は、以前から動いているDiscord送信用の計算処理をそのまま繋いでください
+    print("📬 Discord速報の配信準備を開始します...")
+    # ...（以下、既存の判定・送信ロジック）...
     
-    # 仮の完了通知
     send_discord_notify(f"✅ 本日の弾薬補充完了（全 {len(full_df)} 行）\nスキャナーの1年フィルターが使用可能になりました。")
 
-# 実行トリガー：必ず関数の外、一番下に置く
+# 実行トリガー：必ず関数の外、一番最後に配置
 if __name__ == "__main__":
     main()
