@@ -935,57 +935,61 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     del full_df; gc.collect()
 
-                    def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                    # 🛡️ 【真・IPOフィルター：1年稼働義務】
-                    if len(group) < 245:
-                        return None
-
-                    c_vals = group['AdjC'].values
-                    lc = c_vals[-1]
-                    v_col = next((col for col in group.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
-                    curr_vol = group[v_col].iloc[-1]
-                    vol_ratio = (curr_vol / v_avg) if v_avg > 0 else 0
-                    
-                    rsi, m_hist, m_signal, m_line = get_fast_indicators(c_vals)
-                    m_hist_5d = []
-                    for i in range(1, 6):
-                        if len(c_vals) >= i:
-                            _, h, _, _ = get_fast_indicators(c_vals[:len(c_vals)-(i-1)])
-                            m_hist_5d.insert(0, h)
-                    
-                    is_gc = False
-                    gc_days = 0
-                    if len(m_hist_5d) >= 2:
-                        if m_hist_5d[-2] < 0 and m_hist_5d[-1] >= 0:
-                            is_gc = True; gc_days = 1
-                        elif len(m_hist_5d) >= 3 and m_hist_5d[-3] < 0 and m_hist_5d[-1] >= 0:
-                            is_gc = True; gc_days = 2
-                        elif len(m_hist_5d) >= 4 and m_hist_5d[-4] < 0 and m_hist_5d[-1] >= 0:
-                            is_gc = True; gc_days = 3
-
-                    if not is_gc: return None
-
-                    score = 20
-                    if vol_ratio >= 2.0: score += 20
-                    elif vol_ratio >= 1.5: score += 10
-                    
-                    h_vals = group['AdjH'].values
-                    h14 = h_vals[max(0, len(h_vals)-15):-1].max()
-                    if lc >= h14: score += 20
-                    elif lc >= h14 * 0.98: score += 10
-
-                    if 50 <= rsi <= 75: score += 10
-                    elif rsi > 75: score -= 20
-
-                    if score >= 60: rank, bg, t_score = "S⚡", "#d32f2f", 6.0
-                    elif score >= 40: rank, bg, t_score = "A🔥", "#ed6c02", 5.0
-                    else: rank, bg, t_score = "B📈", "#fbc02d", 4.0
-
-                    return {
-                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'vol_ratio': float(vol_ratio),
-                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 'score': score, 
-                        'gc_days': gc_days, 'avg_vol': int(v_avg)
-                    }
+                    def scan_unit_t1_parallel(code, group, cfg, v_avg):
+                        # 🛡️ 【真・IPOフィルター：1年稼働義務】
+                        # このif文は必ずdefより「半角スペース4つ分」右に下げてください
+                        if len(group) < 245:
+                            return None
+    
+                        c_vals = group['AdjC'].values
+                        lc = c_vals[-1]
+                        
+                        # 20日前の株価と比較（急騰しすぎを排除）
+                        p20 = c_vals[max(0, len(c_vals)-20)]
+                        if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+                        
+                        h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+                        if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
+                        
+                        # 直近4日間の高値位置を確認
+                        r4h = h_vals[-4:]; h4 = r4h.max()
+                        g_max_idx = len(h_vals) - 4 + r4h.argmax()
+                        l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
+    
+                        if l14 <= 0 or h4 <= l14: return None
+                        wh = h4 / l14
+                        if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
+                        
+                        # ファンダメンタルズによる赤字排除（オプション）
+                        if cfg["f12_ex_overvalued"]:
+                            f_data = get_fundamentals(code[:4])
+                            if f_data and ((f_data.get("op", 0) or 0) < 0): return None
+                        
+                        # 指標計算
+                        rsi, _, _, _ = get_fast_indicators(c_vals)
+                        base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
+                        target_buy = h4 - base_push
+                        target_buy = target_buy * (1.0 - cfg["push_penalty"]) # 地合い補正
+                        
+                        # スコアリング
+                        score = 4
+                        if 1.3 <= wh <= 2.0: score += 1
+                        if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
+                        if not check_double_top(group.tail(31).iloc[:-1]): score += 1
+                        if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+                        
+                        # ランク判定（トリアージ）
+                        dist_pct = ((lc / target_buy) - 1) * 100
+                        if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                        elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#2e7d32", 5.5
+                        elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
+                        else: rank, bg, t_score = "B📈", "#0288d1", 3.5
+    
+                        return {
+                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
+                            'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
+                            't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
+                        }
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
