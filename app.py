@@ -1255,149 +1255,82 @@ with tab3:
                             })
                             continue
 
-                        # --- 2. 演算：テクニカル解析 ---
+                        # --- ⚙️ 2. 演算：テクニカル解析（1pxの妥協なき計算） ---
                         df_raw = pd.DataFrame(bars)
-                        if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
+                        if 'Code' not in df_raw.columns: 
+                            df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
                         try:
                             df_chart_full = calc_technicals(df_s.copy())
                         except:
                             df_chart_full = df_s.copy()
                         
-                        latest = df_chart_full.iloc[-1]
-                        prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else latest
-                        
-                        # 各値の浮動小数点化とNaN対策
-                        lc = float(latest['AdjC'])
-                        latest_o, latest_h, latest_l = float(latest['AdjO']), float(latest['AdjH']), float(latest['AdjL'])
-                        prev_c, prev_o = float(prev['AdjC']), float(prev['AdjO'])
-                        
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
-                        ur_v = h14 - l14
-                        rsi_v = float(latest.get('RSI', 50))
-                        atr_v = float(latest.get('ATR', lc * 0.05))
-                        
-                        # メモリ解放：描画に必要な分だけ保持
-                        df_mini = df_chart_full.tail(100).copy()
-                        # --- 🧬 物理波形解析ユニット：酒田五法エンジン（安全装置付） ---
-                        if len(df_chart_full) < 5:
-                            continue # データが5日分ない銘柄は物理的に解析不能なためスキップ
-                        
-                        # 各日の価格データを物理抽出
+                        # --- 🧬 物理波形解析：酒田五法エンジン準備 ---
                         t_latest = df_chart_full.iloc[-1]
                         t_prev   = df_chart_full.iloc[-2]
                         t_pprev  = df_chart_full.iloc[-3]
                         
-                        # 演算用変数（衝突回避のため接頭辞 t_ を付与）
                         lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
                         pc, po, ph, pl = float(t_prev['AdjC']), float(t_prev['AdjO']), float(t_prev['AdjH']), float(t_prev['AdjL'])
-                        ppc, ppo = float(t_pprev['AdjC']), float(t_pprev['AdjO'])
-    
-                        score = 0
-                        alerts = []
-                        gc_days = 0
-    
+                        ppc, ppo, pph = float(t_pprev['AdjC']), float(t_pprev['AdjO']), float(t_pprev['AdjH'])
+                        
+                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                        ur_v = h14 - l14
+                        rsi_v = float(t_latest.get('RSI', 50))
+                        atr_v = float(t_latest.get('ATR', lc * 0.05))
+                        
+                        df_mini = df_chart_full.tail(100).copy()
+                        
+                        # --- 🎯 3. 索敵：戦術判定（スコア・ランク定義） ---
+                        score, alerts, gc_days = 0, [], 0
+
                         if is_ambush:
-                            # 🌐 【待伏：黄金比迎撃】
+                            # 🌐 【待伏モード判定】
                             score = 4
                             bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
                             m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
-                            if pbr_v is not None and pbr_v <= 5.0: score += 2
+                            if res_pbr is not None and res_pbr <= 5.0: score += 2
                             
-                            # --- 🧬 酒田五法：底打ち反転判定エンジン ---
-                            body_v = abs(lc - lo)
-                            shadow_l = min(lc, lo) - ll
-                            full_rng = lh - ll
-                            
+                            # 🧬 酒田五法：底打ち判定
+                            body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
                             if full_rng > 0:
-                                # 1. 【たくり足】
                                 if shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
                                     alerts.append("🟢 【酒田】たくり線（下影小陽線）を検知。底打ち反転の急所。")
                                     score += 5
-                                # 2. 【三川（明けの明星風）】
                                 if ppc < ppo and abs(pc - po) < (abs(ppc - ppo) * 0.3) and lc > lo and lc > pc:
-                                    alerts.append("🟢 【酒田】三川（明けの明星）の兆候を捕捉。反転攻勢の開始。")
+                                    alerts.append("🟢 【酒田】三川（明けの明星）の兆候。反転攻勢の開始。")
                                     score += 4
-                                # 3. 【陰の極み】
                                 if pc < po and lc < lo and rsi_v < 25:
-                                    alerts.append("🟢 【酒田】陰の極みを検知。売られすぎによる自律反転間近。")
+                                    alerts.append("🟢 【酒田】陰の極みを検知。自律反転間近。")
                                     score += 3
-                                # 4. 【陽の包み足】
                                 if pc < po and lc > lo and lc > po and lo < pc:
-                                    alerts.append("🟢 【酒田】陽の包み足（抱き線）を検知。強力な買い転換サイン。")
+                                    alerts.append("🟢 【酒田】陽の包み足（抱き線）。強力な反転合図。")
                                     score += 4
-                            
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
-                            if score >= 12: rank, bg_c = "S級待伏🔥", "#1b5e20"
-                            elif score >= 8: rank, bg_c = "A級待伏💎", "#2e7d32"
-                            elif score >= 5: rank, bg_c = "B級待伏🛡️", "#4caf50"
-                            else: rank, bg_c = "圏外💀", "#616161"
+                            rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
-                            # ⚡ 【真の強襲：電撃戦】
+                            # ⚡ 【強襲モード判定】
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            gc_score = 0
-                            if len(hist_vals) >= 2:
-                                if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 1; gc_score = 60
-                                elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 2; gc_score = 40
-                                elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
-                                    gc_days = 3; gc_score = 20
-                                else: gc_score = 5
-
-                            # --- 🚨 酒田五法：天井圏警戒（三尊/三山） ---
-                            # 過去15日間の最高値と比較し、トリプルトップの兆候を監視
+                            gc_score = 60 if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0 else 40 if len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0 else 20 if len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0 else 5
+                            gc_days = 1 if gc_score == 60 else 2 if gc_score == 40 else 3 if gc_score == 20 else 0
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は既に天井圏。")
-                            # --------------------------------------------------
-                            
-                            # 出来高サージ
+                                alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は天井圏。")
                             vol_surge_score = 0
                             if 'Volume' in df_mini.columns and len(df_mini) >= 6:
-                                avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
-                                curr_vol = df_mini['Volume'].iloc[-1]
-                                if avg_vol > 0:
-                                    v_ratio = curr_vol / avg_vol
-                                    if v_ratio >= 2.0:
-                                        vol_surge_score = 20
-                                        alerts.append(f"⚡ 【熱量】出来高が5日平均の {v_ratio:.1f}倍 に急増。大口流入。")
-                                    elif v_ratio >= 1.5:
-                                        vol_surge_score = 10
-                                        alerts.append(f"⚡ 【熱量】出来高活性化（{v_ratio:.1f}倍）。進軍の予兆。")
-
-                            # 突破判定
-                            breakout_score = 0
-                            if lc >= h14:
-                                breakout_score = 20
-                                alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
-                            elif lc >= h14 * 0.98:
-                                breakout_score = 10
-                                alerts.append("⚡ 【射程】14日高値に急接近。防衛線突破間近。")
-
-                            rsi_score = 0
-                            if 50 <= rsi_v <= 75: rsi_score = 10
-                            elif rsi_v > 75:
-                                rsi_score = -10
-                                alerts.append("🔴 【警告】戦域が過熱（RSI高）。高値掴みに警戒。")
-
-                            quality_score = 10 if (roe_v is not None and roe_v >= 10.0) else 0
+                                avg_vol, curr_vol = df_mini['Volume'].iloc[-6:-1].mean(), df_mini['Volume'].iloc[-1]
+                                if avg_vol > 0 and (curr_vol / avg_vol) >= 1.5: 
+                                    vol_surge_score = 20
+                                    alerts.append(f"⚡ 【熱量】出来高活性化（{curr_vol/avg_vol:.1f}倍）。")
+                            breakout_score = 20 if lc >= h14 else 10 if lc >= h14 * 0.98 else 0
+                            rsi_score = 10 if 50 <= rsi_v <= 75 else -10 if rsi_v > 75 else 0
+                            quality_score = 10 if (res_roe is not None and res_roe >= 10.0) else 0
                             score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-
-                            if score >= 80: rank, bg_c = "S級強襲⚡", "#d32f2f"
-                            elif score >= 60: rank, bg_c = "A級強襲🔥", "#ed6c02"
-                            elif score >= 40: rank, bg_c = "B級強襲📈", "#fbc02d"
-                            else: rank, bg_c = "圏外💀", "#616161"
-
-                        # 共通警告メッセージ
-                        if lc < bt_val - atr_v: 
-                            alerts.append("🔴 【警告】第一防衛線（-1ATR）を完全突破。撤退を推奨。")
-                        if 'MA75' in df_mini.columns and lc < df_mini['MA75'].iloc[-1]: 
-                            alerts.append("🔴 【警告】長期トレンド（MA75）を下抜け。機関の撤退を警戒。")
+                            rank, bg_c = ("S級強襲⚡", "#d32f2f") if score >= 80 else ("A級強襲🔥", "#ed6c02") if score >= 60 else ("B級強襲📈", "#fbc02d") else ("圏外💀", "#616161")
 
                         # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
                         scope_results.append({
