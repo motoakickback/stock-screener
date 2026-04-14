@@ -1309,19 +1309,64 @@ with tab3:
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
+                            # ⚡ 【強襲モード判定：電撃戦】
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
+                            
+                            # MACDゴールデンクロスの鮮度判定
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                gc_days, score = 1, 60
-                            elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                gc_days, score = 2, 40
-                            else:
-                                score = 5
+                            gc_score = 0
+                            gc_days = 0
+                            if len(hist_vals) >= 2:
+                                if hist_vals[-2] < 0 and hist_vals[-1] >= 0:
+                                    gc_days = 1
+                                    gc_score = 60
+                                elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
+                                    gc_days = 2
+                                    gc_score = 40
+                                elif len(hist_vals) >= 4 and hist_vals[-4] < 0 and hist_vals[-1] >= 0:
+                                    gc_days = 3
+                                    gc_score = 20
+                                else:
+                                    gc_score = 5
+
+                            # 🚨 酒田五法：天井圏警戒（三尊/三山）
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
-                            if res_roe is not None and res_roe >= 10.0: score += 10
+                                alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は既に天井圏。")
+                            
+                            # 出来高サージ判定
+                            vol_surge_score = 0
+                            if 'Volume' in df_mini.columns and len(df_mini) >= 6:
+                                avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
+                                curr_vol = df_mini['Volume'].iloc[-1]
+                                if avg_vol > 0 and (curr_vol / avg_vol) >= 1.5: 
+                                    vol_surge_score = 20
+                                    alerts.append(f"⚡ 【熱量】出来高活性化（{curr_vol/avg_vol:.1f}倍）。大口の進軍。")
+
+                            # 突破（ブレイクアウト）判定
+                            breakout_score = 20 if lc >= h14 else 10 if lc >= h14 * 0.98 else 0
+                            if breakout_score == 20:
+                                alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
+                            
+                            # 過熱感判定
+                            rsi_score = 10 if 50 <= rsi_v <= 75 else -10 if rsi_v > 75 else 0
+                            
+                            # 品質保証（ROE基準）
+                            quality_score = 10 if (res_roe is not None and res_roe >= 10.0) else 0
+                            
+                            # 最終スコア集計
+                            score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-                            rank, bg_c = ("S級強襲⚡", "#d32f2f") if score >= 80 else ("A級強襲🔥", "#ed6c02") if score >= 60 else ("B級強襲📈", "#fbc02d") else ("圏外💀", "#616161")
+                            
+                            # 💎 ランク判定（SyntaxError 物理修復版）
+                            # 1行で書く三項演算子を止め、確実な if-elif 形式に換装
+                            if score >= 80:
+                                rank, bg_c = "S級強襲⚡", "#d32f2f"
+                            elif score >= 60:
+                                rank, bg_c = "A級強襲🔥", "#ed6c02"
+                            elif score >= 40:
+                                rank, bg_c = "B級強襲📈", "#fbc02d"
+                            else:
+                                rank, bg_c = "圏外💀", "#616161"
 
                         # --- 💎 最終格納：変数を scope_results に溶接 ---
                         scope_results.append({
