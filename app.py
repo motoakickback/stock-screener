@@ -1371,12 +1371,32 @@ with tab3:
                                 rank, bg_c = "圏外💀", "#616161"
 
                         # 💎 最終格納：抽出した per_v 等を、描画側に渡す辞書へ確実に溶接
+                        # 💎 最終格納：計算済み変数（res_per等）を、描画側に渡す辞書へ正確に溶接
                         scope_results.append({
-                            'code': c, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
+                            'code': c,
+                            'name': c_name,
+                            'lc': lc,
+                            'h14': h14,
+                            'l14': l14,
+                            'ur': ur_v,
+                            'bt_val': bt_val,
+                            'atr_val': atr_v,
+                            'rsi': rsi_v,
+                            'rank': rank,
+                            'bg': bg_c,
+                            'score': score,
+                            'reach_val': reach_rate,
+                            'gc_days': gc_days,
                             'df_chart': df_mini, 
-                            'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v, # 命。
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                            'per': res_per,       # 💎 per_v から res_per へ物理修復
+                            'pbr': res_pbr,       # 💎 pbr_v から res_pbr へ物理修復
+                            'roe': res_roe,       # 💎 roe_v から res_roe へ物理修復
+                            'mcap': res_mcap_str, # 💎 mcap_str から res_mcap_str へ物理修復
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
+                            'sector': c_sector,
+                            'market': c_market,
+                            'alerts': alerts,
+                            'error': False
                         })
                     except:
                         continue
