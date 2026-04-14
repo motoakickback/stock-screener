@@ -1432,13 +1432,48 @@ with tab3:
                         st.metric("🌪️ 1ATR", f"{atr_val_int:,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
                     
                     with sc_mid:
-                        # 💎 指標別の配色・判定ロジック（is not None判定への換装で 0を救済）
-                        roe_v = r.get('roe'); roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"; roe_c = "#26a69a" if (roe_v is not None and roe_v >= 10.0) else "#ef5350"
-                        per_v = r.get('per'); per_s = f"{per_v:.1f}倍" if per_v is not None else "-"; per_c = "#26a69a" if (per_v is not None and per_v <= 20.0) else "#ef5350"
-                        pbr_v = r.get('pbr'); pbr_s = f"{pbr_v:.2f}倍" if pbr_v is not None else "-"; pbr_c = "#26a69a" if (pbr_v is not None and pbr_v <= 5.0) else "#ef5350"
+                        # 💎 指標の安全抽出（0を救済し、Noneだけを"-"にする）
+                        roe_v = r.get('roe')
+                        roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"
+                        roe_c = "#26a69a" if (roe_v is not None and roe_v >= 10.0) else "#ef5350"
                         
+                        per_v = r.get('per')
+                        per_s = f"{per_v:.1f}倍" if per_v is not None else "-"
+                        per_c = "#26a69a" if (per_v is not None and per_v <= 20.0) else "#ef5350"
+                        
+                        pbr_v = r.get('pbr')
+                        pbr_s = f"{pbr_v:.2f}倍" if pbr_v is not None else "-"
+                        # 🎯 ボス指令：PBR 5.0倍基準
+                        pbr_c = "#26a69a" if (pbr_v is not None and pbr_v <= 5.0) else "#ef5350"
+                        
+                        mcap_s = r.get('mcap', "-")
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
-                        st.markdown(f"""<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'><div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div><div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div><div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'><div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div><div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div><div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div></div><div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'><span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r['mcap']}</span></div></div>""", unsafe_allow_html=True)
+                        
+                        # ボスの資産（HTMLレイアウト）を維持し、変数だけを流し込む
+                        st.markdown(f"""
+                            <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
+                                <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+                                <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div>
+                                <div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'>
+                                    <div style='flex:1;'>
+                                        <div style='color:#888; font-size:10px;'>PER</div>
+                                        <div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div>
+                                    </div>
+                                    <div style='flex:1;'>
+                                        <div style='color:#888; font-size:10px;'>PBR</div>
+                                        <div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div>
+                                    </div>
+                                    <div style='flex:1;'>
+                                        <div style='color:#888; font-size:10px;'>ROE</div>
+                                        <div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div>
+                                    </div>
+                                </div>
+                                <div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+                                    <span style='color:#888; font-size:11px;'>時価総額: </span>
+                                    <span style='color:#fff; font-size:11px; font-weight:bold;'>{mcap_s}</span>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
 
                     with sc_right:
                         c_target, atr_v = r['bt_val'], r['atr_val'] if r['atr_val'] > 0 else r['bt_val'] * 0.05
