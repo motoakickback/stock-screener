@@ -852,7 +852,6 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    # 💎 物理修復1：消去してしまったUIスロットを完全復元（AttributeError回避）
     col_t2_1, col_t2_2 = st.columns(2)
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
     if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
@@ -865,7 +864,6 @@ with tab2:
         gc.collect()
 
         with st.spinner("地合いによる過熱感を検知中..."):
-            # 💎 物理修復4：コンテナ自体のクラッシュを防ぐ防護シールド
             try:
                 raw = get_hist_data_cached()
                 if not raw:
@@ -889,11 +887,9 @@ with tab2:
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス")
                     }
                     
-                    # 💎 物理修復2：出来高のNaNエラー（ValueError）とKeyErrorを完全封殺
                     v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
                     if v_col not in full_df.columns: full_df[v_col] = 100000
                     
-                    # fillna(0)でNaNを潰してから整数化し、計算崩壊を防ぐ
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean().fillna(0).astype(int)
                     
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -915,6 +911,7 @@ with tab2:
                         if rsi > cfg["rsi_lim"]: return None
                         
                         gc_days = 0
+                        # 💎 GC発動 1〜3日目までを抽出
                         if len(hist) >= 4:
                             if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
                             elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
@@ -935,7 +932,6 @@ with tab2:
                         return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
 
                     results = []
-                    # 💎 物理修復3：OOM（メモリ枯渇）回避のためワーカー数を10から5へ制限
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
@@ -957,12 +953,11 @@ with tab2:
                     st.session_state.tab2_scan_results = filtered_results
 
             except Exception as e:
-                # アプリ全体を落とさず、画面にエラー理由だけを表示して止まる
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。処理を安全に中断しました。\n詳細: {str(e)}")
 
     if st.session_state.tab2_scan_results:
         res_list = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC初動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
+        st.success(f"⚡ 強襲ロックオン: GC発動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
         
         sab_codes = " ".join([str(r['Code'])[:4] for r in res_list if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
@@ -984,7 +979,7 @@ with tab2:
                     <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                         {badge_html}{t_badge}{sector_badge}
-                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC後 {r['GC_Days']}日目</span>
+                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                     </div>
                 </div>
