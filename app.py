@@ -725,22 +725,16 @@ with tab1:
         st.session_state.tab1_scan_results = None
         gc.collect() 
         
-        # 🛡️ 診断プログラム：物理ログの出力
-        with st.spinner("診断プログラム起動中..."):
+        with st.spinner("1,757銘柄の深層をスキャン中..."):
             raw = get_hist_data_cached()
             if not raw:
-                st.error("❌ 供給源が空です。APIからのデータ取得に失敗しています。")
+                st.error("❌ APIからの供給が途絶しています。")
             else:
-                # 1. データの基本構造チェック
                 full_df = clean_df(pd.DataFrame(raw))
-                st.sidebar.markdown("### 📡 診断ログ")
-                st.sidebar.write(f"1. 全データ行数: {len(full_df)}")
-                st.sidebar.write(f"2. 検出カラム: {list(full_df.columns)}")
-                
                 # 銘柄コードの正規化
                 full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
                 
-                # --- 3. フィルタパラメータの確認 ---
+                # --- パラメータ注入 ---
                 push_penalty = st.session_state.get('push_penalty', 0.0)
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min),
@@ -762,76 +756,93 @@ with tab1:
                 m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
                 
                 latest_date = full_df['Date'].max()
-                st.sidebar.write(f"3. 最新データ日付: {latest_date}")
-                
-                # 4. マスク処理（条件絞り込み）の実行
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
                 valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
-                
-                st.sidebar.write(f"4. 条件合致銘柄数: {len(valid_codes)}")
-                
-                if len(valid_codes) == 0:
-                    st.warning("⚠️ フィルタ条件（価格帯・市場）で銘柄が全滅しました。")
                 
                 v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
                 avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                 df = full_df[full_df['Code'].isin(valid_codes)]
 
-                # 5. 並列スキャンの実行
+                # 📊 脱落統計用カウンター
+                fail_stats = {"total": 0, "history": 0, "surge": 0, "drop": 0, "range": 0, "error": 0}
+
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
-                    # テスト用：まずは50日で判定（疎通確認）
-                    if len(group) < 50:
-                        return None
-                    
-                    c_vals = group['AdjC'].values
-                    lc = c_vals[-1]
-                    p20 = c_vals[max(0, len(c_vals)-20)]
-                    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
-                    
-                    h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
-                    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
-                    
-                    r4h = h_vals[-4:]; h4 = r4h.max()
-                    g_max_idx = len(h_vals) - 4 + r4h.argmax()
-                    l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
+                    try:
+                        # 🛡️ 1. 歴史チェック（IPOフィルター）
+                        if len(group) < 50:
+                            return "history"
+                        
+                        c_vals = group['AdjC'].values
+                        lc = c_vals[-1]
+                        
+                        # 🛡️ 2. 急騰排除（20日移動平均乖離など）
+                        p20 = c_vals[max(0, len(c_vals)-20)]
+                        if p20 > 0 and (lc / p20) > cfg["f2_m30"]:
+                            return "surge"
+                        
+                        # 🛡️ 3. 下落率チェック（★ここが全滅の最有力候補）
+                        h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+                        h_max = h_vals.max()
+                        # 例：f3_dropが0なら、lcが1円でも高値より下ならNone
+                        if lc < h_max * (1 + (cfg["f3_drop"] / 100.0)):
+                            return "drop"
+                        
+                        # 🛡️ 4. 14日高値幅（ボラティリティ）
+                        r4h = h_vals[-4:]; h4 = r4h.max()
+                        g_max_idx = len(h_vals) - 4 + r4h.argmax()
+                        l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
 
-                    if l14 <= 0 or h4 <= l14: return None
-                    wh = h4 / l14
-                    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
-                    
-                    rsi, _, _, _ = get_fast_indicators(c_vals)
-                    base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
-                    target_buy = h4 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"])
-                    
-                    score = 4
-                    if 1.3 <= wh <= 2.0: score += 1
-                    if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
-                    if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                    
-                    dist_pct = ((lc / target_buy) - 1) * 100
-                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#d32f2f", 0
-                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#2e7d32", 5.5
-                    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
-                    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
+                        if l14 <= 0 or h4 <= l14: return "range"
+                        wh = h4 / l14
+                        if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]):
+                            return "range"
+                        
+                        # テクニカル指標計算
+                        rsi, _, _, _ = get_fast_indicators(c_vals)
+                        base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
+                        target_buy = h4 - base_push
+                        target_buy = target_buy * (1.0 - cfg["push_penalty"])
+                        
+                        # スコアリング
+                        score = 4
+                        if 1.3 <= wh <= 2.0: score += 1
+                        if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
+                        
+                        dist_pct = ((lc / target_buy) - 1) * 100
+                        if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#d32f2f", 0
+                        elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#2e7d32", 5.5
+                        elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
+                        else: rank, bg, t_score = "B📈", "#0288d1", 3.5
 
-                    return {
-                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-                        'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
-                        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
-                    }
+                        return {
+                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
+                            'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
+                            't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
+                        }
+                    except Exception as e:
+                        return f"error: {str(e)}"
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-                    futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df.groupby('Code')}
+                    # avg_vols.get(c, 0) の型不一致を防ぐため str(c) で確実に取得
+                    futures = {exe.submit(scan_unit_t1_parallel, str(c), g, config_t1, avg_vols.get(str(c), 0)): c for c, g in df.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
-                        try:
-                            res = f.result()
-                            if res: results.append(res)
-                        except: pass
+                        res = f.result()
+                        if isinstance(res, dict):
+                            results.append(res)
+                        elif isinstance(res, str):
+                            if "error" in res: fail_stats["error"] += 1
+                            else: fail_stats[res] += 1
                 
-                st.sidebar.write(f"5. スキャン通過銘柄数: {len(results)}")
+                # 📡 診断結果のフィードバック
+                st.sidebar.markdown("### 🔍 脱落原因レポート")
+                st.sidebar.write(f"・データ不足: {fail_stats['history']} 銘柄")
+                st.sidebar.write(f"・急騰しすぎ: {fail_stats['surge']} 銘柄")
+                st.sidebar.write(f"・下落率不足: {fail_stats['drop']} 銘柄")
+                st.sidebar.write(f"・値幅条件外: {fail_stats['range']} 銘柄")
+                if fail_stats["error"] > 0:
+                    st.sidebar.error(f"・内部エラー: {fail_stats['error']} 銘柄")
                 
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 filtered_results = []
@@ -844,6 +855,8 @@ with tab1:
                     if len(filtered_results) >= 30: break
                 
                 st.session_state.tab1_scan_results = filtered_results
+                if not filtered_results:
+                    st.warning("条件に合致する銘柄が見つかりませんでした。サイドバーの脱落原因を確認してください。")
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
