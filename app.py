@@ -1309,10 +1309,10 @@ with tab3:
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
-                            # ⚡ 【強襲モード判定：電撃戦】
+                            # ⚡ 【強襲モード判定：物理演算エンジン】
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             
-                            # MACDゴールデンクロスの鮮度判定
+                            # 1. MACDゴールデンクロスの鮮度判定
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             gc_score = 0
                             gc_days = 0
@@ -1329,11 +1329,11 @@ with tab3:
                                 else:
                                     gc_score = 5
 
-                            # 🚨 酒田五法：天井圏警戒（三尊/三山）
+                            # 2. 🚨 酒田五法：天井圏警戒（三尊/三山）
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
                                 alerts.append("🔴 【酒田】三尊（三山）の形成を警戒。戦域は既に天井圏。")
                             
-                            # 出来高サージ判定
+                            # 3. 出来高サージ判定
                             vol_surge_score = 0
                             if 'Volume' in df_mini.columns and len(df_mini) >= 6:
                                 avg_vol = df_mini['Volume'].iloc[-6:-1].mean()
@@ -1342,23 +1342,22 @@ with tab3:
                                     vol_surge_score = 20
                                     alerts.append(f"⚡ 【熱量】出来高活性化（{curr_vol/avg_vol:.1f}倍）。大口の進軍。")
 
-                            # 突破（ブレイクアウト）判定
+                            # 4. 突破（ブレイクアウト）判定
                             breakout_score = 20 if lc >= h14 else 10 if lc >= h14 * 0.98 else 0
                             if breakout_score == 20:
                                 alerts.append("⚡ 【突破】14日高値を完全上抜け。新天地への進軍。")
                             
-                            # 過熱感判定
+                            # 5. 過熱感判定
                             rsi_score = 10 if 50 <= rsi_v <= 75 else -10 if rsi_v > 75 else 0
                             
-                            # 品質保証（ROE基準）
+                            # 6. 品質保証（ROE基準）
                             quality_score = 10 if (res_roe is not None and res_roe >= 10.0) else 0
                             
-                            # 最終スコア集計
+                            # 7. 最終スコア集計
                             score = gc_score + vol_surge_score + breakout_score + rsi_score + quality_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
                             
-                            # 💎 ランク判定（SyntaxError 物理修復版）
-                            # 1行で書く三項演算子を止め、確実な if-elif 形式に換装
+                            # 💎 ランク判定（SyntaxError物理修復版）
                             if score >= 80:
                                 rank, bg_c = "S級強襲⚡", "#d32f2f"
                             elif score >= 60:
@@ -1370,11 +1369,30 @@ with tab3:
 
                         # --- 💎 最終格納：変数を scope_results に溶接 ---
                         scope_results.append({
-                            'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days,
+                            'code': target_key, 
+                            'name': c_name, 
+                            'lc': lc, 
+                            'h14': h14, 
+                            'l14': l14, 
+                            'ur': ur_v, 
+                            'bt_val': bt_val, 
+                            'atr_val': atr_v, 
+                            'rsi': rsi_v,
+                            'rank': rank, 
+                            'bg': bg_c, 
+                            'score': score, 
+                            'reach_val': reach_rate, 
+                            'gc_days': gc_days,
                             'df_chart': df_mini, 
-                            'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                            'per': res_per, 
+                            'pbr': res_pbr, 
+                            'roe': res_roe, 
+                            'mcap': res_mcap_str,
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 
+                            'sector': c_sector, 
+                            'market': c_market, 
+                            'alerts': alerts, 
+                            'error': False
                         })
                     except:
                         continue
