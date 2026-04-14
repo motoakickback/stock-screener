@@ -1204,11 +1204,15 @@ with tab3:
 
                 scope_results = []
                 for c in t_codes:
-                    raw_s = raw_data_dict.get(c)
-                    if not raw_s: continue 
+                    # 💎 型の不一致を物理的に遮断：キーを確実に文字列にする
+                    target_key = str(c)
+                    raw_s = raw_data_dict.get(target_key)
+                    
+                    if not raw_s: 
+                        continue 
 
-                    # 💎 物理修復：参照前に api_code を確定させる
-                    api_code = str(c) + "0"
+                    # api_codeの確定
+                    api_code = target_key + "0"
                     
                     c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                     if not master_df.empty:
@@ -1218,13 +1222,13 @@ with tab3:
                             c_sector = m_row.iloc[0]['Sector']
                             c_market = m_row.iloc[0]['Market']
                     
-                    # 💎 指標の確実な抽出（Noneを徹底排除）
+                    # 💎 格納時の名前に合わせて正確に抽出
                     per_v = raw_s.get('per')
                     pbr_v = raw_s.get('pbr')
                     roe_v = raw_s.get('roe')
                     res_mcap = raw_s.get("mcap")
                     
-                    # 時価総額変換ロジック
+                    # 時価総額の文字列変換
                     if res_mcap and res_mcap >= 1e12:
                         mcap_str = f"{res_mcap / 1e12:.2f}兆円"
                     elif res_mcap and res_mcap >= 1e8:
@@ -1234,7 +1238,7 @@ with tab3:
 
                     bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                    # データ不足時のハンドリング
+                    # データ不足時のハンドリング（指標を辞書へ確実に受け渡す）
                     if not bars or len(bars) < 2:
                         scope_results.append({
                             'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
