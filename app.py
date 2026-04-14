@@ -565,7 +565,8 @@ st.sidebar.title("🛠️ 戦術コンソール")
 # 🌐 マクロ地合い連動システム
 # ==========================================
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
-use_macro = st.sidebar.toggle("地合い連動を有効化", value=False)
+# 💎 変更点：デフォルトをON（True）に設定し、起動時から常時監視
+use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
 # 初期化（OFFの場合はペナルティゼロの平時モード）
 st.session_state.push_penalty = 0.0
@@ -599,7 +600,7 @@ if use_macro:
         help="現在の日経平均の騰落率が自動で入っています。暴落シミュレーションをする場合は、この数値をさらに低く書き換えてください。"
     )
 
-    # 4. マクロ気象の判定とペナルティ計算（ボスの厳格ルールに復元）
+    # 4. マクロ気象の判定とペナルティ計算（ボスの厳格ルール）
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  # 待伏：買値目標を10%深掘り
         st.session_state.rsi_penalty = 20     # 強襲：RSI上限を20厳しく
@@ -609,8 +610,6 @@ if use_macro:
         st.session_state.rsi_penalty = 10     # 強襲：RSI上限を10厳しく
         st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）: 買値目標+5%深掘り / RSI上限-10"
     else:
-        st.session_state.push_penalty = 0.0
-        st.session_state.rsi_penalty = 0
         st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）: 通常ロジック稼働"
 
 st.sidebar.divider()
