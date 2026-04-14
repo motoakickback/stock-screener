@@ -1254,10 +1254,6 @@ with tab3:
                             continue
 
                         # --- 2. 演算：テクニカル解析 ---
-                        # ここが1252行目付近：if 文と同じ深さ（列）に戻すこと
-                        df_raw = pd.DataFrame(bars)
-
-                        # --- 2. 演算：テクニカル解析 ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
