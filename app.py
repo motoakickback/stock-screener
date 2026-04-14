@@ -762,15 +762,13 @@ with tab1:
                 df = full_df[full_df['Code'].isin(valid_codes)]
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
-                    # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
-                    # 兵の熟練度を確認。1年分の戦歴がない銘柄は、この時点で索敵対象から抹殺する。
+                    # 🛡️ 【真・IPOフィルター：1年稼働義務】
+                    # この行（if）は必ず def より半角スペース4つ分右に下げてください
                     if len(group) < 245:
                         return None
 
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
-                    
-                    # 既存の判定ロジック
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                     
@@ -790,11 +788,9 @@ with tab1:
                         if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     rsi, _, _, _ = get_fast_indicators(c_vals)
-                    
-                    # 💎 改修2：地合いが悪い時は、より深い位置（push_penalty分）で指値を待つ
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h4 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) # 深掘り補正
+                    target_buy = target_buy * (1.0 - cfg["push_penalty"])
                     
                     score = 4
                     if 1.3 <= wh <= 2.0: score += 1
@@ -940,62 +936,47 @@ with tab2:
                     del full_df; gc.collect()
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                    # 🛡️ 【真・IPOフィルター：1年（245営業日）稼働義務】
-                    # 強襲モードにおいても、1年分の戦歴がない「若造」は即座に除外。
+                    # 🛡️ 【真・IPOフィルター：1年稼働義務】
                     if len(group) < 245:
                         return None
 
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
-                    
-                    # 出来高サージ判定（5日平均比）
                     v_col = next((col for col in group.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
                     curr_vol = group[v_col].iloc[-1]
                     vol_ratio = (curr_vol / v_avg) if v_avg > 0 else 0
                     
-                    # テクニカル指標の高速計算
                     rsi, m_hist, m_signal, m_line = get_fast_indicators(c_vals)
-                    
-                    # 直近5日のMACDヒストグラムを取得
-                    # 判定に必要なしきい値を設定（GCの鮮度を確認）
                     m_hist_5d = []
                     for i in range(1, 6):
                         if len(c_vals) >= i:
                             _, h, _, _ = get_fast_indicators(c_vals[:len(c_vals)-(i-1)])
                             m_hist_5d.insert(0, h)
                     
-                    # 🎯 強襲判定（MACDゴールデンクロス発生から3日以内）
                     is_gc = False
                     gc_days = 0
                     if len(m_hist_5d) >= 2:
-                        # 当日GC
                         if m_hist_5d[-2] < 0 and m_hist_5d[-1] >= 0:
                             is_gc = True; gc_days = 1
-                        # 2日前GC
                         elif len(m_hist_5d) >= 3 and m_hist_5d[-3] < 0 and m_hist_5d[-1] >= 0:
                             is_gc = True; gc_days = 2
-                        # 3日前GC
                         elif len(m_hist_5d) >= 4 and m_hist_5d[-4] < 0 and m_hist_5d[-1] >= 0:
                             is_gc = True; gc_days = 3
 
                     if not is_gc: return None
 
-                    # スコアリング（強襲専用）
-                    score = 20 # 基礎点
+                    score = 20
                     if vol_ratio >= 2.0: score += 20
                     elif vol_ratio >= 1.5: score += 10
                     
-                    # 14日高値突破の確認
                     h_vals = group['AdjH'].values
                     h14 = h_vals[max(0, len(h_vals)-15):-1].max()
                     if lc >= h14: score += 20
                     elif lc >= h14 * 0.98: score += 10
 
-                    # RSIによる過熱感制限（高値掴み防止）
                     if 50 <= rsi <= 75: score += 10
                     elif rsi > 75: score -= 20
 
-                    # ランク判定
                     if score >= 60: rank, bg, t_score = "S⚡", "#d32f2f", 6.0
                     elif score >= 40: rank, bg, t_score = "A🔥", "#ed6c02", 5.0
                     else: rank, bg, t_score = "B📈", "#fbc02d", 4.0
