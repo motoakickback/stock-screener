@@ -1191,12 +1191,23 @@ with tab3:
                         return c, None, {"per": None, "pbr": None, "mcap": None, "roe": None}
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+                    # 銘柄リスト(t_codes)を並列スキャン
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            res_c, res_data, res_per, res_pbr, res_mcap, res_roe = f.result()
-                            raw_data_dict[res_c] = {"data": res_data, "per": res_per, "pbr": res_pbr, "mcap": res_mcap, "roe": res_roe}
-                        except: pass
+                            # 🚨 物理配線：Block Aの戻り値（c, data, res_f）に合わせて3つで受ける
+                            res_c, res_data, res_f = f.result()
+                            if res_data:
+                                # raw_data_dict に完全に溶接
+                                raw_data_dict[res_c] = {
+                                    "data": res_data,
+                                    "per": res_f["per"],
+                                    "pbr": res_f["pbr"],
+                                    "mcap": res_f["mcap"],
+                                    "roe": res_f["roe"]
+                                }
+                        except:
+                            pass
 
                 scope_results = []
                 for c in t_codes:
@@ -1262,12 +1273,15 @@ with tab3:
                         # --- 🛡️ 兵站確保：データ不足時の防護処理（酒田五法5日基準） ---
                         if not bars or len(bars) < 5:
                             scope_results.append({
-                                'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': res_per,       # 抽出したばかりの res_per を装填
-                                'pbr': res_pbr,       # 抽出したばかりの res_pbr を装填
-                                'roe': res_roe,       # 抽出したばかりの res_roe を装填
-                                'mcap': res_mcap_str, # 変換済みの res_mcap_str を装填
+                                'code': c, 
+                                'name': c_name, 
+                                'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 
+                                'df_chart': pd.DataFrame(),
+                                'per': res_per,       # ✅ 抽出済みの変数
+                                'pbr': res_pbr,       # ✅ 抽出済みの変数
+                                'roe': res_roe,       # ✅ 抽出済みの変数
+                                'mcap': res_mcap_str, # ✅ 抽出済みの変数
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 
                                 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                             })
