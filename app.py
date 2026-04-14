@@ -1148,21 +1148,41 @@ with tab3:
                                 if not hist.empty:
                                     bars = []
                                     for dt, row in hist.iterrows():
-                                        bars.append({
-                                            'Code': api_code, 
-                                            'Date': dt.strftime('%Y-%m-%d'), 
-                                            'AdjO': float(row['Open']), 
-                                            'AdjH': float(row['High']), 
-                                            'AdjL': float(row['Low']), 
-                                            'AdjC': float(row['Close']), 
-                                            'Volume': float(row['Volume'])
-                                        })
+                                        bars.append({'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 'AdjO': float(row['Open']), 'AdjH': float(row['High']), 'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 'Volume': float(row['Volume'])})
                                     data = {"bars": bars}
                             except: pass
 
-                        # 2. ファンダメンタルズ取得（キー名の揺れを物理吸収）
+                        # 2. 指標取得（大文字・小文字・yfinance名をすべて網羅）
                         f_data = get_fundamentals(c)
-                        res_f = {"per": None, "pbr": None, "mcap": None, "roe": None}
+                        def get_any(d, keys):
+                            if not d: return None
+                            for k in keys:
+                                if k in d and d[k] is not None: return d[k]
+                            return None
+
+                        # あらゆるキー名(per, PER, trailingPE)を探索
+                        res_per = get_any(f_data, ['per', 'PER', 'trailingPE'])
+                        res_pbr = get_any(f_data, ['pbr', 'PBR', 'priceToBook'])
+                        res_mcap = get_any(f_data, ['mcap', 'MCAP', 'marketCap'])
+                        res_roe = get_any(f_data, ['roe', 'ROE', 'returnOnEquity'])
+
+                        # yfinance による最終補完
+                        if res_per is None or res_pbr is None:
+                            try:
+                                import yfinance as yf
+                                tk = yf.Ticker(c + ".T")
+                                info = tk.info
+                                res_per = res_per or info.get('trailingPE')
+                                res_pbr = res_pbr or info.get('priceToBook')
+                                res_mcap = res_mcap or info.get('marketCap')
+                                if res_roe is None:
+                                    raw_roe = info.get('returnOnEquity')
+                                    if raw_roe: res_roe = raw_roe * 100
+                            except: pass
+
+                        return c, data, res_per, res_pbr, res_mcap, res_roe
+                    except:
+                        return c, None, None, None, None, None
                         
                         if f_data:
                             # 大文字・小文字を両方チェックして res_f に詰め直す
@@ -1191,23 +1211,21 @@ with tab3:
                         return c, None, {"per": None, "pbr": None, "mcap": None, "roe": None}
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    # 銘柄リスト(t_codes)を並列スキャン
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            # 🚨 物理配線：Block Aの戻り値（c, data, res_f）に合わせて3つで受ける
-                            res_c, res_data, res_f = f.result()
+                            # 🚨 ここで6つの変数を正確に受け取る
+                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
                             if res_data:
-                                # raw_data_dict に完全に溶接
+                                # raw_data_dict に小文字キーで統一して格納
                                 raw_data_dict[res_c] = {
-                                    "data": res_data,
-                                    "per": res_f["per"],
-                                    "pbr": res_f["pbr"],
-                                    "mcap": res_f["mcap"],
-                                    "roe": res_f["roe"]
+                                    "data": res_data, 
+                                    "per": r_per, 
+                                    "pbr": r_pbr, 
+                                    "mcap": r_mcap, 
+                                    "roe": r_roe
                                 }
-                        except:
-                            pass
+                        except: pass
 
                 scope_results = []
                 for c in t_codes:
