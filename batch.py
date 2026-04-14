@@ -10,8 +10,13 @@ import time
 
 # --- 1. 環境変数 ---
 API_KEY = os.getenv("JQUANTS_API_KEY", os.getenv("JQ", "")).strip()
-raw_webhooks = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", ""))
-DISCORD_WEBHOOKS = [url.strip() for url in raw_webhooks.split(",") if url.strip()]
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", os.getenv("DW", "")).strip()
+
+print(f"【システムログ】JQセンサー反応: {bool(API_KEY)} / Discordアンテナ反応: {bool(DISCORD_WEBHOOK)}")
+
+if not API_KEY or not DISCORD_WEBHOOK:
+    print("🚨 【緊急警告】必要な暗号鍵またはWebhook URLが欠落しています！")
+    exit(1)
 
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
@@ -24,86 +29,284 @@ def clean_df(df):
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjC']).reset_index(drop=True)
+        df = df.sort_values('Date').dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
-# 💎 改造ポイント：32日分ではなく「連続300営業日」を取得するように変更
-def get_continuous_hist_data(days_to_fetch=500):
-    """
-    🎯 供給路の拡張：連続500営業日（約2年分）のデータを一括取得
-    """
-    print(f"📡 連続 {days_to_fetch} 営業日のデータを深掘り開始（2年分の弾薬を装填中）...")
+def load_master():
+    try:
+        h = {'User-Agent': 'Mozilla/5.0'}
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers=h, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers=h, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分', '規模区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market', 'Scale']
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except: pass
+    return pd.DataFrame()
+
+def get_old_codes():
+    base = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+    for i in range(7):
+        d = (base - timedelta(days=i)).strftime('%Y%m%d')
+        for v in ["v2", "v1"]:
+            try:
+                r = requests.get(f"https://api.jquants.com/{v}/listed/info?date={d}", headers=headers, timeout=10)
+                if r.status_code == 200 and r.json().get("info"): return pd.DataFrame(r.json()["info"])['Code'].astype(str).tolist()
+            except: pass
+    return []
+
+def get_hist_data():
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
-    days_back = 0
-    
-    # 500営業日分の日付リストを作成
-    while len(dates) < days_to_fetch:
-        d = base - timedelta(days=days_back)
-        if d.weekday() < 5: # 土日除外
-            dates.append(d.strftime('%Y%m%d'))
-        days_back += 1
+    days = 0
+    while len(dates) < 30:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
+        days += 1
+    d_h = base - timedelta(days=180)
+    while d_h.weekday() >= 5: d_h -= timedelta(days=1)
+    dates.append(d_h.strftime('%Y%m%d'))
+    d_y = base - timedelta(days=365)
+    while d_y.weekday() >= 5: d_y -= timedelta(days=1)
+    dates.append(d_y.strftime('%Y%m%d'))
     
     rows = []
     def fetch(dt):
         try:
-            # J-Quants API V2: daily bars
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=15)
-            if r.status_code == 200: 
-                return r.json().get("data", [])
-        except Exception as e:
-            # 通信エラー時はログを残し、空リストを返す
-            print(f"⚠️ 日付 {dt} の取得に失敗: {e}")
+            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
+            if r.status_code == 200: return r.json().get("data", [])
+        except: pass
         return []
         
-    # 通信負荷と速度のバランスを考慮（5スレッド）
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
             if res: rows.extend(res)
-            
-    print(f"✅ 取得完了：全 {len(rows)} 行の物資を確保しました。")
     return rows
 
-def save_market_archive(df):
-    """ 💎 アプリ（Streamlit）が読み込むための弾薬庫を更新 """
-    file_path = "market_data_continuous.feather"
-    # Feather形式で爆速保存（アプリ側での読み込みがコンマ秒になります）
-    df.to_feather(file_path)
-    print(f"✅ 【システムログ】弾薬庫（{file_path}）を連続データで更新しました。")
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        if len(v) < 15: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 3): peaks.append((i, v[i]))
+        if len(v) >= 2 and v[-1] > v[-2]:
+            if not peaks or (len(v)-1 - peaks[-1][0] > 3): peaks.append((len(v)-1, v[-1]))
+        if len(peaks) >= 2:
+            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95:
+                    if c[-1] < p2_val * 0.97: return True
+        return False
+    except: return False
+
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 20: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 2): peaks.append((i, v[i]))
+        if len(peaks) >= 3:
+            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val:
+                if abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10:
+                    if c[-1] < p3_val * 0.97: return True
+        return False
+    except: return False
+
+def check_double_bottom(df_sub):
+    try:
+        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        if len(l) < 15: return False
+        valleys = []
+        for i in range(1, len(l)-1):
+            if l[i] == min(l[i-1:i+2]):
+                if not valleys or (i - valleys[-1][0] > 3): valleys.append((i, l[i]))
+        if len(l) >= 3 and l[-2] == min(l[-3:]):
+             if not valleys or (len(l)-2 - valleys[-1][0] > 3): valleys.append((len(l)-2, l[-2]))
+                
+        if len(valleys) >= 2:
+            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
+                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
+                if peak > max(v1_val, v2_val) * 1.04: 
+                    if c[-1] > v2_val * 1.01: return True
+        return False
+    except: return False
 
 def send_discord_notify(message):
-    for url in DISCORD_WEBHOOKS:
-        try: requests.post(url, json={"content": message}, timeout=10)
-        except: pass
+    data = {"content": message}
+    requests.post(DISCORD_WEBHOOK, json=data)
+
+# 名前圧縮ツール（安全な場所に配置）
+def compress_name(name):
+    if not isinstance(name, str): return "不明"
+    reps = {"ホールディングス": "HD", "コーポレーション": "Corp", "グループ": "G", 
+            "ソリューションズ": "Sols", "システムズ": "Sys", "テクノロジーズ": "Tech",
+            "フィナンシャルグループ": "FG"}
+    for k, v in reps.items(): name = name.replace(k, v)
+    return name[:9] + "…" if len(name) > 9 else name
 
 # --- 3. メインロジック ---
 def main():
-    print("🚀 ミッション開始：全銘柄1年分データの集約と保存")
+    print("データ取得開始...")
+    master_df = load_master()
+    old_codes = get_old_codes()
+    raw = get_hist_data()
     
-    # 1. データの「線（連続300日）」での一括取得
-    raw = get_continuous_hist_data(days_to_fetch=300)
     if not raw:
-        print("🚨 データの取得に失敗しました。")
+        send_discord_notify("🚨 **データの取得に失敗しました。**")
         return
         
-    # 2. クレンジング（カラム名の正規化）
-    full_df = clean_df(pd.DataFrame(raw))
+    d_raw = pd.DataFrame(raw)
+    df = clean_df(d_raw).dropna(subset=['AdjC', 'AdjH', 'AdjL']).sort_values(['Code', 'Date'])
     
-    # 3. アプリ用の弾薬庫（Featherファイル）を生成・上書き保存
-    # ※ Feather形式で保存することで、アプリ側の読込をコンマ秒にする
-    file_path = "market_data_continuous.feather"
-    full_df.to_feather(file_path)
-    print(f"✅ 【システムログ】弾薬庫（{file_path}）を連続データで更新しました。")
+    df_30 = df.groupby('Code').tail(30)
+    df_14 = df_30.groupby('Code').tail(14)
+    counts = df_14.groupby('Code').size()
+    valid = counts[counts == 14].index
     
-    # 4. Discord速報用の処理（ボスの既存ロジックを継続）
-    # ※ここから下は、以前から動いているDiscord送信用の計算処理をそのまま繋いでください
-    print("📬 Discord速報の配信準備を開始します...")
-    # ...（以下、既存の判定・送信ロジック）...
-    
-    send_discord_notify(f"✅ 本日の弾薬補充完了（全 {len(full_df)} 行）\nスキャナーの1年フィルターが使用可能になりました。")
+    if valid.empty:
+        send_discord_notify("🚨 **条件を満たすデータが存在しません。**")
+        return
 
-# 実行トリガー：必ず関数の外、一番最後に配置
+    df_14 = df_14[df_14['Code'].isin(valid)]
+    df_30 = df_30[df_30['Code'].isin(valid)]
+    df_past = df[~df.index.isin(df_30.index)]; df_past = df_past[df_past['Code'].isin(valid)]
+    
+    agg_14 = df_14.groupby('Code').agg(
+        lc=('AdjC', 'last'), 
+        prev_c=('AdjC', lambda x: x.iloc[-2] if len(x) > 1 else np.nan),
+        c_3days_ago=('AdjC', lambda x: x.iloc[-4] if len(x) > 3 else np.nan),
+        h14=('AdjH', 'max'), 
+        l14=('AdjL', 'min')
+    )
+    
+    idx_max = df_14.groupby('Code')['AdjH'].idxmax()
+    h_dates = df_14.loc[idx_max, ['Code', 'Date']].rename(columns={'Date': 'h_date'})
+    df_14_m = df_14.merge(h_dates, on='Code')
+    d_high = df_14_m[df_14_m['Date'] > df_14_m['h_date']].groupby('Code').size().rename('d_high')
+    
+    agg_30 = df_30.groupby('Code').agg(l30=('AdjL', 'min'))
+    agg_p = df_past.groupby('Code').agg(omax=('AdjH', 'max'), omin=('AdjL', 'min'))
+    sum_df = agg_14.join(d_high, how='left').fillna({'d_high': 0}).join(agg_30).join(agg_p).reset_index()
+    
+    # --- 🎯 狙撃パラメーター（大型株・25%押し仕様に変更） ---
+    push_r = 25  # 50%から25%押しへ変更（大型株は落ちにくいため浅めに設定）
+    limit_d = 4
+    sl_i = 8 
+    
+    ur = sum_df['h14'] - sum_df['l14']
+    sum_df['bt'] = sum_df['h14'] - (ur * (push_r / 100.0))
+    sum_df['tp5'] = sum_df['bt'] * 1.05; sum_df['tp10'] = sum_df['bt'] * 1.10; sum_df['tp15'] = sum_df['bt'] * 1.15; sum_df['tp20'] = sum_df['bt'] * 1.20
+    
+    denom = sum_df['h14'] - sum_df['bt']
+    sum_df['reach_pct'] = np.where(denom > 0, (sum_df['h14'] - sum_df['lc']) / denom * 100, 0)
+    sum_df['r14'] = np.where(sum_df['l14'] > 0, sum_df['h14'] / sum_df['l14'], 0)
+    sum_df['r30'] = np.where(sum_df['l30'] > 0, sum_df['lc'] / sum_df['l30'], 0)
+    sum_df['ldrop'] = np.where((sum_df['omax'].notna()) & (sum_df['omax'] > 0), ((sum_df['lc'] / sum_df['omax']) - 1) * 100, 0)
+    sum_df['lrise'] = np.where((sum_df['omin'].notna()) & (sum_df['omin'] > 0), sum_df['lc'] / sum_df['omin'], 0)
+    
+    sum_df['daily_pct'] = np.where(sum_df['prev_c'] > 0, (sum_df['lc'] / sum_df['prev_c']) - 1, 0)
+    sum_df['pct_3days'] = np.where(sum_df['c_3days_ago'] > 0, (sum_df['lc'] / sum_df['c_3days_ago']) - 1, 0)
+    
+    dt_s = df_30.groupby('Code').apply(check_double_top).rename('is_dt')
+    hs_s = df_30.groupby('Code').apply(check_head_shoulders).rename('is_hs')
+    db_s = df_30.groupby('Code').apply(check_double_bottom).rename('is_db')
+    sum_df = sum_df.merge(dt_s, on='Code', how='left').merge(hs_s, on='Code', how='left').merge(db_s, on='Code', how='left')
+    sum_df = sum_df.fillna({'is_dt': False, 'is_hs': False, 'is_db': False})
+    
+    sum_df['is_defense'] = (~sum_df['is_dt']) & (~sum_df['is_hs']) & (sum_df['lc'] <= (sum_df['l14'] * 1.03))
+    
+    if not master_df.empty: sum_df = pd.merge(sum_df, master_df, on='Code', how='left')
+
+    # --- 🛡️ 1. 基礎フィルター（完全防衛・大型株専用へ進化） ---
+    sum_df = sum_df[sum_df['lc'] >= 500]  
+    sum_df = sum_df[sum_df['r30'] <= 2.0]
+    
+    # ⚠️ 危険波形（ダブルトップ・三尊）をリストから完全除外
+    sum_df = sum_df[(~sum_df['is_dt']) & (~sum_df['is_hs'])]
+    
+    if 'Sector' in sum_df.columns:
+        sum_df = sum_df[sum_df['Sector'].notna()]
+        sum_df = sum_df[sum_df['Sector'] != '-']
+        # 医薬品（バイオ等）を除外
+        sum_df = sum_df[sum_df['Sector'] != '医薬品']
+
+    # 🏢 【追加】規模区分で「大型・中型株（Core30, Large70, Mid400）」のみに厳選！
+    if 'Scale' in sum_df.columns:
+        sum_df = sum_df[sum_df['Scale'].astype(str).str.contains("Core30|Large70|Mid400", na=False)]
+
+    # 👇👇👇 【ここに追加】行き過ぎた暴落（到達度135%超え）と、遠すぎる標的を排除 👇👇👇
+    sum_df = sum_df[(sum_df['reach_pct'] >= 50) & (sum_df['reach_pct'] <= 135)]
+    
+    # --- 2. ソート ---
+    res = sum_df.sort_values('reach_pct', ascending=False).head(15)
+
+    # --- 3. Discord用メッセージの構築 ---
+    if len(res) == 0:
+        message = "🎯 **本日のSクラススナイプ候補（大型安定・25%押し）**\n\n> 該当する銘柄はありませんでした（全軍待機）。"
+    else:
+        message = "🎯 **本日のSクラススナイプ候補（大型安定・25%押しトップ15）**\n\n"
+        for index, row in res.iterrows():
+            c_name = compress_name(row.get('CompanyName', '不明'))
+            code = str(row['Code'])[:4]
+            market = str(row.get('Market', '不明')).split('（')[0] 
+            sector = row.get('Sector', '不明')
+            
+            d_pct = row.get('daily_pct', 0) * 100
+            sign = "+" if d_pct > 0 else ""
+            
+            message += f"**【{code}】{c_name}** ({market}/{sector})\n"
+            message += f"> 🟢 値: **{int(row['lc'])}円** (前日: {sign}{d_pct:.1f}%)\n"
+            # 👇 【修正】「50%的」を「25%的」に変更し、到達度の小数点を非表示（.0f）に調整
+            message += f"> 🎯 25%的: **{int(row['bt'])}円** (到達: {row['reach_pct']:.0f}%)\n"
+            message += f"> 📈 [利] +10%: {int(row['bt']*1.1)}円 / +15%: {int(row['lc']*1.15)}円\n"
+            message += f"> 📉 [損] -8%: {int(row['bt']*0.92)}円\n"
+            message += f"> 📊 [波] 高 {int(row['h14'])} ➡️ 安 {int(row['l14'])}\n\n"
+
+        # ▼▼▼ NEW: 一括コピペ弾倉の追加 ▼▼▼
+        copy_codes = ",".join([str(code)[:4] for code in res['Code']])
+        message += f"📋 **【一括コピペ用コード】**\n```text\n{copy_codes}\n```\n"
+
+    # --- 4. 新型・Discord分割連射システム ---
+    target_webhook_url = os.environ.get("DISCORD_WEBHOOK")
+    if not target_webhook_url:
+        print("【致命的エラー】DiscordのWebhookURLが見つかりません。")
+    else:
+        max_length = 1800 
+        message_chunks = []
+        current_chunk = ""
+
+        for line in message.split('\n'):
+            if len(current_chunk) + len(line) + 1 > max_length:
+                message_chunks.append(current_chunk)
+                current_chunk = line + "\n"
+            else:
+                current_chunk += line + "\n"
+        
+        if current_chunk:
+            message_chunks.append(current_chunk)
+
+        print(f"【システムログ】Discordへの送信準備完了。全 {len(message_chunks)} 分割で投下します。")
+
+        for i, chunk in enumerate(message_chunks):
+            payload = {"content": chunk}
+            response = requests.post(target_webhook_url, json=payload)
+            if response.status_code not in [200, 204]:
+                print(f"【通信エラー】Discord送信失敗 (Part {i+1}): {response.status_code} - {response.text}")
+            time.sleep(1)
+        
+        print("【システムログ】全ミッション完了。通信回線を閉じます。")
+
+# --- 実行トリガー ---
 if __name__ == "__main__":
     main()
