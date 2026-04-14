@@ -1198,52 +1198,60 @@ with tab3:
                 scope_results = []
                 for c in t_codes:
                     try:
-                        # --- 1. 物理配線：データ抽出 ---
+                        # --- 1. 物理配線：データ抽出（ファンダメンタルズ完全同期版） ---
                         target_key = str(c)
                         raw_s = raw_data_dict.get(target_key)
                         if not raw_s: 
                             continue 
-
+    
                         api_code = target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
-                            # 物理修復：型の不一致をASTYPEで強制解決し、銘柄情報を紐付け
+                            # 物理修復：型の不一致を解決し銘柄情報を紐付け
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name = m_row.iloc[0]['CompanyName']
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
                         
-                        # 💎 指標の物理抽出（数値 0 を救済するため is not None で判定）
-                        # NaN（非数）が紛れ込むのを防ぐため、抽出時にクリーンアップ
-                        def clean_val(v):
-                            if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
+                        # 💎 指標の物理抽出（数値 0 を救済し NaN を排除）
+                        def prepare_fundamental(val):
+                            if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
                                 return None
-                            return float(v)
-
-                        per_v = clean_val(raw_s.get('per'))
-                        pbr_v = clean_val(raw_s.get('pbr'))
-                        roe_v = clean_val(raw_s.get('roe'))
-                        mcap_raw = raw_s.get("mcap")
+                            try:
+                                return float(val)
+                            except:
+                                return None
+    
+                        # 描画側と完全に同期させるための変数名定義
+                        res_per = prepare_fundamental(raw_s.get('per'))
+                        res_pbr = prepare_fundamental(raw_s.get('pbr'))
+                        res_roe = prepare_fundamental(raw_s.get('roe'))
+                        raw_mcap = raw_s.get("mcap")
                         
-                        # 時価総額の文字列変換
-                        if mcap_raw is not None and mcap_raw >= 1e12:
-                            mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
-                        elif mcap_raw is not None and mcap_raw >= 1e8:
-                            mcap_str = f"{mcap_raw / 1e8:.0f}億円"
+                        # 時価総額の文字列変換（1pxの妥協なき変換）
+                        if raw_mcap is not None and raw_mcap >= 1e12:
+                            res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
+                        elif raw_mcap is not None and raw_mcap >= 1e8:
+                            res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
                         else:
-                            mcap_str = "-"
-
+                            res_mcap_str = "-"
+    
+                        # チャートデータの取得
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
-                        # データ不足時のハンドリング（ここでも指標を確実に渡す）
-                        if not bars or len(bars) < 2:
+                        # --- 🛡️ 兵站確保：データ不足時の防護処理（新変数名に溶接） ---
+                        if not bars or len(bars) < 5: # 酒田五法には最低5日分必要
                             scope_results.append({
                                 'code': c, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': per_v, 'pbr': pbr_v, 'mcap': mcap_str, 'roe': roe_v,
-                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
+                                'per': res_per,       # 💎 res_per に修正
+                                'pbr': res_pbr,       # 💎 res_pbr に修正
+                                'roe': res_roe,       # 💎 res_roe に修正
+                                'mcap': res_mcap_str, # 💎 res_mcap_str に修正
+                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 
+                                'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
                             })
                             continue
 
