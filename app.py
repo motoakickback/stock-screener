@@ -1224,16 +1224,17 @@ with tab3:
                                 c_sector = m_row.iloc[0]['Sector']
                                 c_market = m_row.iloc[0]['Market']
                         
-                        # 指標抽出（数値 0 を False と誤認させない is not None 判定）
+                        # 💎 指標の物理抽出（raw_s から確実に抜き出す）
                         per_v = raw_s.get('per')
                         pbr_v = raw_s.get('pbr')
                         roe_v = raw_s.get('roe')
-                        res_mcap = raw_s.get("mcap")
+                        mcap_raw = raw_s.get("mcap")
                         
-                        if res_mcap is not None and res_mcap >= 1e12:
-                            mcap_str = f"{res_mcap / 1e12:.2f}兆円"
-                        elif res_mcap is not None and res_mcap >= 1e8:
-                            mcap_str = f"{res_mcap / 1e8:.0f}億円"
+                        # 時価総額の物理変換
+                        if mcap_raw is not None and mcap_raw >= 1e12:
+                            mcap_str = f"{mcap_raw / 1e12:.2f}兆円"
+                        elif mcap_raw is not None and mcap_raw >= 1e8:
+                            mcap_str = f"{mcap_raw / 1e8:.0f}億円"
                         else:
                             mcap_str = "-"
 
