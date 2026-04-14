@@ -1137,9 +1137,9 @@ with tab3:
                 def fetch_parallel_t3(c):
                     try:
                         api_code = c + "0"
+                        # 1. チャートデータ取得
                         data = get_single_data(api_code, 1)
-                        per, pbr, mcap, roe_res = None, None, None, None
-                        
+                        # yfinance 予備回路（データ不足時）
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -1160,32 +1160,35 @@ with tab3:
                                     data = {"bars": bars}
                             except: pass
 
-                        try:
-                            f_data = get_fundamentals(c)
-                            if f_data: 
-                                per = f_data.get('per')
-                                pbr = f_data.get('pbr')
-                                mcap = f_data.get('mcap')
-                                roe_res = f_data.get('roe')
-                        except: pass
+                        # 2. ファンダメンタルズ取得（キー名の揺れを物理吸収）
+                        f_data = get_fundamentals(c)
+                        res_f = {"per": None, "pbr": None, "mcap": None, "roe": None}
                         
-                        if per is None or pbr is None:
+                        if f_data:
+                            # 大文字・小文字を両方チェックして res_f に詰め直す
+                            res_f["per"] = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
+                            res_f["pbr"] = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
+                            res_f["mcap"] = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
+                            res_f["roe"] = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
+                        
+                        # yfinance による最終補完（データ欠落時）
+                        if res_f["per"] is None or res_f["pbr"] is None:
                             try:
                                 import yfinance as yf
                                 tk = yf.Ticker(c + ".T")
                                 info = tk.info
                                 if info:
-                                    per = per or info.get('trailingPE')
-                                    pbr = pbr or info.get('priceToBook')
-                                    mcap = mcap or info.get('marketCap')
-                                    raw_roe = info.get('returnOnEquity')
-                                    if raw_roe and roe_res is None: 
-                                        roe_res = raw_roe * 100
+                                    res_f["per"] = res_f["per"] or info.get('trailingPE')
+                                    res_f["pbr"] = res_f["pbr"] or info.get('priceToBook')
+                                    res_f["mcap"] = res_f["mcap"] or info.get('marketCap')
+                                    if res_f["roe"] is None:
+                                        raw_roe = info.get('returnOnEquity')
+                                        if raw_roe: res_f["roe"] = raw_roe * 100
                             except: pass
-                            
-                        return c, data, per, pbr, mcap, roe_res
-                    except: 
-                        return c, None, None, None, None, None
+
+                        return c, data, res_f
+                    except:
+                        return c, None, {"per": None, "pbr": None, "mcap": None, "roe": None}
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
