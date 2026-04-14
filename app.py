@@ -437,25 +437,25 @@ def get_single_data(code, yrs=1):
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
-    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    while len(dates) < 45:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
-        days += 1
-    rows = []
-    def fetch(dt):
+    """
+    🚀 物理直結：バッチが生成したFeatherファイルから一瞬でデータを読み込む
+    """
+    file_path = "market_data_continuous.feather"
+    
+    if os.path.exists(file_path):
         try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json().get("data", [])
-        except: pass
+            # 内部処理：Featherを読み込み、アプリが期待する辞書形式に変換
+            df = pd.read_feather(file_path)
+            return df.to_dict('records')
+        except Exception as e:
+            # 万が一の破損時はエラーを表示
+            st.error(f"🚨 弾薬庫の展開に失敗: {e}")
+            return []
+    else:
+        # ファイルがない場合は警告
+        st.error("🚨 弾薬庫（market_data_continuous.feather）が見つかりません。先にバッチを実行してください。")
         return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result()
-            if res: rows.extend(res)
-    return rows
-
+        
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
     p = np.array(prices, dtype='float32')
