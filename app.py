@@ -1821,23 +1821,29 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（入力保護・跳ね返り防止） ---
-    # 🚨 rerun を誘発させないよう、key を固定し、安定した入力環境を確保。
+    # --- 🛡️ 2. 司令部エディタ（原典回帰版） ---
+    # UIの神聖不可侵：装飾、カラム構成を Turn 18 と完全に一致させる。
+    # 余計な型変換ロジックを排除し、戦速を最優先する。
+
+    if 'frontline_df' not in st.session_state:
+        st.session_state.frontline_df = pd.DataFrame(columns=['code', 'name', 'price', 'quantity', 'f1_min', 'f1_max', '目標', '損切'])
+
+    # 🚨 型変換や .copy() は一切行わず、session_state を直接エディタに渡す
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
-        column_config={
-            "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%d"),
-            "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
-            "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
-            "損切": st.column_config.NumberColumn("固定損切", format="%d"),
-            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
-            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
-        },
         use_container_width=True,
-        key="frontline_editor_v_final_sync"
+        key="frontline_editor_v_final_sync",
+        column_config={
+            "code": st.column_config.TextColumn("銘柄コード", help="4桁の数字を入力", required=True),
+            "price": st.column_config.NumberColumn("現在値", format="%.1f"),
+            "f1_min": st.column_config.NumberColumn("f1_min", format="%.1f"),
+            "f1_max": st.column_config.NumberColumn("f1_max", format="%.1f"),
+            "目標": st.column_config.NumberColumn("利確目標", format="%.1f"),
+            "損切": st.column_config.NumberColumn("損切目安", format="%.1f"),
+        }
     )
+    # --- エディタブロック終了 ---
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
     c1, c2 = st.columns(2)
