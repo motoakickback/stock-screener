@@ -287,38 +287,203 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- 3. 共通関数 & 演算エンジン ---
+# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 物理統合・最終定義版 ） ---
+
+@st.cache_data(ttl=86400)
+def load_master():
+    """
+    🚨 物理防衛：銘柄マスターのロード
+    関数の呼び出し（743行目付近）よりも前に定義を完了させる。
+    """
+    try:
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            # J-Quants v2仕様：コードを5桁の文字列に統一
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except:
+        pass
+    return pd.DataFrame(columns=['Code', 'CompanyName', 'Sector', 'Market'])
+
 def clean_df(df):
+    """J-Quants v2 のカラム名を物理変換し、数値を正規化"""
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
+        if 'Code' in df.columns:
+            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
 def calc_vector_indicators(df):
+    """テクニカル指標の高速演算（ベクトル化・クラッシュガード搭載）"""
     df = df.copy()
+    if df.empty or len(df) < 5: return df
+    
+    # RSI (14日)
     delta = df.groupby('Code')['AdjC'].diff()
     gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
+    
+    # MACD (12, 26, 9)
     ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
     ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
     macd = ema12 - ema26
     signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
     df['MACD_Hist'] = (macd - signal).astype('float32')
-    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
+    
+    # 移動平均線
     df['MA5'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
+    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
     df['MA75'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
+    
+    # ATR (14日)
     tr = pd.concat([df['AdjH']-df['AdjL'], (df['AdjH']-df.groupby('Code')['AdjC'].shift(1)).abs(), (df['AdjL']-df.groupby('Code')['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
     return df
 
 def calc_technicals(df):
     return calc_vector_indicators(df)
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_macro_weather():
+    """日経平均(0000)をJ-Quants v2 指数専用パスから取得"""
+    base = datetime.utcnow() + timedelta(hours=9)
+    f_d, t_d = (base - timedelta(days=10)).strftime('%Y-%m-%d'), base.strftime('%Y-%m-%d')
+    # 🚨 v2 指数専用パス /indices/bars/daily
+    url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}"
+    try:
+        r = requests.get(url, headers=headers, timeout=5.0)
+        if r.status_code == 200:
+            data = r.json().get("daily_quotes") or r.json().get("data") or []
+            if data:
+                df_ni = pd.DataFrame(data)
+                df_ni['Date'] = pd.to_datetime(df_ni['Date'])
+                df_ni = df_ni.sort_values('Date').reset_index(drop=True)
+                latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+                return {
+                    "nikkei": {
+                        "price": float(latest['Close']),
+                        "diff": float(latest['Close'] - prev['Close']),
+                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                        "df": df_ni.tail(65),
+                        "date": latest['Date'].strftime('%m/%d')
+                    }
+                }
+    except: pass
+    return None
+
+# 🚨 これが NameError の解決策：TAB 5 が必要とする同期エンジン
+def fetch_current_prices_fast(codes):
+    """J-Quants API v2 から現在値を並列取得（成功パス一本化）"""
+    results = {}
+    base = datetime.utcnow() + timedelta(hours=9)
+    f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
+    def fetch_single(code):
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        try:
+            r = requests.get(url, headers=headers, timeout=3.0)
+            if r.status_code == 200:
+                data = r.json().get("daily_quotes") or r.json().get("data") or []
+                if data:
+                    latest = sorted(data, key=lambda x: x['Date'])[-1]
+                    return code, float(latest.get("Close"))
+        except: pass
+        return code, None
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futs = {executor.submit(fetch_single, c): c for c in codes}
+        for f in concurrent.futures.as_completed(futs):
+            c_code, price = f.result()
+            if price is not None: results[c_code] = price
+    return results
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
+def get_fundamentals(code):
+    """財務データ取得：ROE物理算出回路"""
+    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    url = f"{BASE_URL}/fins/statements?code={api_code}"
+    try:
+        r = requests.get(url, headers=headers, timeout=3.0)
+        if r.status_code == 200:
+            data = r.json().get("statements", [])
+            if not data: return None
+            l = data[0]
+            res = {"op": l.get("OperatingProfit"), "cap": l.get("MarketCapitalization"), "er": l.get("EquityRatio"), "roe": None}
+            ni, eq = l.get("NetIncome"), l.get("Equity")
+            if ni and eq:
+                try: res["roe"] = (float(ni) / float(eq)) * 100
+                except: res["roe"] = 0.0
+            return res
+    except: pass
+    return None
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_single_data(code, yrs=1):
+    """単一銘柄データ取得（TAB 3等で使用）"""
+    base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
+    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
+    try:
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        r_bars = requests.get(url, headers=headers, timeout=10)
+        if r_bars.status_code == 200:
+            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
+    except: pass
+    return result
+
+@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+def get_hist_data_cached():
+    """TAB 1/2用：全銘柄の一括取得（ハイフン付き日付形式を強制）"""
+    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
+    while len(dates) < 30:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: 
+            dates.append(d.strftime('%Y-%m-%d')) # v2仕様：ハイフン必須
+        days += 1
+    rows = []
+    def fetch(dt):
+        url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200: 
+                return r.json().get("daily_quotes") or []
+        except: pass
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        futs = [exe.submit(fetch, dt) for dt in dates]
+        for f in concurrent.futures.as_completed(futs):
+            res = f.result(); rows.extend(res or [])
+    return rows
+
+def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
+    """格付けエンジン：サイドバー設定の物理反映"""
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス")
+    is_assault = "狙撃優先" in tactics
+    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
+    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
+    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
+    else: macd_t = "減衰"
+    if mode == "強襲":
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#616161", 0, macd_t
+        if is_assault:
+            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後"
+            return "A⚡", "#ed6c02", 4, f"GC{gc_days}日"
+        else:
+            if gc_days == 1: return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
+            return "B📈", "#0288d1", 3, f"GC{gc_days}日"
+    if rsi < 30: return "S💎", "#1b5e20", 5, "大底圏"
+    elif rsi < 45: return "A🛡️", "#2e7d32", 4, "押し目"
+    return "圏外💀", "#616161", 0, "通常"
 
 def check_event_mines(code, event_data=None):
     alerts = []
@@ -347,208 +512,6 @@ def check_event_mines(code, event_data=None):
                 if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
             except: pass
     return alerts
-
-def check_double_top(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
-        if len(v) < 6: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
-        if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
-        return False
-    except: return False
-
-def check_head_shoulders(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
-        if len(v) < 8: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
-        return False
-    except: return False
-
-def check_double_bottom(df_sub):
-    try:
-        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
-        if len(l) < 6: return False
-        valleys = []
-        for i in range(1, len(l)-1):
-            if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
-        if len(valleys) >= 2:
-            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
-            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
-                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
-        return False
-    except: return False
-
-# --- ⚙️ 機関部分：ROE算出・高速スキャンエンジン（ Sniper Edition ） ---
-
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
-def get_fundamentals(code):
-    """
-    J-Quants v2 から財務データを取得し、ROEを算出して返す。
-    1時間のキャッシュを適用し、スキャン速度を保護する。
-    """
-    # 🚨 J-Quants v2 の掟：4桁コードの末尾に "0" を付与して5桁にする
-    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    url = f"{BASE_URL}/fins/statements?code={api_code}"
-    
-    try:
-        # タイムアウトを 3秒に設定（フリーズ防止）
-        r = requests.get(url, headers=headers, timeout=3.0)
-        if r.status_code == 200:
-            data = r.json().get("statements", [])
-            if not data:
-                return None
-            
-            latest = data[0] # 最新の決算短信
-            res = {
-                "op": latest.get("OperatingProfit"),       # 営業利益
-                "cap": latest.get("MarketCapitalization"), # 時価総額
-                "er": latest.get("EquityRatio"),           # 自己資本比率
-                "roe": None                                # ROE初期値
-            }
-            
-            # 🎯 ROE算出ロジック： (当期純利益 / 自己資本) * 100
-            # 数式： $$ROE = \frac{\text{Net Income}}{\text{Equity}} \times 100$$
-            net_income = latest.get("NetIncome")
-            equity = latest.get("Equity")
-            
-            if net_income is not None and equity is not None:
-                try:
-                    res["roe"] = (float(net_income) / float(equity)) * 100
-                except (ZeroDivisionError, ValueError):
-                    res["roe"] = 0.0
-            
-            return res
-    except Exception:
-        pass
-    return None
-
-@st.cache_data(ttl=86400)
-def load_master():
-    try:
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            df['Code'] = df['Code'].astype(str) + "0"
-            return df
-    except: pass
-    return pd.DataFrame()
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_single_data(code, yrs=1):
-    base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
-    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"; url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200: result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except: pass
-    return result
-
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-def get_hist_data_cached():
-    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    while len(dates) < 45:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
-        days += 1
-    rows = []
-    def fetch(dt):
-        try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json().get("data", [])
-        except: pass
-        return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result()
-            if res: rows.extend(res)
-    return rows
-
-def get_fast_indicators(prices):
-    if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
-    p = np.array(prices, dtype='float32')
-    ema12 = pd.Series(p).ewm(span=12, adjust=False).mean().values; ema26 = pd.Series(p).ewm(span=26, adjust=False).mean().values
-    macd = ema12 - ema26; signal = pd.Series(macd).ewm(span=9, adjust=False).mean().values; hist = macd - signal
-    diff = np.diff(p[-15:]); g = np.sum(np.maximum(diff, 0)); l = np.sum(np.abs(np.minimum(diff, 0)))
-    rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
-
-def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """
-    【待伏・強襲 共通格付けエンジン】
-    サイドバーの「戦術アルゴリズム」および「現在損切%」を物理反映。
-    """
-    # 🚨 サイドバー設定のリアルタイム取得
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
-    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
-
-    # MACDトレンド判定
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
-    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
-    else: macd_t = "減衰"
-
-    # --- ⚡ 強襲（GC）モードの判定 ---
-    if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: 
-            return "圏外🚫", "#d32f2f", 0, macd_t
-        
-        # 狙撃優先モード：RSIの過熱感を許容し、勢いを重視
-        if is_assault_mode:
-            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
-            return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
-        else:
-            # バランスモード：RSIと日数を厳密に判定
-            if gc_days == 1: 
-                return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
-            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
-
-    # --- 🌐 待伏（押し目）モードの判定 ---
-    if bt == 0 or lc == 0: 
-        return "C👁️", "#616161", 1, macd_t
-
-    dist_pct = ((lc / bt) - 1) * 100 
-    
-    # 🛡️ 物理防衛線：現在損切%を超えた下落は、どんな好条件でも即「💀圏外」
-    if dist_pct < -sl_limit_pct: 
-        return "圏外💀", "#d32f2f", 0, f"損切突破({dist_pct:.1f}%)"
-
-    # 🏹 ランク評価ロジック
-    if is_assault_mode:
-        # 🎯 狙撃優先：目標価格(bt)への到達度を最優先。RSIが高くても強気にSを付与。
-        if dist_pct <= 2.0: return "S🔥", "#2e7d32", 5.5, macd_t
-        elif dist_pct <= 6.0: return "A⚡", "#ed6c02", 4.5, macd_t
-        elif dist_pct <= 10.0: return "B📈", "#0288d1", 3.5, macd_t
-    else:
-        # ⚖️ バランス：RSIの過熱感を厳密にチェックし、確実性を重視。
-        if dist_pct <= 2.0: 
-            return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
-        elif dist_pct <= 5.0: 
-            return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
-
-    return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     """
