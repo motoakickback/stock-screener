@@ -1821,40 +1821,27 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（絶対防弾・高速版） ---
-    # 🚨 スイング全決済後のデータ不整合を強制吸収し、システムを復旧させる。
+    # --- 🛡️ 2. 司令部エディタ（超高速・動的防衛版） ---
+    # 🚨 スキャン速度を維持するため、型矯正は「必要な時だけ」最小限に行う。
 
-    # 初期化チェック：session_stateが存在しない、またはDataFrameでない場合のガード
+    # A. 構造チェック（初期化）
     if 'frontline_df' not in st.session_state or not isinstance(st.session_state.frontline_df, pd.DataFrame):
-        # 異常時は空のDataFrameで初期化してクラッシュを防ぐ
         st.session_state.frontline_df = pd.DataFrame(columns=['code', 'name', 'price', 'quantity', 'f1_min', 'f1_max', '目標', '損切'])
 
-    # 表示用バッファの作成（型矯正プロセス）
+    # B. 超高速・型矯正（スキャンを邪魔しない）
     if not st.session_state.frontline_df.empty:
-        try:
-            # 1. データのコピーを作成（元データを破壊しない）
-            display_df = st.session_state.frontline_df.copy()
-            
-            # 2. 数値であるべき主要カラムを強制指定
-            # ボスのサイドバー（f1_min等）とロジックを物理的に同期
+        # 数値であるべき代表カラム（f1_min）が 'object' 型の時だけ一括変換をかける
+        # これにより、スキャン中の大半の時間は計算コストがほぼゼロになる
+        if st.session_state.frontline_df['f1_min'].dtype == 'object':
             target_cols = ['f1_min', 'f1_max', 'price', 'quantity', '目標', '損切']
-            numeric_cols = [c for c in target_cols if c in display_df.columns]
-            
-            # 3. 高速一括型変換（ベクトル処理）
-            # errors='coerce' で不正データを強制的にNaNにし、0.0で埋める
+            numeric_cols = [c for c in target_cols if c in st.session_state.frontline_df.columns]
             for col in numeric_cols:
-                display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0.0)
-                
-        except Exception as e:
-            # 万が一の変換エラー時も止まらないよう、生データを渡す
-            display_df = st.session_state.frontline_df
-    else:
-        display_df = st.session_state.frontline_df
+                st.session_state.frontline_df[col] = pd.to_numeric(st.session_state.frontline_df[col], errors='coerce').fillna(0.0)
 
-    # 4. 司令部エディタ本体の描画
-    # UIの神聖不可侵：key名とカラム構成を維持
+    # C. 司令部エディタ本体（UIの神聖不可侵を維持）
+    # display_df を作らず、session_state を直接参照してメモリと時間を節約
     edited_df = st.data_editor(
-        display_df,
+        st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
         key="frontline_editor_v_final_sync",
