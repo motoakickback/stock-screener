@@ -1821,31 +1821,23 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 司令部エディタ：ゼロ・レイテンシ版 ---
-
-    # 1. 表示用のデータ準備（加工を一切しない）
-    # 🚨 以前の型変換ロジック（pd.to_numeric）はここから「全削除」してください。
-    # 型変換はスキャナー（Tab 1-3のループ内）で一度だけ行うのがスナイパーの流儀です。
-    
-    if 'frontline_df' not in st.session_state:
-        st.session_state.frontline_df = pd.DataFrame(columns=['code', 'name', 'price', 'quantity', 'f1_min', 'f1_max', '目標', '損切'])
-    
-    # 2. 軽量化したエディタ
-    # data_editor の引数 'use_container_width' や 'column_config' は最小限にします
+    # --- 🛡️ 2. 司令部エディタ（入力保護・跳ね返り防止） ---
+    # 🚨 rerun を誘発させないよう、key を固定し、安定した入力環境を確保。
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
-        key="frontline_editor_v_final_sync",
-        use_container_width=True
+        column_config={
+            "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
+            "買値": st.column_config.NumberColumn("買値", format="%d"),
+            "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
+            "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
+            "損切": st.column_config.NumberColumn("固定損切", format="%d"),
+            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
+            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
+        },
+        use_container_width=True,
+        key="frontline_editor_v_final_sync"
     )
-    
-    # --- 🚀 スキャナー側の高速化（全Tab共通の原則） ---
-    # スキャンを実行している関数内（Tab 1-3のロジック内）で以下を適用してください。
-    # 例: 
-    # new_data = scanner.run()
-    # st.session_state.frontline_df = pd.concat([st.session_state.frontline_df, new_data])
-    # ↓ 直後にこれを入れるだけ
-    # st.session_state.frontline_df = st.session_state.frontline_df.infer_objects()
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
     c1, c2 = st.columns(2)
