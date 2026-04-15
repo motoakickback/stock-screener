@@ -1821,40 +1821,31 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（超高速・動的防衛版） ---
-    # 🚨 スキャン速度を維持するため、型矯正は「必要な時だけ」最小限に行う。
+    # --- 🛡️ 司令部エディタ：ゼロ・レイテンシ版 ---
 
-    # A. 構造チェック（初期化）
-    if 'frontline_df' not in st.session_state or not isinstance(st.session_state.frontline_df, pd.DataFrame):
+    # 1. 表示用のデータ準備（加工を一切しない）
+    # 🚨 以前の型変換ロジック（pd.to_numeric）はここから「全削除」してください。
+    # 型変換はスキャナー（Tab 1-3のループ内）で一度だけ行うのがスナイパーの流儀です。
+    
+    if 'frontline_df' not in st.session_state:
         st.session_state.frontline_df = pd.DataFrame(columns=['code', 'name', 'price', 'quantity', 'f1_min', 'f1_max', '目標', '損切'])
-
-    # B. 超高速・型矯正（スキャンを邪魔しない）
-    if not st.session_state.frontline_df.empty:
-        # 数値であるべき代表カラム（f1_min）が 'object' 型の時だけ一括変換をかける
-        # これにより、スキャン中の大半の時間は計算コストがほぼゼロになる
-        if st.session_state.frontline_df['f1_min'].dtype == 'object':
-            target_cols = ['f1_min', 'f1_max', 'price', 'quantity', '目標', '損切']
-            numeric_cols = [c for c in target_cols if c in st.session_state.frontline_df.columns]
-            for col in numeric_cols:
-                st.session_state.frontline_df[col] = pd.to_numeric(st.session_state.frontline_df[col], errors='coerce').fillna(0.0)
-
-    # C. 司令部エディタ本体（UIの神聖不可侵を維持）
-    # display_df を作らず、session_state を直接参照してメモリと時間を節約
+    
+    # 2. 軽量化したエディタ
+    # data_editor の引数 'use_container_width' や 'column_config' は最小限にします
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
-        use_container_width=True,
         key="frontline_editor_v_final_sync",
-        column_config={
-            "code": st.column_config.TextColumn("銘柄コード", help="4桁の数字を入力", required=True),
-            "price": st.column_config.NumberColumn("現在値", format="%.1f"),
-            "f1_min": st.column_config.NumberColumn("f1_min", format="%.1f"),
-            "f1_max": st.column_config.NumberColumn("f1_max", format="%.1f"),
-            "目標": st.column_config.NumberColumn("利確目標", format="%.1f"),
-            "損切": st.column_config.NumberColumn("損切目安", format="%.1f"),
-        }
+        use_container_width=True
     )
-    # --- エディタブロック終了 ---
+    
+    # --- 🚀 スキャナー側の高速化（全Tab共通の原則） ---
+    # スキャンを実行している関数内（Tab 1-3のロジック内）で以下を適用してください。
+    # 例: 
+    # new_data = scanner.run()
+    # st.session_state.frontline_df = pd.concat([st.session_state.frontline_df, new_data])
+    # ↓ 直後にこれを入れるだけ
+    # st.session_state.frontline_df = st.session_state.frontline_df.infer_objects()
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
     c1, c2 = st.columns(2)
