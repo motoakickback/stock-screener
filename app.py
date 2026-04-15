@@ -348,24 +348,47 @@ def render_macro_board():
 # 🛰️ 実行：メインパネル最上部に気象情報を展開
 render_macro_board()
 
-# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 索敵能力・完全復旧版 ） ---
+# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 物理統合・定義順序修正済 ） ---
+
+@st.cache_data(ttl=86400)
+def load_master():
+    """
+    🚨 最優先定義：銘柄マスターのロード
+    エラー回避のため、失敗時も空のデータフレームを返しシステム停止を防ぐ。
+    """
+    try:
+        # JPX公式サイトから最新の銘柄一覧（Excel）を直接狙撃
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            # J-Quants v2仕様：コードを5桁の文字列に統一（例: 72030）
+            df['Code'] = df['Code'].astype(str) + "0"
+            return df
+    except Exception as e:
+        print(f"Master Load Error: {e}")
+    return pd.DataFrame(columns=['Code', 'CompanyName', 'Sector', 'Market'])
+
+# 🚨 呼び出し行：関数の定義より「後」に配置すること
+# master_df = load_master() 
 
 def clean_df(df):
-    """J-Quants v2 のカラム名を物理変換し、5桁コードを正規化"""
+    """J-Quants v2 のカラム名を物理変換し、数値を正規化"""
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        # 🚨 v2仕様：コードを5桁の文字列に統一
         if 'Code' in df.columns:
             df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
 def calc_vector_indicators(df):
-    """テクニカル指標の高速演算（ベクトル化・クラッシュガード搭載）"""
+    """テクニカル指標の高速演算（クラッシュガード搭載）"""
     df = df.copy()
     if df.empty or len(df) < 5: return df
     
@@ -376,7 +399,7 @@ def calc_vector_indicators(df):
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
     
-    # MACD (12, 26, 9)
+    # MACD
     ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
     ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
     macd = ema12 - ema26
@@ -396,10 +419,9 @@ def calc_technicals(df):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均(0000)をJ-Quants v2 指数専用パスから取得"""
+    """日経平均専用：指数用エンドポイントを直撃"""
     base = datetime.utcnow() + timedelta(hours=9)
     f_d, t_d = (base - timedelta(days=100)).strftime('%Y-%m-%d'), base.strftime('%Y-%m-%d')
-    # 🚨 v2 指数専用エンドポイント /indices/bars/daily
     url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}"
     try:
         r = requests.get(url, headers=headers, timeout=5.0)
@@ -422,38 +444,8 @@ def get_macro_weather():
     except: pass
     return None
 
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-def get_hist_data_cached():
-    """TAB1/2用：全銘柄の履歴を物理取得。ハイフン付き日付形式を強制。"""
-    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    # 索敵範囲：直近30営業日
-    while len(dates) < 30:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: 
-            dates.append(d.strftime('%Y-%m-%d')) # 🚨 YYYY-MM-DD 必須
-        days += 1
-    
-    rows = []
-    def fetch(dt):
-        # 🚨 v2 全銘柄一括エンドポイント /prices/daily_quotes
-        url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                # v2レスポンスキー 'daily_quotes' を抽出
-                return r.json().get("daily_quotes") or []
-        except: pass
-        return []
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result()
-            if res: rows.extend(res)
-    return rows
-
 def fetch_current_prices_fast(codes):
-    """TAB5用：個別銘柄の高速同期（TAB3の成功パスを流用）"""
+    """TAB5用：成功パス /equities/bars/daily へ物理一本化"""
     results = {}
     base = datetime.utcnow() + timedelta(hours=9)
     f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
@@ -478,7 +470,7 @@ def fetch_current_prices_fast(codes):
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
-    """財務データ取得：ROE物理算出回路"""
+    """ROE物理算出回路（ハイフン根絶仕様）"""
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     try:
@@ -496,8 +488,46 @@ def get_fundamentals(code):
     except: pass
     return None
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_single_data(code, yrs=1):
+    """単一銘柄データ取得（成功実績ルート）"""
+    base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
+    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
+    try:
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        r_bars = requests.get(url, headers=headers, timeout=10)
+        if r_bars.status_code == 200:
+            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
+    except: pass
+    return result
+
+@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+def get_hist_data_cached():
+    """TAB1/2用：日付フォーマットを v2 仕様（YYYY-MM-DD）に物理修正"""
+    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
+    while len(dates) < 30:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: 
+            dates.append(d.strftime('%Y-%m-%d')) # ハイフンあり
+        days += 1
+    rows = []
+    def fetch(dt):
+        url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200: 
+                return r.json().get("daily_quotes") or []
+        except: pass
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        futs = [exe.submit(fetch, dt) for dt in dates]
+        for f in concurrent.futures.as_completed(futs):
+            res = f.result(); rows.extend(res or [])
+    return rows
+
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """【待伏・強襲 共通格付けエンジン】サイドバー設定を物理反映"""
+    """格付けエンジン（物理反映版）"""
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス")
     is_assault = "狙撃優先" in tactics
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
@@ -516,20 +546,33 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     elif rsi < 45: return "A🛡️", "#2e7d32", 4, "押し目"
     return "圏外💀", "#616161", 0, "通常"
 
-    # 🏹 ランク評価ロジック
-    if is_assault_mode:
-        # 🎯 狙撃優先：目標価格(bt)への到達度を最優先。RSIが高くても強気にSを付与。
-        if dist_pct <= 2.0: return "S🔥", "#2e7d32", 5.5, macd_t
-        elif dist_pct <= 6.0: return "A⚡", "#ed6c02", 4.5, macd_t
-        elif dist_pct <= 10.0: return "B📈", "#0288d1", 3.5, macd_t
-    else:
-        # ⚖️ バランス：RSIの過熱感を厳密にチェックし、確実性を重視。
-        if dist_pct <= 2.0: 
-            return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
-        elif dist_pct <= 5.0: 
-            return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
-
-    return "C👁️", "#616161", 1, macd_t
+def check_event_mines(code, event_data=None):
+    alerts = []
+    c = str(code)[:4]; today = datetime.utcnow() + timedelta(hours=9); today_date = today.date()
+    max_warning_date = today_date + timedelta(days=14)
+    critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
+    if c in critical_mines:
+        try:
+            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
+            if (event_date - timedelta(days=14)) <= today_date <= event_date: alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
+        except: pass
+    if not event_data: return alerts
+    for item in event_data.get("dividend", []):
+        d_str = str(item.get("RecordDate", ""))[:10]
+        if d_str:
+            try:
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date: alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})"); break
+            except: pass
+    for item in event_data.get("earnings", []):
+        if str(item.get("Code", ""))[:4] != c: continue
+        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
+        if d_str:
+            try:
+                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
+                if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
+            except: pass
+    return alerts
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     """
