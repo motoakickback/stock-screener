@@ -217,31 +217,56 @@ def apply_presets():
 # 初期化実行
 load_settings()
 
-# --- 🌪️ 1. マクロ気象レーダー（関数定義：必ず一番上に置く） ---
-@st.cache_data(ttl=60, show_spinner=False)
-def get_macro_weather():
-    try:
-        import yfinance as yf
-        import pandas as pd
-        from datetime import datetime, timedelta
-        import pytz
-        jst = pytz.timezone('Asia/Tokyo')
-        now = datetime.now(jst)
-        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
-        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
-        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
-        if not df_raw.empty:
-            if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
-            df_ni = df_raw.reset_index()
-            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
-            df_ni = df_ni.dropna(subset=['Close']).tail(65)
-            latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
-            return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest['Date'].strftime('%m/%d')}}
-    except: return None
+# --- 🌪️ 1. マクロ気象レーダー（J-Quants API v2 物理一本化版） ---
 
-# --- 🌪️ 2. マクロ気象・司令部通信（関数定義の後で呼び出す） ---
+@st.cache_data(ttl=600, show_spinner=False)
+def get_macro_weather():
+    """
+    TAB3と同じ成功ルート（/equities/bars/daily）を使用して日経平均を取得。
+    yfinanceの遅延を物理的に回避し、常に最新の国内データを狙撃する。
+    """
+    # 🚨 TAB3と同じJ-Quants成功エンドポイントを使用
+    base = datetime.utcnow() + timedelta(hours=9)
+    # 直近5日分を取得すれば、必ず最新の営業日が含まれる
+    f_d = (base - timedelta(days=5)).strftime('%Y%m%d')
+    t_d = base.strftime('%Y%m%d')
+    
+    # 物理配線：日経平均のコードは「0000」
+    url = f"{BASE_URL}/equities/bars/daily?code=0000&from={f_d}&to={t_d}"
+    
+    try:
+        r = requests.get(url, headers=headers, timeout=5.0)
+        if r.status_code == 200:
+            # TAB3と同じレスポンス解析ロジック
+            data = r.json().get("daily_quotes") or r.json().get("data")
+            if data:
+                df_ni = pd.DataFrame(data)
+                df_ni['Date'] = pd.to_datetime(df_ni['Date'])
+                df_ni = df_ni.sort_values('Date').reset_index(drop=True)
+                
+                latest = df_ni.iloc[-1]
+                prev = df_ni.iloc[-2]
+                
+                # 📡 司令部UIとサイドバーフィルターへ供給する辞書構造
+                return {
+                    "nikkei": {
+                        "price": float(latest['Close']),
+                        "diff": float(latest['Close'] - prev['Close']),
+                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                        "df": df_ni,
+                        "date": latest['Date'].strftime('%m/%d')
+                    }
+                }
+    except Exception as e:
+        print(f"Nikkei Macro Error: {e}")
+    return None
+
+# --- 🌪️ 2. マクロ気象・司令部通信（物理配線：ここがフィルターの命） ---
+# 🚨 関数の定義直後に一度だけ呼び出し、グローバル変数を確定させる
 weather = get_macro_weather()
-nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
+
+# ✅ 重要：サイドバーの各種フィルターが参照する物理変数
+nikkei_pct_api = weather['nikkei']['pct'] if weather and "nikkei" in weather else 0.0
 
 def render_macro_board():
     data = get_macro_weather()
