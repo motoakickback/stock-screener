@@ -1821,22 +1821,29 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（入力保護・跳ね返り防止） ---
-    # 🚨 rerun を誘発させないよう、key を固定し、安定した入力環境を確保。
+    # --- 🛡️ 2. 司令部エディタ（入力保護・型矯正） ---
+
+    # 1. デバッグ情報の出力（必要なら残す、不要ならコメントアウト）
+    # st.write("Debug: frontline_df dtypes", st.session_state.frontline_df.dtypes)
+    
+    # 2. 【重要】エディタに渡す前に、数値カラムを強制的にクレンジング
+    df_to_edit = st.session_state.frontline_df.copy()
+    
+    # 数値であるべきカラム名（ボスのDFに合わせて適宜追加してください）
+    # 例: f1_min, f1_max, price, quantity 等
+    numeric_cols = [col for col in df_to_edit.columns if any(x in col.lower() for x in ['price', 'f1', 'qty', 'val', '目標', '損切'])]
+    
+    for col in numeric_cols:
+        if col in df_to_edit.columns:
+            # 文字列やNoneを数値に変換。変換できないものは0にする
+            df_to_edit[col] = pd.to_numeric(df_to_edit[col], errors='coerce').fillna(0.0)
+    
+    # 3. 矯正済みのデータでエディタを起動
     edited_df = st.data_editor(
-        st.session_state.frontline_df,
+        df_to_edit,
         num_rows="dynamic",
-        column_config={
-            "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%d"),
-            "第1利確": st.column_config.NumberColumn("第1利確", format="%d"),
-            "第2利確": st.column_config.NumberColumn("第2利確", format="%d"),
-            "損切": st.column_config.NumberColumn("固定損切", format="%d"),
-            "現在値": st.column_config.NumberColumn("🔴 現在値", format="%d"),
-            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
-        },
-        use_container_width=True,
-        key="frontline_editor_v_final_sync"
+        key="frontline_editor_v_final_sync",
+        # column_config 等が下にある場合はそのまま継続
     )
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
