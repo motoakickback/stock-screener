@@ -348,7 +348,8 @@ def render_macro_board():
 # 🛰️ 実行：メインパネル最上部に気象情報を展開
 render_macro_board()
 
-# --- 3. 共通関数 & 演算エンジン ---
+# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 物理同期・完全版 ） ---
+
 def clean_df(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
@@ -361,6 +362,7 @@ def clean_df(df):
 
 def calc_vector_indicators(df):
     df = df.copy()
+    if df.empty: return df
     delta = df.groupby('Code')['AdjC'].diff()
     gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
@@ -380,6 +382,55 @@ def calc_vector_indicators(df):
 
 def calc_technicals(df):
     return calc_vector_indicators(df)
+
+# 🌪️ 日経平均取得エンジン（J-Quants v2 最速・最新日付保証版）
+@st.cache_data(ttl=600, show_spinner=False)
+def get_macro_weather():
+    url = f"{BASE_URL}/prices/daily_quotes?code=0000"
+    try:
+        r = requests.get(url, headers=headers, timeout=5.0)
+        if r.status_code == 200:
+            data = r.json().get("daily_quotes", [])
+            if data:
+                df_ni = pd.DataFrame(data)
+                df_ni['Date'] = pd.to_datetime(df_ni['Date'])
+                df_ni = df_ni.sort_values('Date').reset_index(drop=True)
+                latest = df_ni.iloc[-1]
+                prev = df_ni.iloc[-2]
+                return {
+                    "nikkei": {
+                        "price": float(latest['Close']),
+                        "diff": float(latest['Close'] - prev['Close']),
+                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                        "df": df_ni.tail(65),
+                        "date": latest['Date'].strftime('%m/%d')
+                    }
+                }
+    except: pass
+    return None
+
+# 🛰️ 複数銘柄の現在値一括取得エンジン（Tab 5 の同期で使用）
+def fetch_current_prices_fast(codes):
+    results = {}
+    def fetch_single(code):
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        url = f"{BASE_URL}/prices/daily_quotes?code={api_code}"
+        try:
+            r = requests.get(url, headers=headers, timeout=2.5)
+            if r.status_code == 200:
+                data = r.json().get("daily_quotes", [])
+                if data:
+                    latest = sorted(data, key=lambda x: x['Date'])[-1]
+                    return code, float(latest.get("Close"))
+        except: pass
+        return code, None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futs = {executor.submit(fetch_single, c): c for c in codes}
+        for f in concurrent.futures.as_completed(futs):
+            c_code, price = f.result()
+            if price is not None: results[c_code] = price
+    return results
 
 def check_event_mines(code, event_data=None):
     alerts = []
@@ -409,96 +460,23 @@ def check_event_mines(code, event_data=None):
             except: pass
     return alerts
 
-def check_double_top(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
-        if len(v) < 6: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(v) >= 2 and v[-1] > v[-2]:
-            if not peaks or (len(v)-1 - peaks[-1][0] > 1): peaks.append((len(v)-1, v[-1]))
-        if len(peaks) >= 2:
-            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
-            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
-                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
-                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
-        return False
-    except: return False
-
-def check_head_shoulders(df_sub):
-    try:
-        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
-        if len(v) < 8: return False
-        peaks = []
-        for i in range(1, len(v)-1):
-            if v[i] == max(v[i-1:i+2]):
-                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
-        if len(peaks) >= 3:
-            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
-            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
-        return False
-    except: return False
-
-def check_double_bottom(df_sub):
-    try:
-        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
-        if len(l) < 6: return False
-        valleys = []
-        for i in range(1, len(l)-1):
-            if l[i] == min(l[i-1:i+2]):
-                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
-        if len(valleys) >= 2:
-            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
-            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
-                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
-                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
-        return False
-    except: return False
-
-# --- ⚙️ 機関部分：ROE算出・高速スキャンエンジン（ Sniper Edition ） ---
-
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
-    """
-    J-Quants v2 から財務データを取得し、ROEを算出して返す。
-    1時間のキャッシュを適用し、スキャン速度を保護する。
-    """
-    # 🚨 J-Quants v2 の掟：4桁コードの末尾に "0" を付与して5桁にする
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
-    
     try:
-        # タイムアウトを 3秒に設定（フリーズ防止）
         r = requests.get(url, headers=headers, timeout=3.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
-            if not data:
-                return None
-            
-            latest = data[0] # 最新の決算短信
-            res = {
-                "op": latest.get("OperatingProfit"),       # 営業利益
-                "cap": latest.get("MarketCapitalization"), # 時価総額
-                "er": latest.get("EquityRatio"),           # 自己資本比率
-                "roe": None                                # ROE初期値
-            }
-            
-            # 🎯 ROE算出ロジック： (当期純利益 / 自己資本) * 100
-            # 数式： $$ROE = \frac{\text{Net Income}}{\text{Equity}} \times 100$$
-            net_income = latest.get("NetIncome")
-            equity = latest.get("Equity")
-            
-            if net_income is not None and equity is not None:
-                try:
-                    res["roe"] = (float(net_income) / float(equity)) * 100
-                except (ZeroDivisionError, ValueError):
-                    res["roe"] = 0.0
-            
+            if not data: return None
+            l = data[0]
+            res = {"op": l.get("OperatingProfit"), "cap": l.get("MarketCapitalization"), "er": l.get("EquityRatio"), "roe": None}
+            ni, eq = l.get("NetIncome"), l.get("Equity")
+            if ni is not None and eq is not None:
+                try: res["roe"] = (float(ni) / float(eq)) * 100
+                except: res["roe"] = 0.0
             return res
-    except Exception:
-        pass
+    except: pass
     return None
 
 @st.cache_data(ttl=86400)
@@ -543,48 +521,31 @@ def get_hist_data_cached():
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
-            res = f.result()
-            if res: rows.extend(res)
+            res = f.result(); rows.extend(res or [])
     return rows
 
-def get_fast_indicators(prices):
-    if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
-    p = np.array(prices, dtype='float32')
-    ema12 = pd.Series(p).ewm(span=12, adjust=False).mean().values; ema26 = pd.Series(p).ewm(span=26, adjust=False).mean().values
-    macd = ema12 - ema26; signal = pd.Series(macd).ewm(span=9, adjust=False).mean().values; hist = macd - signal
-    diff = np.diff(p[-15:]); g = np.sum(np.maximum(diff, 0)); l = np.sum(np.abs(np.minimum(diff, 0)))
-    rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
-
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """
-    【待伏・強襲 共通格付けエンジン】
-    サイドバーの「戦術アルゴリズム」および「現在損切%」を物理反映。
-    """
-    # 🚨 サイドバー設定のリアルタイム取得
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
-    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
-
-    # MACDトレンド判定
+    
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
 
-    # --- ⚡ 強襲（GC）モードの判定 ---
     if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: 
-            return "圏外🚫", "#d32f2f", 0, macd_t
-        
-        # 狙撃優先モード：RSIの過熱感を許容し、勢いを重視
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
         if is_assault_mode:
             if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
             return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
         else:
-            # バランスモード：RSIと日数を厳密に判定
-            if gc_days == 1: 
-                return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
+            if gc_days == 1: return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
             return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+    
+    # 待伏モード判定（デフォルト返却値）
+    if rsi < 30: return "S💎", "#1b5e20", 5, "大底圏"
+    elif rsi < 45: return "A🛡️", "#2e7d32", 4, "押し目"
+    return "圏外💀", "#616161", 0, "通常"
 
     # --- 🌐 待伏（押し目）モードの判定 ---
     if bt == 0 or lc == 0: 
