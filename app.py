@@ -1821,33 +1821,53 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- ⚡ 2. 司令部エディタ（高速・型安全版） ---
+    # --- 🛡️ 2. 司令部エディタ（絶対防弾・高速版） ---
+    # 🚨 スイング全決済後のデータ不整合を強制吸収し、システムを復旧させる。
 
-    # 前処理：型不一致によるエラーを防ぎつつ、高速に処理
+    # 初期化チェック：session_stateが存在しない、またはDataFrameでない場合のガード
+    if 'frontline_df' not in st.session_state or not isinstance(st.session_state.frontline_df, pd.DataFrame):
+        # 異常時は空のDataFrameで初期化してクラッシュを防ぐ
+        st.session_state.frontline_df = pd.DataFrame(columns=['code', 'name', 'price', 'quantity', 'f1_min', 'f1_max', '目標', '損切'])
+
+    # 表示用バッファの作成（型矯正プロセス）
     if not st.session_state.frontline_df.empty:
-        # 数値であるべきカラムを特定（ボスのキー名に合わせて最適化）
-        # リストを直接指定するのが最速です
-        target_cols = ['f1_min', 'f1_max', 'price', 'quantity', '目標', '損切'] 
-        
-        # 存在するカラムだけを抽出
-        existing_numeric_cols = [c for c in target_cols if c in st.session_state.frontline_df.columns]
-        
-        # 一括で型変換（errors='coerce' で安全に、最後に fillna）
-        # .copy() を最小限にするため、必要な時だけ処理
-        display_df = st.session_state.frontline_df.copy()
-        display_df[existing_numeric_cols] = display_df[existing_numeric_cols].apply(
-            pd.to_numeric, errors='coerce'
-        ).fillna(0.0)
+        try:
+            # 1. データのコピーを作成（元データを破壊しない）
+            display_df = st.session_state.frontline_df.copy()
+            
+            # 2. 数値であるべき主要カラムを強制指定
+            # ボスのサイドバー（f1_min等）とロジックを物理的に同期
+            target_cols = ['f1_min', 'f1_max', 'price', 'quantity', '目標', '損切']
+            numeric_cols = [c for c in target_cols if c in display_df.columns]
+            
+            # 3. 高速一括型変換（ベクトル処理）
+            # errors='coerce' で不正データを強制的にNaNにし、0.0で埋める
+            for col in numeric_cols:
+                display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0.0)
+                
+        except Exception as e:
+            # 万が一の変換エラー時も止まらないよう、生データを渡す
+            display_df = st.session_state.frontline_df
     else:
         display_df = st.session_state.frontline_df
-    
-    # エディタ呼び出し
+
+    # 4. 司令部エディタ本体の描画
+    # UIの神聖不可侵：key名とカラム構成を維持
     edited_df = st.data_editor(
         display_df,
         num_rows="dynamic",
+        use_container_width=True,
         key="frontline_editor_v_final_sync",
-        # ...以下の引数はボスの原典通りに継続...
+        column_config={
+            "code": st.column_config.TextColumn("銘柄コード", help="4桁の数字を入力", required=True),
+            "price": st.column_config.NumberColumn("現在値", format="%.1f"),
+            "f1_min": st.column_config.NumberColumn("f1_min", format="%.1f"),
+            "f1_max": st.column_config.NumberColumn("f1_max", format="%.1f"),
+            "目標": st.column_config.NumberColumn("利確目標", format="%.1f"),
+            "損切": st.column_config.NumberColumn("損切目安", format="%.1f"),
+        }
     )
+    # --- エディタブロック終了 ---
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
     c1, c2 = st.columns(2)
