@@ -121,6 +121,13 @@ API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
 headers = {"x-api-key": API_KEY}
 BASE_URL = "https://api.jquants.com/v2"
 
+# --- 1826行目以前、BASE_URL の直後に挿入 ---
+import time
+if "login_time" not in st.session_state:
+    st.session_state.login_time = time.time()
+
+st.write(f"⏱ ログインから現在までの経過時間: {time.time() - st.session_state.login_time:.2f}秒")
+
 # --- ⚙️ 設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
