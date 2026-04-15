@@ -348,35 +348,44 @@ def render_macro_board():
 # 🛰️ 実行：メインパネル最上部に気象情報を展開
 render_macro_board()
 
-# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 通信経路・物理正常化版 ） ---
+# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 索敵能力・完全復旧版 ） ---
 
 def clean_df(df):
-    """J-Quants v2 のカラム名をシステム標準に物理変換"""
+    """J-Quants v2 のカラム名を物理変換し、5桁コードを正規化"""
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
     df = df.rename(columns=r_cols)
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
+        # 🚨 v2仕様：コードを5桁の文字列に統一
+        if 'Code' in df.columns:
+            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
 def calc_vector_indicators(df):
-    """テクニカル指標の高速演算（Oh no! クラッシュ防衛機能付き）"""
+    """テクニカル指標の高速演算（ベクトル化・クラッシュガード搭載）"""
     df = df.copy()
-    if df.empty or len(df) < 2: return df
+    if df.empty or len(df) < 5: return df
+    
+    # RSI (14日)
     delta = df.groupby('Code')['AdjC'].diff()
     gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
+    
+    # MACD (12, 26, 9)
     ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
     ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
     macd = ema12 - ema26
     signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
     df['MACD_Hist'] = (macd - signal).astype('float32')
-    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
+    
+    # 移動平均線 & ATR
     df['MA5'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
+    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
     df['MA75'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
     tr = pd.concat([df['AdjH']-df['AdjL'], (df['AdjH']-df.groupby('Code')['AdjC'].shift(1)).abs(), (df['AdjL']-df.groupby('Code')['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
@@ -385,13 +394,12 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
-# 🌪️ 日経平均取得エンジン（指数専用エンドポイント /indices/bars/daily に修正）
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
+    """日経平均(0000)をJ-Quants v2 指数専用パスから取得"""
     base = datetime.utcnow() + timedelta(hours=9)
-    f_d = (base - timedelta(days=100)).strftime('%Y%m%d')
-    t_d = base.strftime('%Y%m%d')
-    # 🚨 指数(Nikkei225)は equities ではなく indices エンドポイントを使用
+    f_d, t_d = (base - timedelta(days=100)).strftime('%Y-%m-%d'), base.strftime('%Y-%m-%d')
+    # 🚨 v2 指数専用エンドポイント /indices/bars/daily
     url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}"
     try:
         r = requests.get(url, headers=headers, timeout=5.0)
@@ -411,24 +419,46 @@ def get_macro_weather():
                         "date": latest['Date'].strftime('%m/%d')
                     }
                 }
-        else:
-            # 認証エラーや通信エラーをログ出力（デバッグ用）
-            print(f"Macro API Error: {r.status_code} {r.text}")
-    except Exception as e:
-        print(f"Macro Logic Error: {e}")
+    except: pass
     return None
 
-# 🛰️ 複数銘柄現在値取得（TAB3と同じ成功パス /equities/bars/daily へ物理一本化）
+@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+def get_hist_data_cached():
+    """TAB1/2用：全銘柄の履歴を物理取得。ハイフン付き日付形式を強制。"""
+    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
+    # 索敵範囲：直近30営業日
+    while len(dates) < 30:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: 
+            dates.append(d.strftime('%Y-%m-%d')) # 🚨 YYYY-MM-DD 必須
+        days += 1
+    
+    rows = []
+    def fetch(dt):
+        # 🚨 v2 全銘柄一括エンドポイント /prices/daily_quotes
+        url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                # v2レスポンスキー 'daily_quotes' を抽出
+                return r.json().get("daily_quotes") or []
+        except: pass
+        return []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        futs = [exe.submit(fetch, dt) for dt in dates]
+        for f in concurrent.futures.as_completed(futs):
+            res = f.result()
+            if res: rows.extend(res)
+    return rows
+
 def fetch_current_prices_fast(codes):
+    """TAB5用：個別銘柄の高速同期（TAB3の成功パスを流用）"""
     results = {}
     base = datetime.utcnow() + timedelta(hours=9)
-    f_d = (base - timedelta(days=7)).strftime('%Y%m%d') # 週末を考慮し7日分
-    t_d = base.strftime('%Y%m%d')
-    
+    f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
     def fetch_single(code):
-        # コードの5桁化
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        # 🚨 成功実績のあるエンドポイントを使用
         url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
         try:
             r = requests.get(url, headers=headers, timeout=3.0)
@@ -439,7 +469,6 @@ def fetch_current_prices_fast(codes):
                     return code, float(latest.get("Close"))
         except: pass
         return code, None
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futs = {executor.submit(fetch_single, c): c for c in codes}
         for f in concurrent.futures.as_completed(futs):
@@ -447,36 +476,9 @@ def fetch_current_prices_fast(codes):
             if price is not None: results[c_code] = price
     return results
 
-def check_event_mines(code, event_data=None):
-    alerts = []
-    c = str(code)[:4]; today = datetime.utcnow() + timedelta(hours=9); today_date = today.date()
-    max_warning_date = today_date + timedelta(days=14)
-    critical_mines = {"8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"}
-    if c in critical_mines:
-        try:
-            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            if (event_date - timedelta(days=14)) <= today_date <= event_date: alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
-        except: pass
-    if not event_data: return alerts
-    for item in event_data.get("dividend", []):
-        d_str = str(item.get("RecordDate", ""))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})"); break
-            except: pass
-    for item in event_data.get("earnings", []):
-        if str(item.get("Code", ""))[:4] != c: continue
-        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date: alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})"); break
-            except: pass
-    return alerts
-
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
+    """財務データ取得：ROE物理算出回路"""
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     try:
@@ -487,99 +489,32 @@ def get_fundamentals(code):
             l = data[0]
             res = {"op": l.get("OperatingProfit"), "cap": l.get("MarketCapitalization"), "er": l.get("EquityRatio"), "roe": None}
             ni, eq = l.get("NetIncome"), l.get("Equity")
-            if ni is not None and eq is not None:
+            if ni and eq:
                 try: res["roe"] = (float(ni) / float(eq)) * 100
                 except: res["roe"] = 0.0
             return res
     except: pass
     return None
 
-@st.cache_data(ttl=86400)
-def load_master():
-    try:
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            df['Code'] = df['Code'].astype(str) + "0"
-            return df
-    except: pass
-    return pd.DataFrame()
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_single_data(code, yrs=1):
-    """TAB3等で使用する単一銘柄取得（成功実績ルート）"""
-    base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
-    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200:
-            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except: pass
-    return result
-
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
-def get_hist_data_cached():
-    """TAB1/2のスキャン用：全銘柄の一括取得（v2形式に物理修正）"""
-    base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    # スキャン対象の日数を確保（直近の平日を探す）
-    while len(dates) < 30:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y-%m-%d')) # YYYY-MM-DD 形式
-        days += 1
-    rows = []
-    def fetch(dt):
-        try:
-            # 🚨 v2における全銘柄一括エンドポイントの物理接続
-            url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200: 
-                return r.json().get("daily_quotes") or r.json().get("data") or []
-        except: pass
-        return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
-        for f in concurrent.futures.as_completed(futs):
-            res = f.result(); rows.extend(res or [])
-    return rows
-
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
+    """【待伏・強襲 共通格付けエンジン】サイドバー設定を物理反映"""
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス")
+    is_assault = "狙撃優先" in tactics
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
     elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
     if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#d32f2f", 0, macd_t
-        if is_assault_mode:
-            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
-            return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#616161", 0, macd_t
+        if is_assault:
+            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後"
+            return "A⚡", "#ed6c02", 4, f"GC{gc_days}日"
         else:
             if gc_days == 1: return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
-            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+            return "B📈", "#0288d1", 3, f"GC{gc_days}日"
     if rsi < 30: return "S💎", "#1b5e20", 5, "大底圏"
     elif rsi < 45: return "A🛡️", "#2e7d32", 4, "押し目"
     return "圏外💀", "#616161", 0, "通常"
-    
-    # 待伏モード判定（デフォルト返却値）
-    if rsi < 30: return "S💎", "#1b5e20", 5, "大底圏"
-    elif rsi < 45: return "A🛡️", "#2e7d32", 4, "押し目"
-    return "圏外💀", "#616161", 0, "通常"
-
-    # --- 🌐 待伏（押し目）モードの判定 ---
-    if bt == 0 or lc == 0: 
-        return "C👁️", "#616161", 1, macd_t
-
-    dist_pct = ((lc / bt) - 1) * 100 
-    
-    # 🛡️ 物理防衛線：現在損切%を超えた下落は、どんな好条件でも即「💀圏外」
-    if dist_pct < -sl_limit_pct: 
-        return "圏外💀", "#d32f2f", 0, f"損切突破({dist_pct:.1f}%)"
 
     # 🏹 ランク評価ロジック
     if is_assault_mode:
@@ -1830,11 +1765,11 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 銘柄コードを入力し、『🔄 全軍同期』を押すと J-Quants 成功ルートから最新価格を強制取得します。")
+    st.caption("※ 銘柄コードを入力し、『🔄 全軍同期』を押すと J-Quants 成功ルートから最新価格を取得します。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
 
-    # --- 🛡️ 1. 兵站初期化（重複防止・物理カラム固定） ---
+    # --- 🛡️ 1. 兵站初期化（KeyError防止） ---
     default_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
     
     if 'frontline_df' not in st.session_state:
@@ -1850,12 +1785,12 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛠️ 2. 司令部エディタ（唯一の入力窓口） ---
+    # --- 🛠️ 2. 司令部エディタ（物理一本化） ---
     edited_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
-        key="frontline_editor_final_unified",
+        key="frontline_editor_final_v4",
         hide_index=True,
         column_config={
             "銘柄": st.column_config.TextColumn("銘柄コード", help="4桁を入力", required=True),
@@ -1864,96 +1799,72 @@ with tab5:
             "損切": st.column_config.NumberColumn("損切目安", format="%.1f"),
             "第1利確": st.column_config.NumberColumn("利確1", format="%.1f"),
             "第2利確": st.column_config.NumberColumn("利確2", format="%.1f"),
-            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         }
     )
     st.session_state.frontline_df = edited_df
 
-    # --- 🔄 3. 同期・保存コマンドユニット ---
+    # --- 🛡️ 3. 同期・保存アクション ---
     c1, c2 = st.columns(2)
     
     with c1:
-        if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary", key="btn_sync_t5_final"):
-            # 物理配線：'銘柄'列からコードを正確に抽出
+        if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary", key="btn_sync_t5_v4"):
             codes_to_sync = [str(c).strip() for c in st.session_state.frontline_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != ""]
-            
             if codes_to_sync:
                 with st.spinner("J-Quants 成功ルートをスキャン中..."):
-                    # 修復されたエンジン fetch_current_prices_fast を呼び出し
                     new_prices = fetch_current_prices_fast(codes_to_sync)
-                    
                     if new_prices:
                         for c_code, c_price in new_prices.items():
                             st.session_state.frontline_df.loc[st.session_state.frontline_df['銘柄'].astype(str) == str(c_code), '現在値'] = c_price
-                        
                         st.success(f"📡 最新値を捕捉。{len(new_prices)} 銘柄を同期完了。")
                         st.rerun()
                     else:
-                        st.error("🚨 APIから有効なデータを取得できませんでした。認証または銘柄コードを確認してください。")
+                        st.error("🚨 APIから有効なデータを取得できませんでした。")
             else:
                 st.warning("同期対象の銘柄コードが入力されていません。")
 
-    with col_c2 if 'col_c2' in locals() else c2:
-        if st.button("💾 戦況を保存", use_container_width=True, key="btn_save_t5_final"):
+    with c2:
+        if st.button("💾 戦況を保存", use_container_width=True, key="btn_save_t5_v4"):
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-            st.toast("✅ 戦況を保存しました。", icon="💾")
+            st.toast("✅ 戦況を固定保存しました。", icon="💾")
 
     st.markdown("---")
     
-    # --- 🛡️ 4. 神聖不可侵UI：戦況描画（ボスの154行ロジックを完全復元） ---
+    # --- 🛡️ 4. 神聖不可侵UI：戦況描画（ボスの154行ロジック） ---
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
-    
     calc_df = st.session_state.frontline_df.copy()
-    # 数値列の強制変換
     for col in ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]:
-        calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
+        if col in calc_df.columns: calc_df[col] = pd.to_numeric(calc_df[col], errors='coerce')
 
     for index, row in calc_df.iterrows():
         ticker = str(row.get('銘柄', '')).strip()
         if ticker == "" or pd.isna(row.get('銘柄')): continue
-        
-        buy = float(row['買値']) if pd.notna(row['買値']) else 0.0
-        cur = float(row['現在値']) if pd.notna(row['現在値']) else 0.0
-        tp1 = float(row['第1利確']) if pd.notna(row['第1利確']) else 0.0
-        tp2 = float(row['第2利確']) if pd.notna(row['第2利確']) else 0.0
+        buy, cur = float(row['買値']) if pd.notna(row['買値']) else 0.0, float(row['現在値']) if pd.notna(row['現在値']) else 0.0
+        tp1, tp2 = float(row['第1利確']) if pd.notna(row['第1利確']) else 0.0, float(row['第2利確']) if pd.notna(row['第2利確']) else 0.0
         atr_v = float(row['atr']) if pd.notna(row['atr']) else buy * 0.03
-        
         active_squads += 1
         
-        # ATRベースの動動的防衛線
         final_sl = buy - (atr_v * sl_mult) if buy > 0 else 0.0
         cur_pct = ((cur / buy) - 1) * 100 if buy > 0 and cur > 0 else 0.0
         sl_pct = ((final_sl / buy) - 1) * 100 if buy > 0 and final_sl > 0 else 0.0
 
-        if cur <= 0:
-            st_text, st_color, bg_rgba = "📡 待機中 (現在値未取得)", "#888888", "rgba(136, 136, 136, 0.1)"
-        elif cur <= final_sl:
-            st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
-        elif cur < buy:
-            st_text, st_color, bg_rgba = "⚠️ 警戒（防衛線へ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
-        elif tp1 > 0 and cur < tp1:
-            st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
-        elif tp2 > 0 and cur < tp2:
-            st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
-        else:
-            st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
+        if cur <= 0: st_text, st_color, bg_rgba = "📡 待機中 (現在値未取得)", "#888888", "rgba(136, 136, 136, 0.1)"
+        elif cur <= final_sl: st_text, st_color, bg_rgba = "💀 被弾（防衛線突破）", "#ef5350", "rgba(239, 83, 80, 0.15)"
+        elif cur < buy: st_text, st_color, bg_rgba = "⚠️ 警戒（防衛線へ後退中）", "#ff9800", "rgba(255, 152, 0, 0.15)"
+        elif tp1 > 0 and cur < tp1: st_text, st_color, bg_rgba = "🟢 巡航中（第1目標へ接近中）", "#26a69a", "rgba(38, 166, 154, 0.15)"
+        elif tp2 > 0 and cur < tp2: st_text, st_color, bg_rgba = "🛡️ 第1目標到達（無敵化推奨）", "#42a5f5", "rgba(66, 165, 245, 0.15)"
+        else: st_text, st_color, bg_rgba = "🏆 最終目標到達（任務完了）", "#ab47bc", "rgba(171, 71, 188, 0.15)"
 
         st.markdown(f'<div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>', unsafe_allow_html=True)
-
         m_cols = st.columns([1, 1, 1.2, 1, 1])
         m_cols[0].metric("防衛線(ATR)", f"¥{int(final_sl):,}" if final_sl > 0 else "---", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="inverse")
         m_cols[1].metric("買値", f"¥{int(buy):,}" if buy > 0 else "---")
-        
         with m_cols[2]:
             st.markdown(f'<div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;"><div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 20px; color: #fff; font-weight: bold;">¥{int(cur):,}</div><div style="font-size: 10px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}%</div></div>', unsafe_allow_html=True)
-            
-        m_cols[3].metric("利確1", f"¥{int(tp1):,}" if tp1 > 0 else "---")
-        m_cols[4].metric("利確2", f"¥{int(tp2):,}" if tp2 > 0 else "---")
+        m_cols[3].metric("利確1", f"¥{int(tp1):,}" if tp1 > 0 else "---"); m_cols[4].metric("利確2", f"¥{int(tp2):,}" if tp2 > 0 else "---")
 
         if cur > 0:
-            pts = [v for v in [final_sl, cur, buy, tp1, tp2] if v > 0]
-            mx, mi = max(pts)*1.02, min(pts)*0.98
+            pts = [v for v in [final_sl, cur, buy, tp1, tp2] if v > 0]; mx, mi = max(pts)*1.02, min(pts)*0.98
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=[mi, mx], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
             fig.add_trace(go.Scatter(x=[int(buy), int(cur)], y=[0, 0], mode='lines', line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=12), hoverinfo='skip'))
@@ -1961,11 +1872,9 @@ with tab5:
                 if p_v > 0: fig.add_trace(go.Scatter(x=[int(p_v)], y=[0], mode="markers", name=p_n, marker=dict(size=10, color=p_c), hovertemplate=f"<b>{p_n}</b>: ¥%{{x:,.0f}}<extra></extra>"))
             fig.add_trace(go.Scatter(x=[int(cur)], y=[0], mode="markers", name="現在地", marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), hovertemplate="<b>🔴 現在地</b>: ¥%{x:,.0f}<extra></extra>"))
             fig.update_layout(height=70, showlegend=False, yaxis=dict(showticklabels=False, range=[-1,1], fixedrange=True), xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True, tickfont=dict(color="#888")), margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"squad_chart_final_{ticker}_{index}")
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"final_squad_{ticker}_{index}")
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-
-    if active_squads == 0:
-        st.info("展開中の部隊はありません。銘柄コードを入力してください。")
+    if active_squads == 0: st.info("展開中の部隊はありません。")
         
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
