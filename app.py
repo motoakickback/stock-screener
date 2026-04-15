@@ -1821,29 +1821,32 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=default_cols)
 
-    # --- 🛡️ 2. 司令部エディタ（入力保護・型矯正） ---
+    # --- ⚡ 2. 司令部エディタ（高速・型安全版） ---
 
-    # 1. デバッグ情報の出力（必要なら残す、不要ならコメントアウト）
-    # st.write("Debug: frontline_df dtypes", st.session_state.frontline_df.dtypes)
+    # 前処理：型不一致によるエラーを防ぎつつ、高速に処理
+    if not st.session_state.frontline_df.empty:
+        # 数値であるべきカラムを特定（ボスのキー名に合わせて最適化）
+        # リストを直接指定するのが最速です
+        target_cols = ['f1_min', 'f1_max', 'price', 'quantity', '目標', '損切'] 
+        
+        # 存在するカラムだけを抽出
+        existing_numeric_cols = [c for c in target_cols if c in st.session_state.frontline_df.columns]
+        
+        # 一括で型変換（errors='coerce' で安全に、最後に fillna）
+        # .copy() を最小限にするため、必要な時だけ処理
+        display_df = st.session_state.frontline_df.copy()
+        display_df[existing_numeric_cols] = display_df[existing_numeric_cols].apply(
+            pd.to_numeric, errors='coerce'
+        ).fillna(0.0)
+    else:
+        display_df = st.session_state.frontline_df
     
-    # 2. 【重要】エディタに渡す前に、数値カラムを強制的にクレンジング
-    df_to_edit = st.session_state.frontline_df.copy()
-    
-    # 数値であるべきカラム名（ボスのDFに合わせて適宜追加してください）
-    # 例: f1_min, f1_max, price, quantity 等
-    numeric_cols = [col for col in df_to_edit.columns if any(x in col.lower() for x in ['price', 'f1', 'qty', 'val', '目標', '損切'])]
-    
-    for col in numeric_cols:
-        if col in df_to_edit.columns:
-            # 文字列やNoneを数値に変換。変換できないものは0にする
-            df_to_edit[col] = pd.to_numeric(df_to_edit[col], errors='coerce').fillna(0.0)
-    
-    # 3. 矯正済みのデータでエディタを起動
+    # エディタ呼び出し
     edited_df = st.data_editor(
-        df_to_edit,
+        display_df,
         num_rows="dynamic",
         key="frontline_editor_v_final_sync",
-        # column_config 等が下にある場合はそのまま継続
+        # ...以下の引数はボスの原典通りに継続...
     )
 
     # --- 🛡️ 3. 最強同期・保存アクション ---
