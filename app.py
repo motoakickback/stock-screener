@@ -629,42 +629,35 @@ def render_technical_radar(df, buy_price, tp_pct):
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     df = df.copy(); fig = go.Figure()
     
-    # 🚨 画像通りの名前「価格」に修正した純正ローソク足
+    # 🚨 1. ローソク足（純正指定）
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
         name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 🚨 純正一括ホバー（x unified）で確実に数値を出すためのフォーマットを指定
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'))
+    # 🚨 2. 目標線（hoverinfoとyhoverformatによる強制注入）
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', 
+        line=dict(color='#FFD700', width=2, dash='dash'), 
+        hoverinfo='name+y', yhoverformat=',.0f'
+    ))
     
-    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
-    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
-    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
+    # 🚨 3. 各MA線（バグの元凶だった hovertemplate と connectgaps を排除し、強制注入）
+    if 'MA5' in df.columns: 
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
+    if 'MA25' in df.columns: 
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
+    if 'MA75' in df.columns: 
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
     
     last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
     
-    # 🚨 諸悪の根源だったレイアウト設定を、純正の「x unified」に復元
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
         yaxis=dict(tickformat=",.0f", side="right"), 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
-    )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
-    
-    # 🚨 5. レイアウト設定：一括ホバー(x unified)を解除し、元の美しい個別ホバー(x)＋縦の点線を復元
-    fig.update_layout(
-        height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
-        xaxis=dict(
-            range=[start_date, last_date + timedelta(days=0.5)], type="date",
-            showspikes=True, spikemode="across", spikethickness=1, spikedash="dot", spikecolor="#ccc"
-        ), 
-        yaxis=dict(tickformat=",.0f", side="right"), 
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-        hovermode="x", 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
