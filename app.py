@@ -291,9 +291,7 @@ render_macro_board()
 
 @st.cache_data(ttl=86400)
 def load_master():
-    """
-    🚨 物理防衛：銘柄マスターのロード
-    """
+    """🚨 物理防衛：銘柄マスターのロード"""
     try:
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
@@ -348,38 +346,9 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
-# 🚨 一発解決エンジン：yfinanceを捨て、標準機能だけでYahooから直接データを抜く
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均(^N225)を外部ライブラリ不要で直接取得"""
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=3mo&interval=1d"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    try:
-        r = requests.get(url, headers=headers, timeout=5.0)
-        if r.status_code == 200:
-            res = r.json()['chart']['result'][0]
-            timestamps = res['timestamp']
-            closes = res['indicators']['quote'][0]['close']
-            
-            # UTCタイムスタンプを日本時間(JST)に変換してDataFrame化
-            df_ni = pd.DataFrame({
-                'Date': [datetime.utcfromtimestamp(t) + timedelta(hours=9) for t in timestamps],
-                'Close': closes
-            }).dropna().reset_index(drop=True)
-            
-            if len(df_ni) >= 2:
-                latest = df_ni.iloc[-1]
-                prev = df_ni.iloc[-2]
-                return {
-                    "nikkei": {
-                        "price": float(latest['Close']),
-                        "diff": float(latest['Close'] - prev['Close']),
-                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
-                        "df": df_ni.tail(65),
-                        "date": latest['Date'].strftime('%m/%d')
-                    }
-                }
-    except: pass
+    """日経平均：一旦安全にバイパス（エラーでアプリを止めない）"""
     return None
 
 def fetch_current_prices_fast(codes):
@@ -441,11 +410,13 @@ def get_single_data(code, yrs=1):
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
+    """🚨 物理修正：スキャン機能を破壊したハイフン指定を排除し YYYYMMDD に復元"""
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
         if d.weekday() < 5: 
-            dates.append(d.strftime('%Y-%m-%d'))
+            # 🚨 諸悪の根源だった '%Y-%m-%d' を '%Y%m%d' に戻しました
+            dates.append(d.strftime('%Y%m%d'))
         days += 1
     rows = []
     def fetch(dt):
