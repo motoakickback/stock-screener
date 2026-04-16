@@ -301,7 +301,6 @@ def load_master():
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
             df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            # J-Quants v2仕様：コードを5桁の文字列に統一
             df['Code'] = df['Code'].astype(str) + "0"
             return df
     except:
@@ -326,26 +325,22 @@ def calc_vector_indicators(df):
     df = df.copy()
     if df.empty or len(df) < 5: return df
     
-    # RSI (14日)
     delta = df.groupby('Code')['AdjC'].diff()
     gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
     avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
     df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
     
-    # MACD (12, 26, 9)
     ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
     ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
     macd = ema12 - ema26
     signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
     df['MACD_Hist'] = (macd - signal).astype('float32')
     
-    # 移動平均線
     df['MA5'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
     df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
     df['MA75'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
     
-    # ATR (14日)
     tr = pd.concat([df['AdjH']-df['AdjL'], (df['AdjH']-df.groupby('Code')['AdjC'].shift(1)).abs(), (df['AdjL']-df.groupby('Code')['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
     return df
@@ -353,33 +348,42 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
-# 🚨 物理換装：日経平均はJ-Quantsに存在しないため yfinance を使用する
+# 🚨 一発解決エンジン：yfinanceを捨て、標準機能だけでYahooから直接データを抜く
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均(^N225)を yfinance から取得"""
-    import yfinance as yf
+    """日経平均(^N225)を外部ライブラリ不要で直接取得"""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=3mo&interval=1d"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     try:
-        tk = yf.Ticker("^N225")
-        df_ni = tk.history(period="3mo")
-        if not df_ni.empty:
-            df_ni = df_ni.reset_index()
-            if df_ni['Date'].dt.tz is not None:
-                df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo')
-            latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
-            return {
-                "nikkei": {
-                    "price": float(latest['Close']),
-                    "diff": float(latest['Close'] - prev['Close']),
-                    "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
-                    "df": df_ni,
-                    "date": latest['Date'].strftime('%m/%d')
+        r = requests.get(url, headers=headers, timeout=5.0)
+        if r.status_code == 200:
+            res = r.json()['chart']['result'][0]
+            timestamps = res['timestamp']
+            closes = res['indicators']['quote'][0]['close']
+            
+            # UTCタイムスタンプを日本時間(JST)に変換してDataFrame化
+            df_ni = pd.DataFrame({
+                'Date': [datetime.utcfromtimestamp(t) + timedelta(hours=9) for t in timestamps],
+                'Close': closes
+            }).dropna().reset_index(drop=True)
+            
+            if len(df_ni) >= 2:
+                latest = df_ni.iloc[-1]
+                prev = df_ni.iloc[-2]
+                return {
+                    "nikkei": {
+                        "price": float(latest['Close']),
+                        "diff": float(latest['Close'] - prev['Close']),
+                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                        "df": df_ni.tail(65),
+                        "date": latest['Date'].strftime('%m/%d')
+                    }
                 }
-            }
     except: pass
     return None
 
 def fetch_current_prices_fast(codes):
-    """J-Quants API v2 から現在値を並列取得（成功パス一本化）"""
+    """J-Quants API v2 から現在値を並列取得"""
     results = {}
     base = datetime.utcnow() + timedelta(hours=9)
     f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
@@ -404,7 +408,7 @@ def fetch_current_prices_fast(codes):
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
-    """財務データ取得：ROE物理算出回路"""
+    """財務データ取得"""
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     try:
@@ -424,7 +428,6 @@ def get_fundamentals(code):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
-    """単一銘柄データ取得"""
     base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
     try:
@@ -438,7 +441,6 @@ def get_single_data(code, yrs=1):
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
-    """全銘柄の一括取得（ハイフン付き日付形式強制）"""
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
@@ -461,7 +463,6 @@ def get_hist_data_cached():
     return rows
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """格付けエンジン"""
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス")
     is_assault = "狙撃優先" in tactics
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
