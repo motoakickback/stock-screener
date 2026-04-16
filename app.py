@@ -629,38 +629,31 @@ def render_technical_radar(df, buy_price, tp_pct):
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     df = df.copy(); fig = go.Figure()
     
-    # 🚨 1. 全てのデータを1箇所に集約するための「密輸用データ（customdata）」を構築
-    ma5 = df['MA5'].fillna(0) if 'MA5' in df.columns else pd.Series([0]*len(df))
-    ma25 = df['MA25'].fillna(0) if 'MA25' in df.columns else pd.Series([0]*len(df))
-    ma75 = df['MA75'].fillna(0) if 'MA75' in df.columns else pd.Series([0]*len(df))
-    c_data = np.column_stack(([targ_p]*len(df), ma5, ma25, ma75))
-    
-    # 🚨 2. ボスの指定に1文字の狂いもなく合わせた完全専用フォーマット
-    htemp = (
-        "Open：%{open:,.0f}<br>"
-        "High：%{high:,.0f}<br>"
-        "Low：%{low:,.0f}<br>"
-        "Close：%{close:,.0f}<br>"
-        "目標：%{customdata[0]:,.0f}<br>"
-        "MA5：%{customdata[1]:,.0f}<br>"
-        "MA25：%{customdata[2]:,.0f}<br>"
-        "MA75：%{customdata[3]:,.0f}<extra></extra>"
-    )
-    
-    # 🚨 3. ローソク足に全データを搭載
+    # 🚨 画像通りの名前「価格」に修正した純正ローソク足
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350', 
-        customdata=c_data, hovertemplate=htemp
+        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 🚨 4. 他の線のホバーは全て「skip（沈黙）」させる（重複表示を防ぐため）
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hoverinfo='skip'))
-    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
-    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
-    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
+    # 🚨 純正一括ホバー（x unified）で確実に数値を出すためのフォーマットを指定
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'))
+    
+    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
+    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
+    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
     
     last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+    
+    # 🚨 諸悪の根源だったレイアウト設定を、純正の「x unified」に復元
+    fig.update_layout(
+        height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
+        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
+        yaxis=dict(tickformat=",.0f", side="right"), 
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified", 
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+    )
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
     
     # 🚨 5. レイアウト設定：一括ホバー(x unified)を解除し、元の美しい個別ホバー(x)＋縦の点線を復元
     fig.update_layout(
