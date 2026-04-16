@@ -630,51 +630,34 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     if df.empty: return
     df = df.copy(); fig = go.Figure()
     
-    # 🚨 1. Plotlyのバグを回避するため、ローソク足自身のホバーを【完全切断】
+    # 🚨 1. ローソク足
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-        hoverinfo='skip'
+        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 🚨 2. 目標線とMA線の描画（これらもホバー干渉を防ぐため完全切断）
-    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hoverinfo='skip'))
-    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
-    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
-    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
-    
-    # 🚨 3. ボスの指定順序で全データを「密輸」するアレイを構築
-    c_data = np.column_stack((
-        df['AdjO'].fillna(0).tolist(),
-        df['AdjH'].fillna(0).tolist(),
-        df['AdjL'].fillna(0).tolist(),
-        df['AdjC'].fillna(0).tolist(),
-        [targ_p]*len(df),
-        df['MA5'].fillna(0).tolist() if 'MA5' in df.columns else [0]*len(df),
-        df['MA25'].fillna(0).tolist() if 'MA25' in df.columns else [0]*len(df),
-        df['MA75'].fillna(0).tolist() if 'MA75' in df.columns else [0]*len(df)
-    ))
-    
-    # 🚨 4. 指定通りのフォーマット（0はNaNの代替表示）
-    htemp = (
-        "Open：%{customdata[0]:,.0f}<br>"
-        "High：%{customdata[1]:,.0f}<br>"
-        "Low：%{customdata[2]:,.0f}<br>"
-        "Close：%{customdata[3]:,.0f}<br>"
-        "目標：%{customdata[4]:,.0f}<br>"
-        "MA5：%{customdata[5]:,.0f}<br>"
-        "MA25：%{customdata[6]:,.0f}<br>"
-        "MA75：%{customdata[7]:,.0f}<extra></extra>"
-    )
-    
-    # 🚨 5. 統合ホバー用の【完全透明なダミートレース】を配置
+    # 🚨 2. 目標線
     fig.add_trace(go.Scatter(
-        x=df['Date'], y=df['AdjC'], mode='markers', name='詳細データ',
-        marker=dict(color='rgba(0,0,0,0)', size=2), # 透明化
-        customdata=c_data, hovertemplate=htemp
+        x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', 
+        line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'
     ))
+    
+    # 🚨 3. MA線（真の元凶：PandasのNaNとfloat32をネイティブ型に物理変換）
+    if 'MA5' in df.columns: 
+        y_ma5 = [float(v) if pd.notna(v) else None for v in df['MA5']]
+        fig.add_trace(go.Scatter(x=df['Date'], y=y_ma5, mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
+        
+    if 'MA25' in df.columns: 
+        y_ma25 = [float(v) if pd.notna(v) else None for v in df['MA25']]
+        fig.add_trace(go.Scatter(x=df['Date'], y=y_ma25, mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
+        
+    if 'MA75' in df.columns: 
+        y_ma75 = [float(v) if pd.notna(v) else None for v in df['MA75']]
+        fig.add_trace(go.Scatter(x=df['Date'], y=y_ma75, mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hovertemplate='%{y:,.0f}', connectgaps=True))
     
     last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+    
+    # 🚨 4. 純正レイアウト（x unified）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
