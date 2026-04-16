@@ -287,13 +287,12 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- 3. 共通関数 & 演算エンジン（ Sniper Edition: 物理統合・最終定義版 ） ---
+# --- 3. 共通関数 & 演算エンジン ---
 
 @st.cache_data(ttl=86400)
 def load_master():
     """
     🚨 物理防衛：銘柄マスターのロード
-    関数の呼び出し（743行目付近）よりも前に定義を完了させる。
     """
     try:
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
@@ -323,7 +322,7 @@ def clean_df(df):
     return df
 
 def calc_vector_indicators(df):
-    """テクニカル指標の高速演算（ベクトル化・クラッシュガード搭載）"""
+    """テクニカル指標の高速演算"""
     df = df.copy()
     if df.empty or len(df) < 5: return df
     
@@ -354,35 +353,31 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
+# 🚨 物理換装：日経平均はJ-Quantsに存在しないため yfinance を使用する
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均(0000)をJ-Quants v2 指数専用パスから取得"""
-    base = datetime.utcnow() + timedelta(hours=9)
-    f_d, t_d = (base - timedelta(days=10)).strftime('%Y-%m-%d'), base.strftime('%Y-%m-%d')
-    # 🚨 v2 指数専用パス /indices/bars/daily
-    url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}"
+    """日経平均(^N225)を yfinance から取得"""
+    import yfinance as yf
     try:
-        r = requests.get(url, headers=headers, timeout=5.0)
-        if r.status_code == 200:
-            data = r.json().get("daily_quotes") or r.json().get("data") or []
-            if data:
-                df_ni = pd.DataFrame(data)
-                df_ni['Date'] = pd.to_datetime(df_ni['Date'])
-                df_ni = df_ni.sort_values('Date').reset_index(drop=True)
-                latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
-                return {
-                    "nikkei": {
-                        "price": float(latest['Close']),
-                        "diff": float(latest['Close'] - prev['Close']),
-                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
-                        "df": df_ni.tail(65),
-                        "date": latest['Date'].strftime('%m/%d')
-                    }
+        tk = yf.Ticker("^N225")
+        df_ni = tk.history(period="3mo")
+        if not df_ni.empty:
+            df_ni = df_ni.reset_index()
+            if df_ni['Date'].dt.tz is not None:
+                df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo')
+            latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+            return {
+                "nikkei": {
+                    "price": float(latest['Close']),
+                    "diff": float(latest['Close'] - prev['Close']),
+                    "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                    "df": df_ni,
+                    "date": latest['Date'].strftime('%m/%d')
                 }
+            }
     except: pass
     return None
 
-# 🚨 これが NameError の解決策：TAB 5 が必要とする同期エンジン
 def fetch_current_prices_fast(codes):
     """J-Quants API v2 から現在値を並列取得（成功パス一本化）"""
     results = {}
@@ -429,7 +424,7 @@ def get_fundamentals(code):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
-    """単一銘柄データ取得（TAB 3等で使用）"""
+    """単一銘柄データ取得"""
     base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
     try:
@@ -443,12 +438,12 @@ def get_single_data(code, yrs=1):
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
-    """TAB 1/2用：全銘柄の一括取得（ハイフン付き日付形式を強制）"""
+    """全銘柄の一括取得（ハイフン付き日付形式強制）"""
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
         if d.weekday() < 5: 
-            dates.append(d.strftime('%Y-%m-%d')) # v2仕様：ハイフン必須
+            dates.append(d.strftime('%Y-%m-%d'))
         days += 1
     rows = []
     def fetch(dt):
@@ -466,7 +461,7 @@ def get_hist_data_cached():
     return rows
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """格付けエンジン：サイドバー設定の物理反映"""
+    """格付けエンジン"""
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス")
     is_assault = "狙撃優先" in tactics
     if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
