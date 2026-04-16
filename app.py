@@ -220,24 +220,39 @@ load_settings()
 # --- 🌪️ 1. マクロ気象レーダー（関数定義：必ず一番上に置く） ---
 @st.cache_data(ttl=60, show_spinner=False)
 def get_macro_weather():
+    """yf.download のバグを排除し、yf.Ticker.history() で最新値を物理取得する改修版"""
     try:
         import yfinance as yf
         import pandas as pd
-        from datetime import datetime, timedelta
-        import pytz
-        jst = pytz.timezone('Asia/Tokyo')
-        now = datetime.now(jst)
-        start_date = (now - timedelta(days=110)).strftime('%Y-%m-%d')
-        end_date = (now + timedelta(days=2)).strftime('%Y-%m-%d')
-        df_raw = yf.download("^N225", start=start_date, end=end_date, progress=False)
+        from datetime import datetime
+        
+        tk = yf.Ticker("^N225")
+        df_raw = tk.history(period="3mo")
+        
         if not df_raw.empty:
-            if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
             df_ni = df_raw.reset_index()
-            df_ni['Date'] = pd.to_datetime(df_ni['Date']).dt.tz_localize(None)
+            
+            # タイムゾーンの揺れを強制的にJSTに統一し、Noneでローカライズ解除
+            if df_ni['Date'].dt.tz is not None:
+                df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
+                
             df_ni = df_ni.dropna(subset=['Close']).tail(65)
-            latest = df_ni.iloc[-1]; prev = df_ni.iloc[-2]
-            return {"nikkei": {"price": latest['Close'], "diff": latest['Close'] - prev['Close'], "pct": ((latest['Close'] / prev['Close']) - 1) * 100, "df": df_ni, "date": latest['Date'].strftime('%m/%d')}}
-    except: return None
+            
+            if len(df_ni) >= 2:
+                latest = df_ni.iloc[-1]
+                prev = df_ni.iloc[-2]
+                return {
+                    "nikkei": {
+                        "price": float(latest['Close']), 
+                        "diff": float(latest['Close'] - prev['Close']), 
+                        "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100, 
+                        "df": df_ni, 
+                        "date": latest['Date'].strftime('%m/%d')
+                    }
+                }
+    except Exception as e:
+        pass
+    return None
 
 # --- 🌪️ 2. マクロ気象・司令部通信（関数定義の後で呼び出す） ---
 weather = get_macro_weather()
@@ -270,6 +285,8 @@ def clean_df(df):
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
+        if 'Code' in df.columns:
+            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
@@ -400,7 +417,6 @@ def get_fundamentals(code):
             }
             
             # 🎯 ROE算出ロジック： (当期純利益 / 自己資本) * 100
-            # 数式： $$ROE = \frac{\text{Net Income}}{\text{Equity}} \times 100$$
             net_income = latest.get("NetIncome")
             equity = latest.get("Equity")
             
