@@ -627,31 +627,54 @@ def render_technical_radar(df, buy_price, tp_pct):
     return f'<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}"><div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>'
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
+    if df.empty: return
     df = df.copy(); fig = go.Figure()
     
-    # 🚨 1. ローソク足（純正指定）
+    # 🚨 1. Plotlyのバグを回避するため、ローソク足自身のホバーを【完全切断】
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
-        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        hoverinfo='skip'
     ))
     
-    # 🚨 2. 目標線（hoverinfoとyhoverformatによる強制注入）
+    # 🚨 2. 目標線とMA線の描画（これらもホバー干渉を防ぐため完全切断）
+    fig.add_trace(go.Scatter(x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hoverinfo='skip'))
+    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
+    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
+    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hoverinfo='skip', connectgaps=True))
+    
+    # 🚨 3. ボスの指定順序で全データを「密輸」するアレイを構築
+    c_data = np.column_stack((
+        df['AdjO'].fillna(0).tolist(),
+        df['AdjH'].fillna(0).tolist(),
+        df['AdjL'].fillna(0).tolist(),
+        df['AdjC'].fillna(0).tolist(),
+        [targ_p]*len(df),
+        df['MA5'].fillna(0).tolist() if 'MA5' in df.columns else [0]*len(df),
+        df['MA25'].fillna(0).tolist() if 'MA25' in df.columns else [0]*len(df),
+        df['MA75'].fillna(0).tolist() if 'MA75' in df.columns else [0]*len(df)
+    ))
+    
+    # 🚨 4. 指定通りのフォーマット（0はNaNの代替表示）
+    htemp = (
+        "Open：%{customdata[0]:,.0f}<br>"
+        "High：%{customdata[1]:,.0f}<br>"
+        "Low：%{customdata[2]:,.0f}<br>"
+        "Close：%{customdata[3]:,.0f}<br>"
+        "目標：%{customdata[4]:,.0f}<br>"
+        "MA5：%{customdata[5]:,.0f}<br>"
+        "MA25：%{customdata[6]:,.0f}<br>"
+        "MA75：%{customdata[7]:,.0f}<extra></extra>"
+    )
+    
+    # 🚨 5. 統合ホバー用の【完全透明なダミートレース】を配置
     fig.add_trace(go.Scatter(
-        x=df['Date'], y=[targ_p]*len(df), mode='lines', name='目標', 
-        line=dict(color='#FFD700', width=2, dash='dash'), 
-        hoverinfo='name+y', yhoverformat=',.0f'
+        x=df['Date'], y=df['AdjC'], mode='markers', name='詳細データ',
+        marker=dict(color='rgba(0,0,0,0)', size=2), # 透明化
+        customdata=c_data, hovertemplate=htemp
     ))
-    
-    # 🚨 3. 各MA線（バグの元凶だった hovertemplate と connectgaps を排除し、強制注入）
-    if 'MA5' in df.columns: 
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
-    if 'MA25' in df.columns: 
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
-    if 'MA75' in df.columns: 
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hoverinfo='name+y', yhoverformat=',.0f'))
     
     last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
