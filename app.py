@@ -390,33 +390,29 @@ def check_double_bottom(df_sub):
 
 # --- ⚙️ 機関部分：ROE算出・高速スキャンエンジン（ Sniper Edition ） ---
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=200) # 🚨 500から200へ上限を物理カット
 def get_fundamentals(code):
     """
     J-Quants v2 から財務データを取得し、ROEを算出して返す。
-    1時間のキャッシュを適用し、スキャン速度を保護する。
     """
-    # 🚨 J-Quants v2 の掟：4桁コードの末尾に "0" を付与して5桁にする
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     
     try:
-        # タイムアウトを 3秒に設定（フリーズ防止）
         r = requests.get(url, headers=headers, timeout=3.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if not data:
                 return None
             
-            latest = data[0] # 最新の決算短信
+            latest = data[0]
             res = {
-                "op": latest.get("OperatingProfit"),       # 営業利益
-                "cap": latest.get("MarketCapitalization"), # 時価総額
-                "er": latest.get("EquityRatio"),           # 自己資本比率
-                "roe": None                                # ROE初期値
+                "op": latest.get("OperatingProfit"),
+                "cap": latest.get("MarketCapitalization"),
+                "er": latest.get("EquityRatio"),
+                "roe": None
             }
             
-            # 🎯 ROE算出ロジック： (当期純利益 / 自己資本) * 100
             net_income = latest.get("NetIncome")
             equity = latest.get("Equity")
             
@@ -456,25 +452,32 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
-@st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
+@st.cache_data(ttl=1800, max_entries=1, show_spinner=False) # 🚨 キャッシュ寿命を30分、保持数を1に制限
 def get_hist_data_cached():
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
-    while len(dates) < 45:
+    # 🚨 スキャン日数を45から30へ圧縮（約12万件に抑制。MA25/MACDの演算には十分）
+    while len(dates) < 30:
         d = base - timedelta(days=days)
         if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
         days += 1
     rows = []
+    
     def fetch(dt):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
             if r.status_code == 200: return r.json().get("data", [])
         except: pass
         return []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+        
+    # 🚨 ワーカー数を5から3へ削減し、瞬間的なメモリの跳ね上がりを封殺
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
             if res: rows.extend(res)
+            
+    # 🚨 結合直後に不要なメモリを強制開放
+    gc.collect()
     return rows
 
 def get_fast_indicators(prices):
