@@ -390,7 +390,7 @@ def check_double_bottom(df_sub):
 
 # --- ⚙️ 機関部分：ROE算出・高速スキャンエンジン（ Sniper Edition ） ---
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=200) # 🚨 500から200へ上限を物理カット
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=500) # 🚨 500から200へ上限を物理カット
 def get_fundamentals(code):
     """
     J-Quants v2 から財務データを取得し、ROEを算出して返す。
