@@ -306,15 +306,26 @@ def load_master():
     return pd.DataFrame(columns=['Code', 'CompanyName', 'Sector', 'Market'])
 
 def clean_df(df):
-    """J-Quants v2 のカラム名を物理変換し、数値を正規化"""
-    r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
-    df = df.rename(columns=r_cols)
+    """🚨 v1/v2 混在フォーマットを完全吸収する物理変換"""
+    df = df.copy()
+    r_map = {}
+    if 'AdjustmentClose' in df.columns:
+        r_map.update({'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'AdjustmentVolume': 'Volume'})
+    elif 'AdjC' in df.columns and 'AdjVo' in df.columns:
+        r_map.update({'AdjVo': 'Volume'})
+    elif 'Close' in df.columns:
+        r_map.update({'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'Volume': 'Volume'})
+    elif 'C' in df.columns:
+        r_map.update({'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC', 'Vo': 'Volume'})
+    
+    df = df.rename(columns=r_map)
+    
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
+        
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        if 'Code' in df.columns:
-            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+        if 'Code' in df.columns: df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
     return df
 
@@ -348,25 +359,64 @@ def calc_technicals(df):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均：一旦安全にバイパス（エラーでアプリを止めない）"""
-    return None
-
-def fetch_current_prices_fast(codes):
-    """J-Quants API v2 から現在値を並列取得"""
-    results = {}
+    """日経平均(TOPIX代用)：BASE_URLの構造を無視し、v2/v1両ルートを自動走破"""
     base = datetime.utcnow() + timedelta(hours=9)
-    f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
-    def fetch_single(code):
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+    f_d, t_d = (base - timedelta(days=10)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
+    bd = BASE_URL.replace('/v1', '').replace('/v2', '').rstrip('/')
+    urls = [
+        f"{bd}/v2/indices/bars/daily?code=0000&from={f_d}&to={t_d}",
+        f"{bd}/v1/indices/topix?from={f_d}&to={t_d}"
+    ]
+    for url in urls:
         try:
-            r = requests.get(url, headers=headers, timeout=3.0)
+            r = requests.get(url, headers=headers, timeout=5.0)
             if r.status_code == 200:
                 data = r.json().get("daily_quotes") or r.json().get("data") or []
                 if data:
-                    latest = sorted(data, key=lambda x: x['Date'])[-1]
-                    return code, float(latest.get("Close"))
+                    df_ni = pd.DataFrame(data)
+                    df_ni['Date'] = pd.to_datetime(df_ni['Date'])
+                    if 'C' in df_ni.columns: df_ni = df_ni.rename(columns={'C': 'Close'})
+                    elif 'AdjC' in df_ni.columns and 'Close' not in df_ni.columns: df_ni = df_ni.rename(columns={'AdjC': 'Close'})
+                    
+                    df_ni = df_ni.sort_values('Date').reset_index(drop=True)
+                    latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+                    c_val = latest.get('Close')
+                    p_val = prev.get('Close')
+                    if c_val and p_val:
+                        return {
+                            "nikkei": {
+                                "price": float(c_val),
+                                "diff": float(c_val) - float(p_val),
+                                "pct": ((float(c_val) / float(p_val)) - 1) * 100,
+                                "df": df_ni.tail(65),
+                                "date": latest['Date'].strftime('%m/%d')
+                            }
+                        }
         except: pass
+    return None
+
+def fetch_current_prices_fast(codes):
+    """TAB5同期用エンジン：v2/v1両ルートを自動走破"""
+    results = {}
+    base = datetime.utcnow() + timedelta(hours=9)
+    f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
+    bd = BASE_URL.replace('/v1', '').replace('/v2', '').rstrip('/')
+    def fetch_single(code):
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        urls = [
+            f"{bd}/v2/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}",
+            f"{bd}/v1/prices/daily_quotes?code={api_code}&from={f_d}&to={t_d}"
+        ]
+        for url in urls:
+            try:
+                r = requests.get(url, headers=headers, timeout=3.0)
+                if r.status_code == 200:
+                    data = r.json().get("daily_quotes") or r.json().get("data") or []
+                    if data:
+                        latest = sorted(data, key=lambda x: x['Date'])[-1]
+                        val = latest.get("Close") or latest.get("C") or latest.get("AdjC")
+                        if val is not None: return code, float(val)
+            except: pass
         return code, None
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futs = {executor.submit(fetch_single, c): c for c in codes}
@@ -377,55 +427,73 @@ def fetch_current_prices_fast(codes):
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=500)
 def get_fundamentals(code):
-    """財務データ取得"""
+    """財務データエンジン：v2/v1両ルートを自動走破"""
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    url = f"{BASE_URL}/fins/statements?code={api_code}"
-    try:
-        r = requests.get(url, headers=headers, timeout=3.0)
-        if r.status_code == 200:
-            data = r.json().get("statements", [])
-            if not data: return None
-            l = data[0]
-            res = {"op": l.get("OperatingProfit"), "cap": l.get("MarketCapitalization"), "er": l.get("EquityRatio"), "roe": None}
-            ni, eq = l.get("NetIncome"), l.get("Equity")
-            if ni and eq:
-                try: res["roe"] = (float(ni) / float(eq)) * 100
-                except: res["roe"] = 0.0
-            return res
-    except: pass
+    bd = BASE_URL.replace('/v1', '').replace('/v2', '').rstrip('/')
+    urls = [
+        f"{bd}/v2/fins/summary?code={api_code}",
+        f"{bd}/v1/fins/statements?code={api_code}"
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=3.0)
+            if r.status_code == 200:
+                data = r.json().get("statements", []) or r.json().get("data", [])
+                if data:
+                    l = data[0]
+                    res = {"op": l.get("OperatingProfit"), "cap": l.get("MarketCapitalization"), "er": l.get("EquityRatio"), "roe": None}
+                    ni, eq = l.get("NetIncome"), l.get("Equity")
+                    if ni and eq:
+                        try: res["roe"] = (float(ni) / float(eq)) * 100
+                        except: res["roe"] = 0.0
+                    return res
+        except: pass
     return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
     base = datetime.utcnow() + timedelta(hours=9); f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'); t_d = base.strftime('%Y%m%d')
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
-    try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200:
-            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except: pass
+    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    bd = BASE_URL.replace('/v1', '').replace('/v2', '').rstrip('/')
+    urls = [
+        f"{bd}/v2/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}",
+        f"{bd}/v1/prices/daily_quotes?code={api_code}&from={f_d}&to={t_d}"
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json().get("daily_quotes") or r.json().get("data")
+                if data:
+                    result["bars"] = data
+                    break
+        except: pass
     return result
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def get_hist_data_cached():
-    """🚨 物理修正：スキャン機能を破壊したハイフン指定を排除し YYYYMMDD に復元"""
+    """TAB 1/2 スキャン用：v2/v1両ルートを自動走破し、404エラーを物理遮断"""
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
     while len(dates) < 30:
         d = base - timedelta(days=days)
         if d.weekday() < 5: 
-            # 🚨 諸悪の根源だった '%Y-%m-%d' を '%Y%m%d' に戻しました
-            dates.append(d.strftime('%Y%m%d'))
+            dates.append(d.strftime('%Y%m%d')) # 🚨 J-Quants準拠のハイフンなし形式固定
         days += 1
     rows = []
+    bd = BASE_URL.replace('/v1', '').replace('/v2', '').rstrip('/')
     def fetch(dt):
-        url = f"{BASE_URL}/prices/daily_quotes?date={dt}"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200: 
-                return r.json().get("daily_quotes") or []
-        except: pass
+        urls = [
+            f"{bd}/v2/equities/bars/daily?date={dt}",
+            f"{bd}/v1/prices/daily_quotes?date={dt}"
+        ]
+        for url in urls:
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code == 200: 
+                    data = r.json().get("daily_quotes") or r.json().get("data")
+                    if data: return data
+            except: pass
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
