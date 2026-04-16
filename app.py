@@ -452,7 +452,7 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
-@st.cache_data(ttl=1800, max_entries=1, show_spinner=False) # 🚨 キャッシュ寿命を30分、保持数を1に制限
+@st.cache_data(ttl=1800, max_entries=500, show_spinner=False) # 🚨 キャッシュ寿命を30分、保持数を1に制限
 def get_hist_data_cached():
     base = datetime.utcnow() + timedelta(hours=9); dates = []; days = 0
     # 🚨 スキャン日数を45から30へ圧縮（約12万件に抑制。MA25/MACDの演算には十分）
