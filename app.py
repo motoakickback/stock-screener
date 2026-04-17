@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 import gc
 import pytz
 import time
+import unicodedata
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -876,14 +877,12 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    import time
-    import gc
-
-    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（診断モード）</h3>', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（救済モード）</h3>', unsafe_allow_html=True)
     
+    # マスターデータの取得
     master_map = st.session_state.get('master_map_fixed', {})
 
-    if st.button("🚀 260日索敵開始 (V40)", key="btn_scan_v40", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V41)", key="btn_scan_v41", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = []
         status = st.status("📊 索敵プロトコル展開中...", expanded=True)
         t_start = time.time()
@@ -895,7 +894,7 @@ with tab1:
             status.update(label="❌ API応答なし", state="error")
         else:
             # 2. 洗浄・規格統一
-            status.write("⚙️ 100万行のデータを物理洗浄・規格統一中...")
+            status.write("⚙️ データを物理洗浄中...")
             df_all = clean_df_v39(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
@@ -909,29 +908,57 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
 
-            # A. 市場・セクター足切り
+            # A. 市場・セクター足切り（V41：強制正規化比較）
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             
+            # 比較用にキーワードを正規化（全角カタカナを統一）
+            norm_keywords = [unicodedata.normalize('NFKC', k) for k in m_keywords]
+            
             eligible_codes = []
-            for code, info in master_map.items():
-                m_text, s_text = str(info.get('Market', '')), str(info.get('Sector', ''))
-                # 判定ガード：部分一致で確実に拾う
-                if not any(k in m_text for k in m_keywords): continue
-                if st.session_state.f7_ex_etf and any(k in m_text for k in ['ETF', 'REIT', '投信', '受益証券']): continue
-                if st.session_state.f8_ex_bio and '医薬品' in s_text: continue
-                eligible_codes.append(code)
+            found_markets = set() # 診断用
+
+            if not master_map:
+                status.write("⚠️ 警告：銘柄マスターデータが空です。")
+            else:
+                for code, info in master_map.items():
+                    # データの正規化
+                    m_raw = str(info.get('Market', ''))
+                    s_raw = str(info.get('Sector', ''))
+                    m_norm = unicodedata.normalize('NFKC', m_raw)
+                    s_norm = unicodedata.normalize('NFKC', s_raw)
+                    
+                    found_markets.add(m_raw) # 診断用に生データを保存
+                    
+                    # 1. 市場判定
+                    if not any(k in m_norm for k in norm_keywords): continue
+                    
+                    # 2. ETF・REIT除外 (f7)
+                    if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益証券']): continue
+                    
+                    # 3. 医薬品（バイオ）除外 (f8)
+                    if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
+                    
+                    eligible_codes.append(code)
             
             status.write(f"🔎 診断1：市場・セクター通過 {len(eligible_codes)} 銘柄")
+            
+            # 🚨 0件時の緊急診断：マスターデータ内の実際の市場名をボスに提示
+            if not eligible_codes and master_map:
+                st.warning("【緊急診断レポート】市場名が一致しません。")
+                st.write("データ内の実際の市場名（抜粋）:", list(found_markets)[:10])
+                st.write("期待していたキーワード:", m_keywords)
 
-            # B. 最新日の特定と価格足切り
+            # B. 価格足切り
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
             
-            # 🚨 救済措置：最新日にデータがなければ1日遡る
+            # 救済措置：最新日にデータがなければ1日遡る
             if current.empty:
-                latest_date = df_all['Date'].unique()[-1]
-                current = df_all[df_all['Date'] == latest_date]
+                unique_dates = sorted(df_all['Date'].unique())
+                if len(unique_dates) >= 1:
+                    latest_date = unique_dates[-1]
+                    current = df_all[df_all['Date'] == latest_date]
 
             targets_df = current[
                 (current['AdjC'] >= cfg["min"]) & 
@@ -939,26 +966,24 @@ with tab1:
                 (current['Code'].isin(eligible_codes))
             ]
             targets = targets_df['Code'].unique().tolist()
-            status.write(f"🔎 診断2：価格帯（{cfg['min']}〜{cfg['max']}円）通過 {len(targets)} 銘柄")
+            status.write(f"🔎 診断2：価格審査（{cfg['min']}〜{cfg['max']}円）通過 {len(targets)} 銘柄")
 
             if not targets:
-                st.warning("捕捉圏内に銘柄なし。市場設定または価格帯を見直してください。")
+                st.error("捕捉圏内に銘柄が残りませんでした。価格帯または市場設定を再度確認してください。")
             else:
-                # 3. テクニカル演算（260日）
+                # 3. テクニカル演算
                 status.write(f"⚙️ 精鋭 {len(targets)} 銘柄の260日潮流を精密演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
                 df_elite = calc_vector_indicators_v28(df_elite, cfg)
                 
-                # 4. 二次解析（掟と格付け）
+                # 4. 二次解析（格付け）
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
                 
-                # 掟：1年最高値からの押し目
-                pre_drop_count = len(latest_df)
+                # 下落除外 (f3)
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
-                status.write(f"🔎 診断3：下落判定（{st.session_state.f3_drop}%以内）通過 {len(latest_df)} / {pre_drop_count} 銘柄")
+                status.write(f"🔎 診断3：下落判定 通過 {len(latest_df)} 銘柄")
                 
-                # 格付け判定
                 u_dates = df_elite['Date'].unique()
                 prev_date = u_dates[-2] if len(u_dates) > 1 else u_dates[-1]
                 prev_map = df_elite[df_elite['Date'] == prev_date].set_index('Code')['MACD_Hist'].to_dict()
@@ -979,7 +1004,7 @@ with tab1:
                         })
                     except: continue
 
-                status.write(f"🔎 診断4：最終格付け（S-Bランク）通過 {len(candidate_list)} 銘柄")
+                status.write(f"🔎 診断4：格付け審査 通過 {len(candidate_list)} 銘柄")
 
                 # 5. 最終結果
                 candidate_list.sort(key=lambda x: x['score'], reverse=True)
