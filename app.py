@@ -1341,8 +1341,6 @@ with tab3:
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
-                                'alerts': alerts + ["⚡ システム生存確認：判定ロジック稼動中"], 
-                                'error': False
                             })
                             continue
 
@@ -1397,6 +1395,8 @@ with tab3:
                             'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_mini, 
                             'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False
+                            'alerts': alerts + ["⚡ システム生存確認：判定ロジック稼動中"], 
+                            'error': False
                         })
                     except: continue
 
