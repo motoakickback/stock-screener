@@ -506,46 +506,67 @@ def get_single_data(code, yrs=1):
 @st.cache_data(ttl=1800, max_entries=1, show_spinner=False)
 def get_hist_data_cached():
     """
-    260日分の全銘柄データを並列で一括取得する電撃兵站エンジン。
+    J-Quants APIの制限を回避しつつ、260日分を並列で奪取する。
     """
     import datetime as dt
     import concurrent.futures
-    
-    rows = [] # 🚨 最初に行う。NameErrorを絶対に防ぐ
+    import time
+
+    rows = [] 
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days = 0
     
-    # 260営業日分のリストを作成
+    # 260営業日分のリストを生成
     while len(dates) < 260:
         d = base - timedelta(days=days)
         if d.weekday() < 5:
             dates.append(d.strftime('%Y%m%d'))
         days += 1
 
-    # 🚨 通信の並列化（10並列で260日分を叩く）
+    # 🚨 ボス、ここが「実弾」です。
+    # 既存の1日取得関数が get_prices_daily(d_str) のような名前であれば、適宜書き換えてください。
     def fetch_single_day(d_str):
         try:
-            # ここに実際のJ-Quants API取得ロジック（raw_data_one_day）を記述
-            # 例: data = cli.get_daily_quotes(date=d_str)
-            return data 
-        except:
-            return []
+            # サーバーを驚かせないための微小な待機
+            time.sleep(0.05) 
+            
+            # --- 💡 ここにボスの『正常に動くAPI取得行』を記述 ---
+            # 例: data = jquants_api.get_prices_daily(date_str=d_str)
+            # 現在動いている関数の「中身」をそのままここに配置してください。
+            # 今回は標準的なJ-Quantsのデータ構造を想定したダミーですが、
+            # ボスが現在使っている「生の取得コード」に差し替えてください。
+            data = get_prices_daily_raw(d_str) # ←ここをボスの既存関数名に！
+            return data if data else []
+        except Exception as e:
+            # エラーを握りつぶさず報告
+            return f"ERR: {str(e)}"
 
-    status_text = st.empty()
-    status_text.write(f"📡 260日分の戦域データ（約100万行）を並列取得中...")
+    status_area = st.empty()
+    status_area.write("📡 260日分の戦域データを5並列で一括取得中...")
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # レートリミットを考慮し、5並列（max_workers=5）で展開
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_date = {executor.submit(fetch_single_day, d): d for d in dates}
+        
         for i, future in enumerate(concurrent.futures.as_completed(future_to_date)):
             res = future.result()
-            if res:
+            if isinstance(res, list):
                 rows.extend(res)
-            # 進捗表示（ボスを不安にさせないための配慮）
-            if i % 30 == 0:
-                status_text.write(f"⏳ データロード中: {i}/260日完了...")
+            elif isinstance(res, str) and res.startswith("ERR"):
+                st.error(f"API通信障害発生 ({future_to_date[future]}): {res}")
+            
+            # 進捗を10%刻みで報告
+            if i % 26 == 0:
+                percent = int((i / 260) * 100)
+                status_area.write(f"⏳ 兵站輸送中: {percent}% 完了... ({len(rows):,}レコード捕捉)")
 
-    status_text.empty()
+    status_area.empty()
+    
+    # 取得データが極端に少ない場合の安全装置
+    if len(rows) < 100:
+        st.error("🚨 警告：取得されたデータが極端に不足しています。APIキーまたは有効期限を確認してください。")
+        
     return rows
 
 def get_fast_indicators(prices):
@@ -878,24 +899,28 @@ with tab1:
 
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・精密索敵レーダー</h3>', unsafe_allow_html=True)
     
+    # マスターデータの取得
     master_map = st.session_state.get('master_map_fixed', {})
 
-    if st.button("🚀 260日電撃索敵 (V36)", key="btn_scan_v36", use_container_width=True, type="primary"):
+    if st.button("🚀 260日・電撃索敵 (V37)", key="btn_scan_v37", use_container_width=True, type="primary"):
+        # 画面リセット
+        st.session_state.tab1_scan_results = []
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
         
-        # 1. データの並列取得（ここで100秒を30秒へ圧縮）
+        # 1. 兵站取得（並列化により25-30秒を目指す）
         raw_data = get_hist_data_cached()
         
-        if not raw_data or len(raw_data) < 1000:
-            st.error("API応答なし、またはデータが不十分です。")
+        # 判定を緩和し、少しでもデータがあれば通す
+        if not raw_data or len(raw_data) < 100:
+            status.update(label="❌ API応答なし、またはデータ不足", state="error")
         else:
-            status.write("⚙️ 100万行のデータを物理洗浄・規格統一中...")
-            df_all = clean_df_v35(pd.DataFrame(raw_data))
+            status.write(f"⚙️ {len(raw_data):,} 行のデータを物理洗浄中...")
+            df_all = clean_df_v28(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
             
-            # サイドバー条件の読み込み
+            # 2. 一次足切り（価格・市場・バイオ除外等）
             cfg = {
                 "min": float(st.session_state.f1_min),
                 "max": float(st.session_state.f1_max),
@@ -904,9 +929,9 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
             
-            # 2. 超速・物理足切り（市場・セクター・除外）
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
+            
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             
@@ -924,19 +949,20 @@ with tab1:
                 (current['Code'].isin(eligible_codes))
             ]['Code'].unique().tolist()
 
-            status.write(f"✅ 一次足切り通過: {len(targets)} 銘柄。精密演算を開始...")
+            status.write(f"✅ 一次足切り通過: {len(targets)} 銘柄。")
 
             if not targets:
                 st.warning("捕捉圏内に銘柄なし。")
             else:
-                # 3. テクニカル指標計算（絞り込んだ銘柄のみ実行）
+                # 3. テクニカル演算（ベクトル演算）
+                status.write("⚙️ テクニカル形状と『掟』を精密演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
                 df_elite = calc_vector_indicators_v28(df_elite, cfg)
                 
-                # 4. 二次解析（格付け：最新日と前日比）
+                # 4. 二次解析（格付け）
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
-                # 掟：1年（260日）最高値からの押し目判定
+                # 掟：1年最高値からの下落
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
                 
                 u_dates = df_elite['Date'].unique()
@@ -960,11 +986,11 @@ with tab1:
                         })
                     except: continue
 
-                # 5. 最終財務チェック（精鋭のみ並列スキャン）
+                # 5. 財務チェック（並列化）
                 candidate_list.sort(key=lambda x: x['score'], reverse=True)
                 final_hit = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-                    status.write(f"🏅 上位 {len(candidate_list)} 銘柄の財務健全性を並列確認中...")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+                    status.write(f"🏅 上位 {len(candidate_list)} 銘柄の財務健全性を並列スキャン...")
                     f_to_c = {exe.submit(get_fundamentals, c['Code'][:4]): c for c in candidate_list[:50]}
                     for future in concurrent.futures.as_completed(f_to_c):
                         c_item = f_to_c[future]
@@ -994,7 +1020,7 @@ with tab1:
             c2.metric("目標", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse")
             c3.metric("RSI", f"{r['RSI']:.1f}%")
             st.divider()
-
+            
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
