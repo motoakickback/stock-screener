@@ -1492,12 +1492,26 @@ with tab3:
 
                     st.markdown("---")
                     d_p = r['df_chart'].copy(); d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
+                    
+                    # 🚨 物理解毒：一括ホバー消失バグの元凶（float32）を、ネイティブなfloat64へ強制変換
+                    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
+                        if col in d_p.columns: 
+                            d_p[col] = d_p[col].astype('float64')
+
                     fig = go.Figure(data=[go.Candlestick(x=d_p['display_date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], name="価格", increasing_line_color='#26a69a', decreasing_line_color='#ef5350')])
+                    
+                    # 🚨 諸悪の根源 hoverinfo='skip' を消去し、フォーマットを強制指定
                     for m_c, m_n, m_col in [('MA5', '5日', '#ffca28'), ('MA25', '25日', '#42a5f5'), ('MA75', '75日', '#ab47bc')]:
-                        if m_c in d_p.columns: fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hoverinfo='skip'))
-                    fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2)))
+                        if m_c in d_p.columns: 
+                            fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hovertemplate='¥%{y:,.0f}'))
+                            
+                    fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2), hovertemplate='¥%{y:,.0f}'))
+                    
                     fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=80), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", template="plotly_dark", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5), xaxis=dict(showgrid=False, type='category'), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888")))
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"t3_chart_final_{r['code']}_{index}")
+                    
+                    # キャッシュ破壊用の識別子
+                    chart_key = f"t3_chart_final_{r['code']}_{index}_v2"
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=chart_key)
                     
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
