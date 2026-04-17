@@ -306,11 +306,11 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-def clean_df_v50(df):
+def clean_df_v51(df):
     """
     100万行のデータを洗浄し、出来高と銘柄コードを物理的に固定する。
     """
-    # 🚨 J-Quantsの全バリエーションに対応
+    # 🚨 列名の名寄せ：J-Quantsの全形式を 'Volume' に統一
     r_cols = {
         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
         'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 
@@ -318,16 +318,15 @@ def clean_df_v50(df):
     }
     df = df.rename(columns=r_cols)
     
-    # 🚨 銘柄コードの物理解毒（8306.0 -> 83060）
+    # 🚨 銘柄コードの物理解毒（8306.0 -> 8306 -> 83060）
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
         df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
     
-    # 必須列の抽出
+    # 計算に必要な列を厳選して保持
     target_cols = ['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume']
     df = df[[c for c in target_cols if c in df.columns]]
     
-    # 型変換とソート
     df = df.dropna(subset=['Code', 'AdjC'])
     for c in ['AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: 
@@ -911,17 +910,21 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵レーダー</h3>', unsafe_allow_html=True)
     
-    # --- 🛡️ 銘柄マスターの物理同期（UI表示に必須） ---
-    if 'master_map_t1' not in st.session_state or not st.session_state.master_map_t1:
-        if 'master_df' in st.session_state and not st.session_state.master_df.empty:
-            m_df = st.session_state.master_df.copy()
-            m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
-            m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
-            st.session_state.master_map_t1 = m_df.set_index('Code').to_dict('index')
+    # --- 🛡️ 銘柄マスターの物理同期（UI表示とフィルタリングの生命線） ---
+    if 'master_df' not in st.session_state or st.session_state.master_df.empty:
+        with st.spinner("📡 銘柄マスターを自動復旧中..."):
+            st.session_state.master_df = load_master() # ボスの load_master を呼び出し
 
-    master_map_t1 = st.session_state.get('master_map_t1', {})
+    # 描画用のMapをV51規格で再構築
+    if 'master_df' in st.session_state and not st.session_state.master_df.empty:
+        m_df = st.session_state.master_df.copy()
+        m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
+        m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+        master_map_t1 = m_df.set_index('Code').to_dict('index')
+    else:
+        master_map_t1 = {}
 
-    if st.button("🚀 260日索敵開始 (V50)", key="btn_scan_v50", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V51)", key="btn_scan_v51", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = []
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
@@ -929,11 +932,11 @@ with tab1:
         # 1. 260日分のデータ取得
         raw_data = get_hist_data_cached()
         if not raw_data:
-            status.update(label="❌ API応答なし", state="error")
+            status.update(label="❌ API応答なし。兵站確保に失敗。", state="error")
         else:
-            # 2. 物理洗浄（V50）
+            # 2. 物理洗浄
             status.write("⚙️ データを物理洗浄・出来高列を確保中...")
-            df_all = clean_df_v50(pd.DataFrame(raw_data))
+            df_all = clean_df_v51(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
             
@@ -944,8 +947,7 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
 
-            # 🚨 3. 市場・ETF・バイオ足切り（バイパスを廃止し厳格化）
-            status.write("📡 掟に基づきETF・バイオ・市場を足切り中...")
+            # 3. 市場・セクター・ETF厳格足切り（診断ログ付）
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             norm_keywords = [unicodedata.normalize('NFKC', k) for k in m_keywords]
@@ -956,30 +958,43 @@ with tab1:
                 s_norm = unicodedata.normalize('NFKC', str(info.get('Sector', '')))
                 # 市場フィルタ
                 if not any(k in m_norm for k in norm_keywords): continue
-                # ETF除外
-                if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益']): continue
+                # ETF除外：1306などの混入を物理排除
+                if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益', 'ETN']): continue
                 # バイオ除外
                 if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
                 eligible_codes.append(code)
             
-            # 価格足切り
+            status.write(f"🔎 診断1：市場条件クリア {len(eligible_codes)} 銘柄")
+
+            # 4. 価格足切り
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
-            targets = current[(current['AdjC'] >= cfg["min"]) & (current['AdjC'] <= cfg["max"]) & (current['Code'].isin(eligible_codes))]['Code'].unique().tolist()
+            if current.empty:
+                u_dates = sorted(df_all['Date'].unique()); latest_date = u_dates[-1] if u_dates else latest_date
+                current = df_all[df_all['Date'] == latest_date]
+
+            targets = current[
+                (current['AdjC'] >= cfg["min"]) & 
+                (current['AdjC'] <= cfg["max"]) & 
+                (current['Code'].isin(eligible_codes))
+            ]['Code'].unique().tolist()
+            
+            status.write(f"🔎 診断2：価格審査通過 {len(targets)} 銘柄")
 
             if not targets:
-                st.error("捕捉圏内に銘柄なし。ETF/バイオ除外設定または価格帯を確認してください。")
+                st.error("捕捉圏内に銘柄なし。市場設定、除外設定、または価格帯を見直してください。")
             else:
-                # 4. 精密演算（V49エンジン：Volume確保済）
+                # 5. 精密演算（V49エンジン：Volume/avg_vol計算対応）
                 status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
                 df_elite = calc_vector_indicators_v49(df_elite, cfg)
                 
-                # 5. 二次解析（格付け）
+                # 6. 二次解析（格付け）
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
-                # 掟：1年最高値からの押し目判定
+                # 掟：1年最高値からの押し目判定（f3_drop）
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
+                status.write(f"🔎 診断3：下落判定クリア {len(latest_df)} 銘柄")
                 
                 u_dates = df_elite['Date'].unique()
                 prev_date = u_dates[-2] if len(u_dates) > 1 else u_dates[-1]
@@ -1003,17 +1018,19 @@ with tab1:
                         })
                     except: continue
 
+                status.write(f"🔎 診断4：最終格付け審査クリア {len(candidate_list)} 銘柄")
                 candidate_list.sort(key=lambda x: x['score'], reverse=True)
                 st.session_state.tab1_scan_results = candidate_list[:30]
                 t_end = time.time()
                 status.update(label=f"🎯 索敵完了（{t_end - t_start:.2f}秒）", state="complete")
 
-    # --- 📜 UI描画：聖典(image_582c20.png)の完全再現 ---
+    # --- 📜 UI描画プロトコル：ボスの「聖典コード」完全準拠 ---
     if st.session_state.get('tab1_scan_results'):
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（マクロ連動・セクター分散適用済）")
         
-        sab_codes = " ".join([str(r['Code'])[:4] for r in light_results if str(r['triage_rank']).startswith(('S', 'A', 'B', 'C'))])
+        # 転送用コード（Cランクも含めて表示）
+        sab_codes = " ".join([str(r['Code'])[:4] for r in light_results])
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
         st.code(sab_codes, language="text")
         
@@ -1024,9 +1041,12 @@ with tab1:
             m_lower = str(m_info.get('Market', '')).lower()
             
             # 市場バッジ
-            if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
+            if 'プライム' in m_lower or '一部' in m_lower: 
+                badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
             
             # 優先度バッジ
             t_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
