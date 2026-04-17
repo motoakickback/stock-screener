@@ -630,7 +630,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     if df is None or df.empty: return
     
     df_plot = df.copy()
-    # 型の物理解毒
+    # 型の物理解毒（ホバー消失防止）
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
         if col in df_plot.columns:
             df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
@@ -651,33 +651,35 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     # 3. 目標線
     fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
-    # 🚨 物理設定：初期ズーム（3ヶ月）と全期間（1年）の定義
+    # 🚨 物理計算：1年分データを保持しつつ、初期ズーム（3ヶ月）を強制設定
     last_date = df_plot['Date'].max()
-    initial_zoom_start = last_date - timedelta(days=90) # 初期表示は3ヶ月
+    initial_start = last_date - timedelta(days=90)
     
-    # 4. レイアウト（機動性全開放版）
+    # 4. レイアウト（移動・拡大完全自由化版）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), 
-        xaxis_rangeslider_visible=True, # 下部スライダーで1年分を自在に移動可能
+        hovermode="x unified",
+        dragmode="pan", # 🚨 デフォルトを「移動（パン）」に設定。マウスで掴んで左右に振れます。
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(
             type="date",
-            range=[initial_zoom_start, last_date + timedelta(days=2)], # 初期ズーム
-            fixedrange=False # 🚨 マウス拡大を許可
-        ), 
-        yaxis=dict(tickformat=",.0f", side="right", fixedrange=False), # 🚨 縦軸の拡大も許可
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-        hovermode="x unified", 
-        dragmode="zoom", # 🚨 デフォルトでマウス範囲選択による拡大を有効化
+            range=[initial_start, last_date + timedelta(days=2)], # 初期表示範囲
+            fixedrange=False, # 拡大・縮小を許可
+            rangeslider=dict(visible=True, thickness=0.05), # スライダーを表示
+        ),
+        yaxis=dict(tickformat=",.0f", side="right", fixedrange=False), # 縦軸の拡大移動も許可
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     
-    # ツールバーを表示し、パン（移動）とズームを切り替え可能にする
+    # ツールバーとホイールズームの有効化
+    # keyの末尾を _v5 に更新してキャッシュを完全に焼き払います
+    cache_key = f"{chart_key}_v5" if chart_key else "chart_v5"
     st.plotly_chart(fig, use_container_width=True, config={
         'displayModeBar': True, 
-        'scrollZoom': True, # マウスホイールでのズームも有効化
+        'scrollZoom': True, # マウスホイールでのズームを有効化
         'displaylogo': False,
-        'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'] # 簡易描画ツール追加
-    }, key=chart_key)
+        'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'autoScale2d']
+    }, key=cache_key)
     
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
