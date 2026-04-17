@@ -1404,9 +1404,11 @@ with tab3:
                     res['r_val'] = rank_order.get(clean_rank, 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
 
-                # --- 📺 5. 神聖UI描画エンジン（ID衝突を物理封印） ---
+                # --- 📺 5. 神聖UI描画エンジン（警告灯・重複排除・完全版） ---
                 for index, r in enumerate(scope_results):
                     st.divider()
+                    
+                    # 1. バッジ等の基本UI
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
                     if 'プライム' in m_lower or '一部' in m_lower: m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
@@ -1416,17 +1418,22 @@ with tab3:
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC発動 {r['gc_days']}日目</span>" if r.get('gc_days', 0) > 0 else ""
-                    sec_badge = f"<span style='background-color: #607d8b; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;'>🏭 {r['sector']}</span>"
                     
-                    st.markdown(f"""<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}{gc_badge}{sec_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_val']:.1f}%</span></div></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}{gc_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span></div></div>""", unsafe_allow_html=True)
                     
+                    # 🚨 警告灯：酒田・地雷・トレンド崩壊メッセージを物理接続
+                    if r.get('alerts'):
+                        for alert in r['alerts']:
+                            if any(mark in alert for mark in ["🟢", "⚡", "🔥"]):
+                                st.success(alert)
+                            else:
+                                st.error(alert)
+
                     if r.get('error'):
                         st.warning("⚠️ データの取得に失敗しました。")
                         continue
 
-                    for alert in r.get('alerts', []):
-                        if any(mark in alert for mark in ["🟢", "⚡"]): st.success(alert)
-                        else: st.error(alert)
+                    # 🚨 以前ここにあった二重の alert ループは物理削除しました
                     
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
