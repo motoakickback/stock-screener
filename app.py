@@ -629,9 +629,8 @@ def render_technical_radar(df, buy_price, tp_pct):
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df is None or df.empty: return
     
-    # 🚨 余計な copy() や再計算を全削除。渡されたデータをそのまま使う。
-    # 🚨 ただし、ホバー消失バグを防ぐ「型変換（解毒）」のみを最小限実行。
     df_plot = df.copy()
+    # 型の物理解毒
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
         if col in df_plot.columns:
             df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
@@ -644,7 +643,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 2. 各MA線（純正仕様）
+    # 2. 各MA線
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: 
             fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
@@ -652,18 +651,33 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     # 3. 目標線
     fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
-    last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=365) if len(df_plot) > 200 else df_plot['Date'].min()
+    # 🚨 物理設定：初期ズーム（3ヶ月）と全期間（1年）の定義
+    last_date = df_plot['Date'].max()
+    initial_zoom_start = last_date - timedelta(days=90) # 初期表示は3ヶ月
     
-    # 4. レイアウト（修正済み：構文エラーを物理排除）
+    # 4. レイアウト（機動性全開放版）
     fig.update_layout(
-        height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
-        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
-        yaxis=dict(tickformat=",.0f", side="right"), 
+        height=450, margin=dict(l=0, r=60, t=30, b=40), 
+        xaxis_rangeslider_visible=True, # 下部スライダーで1年分を自在に移動可能
+        xaxis=dict(
+            type="date",
+            range=[initial_zoom_start, last_date + timedelta(days=2)], # 初期ズーム
+            fixedrange=False # 🚨 マウス拡大を許可
+        ), 
+        yaxis=dict(tickformat=",.0f", side="right", fixedrange=False), # 🚨 縦軸の拡大も許可
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
+        dragmode="zoom", # 🚨 デフォルトでマウス範囲選択による拡大を有効化
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
+    
+    # ツールバーを表示し、パン（移動）とズームを切り替え可能にする
+    st.plotly_chart(fig, use_container_width=True, config={
+        'displayModeBar': True, 
+        'scrollZoom': True, # マウスホイールでのズームも有効化
+        'displaylogo': False,
+        'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'] # 簡易描画ツール追加
+    }, key=chart_key)
     
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
