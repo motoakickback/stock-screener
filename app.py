@@ -628,35 +628,35 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df.empty: return
-    df = df.copy()
     
-    # 🚨 物理復旧パッチ：ホバー消失の真の元凶（float32）をネイティブ型に強制解除
-    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
-        if col in df.columns:
-            df[col] = df[col].astype('float64')
-
+    # 🚨 エラーの元凶である欠損値(NaN)をPlotlyが認識できるNoneに完全置換
+    df_plot = df.where(pd.notnull(df), None)
+    
     fig = go.Figure()
     
-    # 原型のローソク足
+    # 1. ローソク足（原型のまま）
     fig.add_trace(go.Candlestick(
-        x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
+        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
         name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 原型のMA線 + 確実なホバー表示テンプレート
-    if 'MA5' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='5日', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True, hovertemplate='¥%{y:,.0f}'))
-    if 'MA25' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='25日', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True, hovertemplate='¥%{y:,.0f}'))
-    if 'MA75' in df.columns: fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='75日', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True, hovertemplate='¥%{y:,.0f}'))
+    # 2. MA線（余計な装飾を全て破棄し、名称だけを修正）
+    if 'MA5' in df_plot.columns: 
+        fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5)))
+    if 'MA25' in df_plot.columns: 
+        fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5)))
+    if 'MA75' in df_plot.columns: 
+        fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5)))
     
-    # 原型の目標線
+    # 3. 目標線（原型のまま）
     fig.add_trace(go.Scatter(
-        x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', 
-        line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='¥%{y:,.0f}'
+        x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='買値目標', 
+        line=dict(color='#FFD700', width=2, dash='dash')
     ))
     
-    last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+    last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=45) if len(df_plot) > 30 else df_plot['Date'].min()
     
-    # 原型のレイアウト（x unified）
+    # 4. レイアウト（純正の x unified に完全復旧）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
