@@ -1967,7 +1967,7 @@ with tab5:
 with tab6:
     import datetime as dt_module
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
-    st.caption("※ 記録の編集後は、必ず下部の『💾 交戦記録の変更を確定』を押してください。")
+    st.caption("※ 記録の編集は下部の『🛠️ 戦績編集コンソール』で行ってください。")
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
@@ -1981,7 +1981,6 @@ with tab6:
                 return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
         return "不明"
 
-    # メモリ内データの安定化ロード
     if 'aar_df_stable' not in st.session_state:
         if os.path.exists(AAR_FILE):
             try:
@@ -2001,7 +2000,7 @@ with tab6:
     
     with col_a1:
         st.markdown("#### 📝 戦果報告フォーム")
-        with st.form(key="aar_form_v8_final", clear_on_submit=False):
+        with st.form(key="aar_form_v9_final", clear_on_submit=False):
             c_f1, c_f2 = st.columns(2)
             f_date = c_f1.date_input("決済日", value=dt_module.date.today())
             f_code = c_f2.text_input("銘柄コード", max_chars=4)
@@ -2029,7 +2028,7 @@ with tab6:
                     st.rerun()
 
         with st.expander("📥 CSV一括登録"):
-            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v8")
+            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v9")
             if uploaded_csv is not None:
                 if st.button("⚙️ 解析・統合", use_container_width=True):
                     try:
@@ -2086,16 +2085,17 @@ with tab6:
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=250, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
+    # --- 📜 詳細交戦記録（視認性重視：st.dataframe） ---
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
     
-    # 🚨 色彩判定ロジック（利益：緑、損失：赤、ゼロ：白）
+    # 色彩判定ロジック
     def apply_performance_colors(val):
         try:
             v = float(val)
-            if v >= 1.0: return 'color: #26a69a; font-weight: bold;'
-            elif v <= -1.0: return 'color: #ef5350; font-weight: bold;'
-            else: return 'color: #ffffff;'
+            if v >= 1.0: return 'color: #26a69a; font-weight: bold;' # 緑
+            elif v <= -1.0: return 'color: #ef5350; font-weight: bold;' # 赤
+            else: return 'color: #ffffff;' # 白
         except: return 'color: #ffffff;'
 
     def apply_rule_style(val):
@@ -2103,27 +2103,33 @@ with tab6:
         elif val == '違反': return 'color: #ef5350;'
         else: return 'color: #ffffff;'
 
-    # 安定化Styler
-    styled_df = st.session_state.aar_df_stable.style.map(apply_performance_colors, subset=['損益額(円)', '損益(%)']).map(apply_rule_style, subset=['規律'])
-
-    working_log_df = st.data_editor(
-        styled_df, 
+    # 🚨 視認用ログ：装飾を完璧に反映
+    styled_view = st.session_state.aar_df_stable.style.map(apply_performance_colors, subset=['損益額(円)', '損益(%)']).map(apply_rule_style, subset=['規律'])
+    
+    st.dataframe(
+        styled_view,
         column_config={
-            "規模": st.column_config.TextColumn("規模", disabled=True),
-            "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
-            "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%.1f"),
-            "売値": st.column_config.NumberColumn("売値", format="%.1f"),
-            "株数": st.column_config.NumberColumn("株数", format="%d"),
-            "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="¥%,d"),
-            "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%"),
+            "損益額(円)": st.column_config.NumberColumn(format="¥%,d"),
+            "損益(%)": st.column_config.NumberColumn(format="%.2f%%"),
         },
-        hide_index=True, use_container_width=True, key="aar_editor_v8_final"
+        hide_index=True, use_container_width=True
     )
 
-    if st.button("💾 交戦記録の変更を確定 (物理保存)", use_container_width=True):
-        st.session_state.aar_df_stable = working_log_df.copy()
-        st.session_state.aar_df_stable['銘柄'] = st.session_state.aar_df_stable['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
-        st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-        st.success("✅ 交戦ログを物理保存しました。")
-        st.rerun()
+    # 🚨 編集用コンソール：エクスパンダー内に隔離（ここで編集して確定）
+    with st.expander("🛠️ 戦績編集コンソール (一括修正・削除)"):
+        st.warning("※ 編集後、必ず下の『確定』ボタンを押してください。装飾はこの中では反映されません。")
+        working_log_df = st.data_editor(
+            st.session_state.aar_df_stable, 
+            column_config={
+                "規模": st.column_config.TextColumn("規模", disabled=True),
+                "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
+                "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
+            },
+            hide_index=True, use_container_width=True, key="aar_editor_maintenance_v9"
+        )
+
+        if st.button("💾 戦績の変更を確定し、色彩を同期", use_container_width=True, type="primary"):
+            st.session_state.aar_df_stable = working_log_df.copy()
+            st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
+            st.success("✅ 物理保存完了。色彩規律を再適用しました。")
+            st.rerun()
