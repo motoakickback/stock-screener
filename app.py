@@ -628,30 +628,44 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df.empty: return
-    df_plot = df.copy()
+    
+    # 🚨 【OOM・ホバー消失 共通撃破パッチ】
+    # df.copy() などの重いPandas処理を一切使わず、メモリ爆発を完全に封殺。
+    # Plotlyが最も安定して認識する「純粋なPythonネイティブリスト」として数値を物理抽出する。
+    
+    dates = df['Date'].tolist()
+    
+    # MA計算＆解毒エンジン（float32とNaNを、安全なfloatとNoneに完全浄化）
+    def extract_ma(col_name, window):
+        if col_name in df.columns:
+            return [float(x) if pd.notna(x) else None for x in df[col_name]]
+        else:
+            return [float(x) if pd.notna(x) else None for x in df['AdjC'].rolling(window).mean()]
 
-    # データ欠落を防ぐ安全装置
-    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
-    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
-    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
+    ma5 = extract_ma('MA5', 5)
+    ma25 = extract_ma('MA25', 25)
+    ma75 = extract_ma('MA75', 75)
 
     fig = go.Figure()
     
-    # 1. ローソク足（原型のまま、余計なホバー操作を全排除）
+    # 1. ローソク足
     fig.add_trace(go.Candlestick(
-        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
+        x=dates, open=df['AdjO'].tolist(), high=df['AdjH'].tolist(), 
+        low=df['AdjL'].tolist(), close=df['AdjC'].tolist(), 
         name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 2. 目標線とMA線（Plotly純正の挙動に任せ、確実にホバーに出現させる）
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
+    # 2. MA線（完全浄化されたリストのため、Plotlyが確実にホバーへ整列させる）
+    fig.add_trace(go.Scatter(x=dates, y=ma5, mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    fig.add_trace(go.Scatter(x=dates, y=ma25, mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    fig.add_trace(go.Scatter(x=dates, y=ma75, mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
     
-    last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=45) if len(df_plot) > 30 else df_plot['Date'].min()
+    # 3. 目標線
+    fig.add_trace(go.Scatter(x=dates, y=[targ_p]*len(dates), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'))
     
-    # 3. 純正レイアウト（x unified）
+    last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
+    
+    # 4. レイアウト（純正の x unified）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
