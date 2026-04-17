@@ -15,30 +15,21 @@ import pytz
 import datetime as dt_module
 
 # --- 🛡️ 狙撃兵の標準規格：物理規格統一パッチ ---
-def normalize_code_v26(c):
-    """
-    あらゆる不純物を排除し、"83060" という5桁の文字列に絶対統一する。
-    これがないと、どれだけ高性能なロジックも「0ヒット」で沈黙する。
-    """
+def normalize_code_v27(c):
     try:
         if pd.isna(c) or c == "": return ""
-        # 小数点や余計な文字を剥ぎ取り、純粋な数字のみ抽出
+        # 小数点や余計な文字を剥ぎ取り、"83060" という5桁の文字列に絶対統一
         s = str(c).split('.')[0].replace(' ', '').replace('.0', '').strip()
         if len(s) == 4: return s + "0"
         return s
     except: return ""
 
-def clean_df_v26(df):
-    """
-    データ型を物理固定し、計算前に不要なゴミを捨てる洗浄エンジン。
-    """
+def clean_df_v27(df):
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
               'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume'}
     df = df.rename(columns=r_cols)
-    # 🚨 規格統一
-    df['Code'] = df['Code'].apply(normalize_code_v26)
+    df['Code'] = df['Code'].apply(normalize_code_v27)
     df = df.dropna(subset=['Code', 'AdjC'])
-    # 数値化（メモリ節約のためfloat32）
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: 
             df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
@@ -46,23 +37,16 @@ def clean_df_v26(df):
         df['Date'] = pd.to_datetime(df['Date'])
     return df.sort_values(['Code', 'Date']).reset_index(drop=True)
 
-def calc_vector_indicators_v26(df):
-    """
-    1700銘柄の移動平均、RSI、MACDを1秒以内に一括計算するベクトル演算エンジン。
-    """
+def calc_vector_indicators_v27(df):
     if df.empty: return df
     df = df.copy().sort_values(['Code', 'Date'])
-    
-    # 🚨 物理計算（transformによりインデックスを維持）
     g = df.groupby('Code')['AdjC']
     
     # RSI
-    delta = g.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
-    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
-    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).values
+    delta = g.diff()T
+    gain = delta.clip(lower=0).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    df['RSI'] = (100 - (100 / (1 + (gain / (loss + 1e-10))))).values
     
     # MACD
     ema12 = g.transform(lambda x: x.ewm(span=12, adjust=False).mean())
@@ -73,6 +57,9 @@ def calc_vector_indicators_v26(df):
     # ATR
     tr = pd.concat([df['AdjH']-df['AdjL'], (df['AdjH']-g.shift(1)).abs(), (df['AdjL']-g.shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean())
+    
+    # 高値判定用のMax
+    df['HighMax'] = df.groupby('Code')['AdjH'].transform(lambda x: x.rolling(window=len(x), min_periods=1).max())
     
     return df.fillna(0)
     
@@ -861,46 +848,41 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
+    import datetime as dt_module
+    import concurrent.futures
+    import gc
+
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・最終迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # 🛡️ 1. マスターデータの再構成 (不発防止パッチ適用)
-    if 'master_map_v26' not in st.session_state:
+    # マスターデータの規格同期
+    if 'master_map_v27' not in st.session_state:
         if not master_df.empty:
             m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-            m_df['CleanCode'] = m_df['Code'].apply(normalize_code_v26)
-            st.session_state.master_map_v26 = m_df.dropna(subset=['CleanCode']).drop_duplicates('CleanCode').set_index('CleanCode').to_dict('index')
+            m_df['CleanCode'] = m_df['Code'].apply(normalize_code_v27)
+            st.session_state.master_map_v27 = m_df.dropna(subset=['CleanCode']).drop_duplicates('CleanCode').set_index('CleanCode').to_dict('index')
     
-    master_map = st.session_state.get('master_map_v26', {})
+    master_map = st.session_state.get('master_map_v27', {})
 
-    if st.button("🚀 索敵開始 (v26: 電撃必中)", key="btn_scan_v26", use_container_width=True, type="primary"):
+    if st.button("🚀 索敵開始 (v27: 爆速・必中)", key="btn_scan_v27", use_container_width=True, type="primary"):
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         gc.collect()
         
-        # フェーズ1: データロード
         raw_data = get_hist_data_cached()
         if not raw_data:
             st.error("API応答なし。")
         else:
-            # フェーズ2: 規格統一・洗浄
-            df_all = clean_df_v26(pd.DataFrame(raw_data))
+            # 洗浄・規格統一
+            df_all = clean_df_v27(pd.DataFrame(raw_data))
             del raw_data
             
-            # フェーズ3: 一次審査（価格・市場）
+            # 一次審査（価格・市場）
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
-            
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
-            
-            # 🚨 0ヒット救済：マスターが空の場合は市場フィルタをスキップして全銘柄を通す
-            if not master_map:
-                status.warning("⚠️ 銘柄マスター未読込。市場フィルタをバイパスします。")
-                valid_codes = set(current['Code'].unique())
-            else:
-                valid_codes = {c for c, i in master_map.items() if any(k in str(i['Market']) for k in m_keywords)}
+            valid_codes = {c for c, i in master_map.items() if any(k in str(i['Market']) for k in m_keywords)}
 
-            # 物理フィルタ
             targets = current[
                 (current['AdjC'] >= float(st.session_state.f1_min)) & 
                 (current['AdjC'] <= float(st.session_state.f1_max)) &
@@ -910,50 +892,52 @@ with tab1:
             status.write(f"✅ 一次審査通過: {len(targets)} 銘柄")
 
             if not targets:
-                st.warning("捕捉圏内に銘柄がありません。価格帯設定を確認してください。")
+                st.warning("捕捉圏内に銘柄なし。")
             else:
-                # フェーズ4: テクニカル一括計算 (v26)
+                # 🚨 テクニカル一括計算 (1700銘柄を1秒で完了)
                 status.write("⚙️ テクニカル演算エンジン起動...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
-                df_elite = calc_vector_indicators_v26(df_elite)
+                df_elite = calc_vector_indicators_v27(df_elite)
                 del df_all
                 
-                # フェーズ5: 二次解析（掟・格付け）
-                results = []
-                def analyze_v26(code, group):
+                # 二次解析（並列計算：ただし財務APIはここでは呼ばない！）
+                def analyze_v27_fast(code, group):
                     try:
-                        if len(group) < 25: return None # データ不足
-                        latest = group.iloc[-1]; prev = group.iloc[-2]
-                        lc, h_vals, l_vals = latest['AdjC'], group['AdjH'].values, group['AdjL'].values
+                        if len(group) < 20: return None
+                        latest, prev = group.iloc[-1], group.iloc[-2]
+                        lc, hmax = latest['AdjC'], latest['HighMax']
                         
-                        # 下落判定 (掟)
+                        # 掟：下落除外
                         drop_limit = float(st.session_state.f3_drop) / 100.0
-                        if lc < h_vals.max() * (1 + drop_limit): return None
+                        if lc < hmax * (1 + drop_limit): return None
                         
-                        # 買値目標
+                        # 目標値算出
+                        h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
                         h4, l14 = h_vals[-4:].max(), l_vals[-14:].min()
                         target_buy = (h4 - (h4 - l14) * (float(st.session_state.push_r)/100.0)) * (1.0 - float(st.session_state.get('push_penalty', 0.0)))
                         
-                        # 格付けエンジン
+                        # 格付け
                         rank, bg, t_score, _ = get_triage_info(float(latest['MACD_Hist']), float(prev['MACD_Hist']), float(latest['RSI']), lc, target_buy, mode="待伏")
-                        
                         if rank == "圏外💀": return None
 
                         return {'Code': code, 'lc': lc, 'RSI': latest['RSI'], 'target': target_buy, 'rank': rank, 'bg': bg, 'score': t_score, 'df': group.tail(260)}
                     except: return None
 
+                results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as exe:
-                    futures = {exe.submit(analyze_v26, c, g): c for c, g in df_elite.groupby('Code')}
+                    futures = {exe.submit(analyze_v27_fast, c, g): c for c, g in df_elite.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         res = f.result()
                         if res: results.append(res)
                 
-                # フェーズ6: 最終財務チェック（精鋭のみ）
+                # 🚨 最終財務チェック（精鋭上位30銘柄に限定：これで爆速化）
+                status.write(f"🏅 候補 {len(results)} 銘柄から精鋭30件の財務を最終確認...")
                 results.sort(key=lambda x: x['score'], reverse=True)
                 final_hit = []
                 for r in results:
                     if len(final_hit) >= 30: break
                     if st.session_state.f12_ex_overvalued:
+                        # ここで初めてAPIを叩く（最大30回のみ）
                         f_data = get_fundamentals(r['Code'][:4])
                         if f_data and ((f_data.get("op", 0) or 0) < 0): continue
                     final_hit.append(r)
@@ -961,25 +945,18 @@ with tab1:
                 status.update(label=f"🎯 索敵完了：{len(final_hit)} 銘柄捕捉", state="complete")
                 st.session_state.tab1_scan_results = final_hit
 
-    # --- 📜 UI描画 (神聖保持) ---
+    # --- 📜 UI描画 ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
-        code_str = " ".join([r['Code'][:4] for r in res])
-        st.info("📋 照準（TAB3）へのコピペ用コード：")
-        st.code(code_str, language="text")
-        
+        st.code(" ".join([r['Code'][:4] for r in res]))
         for r in res:
             st.divider()
             m_info = master_map.get(r['Code'], {})
             t_badge = f'<span style="background-color: {r["bg"]}; color: white; padding: 2px 10px; border-radius: 4px; font-weight: bold; margin-left: 8px;">{r["rank"]}</span>'
             st.markdown(f"### ({r['Code'][:4]}) {m_info.get('CompanyName', '不明')} {t_badge}", unsafe_allow_html=True)
-            
             c1, c2, c3 = st.columns(3)
-            c1.metric("最新終値", f"{int(r['lc']):,}円")
-            c2.metric("待伏目標", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse")
-            c3.metric("RSI", f"{r['RSI']:.1f}%")
-            
-            draw_chart(r['df'], r['target'], chart_key=f"tab1_v26_{r['Code']}")
+            c1.metric("現在値", f"{int(r['lc']):,}円"); c2.metric("目標値", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse"); c3.metric("RSI", f"{r['RSI']:.1f}%")
+            draw_chart(r['df'], r['target'], chart_key=f"tab1_v27_{r['Code']}")
             
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
