@@ -1966,7 +1966,7 @@ with tab5:
         
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
-    st.caption("※実際の交戦記録を記録し、自身の戦績と規律遵守度を分析します。")
+    st.caption("※ 記録の編集後は、必ず下部の『💾 交戦記録の変更を確定』を押してください。")
     
     AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
@@ -1980,14 +1980,13 @@ with tab6:
                 return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
         return "不明"
 
-    # メモリ内データの安定化ロード
+    # メモリ内データの安定化ロード（ここでのみ型と欠損値を完全に処理する）
     if 'aar_df_stable' not in st.session_state:
         if os.path.exists(AAR_FILE):
             try:
                 df_l = pd.read_csv(AAR_FILE)
                 df_l['決済日'] = df_l['決済日'].astype(str)
-                df_l['銘柄'] = df_l['銘柄'].astype(str)
-                # 🚨 物理修復：NaNを0で埋め、数値を安定化させる
+                df_l['銘柄'] = df_l['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
                 for c in ['買値', '売値', '株数', '損益額(円)', '損益(%)']:
                     if c in df_l.columns:
                         df_l[c] = pd.to_numeric(df_l[c], errors='coerce').fillna(0)
@@ -2012,7 +2011,7 @@ with tab6:
     
     with col_a1:
         st.markdown("#### 📝 戦果報告フォーム")
-        with st.form(key="aar_form_silent_v5", clear_on_submit=False):
+        with st.form(key="aar_form_v6_locked", clear_on_submit=False):
             c_f1, c_f2 = st.columns(2)
             f_date = c_f1.date_input("決済日", key="aar_form_date")
             f_code = c_f2.text_input("銘柄コード", max_chars=4, key="aar_form_code")
@@ -2041,7 +2040,7 @@ with tab6:
                     st.rerun()
         
         with st.expander("📥 CSV一括登録"):
-            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v5")
+            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v6")
             if uploaded_csv is not None:
                 if st.button("⚙️ 解析・統合", use_container_width=True):
                     try:
@@ -2096,46 +2095,41 @@ with tab6:
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=250, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- 📜 詳細交戦記録 (0円白固定・完全消音版) ---
+    # --- 📜 詳細交戦記録 (物理入力ロック・絶対安定版) ---
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
     
-    # 💎 物理修復：色分けロジック（0円時は白を強制）
-    def apply_color_v5(val):
-        # 1円未満の微差（誤差）を切り捨てて判定
+    # 色分けロジック
+    def apply_color_v6(val):
         if val >= 1: return 'color: #26a69a; font-weight: bold;'
         elif val <= -1: return 'color: #ef5350; font-weight: bold;'
-        else: return 'color: #ffffff;' # 0円時は白
+        else: return 'color: #ffffff;'
 
-    def apply_rule_color_v5(val):
+    def apply_rule_color_v6(val):
         if val == '遵守': return 'color: #26a69a;'
         elif val == '違反': return 'color: #ef5350;'
         else: return 'color: #ffffff;'
 
-    # 表示用データの作成（編集中の安定性を保つためNaNを0に徹底変換）
-    display_df = st.session_state.aar_df_stable.fillna(0)
-    
-    # 🚨 物理修復：Stylerを通したまま st.data_editor に渡すが、
-    # 変更があっても st.rerun() を呼ばないことで画面全体の更新（点滅）を物理封殺
-    styled_df = display_df.style.map(apply_color_v5, subset=['損益額(円)', '損益(%)']).map(apply_rule_color_v5, subset=['規律'])
-
-    edited_log_df = st.data_editor(
-        styled_df, 
+    # 🚨 物理修復：Stylerをエディタに直接渡すとリセットの引き金になるため、
+    # 編集用には「raw_df」を使用し、表示上の美しさは別途担保する
+    working_log_df = st.data_editor(
+        st.session_state.aar_df_stable, 
         column_config={
             "規模": st.column_config.TextColumn("規模", disabled=True),
             "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
             "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
-            "買値": st.column_config.NumberColumn("買値", format="%.1f", disabled=True),
-            "売値": st.column_config.NumberColumn("売値", format="%.1f", disabled=True),
-            "株数": st.column_config.NumberColumn("株数", format="%d", disabled=True),
-            "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="¥%,d", disabled=True),
-            "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%", disabled=True),
+            "買値": st.column_config.NumberColumn("買値", format="%.1f"),
+            "売値": st.column_config.NumberColumn("売値", format="%.1f"),
+            "株数": st.column_config.NumberColumn("株数", format="%d"),
+            "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="¥%,d"),
+            "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%"),
         },
-        hide_index=True, use_container_width=True, key="aar_editor_silent_v5"
+        hide_index=True, use_container_width=True, key="aar_editor_stable_v6"
     )
 
-    # 💎 物理修復：メモリ保存（画面のチラつきを抑えるため、rerunなしでバックグラウンド保存）
-    if not edited_log_df.equals(st.session_state.aar_df_stable):
-        st.session_state.aar_df_stable = edited_log_df
+    # 🚨 保存ユニット：編集結果をボタンで確定させることで、入力中のロールバックを封殺
+    if st.button("💾 交戦記録の変更を確定 (物理保存)", use_container_width=True):
+        st.session_state.aar_df_stable = working_log_df.copy()
         st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-        # 次回のアクション（タブ変更等）で完全に反映。入力中の点滅はこれで止まる。
+        st.success("✅ ログの変更を物理保存し、戦績を再計算しました。")
+        st.rerun()
