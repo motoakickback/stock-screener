@@ -14,51 +14,41 @@ import gc
 import pytz
 import datetime as dt_module
 
-# --- 🛡️ 1. 規格統一エンジン（新規追加） ---
+# --- 🛡️ 機関部：物理規格・先行排除エンジン ---
+
 def normalize_code_global(c):
     """
-    あらゆる形式（8306, 8306.0, "8306", "83060"）を、
-    物理的に『5桁の文字列 "83060"』に統一する。
-    これがないと、どれだけ検索しても「0ヒット」のままになる。
+    あらゆる形式を 5桁の文字列 "83060" に統一する。
     """
     try:
         if pd.isna(c): return ""
-        # 小数点以下を切り捨て（8306.0 -> 8306）
         s = str(c).split('.')[0].strip()
-        # 4桁なら末尾に0を付与して5桁にする
         if len(s) == 4: return s + "0"
         return s
     except: return ""
 
-# --- 2. 既存の clean_df をこれに置き換え ---
 def clean_df(df):
+    """
+    型を整え、不要なデータを即座に捨てる外科的洗浄。
+    """
     r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
               'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume'}
     df = df.rename(columns=r_cols)
-    
-    # 🚨 ここで新設した normalize_code_global を使用
     if 'Code' in df.columns:
         df['Code'] = df['Code'].apply(normalize_code_global)
-    
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
-            
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjC']).reset_index(drop=True)
-    return df
+    return df.dropna(subset=['AdjC'])
 
-# --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
     """
-    テクニカル演算エンジン。全銘柄に適用すると30秒以上かかるため、
-    【絞り込み後の精鋭】にのみ適用する運用を推奨。
+    精鋭銘柄（数百件）にのみ適用。4,000銘柄に適用すると自爆する。
     """
     if df.empty: return df
-    df = df.copy()
-    
-    # 🚨 高速演算：groupbyの回数を最小限に抑える
+    df = df.copy().sort_values(['Code', 'Date'])
     groups = df.groupby('Code')
     
     # RSI
@@ -73,23 +63,16 @@ def calc_vector_indicators(df):
     ema12 = groups['AdjC'].ewm(span=12, adjust=False).mean().values
     ema26 = groups['AdjC'].ewm(span=26, adjust=False).mean().values
     macd = ema12 - ema26
-    # MACD Signal (MACDに対してさらにEWM)
     df['MACD_tmp'] = macd
     signal = df.groupby('Code')['MACD_tmp'].ewm(span=9, adjust=False).mean().values
     df['MACD_Hist'] = (macd - signal).astype('float32')
     df.drop(columns=['MACD_tmp'], inplace=True)
-    
-    # 各種MA
-    df['MA5'] = groups['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
-    df['MA25'] = groups['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
-    df['MA75'] = groups['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
     
     # ATR
     tr = pd.concat([df['AdjH']-df['AdjL'], 
                     (df['AdjH']-groups['AdjC'].shift(1)).abs(), 
                     (df['AdjL']-groups['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
-    
     return df
     
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
@@ -880,93 +863,91 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・極地迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # --- 🛡️ 1. マスターデータの規格統一 (v16.1) ---
-    if 'master_map_v16' not in st.session_state:
+    # --- 🛡️ 1. マスターデータの再構成 (規格完全統一) ---
+    if 'master_map_v17' not in st.session_state:
         if not master_df.empty:
             m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-            # 🚨 機関部 normalize_code_global と完全に同期
             m_df['CleanCode'] = m_df['Code'].apply(normalize_code_global)
             m_df = m_df[m_df['CleanCode'] != ""].drop_duplicates(subset='CleanCode')
-            st.session_state.master_map_v16 = m_df.set_index('CleanCode').to_dict('index')
+            st.session_state.master_map_v17 = m_df.set_index('CleanCode').to_dict('index')
+            del m_df
     
-    master_map = st.session_state.get('master_map_v16', {})
+    master_map = st.session_state.get('master_map_v17', {})
 
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
-    if st.button("🚀 電撃索敵を開始 (物理改修版)", key="btn_scan_v16_final"):
+    if st.button("🚀 索敵開始 (v17: 電撃プロトコル)", key="btn_scan_v17"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
-        with st.spinner("戦域を高速スキャン中..."):
+        with st.spinner("電撃スキャン中..."):
             raw_data = get_hist_data_cached()
             if raw_data:
-                # 2. 物理洗浄：機関部の clean_df を使用
+                # --- 第1段階：先行排除（計算前に銘柄を間引く） ---
                 df_all = clean_df(pd.DataFrame(raw_data))
                 del raw_data
+                gc.collect()
                 
-                # --- ⚡ 3. 超高速先行フィルタリング（37秒を10秒へ） ---
-                c_f = {
-                    "min_p": float(st.session_state.f1_min),
-                    "max_p": float(st.session_state.f1_max),
-                    "drop_r": float(st.session_state.f3_drop) / 100.0,
+                cfg = {
+                    "min": float(st.session_state.f1_min),
+                    "max": float(st.session_state.f1_max),
+                    "drop": float(st.session_state.f3_drop) / 100.0,
                     "push_r": float(st.session_state.push_r) / 100.0,
-                    "penalty": st.session_state.get('push_penalty', 0.0)
+                    "penalty": float(st.session_state.get('push_penalty', 0.0))
                 }
 
-                # 最新日の価格と市場で、4000銘柄を100〜200銘柄へ絞り込む
+                # 最新価格と市場で、まず「計算する価値のある奴」だけ選ぶ
                 latest_date = df_all['Date'].max()
                 current_batch = df_all[df_all['Date'] == latest_date]
                 
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
-                
-                # 該当市場の5桁コードセット
-                valid_market_codes = {code for code, info in master_map.items() 
-                                     if any(k in str(info['Market']) for k in m_keywords)}
+                valid_codes = {c for c, i in master_map.items() if any(k in str(i['Market']) for k in m_keywords)}
 
-                # ベクトル演算による高速除外
-                target_codes = current_batch[
-                    (current_batch['AdjC'] >= c_f["min_p"]) & 
-                    (current_batch['AdjC'] <= c_f["max_p"]) &
-                    (current_batch['Code'].isin(valid_market_codes))
+                # 🚨 ここで9割を切り捨てる（爆速化の核心）
+                targets = current_batch[
+                    (current_batch['AdjC'] >= cfg["min"]) & 
+                    (current_batch['AdjC'] <= cfg["max"]) &
+                    (current_batch['Code'].isin(valid_codes))
                 ]['Code'].unique().tolist()
 
-                if not target_codes:
-                    st.warning("捕捉圏内に銘柄がありません。価格帯または市場設定を確認してください。")
+                if not targets:
+                    st.warning("捕捉圏内に銘柄がありません。")
+                    del df_all
                 else:
-                    # 🚨 爆速化の核心：絞り込まれた精鋭のみ、機関部の計算エンジンへ
-                    df_elite = df_all[df_all['Code'].isin(target_codes)].sort_values(['Code', 'Date'])
+                    # --- 第2段階：精鋭のみにテクニカル計算を執行 ---
+                    df_elite = df_all[df_all['Code'].isin(targets)].sort_values(['Code', 'Date'])
                     df_elite = calc_vector_indicators(df_elite)
                     del df_all
                     gc.collect()
 
-                    # --- 🎯 4. 精鋭解析（並列計算） ---
-                    def analyze_unit_final(code, group, cfg):
+                    # --- 第3段階：並列詳細解析 ---
+                    def analyze_unit_v17(code, group, c_f):
                         try:
-                            # 既に計算済みの指標を取得
+                            # 指標は既に計算済み
                             latest = group.iloc[-1]
                             prev = group.iloc[-2]
                             c_vals = group['AdjC'].values
-                            lc, h_vals, l_vals = c_vals[-1], group['AdjH'].values, group['AdjL'].values
-                            
-                            # テクニカル形状判定
-                            hmax = h_vals.max()
-                            if lc < hmax * (1 + cfg["drop_r"]): return None
+                            h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+                            lc, hmax = c_vals[-1], h_vals.max()
+
+                            # 掟判定：1年最高値からの下落除外
+                            if lc < hmax * (1 + c_f["drop"]): return None
                             
                             r4h = h_vals[-4:]; h4 = r4h.max()
                             g_max_idx = len(h_vals) - 4 + r4h.argmax()
                             l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
                             if l14 <= 0 or h4 <= l14: return None
-                            
-                            # 重い外部検索を最小限に
+
+                            # 財務・赤字フィルター
                             if st.session_state.f12_ex_overvalued:
                                 f_data = get_fundamentals(code[:4])
                                 if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                             
-                            target_buy = (h4 - (h4 - l14) * cfg["push_r"]) * (1.0 - cfg["penalty"])
                             rsi = float(latest.get('RSI', 50))
+                            target_buy = (h4 - (h4 - l14) * c_f["push_r"]) * (1.0 - c_f["penalty"])
                             
-                            # 格付け（共通関数 get_triage_info を使用）
+                            # 共通格付けエンジンの呼び出し
                             rank, bg, t_score, _ = get_triage_info(
                                 float(latest.get('MACD_Hist', 0)), 
                                 float(prev.get('MACD_Hist', 0)), 
@@ -979,34 +960,33 @@ with tab1:
                                 'Code': str(code), 'lc': float(lc), 'RSI': rsi, 'target_buy': float(target_buy), 
                                 'reach_rate': float((target_buy / lc) * 100), 
                                 'triage_rank': rank, 'triage_bg': bg, 
-                                't_score': t_score, 'score': 4, # シンプルスコアリング
+                                't_score': t_score, 'score': 4,
                                 'high_4d': float(h4), 'low_14d': float(l14)
                             }
                         except: return None
 
                     results = []
-                    # サーバー負荷を考慮し4スレッド
                     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
-                        futures = {exe.submit(analyze_unit_final, c, g, c_f): c for c, g in df_elite.groupby('Code')}
+                        futures = {exe.submit(analyze_unit_v17, c, g, cfg): c for c, g in df_elite.groupby('Code')}
                         for f in concurrent.futures.as_completed(futures):
                             res = f.result()
                             if res: results.append(res)
                     
-                    # 戦績ソートとセクター分散
+                    # セクター分散と最終選別
                     sorted_raw = sorted(results, key=lambda x: (x['t_score']), reverse=True)
-                    final_list, sec_counts = [], {}
+                    final_results, sec_counts = [], {}
                     for r in sorted_raw:
                         sec = master_map.get(r['Code'], {}).get('Sector', '不明')
                         if sec_counts.get(sec, 0) < 3:
-                            final_list.append(r)
+                            final_results.append(r)
                             sec_counts[sec] = sec_counts.get(sec, 0) + 1
-                        if len(final_list) >= 30: break
-                    st.session_state.tab1_scan_results = final_list
+                        if len(final_results) >= 30: break
+                    st.session_state.tab1_scan_results = final_results
 
     # --- 📜 UI描画 ---
     if st.session_state.tab1_scan_results:
         res = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏捕捉完了: {len(res)} 銘柄捕捉 (機関部・規格完全同期済)")
+        st.success(f"🎯 待伏捕捉完了: {len(res)} 銘柄捕捉 (v17 先行排除成功)")
         
         code_str = " ".join([r['Code'][:4] for r in res])
         st.code(code_str, language="text")
@@ -1016,7 +996,7 @@ with tab1:
             m_info = master_map.get(r['Code'], {})
             m_text = str(m_info.get('Market', ''))
             
-            # 市場別バッジ（ボスの資産）
+            # ボスの神聖UIパーツ
             if 'プライム' in m_text: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🏢 大型</span>'
             elif 'グロース' in m_text: b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🚀 新興</span>'
             else: b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{m_text[:4]}</span>'
@@ -1031,7 +1011,7 @@ with tab1:
             m_cols[1].metric("起点安値", f"{int(r['low_14d']):,}円")
             m_cols[2].metric("最新終値", f"{int(r['lc']):,}円")
             m_cols[3].markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 5px; border-radius: 8px; border: 1px solid #FFD700; text-align: center;"><div style="font-size: 12px; color: #FFD700;">🎯 買値目標</div><div style="font-size: 1.5rem; font-weight: bold; color: #FFD700;">{int(r['target_buy']):,}円</div></div>""", unsafe_allow_html=True)
-            
+
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
