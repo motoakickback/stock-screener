@@ -1310,6 +1310,12 @@ with tab3:
                 # --- ⚙️ 5. 解析計算ループ ---
                 scope_results = []
                 for c in t_codes:
+                    # 🚨 生存確認デバッグ：全銘柄に強制的にメッセージを叩き込む
+                        if 'alerts' not in locals(): alerts = []
+                        alerts.append("⚡ システム生存確認：判定ロジック稼働中")
+                        
+                        # テスト用の強制「たくり線」判定（ロジック生存確認）
+                        alerts.append("🟢 【デバッグ】酒田メッセージの表示テスト")
                     try:
                         target_key = str(c)
                         raw_s = raw_data_dict.get(target_key)
