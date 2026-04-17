@@ -306,28 +306,69 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-def clean_df_v57(df):
+def clean_df_v58(df):
     """
-    出来高(Volume)を確実に数値化し、物理解毒(5桁統一)を完遂する。
+    データ欠落によるKeyErrorを物理的に回避し、5桁規格に溶接する。
     """
-    # 🚨 出来高列の名寄せ（J-Quantsの全仕様に対応）
-    if 'AdjustmentVolume' in df.columns: df['Volume'] = df['AdjustmentVolume']
+    if df.empty:
+        return pd.DataFrame(columns=['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume'])
+
+    # 🚨 1. 名寄せ（どのような列名が来ても内部規格に変換）
+    col_map = {
+        'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
+        'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC',
+        'AdjustmentVolume': 'Volume'
+    }
+    df = df.rename(columns=col_map)
     
-    r_cols = {'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC'}
-    df = df.rename(columns=r_cols)
+    # 🚨 2. 必須列の存在保証（欠落していてもエラーにしない）
+    for col in ['AdjH', 'AdjL', 'AdjC', 'Volume', 'Code', 'Date']:
+        if col not in df.columns:
+            df[col] = 0 if col != 'Date' else pd.Timestamp.now()
+
+    # 3. 銘柄コードの物理解毒（8306.0 -> 83060）
+    df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
+    df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
     
-    # コード物理解毒（8306.0 -> 83060）
-    if 'Code' in df.columns:
-        df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
-        df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+    # 4. 抽出と型変換
+    df = df[['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume']]
+    df = df.dropna(subset=['Code'])
     
-    # 必須列抽出
-    df = df[['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume']].dropna(subset=['Code', 'AdjC'])
     for c in ['AdjH', 'AdjL', 'AdjC', 'Volume']:
         df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('float32')
-        
+            
     df['Date'] = pd.to_datetime(df['Date'])
     return df.sort_values(['Code', 'Date']).reset_index(drop=True)
+
+def calc_vector_indicators_v58(df, cfg):
+    """
+    UI変数(avg_vol, high_4d, target_buy)を一斉生成。
+    """
+    if df.empty: return df
+    df = df.copy().sort_values(['Code', 'Date'])
+    g = df.groupby('Code')
+    
+    # 指標演算
+    delta = g['AdjC'].diff()
+    gain = delta.clip(lower=0).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    df['RSI'] = (100 - (100 / (1 + (gain / (loss + 1e-10))))).values
+    
+    ema12 = g['AdjC'].transform(lambda x: x.ewm(span=12, adjust=False).mean())
+    ema26 = g['AdjC'].transform(lambda x: x.ewm(span=26, adjust=False).mean())
+    macd = ema12 - ema26
+    df['MACD_Hist'] = macd - macd.groupby(df['Code']).transform(lambda x: x.ewm(span=9, adjust=False).mean())
+    
+    # UI変数
+    df['HighMax'] = g['AdjH'].transform(lambda x: x.rolling(window=len(x), min_periods=1).max())
+    df['high_4d'] = g['AdjH'].transform(lambda x: x.rolling(4, min_periods=1).max())
+    df['low_14d'] = g['AdjL'].transform(lambda x: x.rolling(14, min_periods=1).min())
+    df['avg_vol'] = g['Volume'].transform(lambda x: x.rolling(5, min_periods=1).mean())
+    
+    df['target_buy'] = (df['high_4d'] - (df['high_4d'] - df['low_14d']) * cfg["push_r"]) * (1.0 - cfg["penalty"])
+    df['reach_rate'] = (df['AdjC'] / (df['target_buy'] + 1e-10)) * 100
+    
+    return df.fillna(0)
 
 def calc_vector_indicators_v57(df, cfg):
     """
@@ -986,7 +1027,7 @@ with tab1:
         master_map_t1 = m_df.set_index('Code').to_dict('index')
     else: master_map_t1 = {}
 
-    if st.button("🚀 260日索敵開始 (V57: 最終版)", key="btn_scan_v57", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V58)", key="btn_scan_v58", use_container_width=True, type="primary"):
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
         
@@ -995,8 +1036,8 @@ with tab1:
         if not raw_data:
             status.update(label="❌ API応答なし", state="error")
         else:
-            status.write("⚙️ データを物理洗浄・出来高を同期中...")
-            df_all = clean_df_v57(pd.DataFrame(raw_data))
+            status.write("⚙️ データを物理洗浄・KeyErrorを回避中...")
+            df_all = clean_df_v58(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
             
@@ -1024,13 +1065,13 @@ with tab1:
             targets = current[(current['AdjC'] >= cfg["min"]) & (current['AdjC'] <= cfg["max"]) & (current['Code'].isin(eligible_codes))]['Code'].unique().tolist()
 
             if not targets:
-                st.error("捕捉圏内に銘柄なし。")
+                st.error("捕捉圏内に銘柄なし。価格設定または市場設定を見直してください。")
             else:
-                # 3. 精密演算
+                # 3. 精密演算（V58エンジン）
                 status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
-                df_elite = calc_vector_indicators_v57(df_elite, cfg)
+                df_elite = calc_vector_indicators_v58(df_elite, cfg)
                 
                 # 4. 二次判定（格付け）
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
@@ -1055,12 +1096,12 @@ with tab1:
                         })
                     except: continue
 
-                # 🚨 修正：コード順ではなく「スコア順（降順）」でソート
+                # 🚨 重要：スコアが高い順（精鋭順）にソートして偏りを解消
                 candidate_list.sort(key=lambda x: x['score'], reverse=True)
                 st.session_state.tab1_scan_results = candidate_list[:30]
                 status.update(label=f"🎯 索敵完了（{time.time() - t_start:.2f}秒）", state="complete")
 
-    # --- 📜 UI描画：ボスの「聖典コード」完全適用 ---
+    # --- 📜 UI描画：ボスの「聖典コード」完全準拠 ---
     if st.session_state.get('tab1_scan_results'):
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（マクロ連動・精鋭選出済）")
@@ -1074,7 +1115,6 @@ with tab1:
             c_code = str(r['Code']); m_info = master_map_t1.get(c_code, {})
             m_name = m_info.get('CompanyName', '不明'); m_lower = str(m_info.get('Market', '')).lower()
             
-            # バッジ・HTML：ボスの聖典を完全再現
             if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
