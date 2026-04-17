@@ -1398,7 +1398,7 @@ with tab3:
                             'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                             'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
                             # 🚨 ここで生存確認メッセージを強制結合
-                            'alerts': alerts + ["⚡ システム生存確認：判定ロジック稼動中"], 
+                            'alerts': alerts, 
                             'error': False
                         })
                     except: continue
