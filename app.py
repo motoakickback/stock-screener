@@ -1360,7 +1360,7 @@ with tab3:
                         l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v, rsi_v = (h14 - l14), float(t_latest.get('RSI', 50))
                         atr_v = float(t_latest.get('ATR', lc * 0.05))
-                        df_mini = df_chart_full.tail(100).copy()
+                        df_mini = df_chart_full.tail(260).copy()
                         
                         score, alerts, gc_days = 0, [], 0
                         if is_ambush:
