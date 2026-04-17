@@ -834,38 +834,37 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・極地迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # --- 🛡️ 1. マスターデータの高速インデックス化 (重複排除パッチ適用) ---
-    if 'master_map_v13' not in st.session_state:
+    # --- 🛡️ 1. マスターデータの高速インデックス化 (メモリ節約版) ---
+    if 'master_map_v14' not in st.session_state:
         if not master_df.empty:
             def clean_code_to_int(c):
                 try:
                     s = str(c).split('.')[0]
-                    # 4桁なら末尾0付与、それ以外はそのまま整数化
                     return int(s + "0") if len(s) == 4 else int(s)
                 except: return 0
             
             m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
             m_df['IntCode'] = m_df['Code'].apply(clean_code_to_int)
-            
-            # 🚨 物理修復：重複コードを排除してインデックスの唯一性を保証
             m_df = m_df.drop_duplicates(subset='IntCode')
-            
-            st.session_state.master_map_v13 = m_df.set_index('IntCode').to_dict('index')
+            st.session_state.master_map_v14 = m_df.set_index('IntCode').to_dict('index')
+            del m_df
     
-    master_map = st.session_state.get('master_map_v13', {})
+    master_map = st.session_state.get('master_map_v14', {})
 
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
-    if st.button("🚀 電撃索敵を開始", key="btn_scan_v13_fixed"):
+    if st.button("🚀 電撃索敵を開始 (安全モード)", key="btn_scan_v14"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
-        with st.spinner("戦域を高速スキャン中..."):
+        with st.spinner("メモリを節約しながら索敵中..."):
             raw = get_hist_data_cached()
             if raw:
-                # --- ⚙️ 2. データ物理洗浄 & 数値化 ---
+                # --- ⚙️ 2. 物理洗浄 & メモリ解放 ---
                 df_all = pd.DataFrame(raw)
-                # 比較用にCodeを整数に統一
+                del raw # 🚨 巨大な生リストを即座に破棄
+                gc.collect() # 物理メモリ解放
+                
                 df_all['Code'] = df_all['Code'].apply(lambda x: int(str(x).split('.')[0]))
                 for col in ['AdjC', 'AdjH', 'AdjL', 'AdjO']:
                     df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
@@ -879,11 +878,9 @@ with tab1:
                     "penalty": st.session_state.get('push_penalty', 0.0)
                 }
 
-                # 最新価格フィルター
                 latest_date = df_all['Date'].max()
                 current_batch = df_all[df_all['Date'] == latest_date].copy()
                 
-                # 市場フィルター判定関数
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
                 
@@ -891,30 +888,30 @@ with tab1:
                     m = master_map.get(code)
                     return m and any(k in str(m['Market']) for k in m_keywords)
 
-                # 高速一括フィルタリング
                 eligible = current_batch[
                     (current_batch['AdjC'] >= c_f["min_p"]) & 
                     (current_batch['AdjC'] <= c_f["max_p"])
                 ].copy()
                 eligible['InMarket'] = eligible['Code'].apply(check_market)
                 target_codes = eligible[eligible['InMarket'] == True]['Code'].unique().tolist()
+                del current_batch, eligible # 不要な中間データを削除
 
                 if not target_codes:
                     st.error("ターゲット捕捉失敗。市場設定または価格帯を見直してください。")
+                    del df_all
                 else:
-                    # 判定対象の全履歴
+                    # 判定対象の全履歴のみを抽出
                     df_elite = df_all[df_all['Code'].isin(target_codes)].sort_values(['Code', 'Date'])
+                    del df_all # 🚨 巨大な全体データを破棄して精鋭のみ残す
+                    gc.collect()
 
-                    # --- 🎯 4. 精鋭のみを並列解析 ---
-                    def analyze_unit_v13(code, group, cfg):
+                    # --- 🎯 4. 精鋭のみを並列解析 (メモリ負荷軽減版) ---
+                    def analyze_unit_v14(code, group, cfg):
                         try:
                             c_vals = group['AdjC'].values
                             if len(c_vals) < 40: return None
-                            
                             lc, h_vals, l_vals = c_vals[-1], group['AdjH'].values, group['AdjL'].values
                             hmax = h_vals.max()
-                            
-                            # 形状足切り
                             if lc < hmax * (1 + cfg["drop_r"]): return None
                             
                             r4h = h_vals[-4:]; h4 = r4h.max()
@@ -949,12 +946,16 @@ with tab1:
                         except: return None
 
                     results = []
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-                        futures = {exe.submit(analyze_unit_v13, c, g, c_f): c for c, g in df_elite.groupby('Code')}
+                    # 🚨 max_workersを4に制限し、メモリ飽和を防止
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
+                        futures = {exe.submit(analyze_unit_v14, c, g, c_f): c for c, g in df_elite.groupby('Code')}
                         for f in concurrent.futures.as_completed(futures):
                             res = f.result()
                             if res: results.append(res)
                     
+                    del df_elite # 最後に抽出データを破棄
+                    gc.collect()
+
                     # セクター分散
                     sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                     final_list = []
@@ -965,15 +966,13 @@ with tab1:
                             final_list.append(r)
                             sec_counts[sec] = sec_counts.get(sec, 0) + 1
                         if len(final_list) >= 30: break
-                    
                     st.session_state.tab1_scan_results = final_list
 
     # --- 📜 UI描画 (神聖保持) ---
     if st.session_state.tab1_scan_results:
         res = st.session_state.tab1_scan_results
-        st.success(f"🎯 捕捉完了: {len(res)} 銘柄捕捉（エラー修復済）")
+        st.success(f"🎯 捕捉完了: {len(res)} 銘柄（メモリ安全モード）")
         
-        # S, A, B ランクのみのコードを抽出
         code_str = " ".join([r['Code'][:4] for r in res if not r['triage_rank'].startswith("圏外")])
         st.code(code_str, language="text")
         
@@ -981,11 +980,7 @@ with tab1:
             st.divider()
             m_info = master_map.get(int(r['Code']), {})
             m_text = str(m_info.get('Market', ''))
-            
-            if 'プライム' in m_text: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🏢 大型</span>'
-            elif 'グロース' in m_text: b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🚀 新興</span>'
-            else: b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{m_text[:4]}</span>'
-            
+            b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{m_text[:4]}</span>'
             t_badge = f'<span style="background-color: {r["triage_bg"]}; color: white; padding: 2px 10px; border-radius: 4px; font-weight: bold; margin-left: 8px;">{r["triage_rank"]}</span>'
             
             st.markdown(f"### ({r['Code'][:4]}) {m_info.get('CompanyName', '不明')} {b_html}{t_badge}", unsafe_allow_html=True)
