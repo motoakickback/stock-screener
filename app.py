@@ -628,35 +628,33 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df is None or df.empty: return
+    
+    # 🚨 余計な copy() や再計算を全削除。渡されたデータをそのまま使う。
+    # 🚨 ただし、ホバー消失バグを防ぐ「型変換（解毒）」のみを最小限実行。
     df_plot = df.copy()
-
-    # 1. 安全装置（万が一データが欠落していてもここで強制計算）
-    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
-    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
-    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
-
-    # 2. Pandasの毒(float32やNaN)を抜き、Plotlyが100%認識できるPythonネイティブ型へ解毒
-    y_ma5 = [float(x) if pd.notna(x) else None for x in df_plot['MA5']]
-    y_ma25 = [float(x) if pd.notna(x) else None for x in df_plot['MA25']]
-    y_ma75 = [float(x) if pd.notna(x) else None for x in df_plot['MA75']]
+    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
+        if col in df_plot.columns:
+            df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
 
     fig = go.Figure()
     
-    # ローソク足
+    # 1. ローソク足
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
         name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 目標とMA線（一括ホバーに確実に並ぶ純正フォーマット）
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma5, mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma25, mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma75, mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    # 2. 各MA線（純正仕様）
+    for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
+        if m_c in df_plot.columns: 
+            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
+            
+    # 3. 目標線
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
     last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=45) if len(df_plot) > 30 else df_plot['Date'].min()
     
-    # 純正レイアウト
+    # 4. レイアウト（純正 x unified）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
@@ -665,10 +663,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         hovermode="x unified", 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    
-    # 🚨 最終物理破壊：keyの末尾に「_v2」を付け、Streamlitの古いキャッシュを強制的に殺す
-    cache_breaker_key = f"{chart_key}_v2" if chart_key else "chart_v2"
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=cache_breaker_key)
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
     
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
