@@ -834,24 +834,29 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・極地迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # --- 🛡️ 1. マスターデータの高速インデックス化 (Int統一) ---
+    # --- 🛡️ 1. マスターデータの高速インデックス化 (重複排除パッチ適用) ---
     if 'master_map_v13' not in st.session_state:
         if not master_df.empty:
             def clean_code_to_int(c):
                 try:
                     s = str(c).split('.')[0]
+                    # 4桁なら末尾0付与、それ以外はそのまま整数化
                     return int(s + "0") if len(s) == 4 else int(s)
                 except: return 0
             
             m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
             m_df['IntCode'] = m_df['Code'].apply(clean_code_to_int)
+            
+            # 🚨 物理修復：重複コードを排除してインデックスの唯一性を保証
+            m_df = m_df.drop_duplicates(subset='IntCode')
+            
             st.session_state.master_map_v13 = m_df.set_index('IntCode').to_dict('index')
     
     master_map = st.session_state.get('master_map_v13', {})
 
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
-    if st.button("🚀 電撃索敵を開始", key="btn_scan_v13"):
+    if st.button("🚀 電撃索敵を開始", key="btn_scan_v13_fixed"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
@@ -860,11 +865,12 @@ with tab1:
             if raw:
                 # --- ⚙️ 2. データ物理洗浄 & 数値化 ---
                 df_all = pd.DataFrame(raw)
+                # 比較用にCodeを整数に統一
                 df_all['Code'] = df_all['Code'].apply(lambda x: int(str(x).split('.')[0]))
                 for col in ['AdjC', 'AdjH', 'AdjL', 'AdjO']:
                     df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
 
-                # --- ⚡ 3. ベクトル演算による先行排除 (ここで95%を削る) ---
+                # --- ⚡ 3. ベクトル演算による先行排除 ---
                 c_f = {
                     "min_p": float(st.session_state.f1_min),
                     "max_p": float(st.session_state.f1_max),
@@ -877,7 +883,7 @@ with tab1:
                 latest_date = df_all['Date'].max()
                 current_batch = df_all[df_all['Date'] == latest_date].copy()
                 
-                # 市場フィルター (IntCodeでマスターと照合)
+                # 市場フィルター判定関数
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
                 
@@ -899,7 +905,7 @@ with tab1:
                     # 判定対象の全履歴
                     df_elite = df_all[df_all['Code'].isin(target_codes)].sort_values(['Code', 'Date'])
 
-                    # --- 🎯 4. 精鋭のみを並列解析 (重いロジック) ---
+                    # --- 🎯 4. 精鋭のみを並列解析 ---
                     def analyze_unit_v13(code, group, cfg):
                         try:
                             c_vals = group['AdjC'].values
@@ -908,20 +914,17 @@ with tab1:
                             lc, h_vals, l_vals = c_vals[-1], group['AdjH'].values, group['AdjL'].values
                             hmax = h_vals.max()
                             
-                            # 形状足切り (高値からの乖離)
+                            # 形状足切り
                             if lc < hmax * (1 + cfg["drop_r"]): return None
                             
-                            # 14日ボラティリティ
                             r4h = h_vals[-4:]; h4 = r4h.max()
                             g_max_idx = len(h_vals) - 4 + r4h.argmax()
                             l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
                             if l14 <= 0 or h4 <= l14: return None
                             
-                            # 重い処理を最後尾に配置
                             rsi, _, _, _ = get_fast_indicators(c_vals)
                             target_buy = (h4 - (h4 - l14) * cfg["push_r"]) * (1.0 - cfg["penalty"])
                             
-                            # スコアリング
                             score = 4
                             wh = h4 / l14
                             if 1.3 <= wh <= 2.0: score += 1
@@ -968,8 +971,9 @@ with tab1:
     # --- 📜 UI描画 (神聖保持) ---
     if st.session_state.tab1_scan_results:
         res = st.session_state.tab1_scan_results
-        st.success(f"🎯 捕捉完了: {len(res)} 銘柄（ベクトル演算同期済）")
+        st.success(f"🎯 捕捉完了: {len(res)} 銘柄捕捉（エラー修復済）")
         
+        # S, A, B ランクのみのコードを抽出
         code_str = " ".join([r['Code'][:4] for r in res if not r['triage_rank'].startswith("圏外")])
         st.code(code_str, language="text")
         
