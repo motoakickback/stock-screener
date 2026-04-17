@@ -476,13 +476,15 @@ def get_fundamentals(code):
     return None
 
 @st.cache_data(ttl=86400)
-def load_master_v45():
+def load_master():
     """
-    JPX公式サイトからExcelを直接取得し、5桁規格に完全溶接する。
+    JPX公式サイトからExcelを直接取得し、5桁規格("83060")に完全溶接する。
     """
     import re
     import requests
     from io import BytesIO
+    import pandas as pd
+
     try:
         # 1. JPX統計ページからExcelのリンクを抽出
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
@@ -490,17 +492,18 @@ def load_master_v45():
         if m:
             # 2. Excelファイルをダウンロード
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            # xlrdエンジンで読み込み、必要な列を抽出
+            # xlrdエンジンで読み込み
             df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
             
-            # 🚨 物理解毒：8306.0 などの小数点浮動を排除し、4桁を5桁(83060)へ
+            # 🚨 物理解毒：8306.0 などの小数点浮動を排除し、4桁を5桁(83060)へ変換
             df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
             df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
             
             return df
     except Exception as e:
-        st.error(f"マスター取得エラー: {e}")
+        # エラー時は空のDFを返し、システム停止を防ぐ
+        return pd.DataFrame()
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -891,26 +894,35 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（V45）</h3>', unsafe_allow_html=True)
+    import time
+    import gc
+    import unicodedata
+
+    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（V46）</h3>', unsafe_allow_html=True)
     
-    # --- 🛡️ 銘柄マスターの物理同期 ---
-    if 'master_map_v45' not in st.session_state:
+    # --- 🛡️ 銘柄マスターの物理同期プロトコル ---
+    # ここでの呼び出し名を load_master() に完全統一
+    if 'master_map_v46' not in st.session_state:
         # master_dfが存在しないか空の場合、JPXから直接取得
         if 'master_df' not in st.session_state or st.session_state.master_df.empty:
             with st.spinner("📡 JPXから最新の銘柄地図を奪取中..."):
-                st.session_state.master_df = load_master_v45()
+                # 🚨 名称を load_master() へ同期
+                st.session_state.master_df = load_master()
         
         # 取得成功していれば高速検索Mapを生成
-        if not st.session_state.master_df.empty:
+        if 'master_df' in st.session_state and not st.session_state.master_df.empty:
             m_df = st.session_state.master_df.copy()
-            st.session_state.master_map_v45 = m_df.set_index('Code').to_dict('index')
-            st.success("✅ 銘柄マスターをV45規格で同期しました。")
+            # 規格を「5桁文字列」に溶接
+            m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
+            m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+            st.session_state.master_map_v46 = m_df.set_index('Code').to_dict('index')
+            st.success("✅ 銘柄マスターをV46規格で同期しました。")
 
-    master_map = st.session_state.get('master_map_v45', {})
+    master_map = st.session_state.get('master_map_v46', {})
 
-    if st.button("🚀 260日索敵開始 (V45)", key="btn_scan_v45", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V46)", key="btn_scan_v46", use_container_width=True, type="primary"):
         if not master_map:
-            st.error("❌ 銘柄マスターの取得に失敗しました。サイト側の仕様変更の可能性があります。")
+            st.error("❌ 銘柄マスターが空です。APIの取得制限またはサイト側の仕様変更の可能性があります。")
             st.stop()
 
         st.session_state.tab1_scan_results = []
@@ -924,7 +936,7 @@ with tab1:
             status.update(label="❌ API応答なし。兵站の確保に失敗。", state="error")
         else:
             # 2. 物理洗浄
-            status.write("⚙️ データを物理洗浄中...")
+            status.write("⚙️ データを物理洗浄・規格統一中...")
             df_all = clean_df_v39(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
@@ -976,7 +988,6 @@ with tab1:
                 status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を精密演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
-                # 前のターンで定義したV44演算エンジンを使用（定義されているか要確認）
                 df_elite = calc_vector_indicators_v44(df_elite, cfg)
                 
                 # 5. 格付け解析
@@ -1020,8 +1031,7 @@ with tab1:
         st.success(f"🎯 ターゲット捕捉: {len(res)} 銘柄")
         st.code(code_str, language="text")
         
-        # 待伏目標価格の算出根拠（ボスへのリマインド）
-        st.info("💡 待伏目標価格は、直近4日の最高値 $H_4$ と14日の最安値 $L_{14}$ を用いて以下の通り算出されています：")
+        st.info("💡 待伏目標価格算出式：")
         st.latex(r"Target = (H_4 - (H_4 - L_{14}) \times \text{push\_r}) \times (1 - \text{penalty})")
 
         for r in res:
