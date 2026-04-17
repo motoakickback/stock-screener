@@ -48,6 +48,49 @@ def clean_df(df):
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjC']).reset_index(drop=True)
     return df
+
+# --- 3. 共通関数 & 演算エンジン ---
+def calc_vector_indicators(df):
+    """
+    テクニカル演算エンジン。全銘柄に適用すると30秒以上かかるため、
+    【絞り込み後の精鋭】にのみ適用する運用を推奨。
+    """
+    if df.empty: return df
+    df = df.copy()
+    
+    # 🚨 高速演算：groupbyの回数を最小限に抑える
+    groups = df.groupby('Code')
+    
+    # RSI
+    delta = groups['AdjC'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).values.astype('float32')
+    
+    # MACD
+    ema12 = groups['AdjC'].ewm(span=12, adjust=False).mean().values
+    ema26 = groups['AdjC'].ewm(span=26, adjust=False).mean().values
+    macd = ema12 - ema26
+    # MACD Signal (MACDに対してさらにEWM)
+    df['MACD_tmp'] = macd
+    signal = df.groupby('Code')['MACD_tmp'].ewm(span=9, adjust=False).mean().values
+    df['MACD_Hist'] = (macd - signal).astype('float32')
+    df.drop(columns=['MACD_tmp'], inplace=True)
+    
+    # 各種MA
+    df['MA5'] = groups['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
+    df['MA25'] = groups['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
+    df['MA75'] = groups['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
+    
+    # ATR
+    tr = pd.concat([df['AdjH']-df['AdjL'], 
+                    (df['AdjH']-groups['AdjC'].shift(1)).abs(), 
+                    (df['AdjL']-groups['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
+    df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
+    
+    return df
     
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
@@ -338,49 +381,6 @@ def render_macro_board():
     else: st.warning("📡 外部気象レーダー応答なし")
 
 render_macro_board()
-
-# --- 3. 共通関数 & 演算エンジン ---
-def calc_vector_indicators(df):
-    """
-    テクニカル演算エンジン。全銘柄に適用すると30秒以上かかるため、
-    【絞り込み後の精鋭】にのみ適用する運用を推奨。
-    """
-    if df.empty: return df
-    df = df.copy()
-    
-    # 🚨 高速演算：groupbyの回数を最小限に抑える
-    groups = df.groupby('Code')
-    
-    # RSI
-    delta = groups['AdjC'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
-    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
-    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).values.astype('float32')
-    
-    # MACD
-    ema12 = groups['AdjC'].ewm(span=12, adjust=False).mean().values
-    ema26 = groups['AdjC'].ewm(span=26, adjust=False).mean().values
-    macd = ema12 - ema26
-    # MACD Signal (MACDに対してさらにEWM)
-    df['MACD_tmp'] = macd
-    signal = df.groupby('Code')['MACD_tmp'].ewm(span=9, adjust=False).mean().values
-    df['MACD_Hist'] = (macd - signal).astype('float32')
-    df.drop(columns=['MACD_tmp'], inplace=True)
-    
-    # 各種MA
-    df['MA5'] = groups['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
-    df['MA25'] = groups['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
-    df['MA75'] = groups['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
-    
-    # ATR
-    tr = pd.concat([df['AdjH']-df['AdjL'], 
-                    (df['AdjH']-groups['AdjC'].shift(1)).abs(), 
-                    (df['AdjL']-groups['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
-    df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
-    
-    return df
 
 def calc_technicals(df):
     return calc_vector_indicators(df)
