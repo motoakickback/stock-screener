@@ -1980,7 +1980,7 @@ with tab6:
                 return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
         return "不明"
 
-    # メモリ内データの安定化ロード（ここでのみ型と欠損値を完全に処理する）
+    # メモリ内データの安定化ロード
     if 'aar_df_stable' not in st.session_state:
         if os.path.exists(AAR_FILE):
             try:
@@ -1996,35 +1996,24 @@ with tab6:
         else:
             st.session_state.aar_df_stable = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
 
-    # フォーム用の物理ロックキー
-    import datetime as dt_module
-    if "aar_form_date" not in st.session_state: st.session_state.aar_form_date = dt_module.date.today()
-    if "aar_form_code" not in st.session_state: st.session_state.aar_form_code = ""
-    if "aar_form_tactics" not in st.session_state: st.session_state.aar_form_tactics = "🌐 待伏 (押し目)"
-    if "aar_form_buy" not in st.session_state: st.session_state.aar_form_buy = 0.0
-    if "aar_form_sell" not in st.session_state: st.session_state.aar_form_sell = 0.0
-    if "aar_form_lot" not in st.session_state: st.session_state.aar_form_lot = 100
-    if "aar_form_rule" not in st.session_state: st.session_state.aar_form_rule = "✅ 遵守した (冷徹な狙撃)"
-    if "aar_form_memo" not in st.session_state: st.session_state.aar_form_memo = ""
-
     col_a1, col_a2 = st.columns([1, 2.2])
     
     with col_a1:
         st.markdown("#### 📝 戦果報告フォーム")
-        with st.form(key="aar_form_v6_locked", clear_on_submit=False):
+        with st.form(key="aar_form_v7_final", clear_on_submit=False):
             c_f1, c_f2 = st.columns(2)
-            f_date = c_f1.date_input("決済日", key="aar_form_date")
-            f_code = c_f2.text_input("銘柄コード", max_chars=4, key="aar_form_code")
+            f_date = c_f1.date_input("決済日", value=st.session_state.get("aar_form_date", dt_module.date.today()))
+            f_code = c_f2.text_input("銘柄コード", max_chars=4, value=st.session_state.get("aar_form_code", ""))
             t_opts = ["🌐 待伏 (押し目)", "⚡ 強襲 (順張り)", "⚠️ その他"]
-            f_tactics = st.selectbox("使用した戦術", options=t_opts, key="aar_form_tactics")
+            f_tactics = st.selectbox("使用した戦術", options=t_opts)
             c_f3, c_f4, c_f5 = st.columns(3)
-            f_buy = c_f3.number_input("買値", min_value=0.0, step=1.0, format="%.1f", key="aar_form_buy")
-            f_sell = c_f4.number_input("売値", min_value=0.0, step=1.0, format="%.1f", key="aar_form_sell")
-            f_lot = c_f5.number_input("株数", min_value=100, step=100, key="aar_form_lot")
-            st.markdown("**⚖️ 自己評価**")
+            f_buy = c_f3.number_input("買値", min_value=0.0, step=1.0, format="%.1f")
+            f_sell = c_f4.number_input("売値", min_value=0.0, step=1.0, format="%.1f")
+            f_lot = c_f5.number_input("株数", min_value=100, step=100)
             r_opts = ["✅ 遵守した (冷徹な狙撃)", "❌ 破った (感情・焦り・妥協)"]
-            f_rule = st.radio("規律を守ったか？", options=r_opts, key="aar_form_rule")
-            f_memo = st.text_input("特記事項", key="aar_form_memo")
+            f_rule = st.radio("規律を守ったか？", options=r_opts)
+            f_memo = st.text_input("特記事項")
+            
             if st.form_submit_button("💾 記録を保存", use_container_width=True):
                 if f_code and f_buy > 0 and f_sell > 0:
                     profit = int((f_sell - f_buy) * f_lot)
@@ -2036,55 +2025,17 @@ with tab6:
                     }])
                     st.session_state.aar_df_stable = pd.concat([new_entry, st.session_state.aar_df_stable], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
                     st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-                    st.session_state.aar_form_code = ""; st.session_state.aar_form_buy = 0.0; st.session_state.aar_form_sell = 0.0; st.session_state.aar_form_memo = ""
                     st.rerun()
-        
-        with st.expander("📥 CSV一括登録"):
-            uploaded_csv = st.file_uploader("約定履歴CSV", type=["csv"], key="aar_csv_uploader_v6")
-            if uploaded_csv is not None:
-                if st.button("⚙️ 解析・統合", use_container_width=True):
-                    try:
-                        import io
-                        raw = uploaded_csv.getvalue()
-                        try: content = raw.decode('utf-8')
-                        except: content = raw.decode('shift_jis', errors='replace')
-                        lines = content.splitlines(); h_idx = -1
-                        for i, line in enumerate(lines):
-                            if "約定日" in line and "銘柄" in line: h_idx = i; break
-                        if h_idx != -1:
-                            df_csv = pd.read_csv(io.StringIO("\n".join(lines[h_idx:])))
-                            df_csv.columns = df_csv.columns.str.strip()
-                            if '取引' in df_csv.columns: df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
-                            records = []
-                            c_col = '銘柄コード' if '銘柄コード' in df_csv.columns else '銘柄'
-                            for code, group in df_csv.groupby(c_col):
-                                buys, sells = [], []
-                                for _, row in group.iterrows():
-                                    item = {'date': str(row['約定日']).replace('/', '-'), 'qty': int(row['約定数量']), 'price': float(row['約定単価']), 'code': str(code).strip()}
-                                    if "買" in str(row['取引']): buys.append(item)
-                                    elif "売" in str(row['取引']): sells.append(item)
-                                buys.sort(key=lambda x: x['date']); sells.sort(key=lambda x: x['date'])
-                                for s in sells:
-                                    s_qty, m_qty, m_amt = s['qty'], 0, 0
-                                    while s_qty > 0 and len(buys) > 0:
-                                        b = buys[0]
-                                        if b['qty'] <= s_qty: m_qty += b['qty']; m_amt += b['price']*b['qty']; s_qty -= b['qty']; buys.pop(0)
-                                        else: m_qty += s_qty; m_amt += b['price']*s_qty; b['qty'] -= s_qty; s_qty = 0
-                                    if m_qty > 0:
-                                        avg_b = m_amt / m_qty
-                                        records.append({"決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析", "買値": round(avg_b, 1), "売値": round(s['price'], 1), "株数": int(m_qty), "損益額(円)": int((s['price']-avg_b)*m_qty), "損益(%)": round(((s['price']/avg_b)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動取り込み"})
-                            if records:
-                                st.session_state.aar_df_stable = pd.concat([st.session_state.aar_df_stable, pd.DataFrame(records)], ignore_index=True).drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
-                                st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False); st.rerun()
-                    except Exception as e: st.error(f"エラー: {e}")
 
     with col_a2:
         st.markdown("#### 📊 司令部 総合戦績")
         w_df = st.session_state.aar_df_stable
         if not w_df.empty:
             m1, m2, m3, m4 = st.columns(4)
-            tot_p = w_df['損益額(円)'].sum(); w_rate = (len(w_df[w_df['損益額(円)'] > 0]) / len(w_df)) * 100
-            pf = round(w_df[w_df['損益額(円)'] > 0]['損益額(円)'].sum() / abs(w_df[w_df['損益額(円)'] < 0]['損益額(円)'].sum()), 2) if abs(w_df[w_df['損益額(円)'] < 0]['損益額(円)'].sum()) > 0 else 9.9
+            tot_p = w_df['損益額(円)'].sum()
+            w_rate = (len(w_df[w_df['損益額(円)'] > 0]) / len(w_df)) * 100
+            loss_sum = abs(w_df[w_df['損益額(円)'] < 0]['損益額(円)'].sum())
+            pf = round(w_df[w_df['損益額(円)'] > 0]['損益額(円)'].sum() / loss_sum, 2) if loss_sum > 0 else 9.9
             adh = (len(w_df[w_df['規律'] == '遵守']) / len(w_df)) * 100
             m1.metric("総交戦", f"{len(w_df)}回"); m2.metric("勝率", f"{w_rate:.1f}%"); m3.metric("損益", f"{int(tot_p):,}円", f"PF: {pf}"); m4.metric("遵守率", f"{adh:.1f}%")
             
@@ -2095,25 +2046,34 @@ with tab6:
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=250, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- 📜 詳細交戦記録 (物理入力ロック・絶対安定版) ---
+    # --- 📜 詳細交戦記録 (色彩規律・入力ロック版) ---
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
     
-    # 色分けロジック
-    def apply_color_v6(val):
-        if val >= 1: return 'color: #26a69a; font-weight: bold;'
-        elif val <= -1: return 'color: #ef5350; font-weight: bold;'
-        else: return 'color: #ffffff;'
+    # 🚨 物理色彩エンジン：利益(緑)、損失(赤)、ゼロ(白)
+    def apply_performance_colors(val):
+        try:
+            v = float(val)
+            if v >= 1.0: return 'color: #26a69a; font-weight: bold;' # 緑
+            elif v <= -1.0: return 'color: #ef5350; font-weight: bold;' # 赤
+            else: return 'color: #ffffff;' # 白
+        except: return 'color: #ffffff;'
 
-    def apply_rule_color_v6(val):
+    def apply_rule_style(val):
         if val == '遵守': return 'color: #26a69a;'
         elif val == '違反': return 'color: #ef5350;'
         else: return 'color: #ffffff;'
 
-    # 🚨 物理修復：Stylerをエディタに直接渡すとリセットの引き金になるため、
-    # 編集用には「raw_df」を使用し、表示上の美しさは別途担保する
+    # 表示・編集用の安定化Styler
+    styled_stable_df = st.session_state.aar_df_stable.style.map(
+        apply_performance_colors, subset=['損益額(円)', '損益(%)']
+    ).map(
+        apply_rule_style, subset=['規律']
+    )
+
+    # 🚨 エディタ本体：ソースコードは stable_df で固定
     working_log_df = st.data_editor(
-        st.session_state.aar_df_stable, 
+        styled_stable_df, 
         column_config={
             "規模": st.column_config.TextColumn("規模", disabled=True),
             "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "自動解析", "その他"], required=True),
@@ -2124,12 +2084,14 @@ with tab6:
             "損益額(円)": st.column_config.NumberColumn("損益額(円)", format="¥%,d"),
             "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%"),
         },
-        hide_index=True, use_container_width=True, key="aar_editor_stable_v6"
+        hide_index=True, use_container_width=True, key="aar_editor_final_colored"
     )
 
-    # 🚨 保存ユニット：編集結果をボタンで確定させることで、入力中のロールバックを封殺
-    if st.button("💾 交戦記録の変更を確定 (物理保存)", use_container_width=True):
+    # 🚨 確定ボタン：入力完了を物理的に検知
+    if st.button("💾 交戦記録の変更を確定 (物理保存)", use_container_width=True, type="secondary"):
         st.session_state.aar_df_stable = working_log_df.copy()
+        # 型の最終整形
+        st.session_state.aar_df_stable['銘柄'] = st.session_state.aar_df_stable['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
         st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-        st.success("✅ ログの変更を物理保存し、戦績を再計算しました。")
+        st.success("✅ 色彩規律を適用し、ログを物理保存しました。")
         st.rerun()
