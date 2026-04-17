@@ -1310,12 +1310,6 @@ with tab3:
                 # --- ⚙️ 5. 解析計算ループ ---
                 scope_results = []
                 for c in t_codes:
-                    # 🚨 生存確認デバッグ：全銘柄に強制的にメッセージを叩き込む
-                        if 'alerts' not in locals(): alerts = []
-                        alerts.append("⚡ システム生存確認：判定ロジック稼働中")
-                        
-                        # テスト用の強制「たくり線」判定（ロジック生存確認）
-                        alerts.append("🟢 【デバッグ】酒田メッセージの表示テスト")
                     try:
                         target_key = str(c)
                         raw_s = raw_data_dict.get(target_key)
@@ -1347,6 +1341,8 @@ with tab3:
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': [], 'error': True
+                                'alerts': alerts + ["⚡ システム生存確認：判定ロジック稼動中"], 
+                                'error': False
                             })
                             continue
 
