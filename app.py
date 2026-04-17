@@ -859,101 +859,143 @@ with tab1:
 
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・極地迎撃スキャン</h3>', unsafe_allow_html=True)
     
-    if st.button("🚀 索敵開始 (v23: 掟・強制突破モード)", key="btn_scan_v23", use_container_width=True, type="primary"):
+    # --- 🛡️ 1. マスターデータの物理固定（NameError 対策） ---
+    # セッションから取得、なければ生成。変数を「master_map」で確実に固定。
+    if 'master_map_fixed' not in st.session_state:
+        if not master_df.empty:
+            m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
+            # 5桁文字列 "83060" 規格へ強制統一
+            m_df['CleanCode'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
+            m_df['CleanCode'] = m_df['CleanCode'].apply(lambda x: x + "0" if len(x) == 4 else x)
+            st.session_state.master_map_fixed = m_df.dropna(subset=['CleanCode']).drop_duplicates('CleanCode').set_index('CleanCode').to_dict('index')
+
+    # ボタンの外で必ず定義（これでNameErrorは発生しない）
+    master_map = st.session_state.get('master_map_fixed', {})
+
+    if st.button("🚀 索敵開始 (v24: 最終安定モード)", key="btn_scan_v24", use_container_width=True, type="primary"):
         status = st.status("📊 戦域スキャン進行中...", expanded=True)
+        gc.collect()
         
+        # フェーズ1: データ取得
         raw_data = get_hist_data_cached()
         if not raw_data:
-            st.error("API応答なし")
+            st.error("API応答なし。J-Quantsの接続を確認してください。")
         else:
-            # 1. 洗浄 & 1762銘柄への絞り込み（ここは正常）
+            # フェーズ2: 物理洗浄
             df_all = clean_df_v22(pd.DataFrame(raw_data))
             del raw_data
             
+            # フェーズ3: 一次審査（価格・市場）
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
             
+            # サイドバー設定のロード
+            f1_min = float(st.session_state.f1_min)
+            f1_max = float(st.session_state.f1_max)
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
+            
+            # 有効コードの抽出（NameError 回避済）
             valid_codes = {c for c, i in master_map.items() if any(k in str(i['Market']) for k in keywords)}
             
             targets = current[
-                (current['AdjC'] >= float(st.session_state.f1_min)) & 
-                (current['AdjC'] <= float(st.session_state.f1_max)) &
+                (current['AdjC'] >= f1_min) & 
+                (current['AdjC'] <= f1_max) &
                 (current['Code'].isin(valid_codes))
             ]['Code'].unique().tolist()
 
-            status.write(f"✅ 一次審査通過: {len(targets)} 銘柄")
+            status.write(f"✅ 一次審査通過: {len(targets)} 銘柄（価格: {f1_min}〜{f1_max}円）")
 
-            # 🚨 2. テクニカル一括計算 (v23・0.5秒)
-            df_elite = df_all[df_all['Code'].isin(targets)].copy()
-            df_elite = calc_vector_indicators_v23(df_elite)
-            
-            # 3. 解析ループ（API通信を排除して高速化）
-            results = []
-            rejection_stats = {"下落除外": 0, "圏外": 0, "その他": 0}
+            if not targets:
+                st.warning("捕捉圏内に銘柄がありません。")
+            else:
+                # フェーズ4: 超高速テクニカル計算 (v23エンジン継承)
+                status.write("⚙️ テクニカル指標を一斉演算中...")
+                df_elite = df_all[df_all['Code'].isin(targets)].copy()
+                df_elite = calc_vector_indicators_v23(df_elite)
+                
+                # フェーズ5: 二次解析（掟・格付け）
+                # 🚨 ここでは財務API(get_fundamentals)を絶対に呼ばない（遅延の主犯）
+                results = []
+                reject_drop = 0
+                reject_range = 0
 
-            def analyze_v23(code, group):
-                try:
-                    latest, prev = group.iloc[-1], group.iloc[-2]
-                    lc, h_vals, l_vals = latest['AdjC'], group['AdjH'].values, group['AdjL'].values
-                    hmax = h_vals.max()
+                def analyze_v24_light(code, group):
+                    try:
+                        latest, prev = group.iloc[-1], group.iloc[-2]
+                        lc, h_vals, l_vals = latest['AdjC'], group['AdjH'].values, group['AdjL'].values
+                        hmax = h_vals.max()
+                        
+                        # 掟判定
+                        drop_limit = float(st.session_state.f3_drop) / 100.0
+                        if lc < hmax * (1 + drop_limit): return "DROP"
+                        
+                        h4 = h_vals[-4:].max(); l14 = l_vals[-14:].min()
+                        target_buy = (h4 - (h4 - l14) * (float(st.session_state.push_r) / 100.0)) * (1.0 - float(st.session_state.get('push_penalty', 0.0)))
+                        
+                        rank, bg, t_score, _ = get_triage_info(float(latest['MACD_Hist']), float(prev['MACD_Hist']), float(latest['RSI']), lc, target_buy, mode="待伏")
+                        
+                        if rank == "圏外💀": return "RANGE"
+
+                        return {'Code': code, 'lc': lc, 'RSI': latest['RSI'], 'target': target_buy, 'rank': rank, 'bg': bg, 'score': t_score, 'df': group.tail(260)}
+                    except: return "ERR"
+
+                # 10スレッドで純粋計算のみを実行（爆速）
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
+                    futures = {exe.submit(analyze_v24_light, c, g): c for c, g in df_elite.groupby('Code')}
+                    for f in concurrent.futures.as_completed(futures):
+                        res = f.result()
+                        if res == "DROP": reject_drop += 1
+                        elif res == "RANGE": reject_range += 1
+                        elif isinstance(res, dict): results.append(res)
+                
+                status.write(f"📊 二次解析結果: 候補 {len(results)} 銘柄（除外: 下落判定 {reject_drop} / 待伏圏外 {reject_range}）")
+
+                # フェーズ6: 最終財務チェック（精鋭のみ30回限定）
+                final_results = []
+                results.sort(key=lambda x: x['score'], reverse=True)
+                
+                status.write("🏅 上位銘柄の財務健全性を最終確認中...")
+                for r in results:
+                    if len(final_results) >= 30: break
                     
-                    # 掟：下落除外の判定
-                    drop_limit = float(st.session_state.f3_drop) / 100.0
-                    if lc < hmax * (1 + drop_limit):
-                        return "REJECT_DROP"
+                    # 掟：非常に割高・赤字除外
+                    if st.session_state.f12_ex_overvalued:
+                        f_data = get_fundamentals(r['Code'][:4])
+                        if f_data and ((f_data.get("op", 0) or 0) < 0): continue # 赤字は無慈悲にカット
                     
-                    # 買値目標
-                    h4 = h_vals[-4:].max(); l14 = l_vals[-14:].min()
-                    push_r = float(st.session_state.push_r) / 100.0
-                    penalty = float(st.session_state.get('push_penalty', 0.0))
-                    target_buy = (h4 - (h4 - l14) * push_r) * (1.0 - penalty)
-                    
-                    # 格付け（Cランクまで許容）
-                    rank, bg, t_score, _ = get_triage_info(float(latest['MACD_Hist']), float(prev['MACD_Hist']), float(latest['RSI']), lc, target_buy, mode="待伏")
-                    
-                    if rank == "圏外💀": return "REJECT_RANGE"
+                    final_results.append(r)
 
-                    return {'Code': code, 'lc': lc, 'RSI': latest['RSI'], 'target': target_buy, 'rank': rank, 'bg': bg, 'score': t_score, 'df': group.tail(260)}
-                except: return "REJECT_ERR"
+                status.update(label=f"🎯 索敵完了：{len(final_results)} 銘柄を捕捉", state="complete")
+                st.session_state.tab1_scan_results = final_results
 
-            # 🚨 並列実行 (APIを呼ばないので10スレッドでぶん回す)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-                futures = {exe.submit(analyze_v23, c, g): c for c, g in df_elite.groupby('Code')}
-                for f in concurrent.futures.as_completed(futures):
-                    res = f.result()
-                    if res == "REJECT_DROP": rejection_stats["下落除外"] += 1
-                    elif res == "REJECT_RANGE": rejection_stats["圏外"] += 1
-                    elif isinstance(res, dict): results.append(res)
-            
-            status.write(f"📊 審査内訳: 下落除外 {rejection_stats['下落除外']}銘柄 / 待伏圏外 {rejection_stats['圏外']}銘柄")
-
-            # 🚨 4. 財務チェック（最終候補30個だけに限定：これで30秒浮く！）
-            results.sort(key=lambda x: x['score'], reverse=True)
-            final_hit = []
-            for r in results:
-                if len(final_hit) >= 30: break
-                if st.session_state.f12_ex_overvalued:
-                    f_data = get_fundamentals(r['Code'][:4])
-                    if f_data and ((f_data.get("op", 0) or 0) < 0): continue
-                final_hit.append(r)
-
-            status.update(label=f"🎯 索敵完了：{len(final_hit)} 銘柄捕捉", state="complete")
-            st.session_state.tab1_scan_results = final_hit
-
-    # --- UI描画 (神聖保持) ---
+    # --- 📜 UI描画 ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
         code_str = " ".join([r['Code'][:4] for r in res])
+        st.info("📋 ヒット銘柄コード（TAB3へコピペ用）")
         st.code(code_str, language="text")
+        
         for r in res:
             st.divider()
             m_info = master_map.get(r['Code'], {})
-            st.markdown(f"### ({r['Code'][:4]}) {m_info.get('CompanyName')} <span style='background:{r['bg']}; color:white; padding:2px 8px; border-radius:4px;'>{r['rank']}</span>", unsafe_allow_html=True)
+            m_text = str(m_info.get('Market', ''))
+            
+            # ボスの資産（UI装飾）
+            if 'プライム' in m_text: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🏢 大型</span>'
+            elif 'グロース' in m_text: b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🚀 新興</span>'
+            else: b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{m_text[:4]}</span>'
+            
+            t_badge = f'<span style="background-color: {r["bg"]}; color: white; padding: 2px 10px; border-radius: 4px; font-weight: bold; margin-left: 8px;">{r["rank"]}</span>'
+            
+            st.markdown(f"### ({r['Code'][:4]}) {m_info.get('CompanyName', '不明')} {b_html}{t_badge}", unsafe_allow_html=True)
+            
             c1, c2, c3 = st.columns(3)
-            c1.metric("終値", f"{int(r['lc']):,}円"); c2.metric("目標", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse"); c3.metric("RSI", f"{r['RSI']:.1f}%")
-            draw_chart(r['df'], r['target'], chart_key=f"tab1_v23_{r['Code']}")
+            c1.metric("最新終値", f"{int(r['lc']):,}円")
+            c2.metric("待伏目標", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse")
+            c3.metric("RSI", f"{r['RSI']:.1f}%")
+            
+            draw_chart(r['df'], r['target'], chart_key=f"tab1_v24_{r['Code']}")
             
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
