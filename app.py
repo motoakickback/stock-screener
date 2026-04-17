@@ -1810,40 +1810,39 @@ with tab4:
 
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 銘柄コードを入力し、『🔄 全軍同期』を押すと最新価格を取得します。")
+    st.caption("※ 銘柄コードを入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
     target_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
 
-    # --- 1. 物理初期化およびロード（ここでのみ型を強制固定する） ---
-    if 'frontline_df' not in st.session_state or st.session_state.frontline_df is None:
+    # --- 1. 物理初期化（ソース・オブ・トゥルース） ---
+    if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切'}
-                temp_df = temp_df.rename(columns=rename_map)
-                for col in target_cols:
-                    if col not in temp_df.columns: temp_df[col] = np.nan if col != "銘柄" else ""
+                temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
                 
-                # ロード時に型のクリーニングを完結させる
+                # 型の完全浄化（この1回のみ実行）
                 temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
                 num_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
                 for c in num_cols:
                     temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
                 
-                st.session_state.frontline_df = temp_df[target_cols]
+                st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # --- 2. 司令部エディタ (物理ロック：session_stateを直接接続) ---
-    # 🚨 ポイント：加工した copy を渡さず、session_state そのものを流し込むことでリセットを防止
-    st.session_state.frontline_df = st.data_editor(
+    # --- 2. 司令部エディタ (物理分離：入力ソースを固定) ---
+    # 🚨 諸悪の根源である「st.session_state.frontline_df = st.data_editor(...)」を破壊。
+    # 🚨 入力用には不変の「frontline_df」を渡し、編集結果は別変数「working_df」で受ける。
+    working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
-        key="frontline_editor_v_stable", # キーを刷新しキャッシュの干渉を排除
+        key="frontline_editor_fixed_v5", # キーを刷新してキャッシュを焼き払う
         hide_index=True,
         column_config={
             "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
@@ -1859,18 +1858,18 @@ with tab5:
     # --- 3. コマンドユニット ---
     col_c1, col_c2 = st.columns(2)
     with col_c1:
+        # 同期や保存の時だけ、エディタの結果をソースに書き戻す
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
-            codes = [str(c).replace('.0', '').strip() for c in st.session_state.frontline_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
+            codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
             if codes:
                 with st.spinner("J-Quants 接続中..."):
                     new_prices = fetch_current_prices_fast(codes)
                     if new_prices:
-                        # 同期処理
+                        # working_dfに反映
                         for c_code, c_price in new_prices.items():
-                            st.session_state.frontline_df.loc[st.session_state.frontline_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code), '現在値'] = c_price
-                        
-                        # 同期直後も型を再整理
-                        st.session_state.frontline_df['銘柄'] = st.session_state.frontline_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
+                            working_df.loc[working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code), '現在値'] = c_price
+                        # ソースを更新して再起動
+                        st.session_state.frontline_df = working_df.copy()
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
                     else:
@@ -1880,26 +1879,28 @@ with tab5:
 
     with col_c2:
         if st.button("💾 戦況をファイルに保存", use_container_width=True):
+            st.session_state.frontline_df = working_df.copy()
             st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
             st.toast("✅ 戦況を固定保存しました。", icon="💾")
 
     st.markdown("---")
 
-    # --- 4. 戦況描画ユニット ---
+    # --- 4. 戦況描画ユニット (working_dfを参照してリアルタイム描画) ---
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
-    for index, row in st.session_state.frontline_df.iterrows():
+    # ここでは working_df（現在の編集中の値）をベースに描画する
+    for index, row in working_df.iterrows():
         ticker = str(row.get('銘柄', '')).replace('.0', '').strip()
-        if not ticker or ticker == "nan": continue
+        if not ticker or ticker == "nan" or ticker == "None": continue
         
         def to_i(v):
-            try: return int(float(v)) if pd.notna(v) and v != "" else 0
+            try: return int(float(v)) if pd.notna(v) and str(v).strip() != "" else 0
             except: return 0
 
         buy, cur = to_i(row['買値']), to_i(row['現在値'])
         tp1, tp2 = to_i(row['第1利確']), to_i(row['第2利確'])
-        atr_v = float(row['atr']) if pd.notna(row['atr']) and row['atr'] != "" else float(buy * 0.03)
+        atr_v = float(row['atr']) if pd.notna(row['atr']) and str(row['atr']).strip() != "" else float(buy * 0.03)
         
         active_squads += 1
         
