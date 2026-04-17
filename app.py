@@ -1015,22 +1015,45 @@ with tab1:
                 status.update(label=f"🎯 索敵完了：{len(final_hit)} 銘柄捕捉（処理時間: {t_end - t_start:.2f}秒）", state="complete")
                 st.session_state.tab1_scan_results = final_hit
 
-    # --- 📜 UI描画 ---
+    # --- 📜 UI描画プロトコル：Turn 18 神聖復元 ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
+        
+        # 照準（TAB3）転送用コードブロック
         code_str = " ".join([r['Code'][:4] for r in res])
         st.success(f"🎯 ターゲット捕捉: {len(res)} 銘柄")
+        st.markdown("##### 📋 照準（TAB3）転送用コード")
         st.code(code_str, language="text")
         
-        st.info("💡 待伏目標価格算出式：")
-        st.latex(r"Target = (H_4 - (H_4 - L_{14}) \times \text{push\_r}) \times (1 - \text{penalty})")
-
         for r in res:
+            # マスターデータからの確実な引き出し（5桁規格で照合）
             m_info = master_map.get(r['Code'], {})
-            t_rank, t_bg = r.get('triage_rank', '不明'), r.get('triage_bg', '#455a64')
-            st.markdown(f"#### ({r['Code'][:4]}) {m_info.get('CompanyName', '不明')} <span style='background:{t_bg}; color:white; padding:2px 10px; border-radius:4px;'>{t_rank}</span>", unsafe_allow_html=True)
+            comp_name = m_info.get('CompanyName', '不明')
+            
+            # バッジ装飾：Turn 18 規格
+            t_rank = r.get('triage_rank', '不明')
+            t_bg = r.get('triage_bg', '#455a64')
+            t_badge = f'<span style="background-color: {t_bg}; color: white; padding: 2px 10px; border-radius: 4px; font-weight: bold; margin-left: 8px;">{t_rank}</span>'
+
+            # 銘柄タイトル行
+            st.markdown(f"#### ({r['Code'][:4]}) {comp_name} {t_badge}", unsafe_allow_html=True)
+
+            # 3カラム・メトリック構成：Turn 18 完全準拠
             c1, c2, c3 = st.columns(3)
-            c1.metric("終値", f"{int(r['lc']):,}円"); c2.metric("目標", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse"); c3.metric("RSI", f"{r['RSI']:.1f}%")
+            
+            # 1. 終値
+            c1.metric("終値", f"{int(r['lc']):,}円")
+            
+            # 2. 待伏目標：現在値との乖離をデルタ表示
+            target_val = int(r['target'])
+            current_val = int(r['lc'])
+            diff = target_val - current_val
+            # デルタカラー：目標値より高ければ「要下落」のため inverse（赤）表示
+            c2.metric("待伏目標", f"{target_val:,}円", delta=f"{diff}円", delta_color="inverse")
+            
+            # 3. RSI
+            c3.metric("RSI", f"{r['RSI']:.1f}%")
+            
             st.divider()
             
 with tab2:
