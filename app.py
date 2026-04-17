@@ -861,10 +861,6 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    import datetime as dt_module
-    import concurrent.futures
-    import gc
-
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・最終迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
