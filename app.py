@@ -628,38 +628,30 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df.empty: return
-    
-    # 🚨 物理防衛：重複日付を排除し、最新日の計算遅れによるホバー消失（NaN）を前詰めで強制補完
-    df = df.drop_duplicates(subset=['Date']).copy()
-    if 'MA5' not in df.columns: df['MA5'] = df['AdjC'].rolling(5).mean()
-    if 'MA25' not in df.columns: df['MA25'] = df['AdjC'].rolling(25).mean()
-    if 'MA75' not in df.columns: df['MA75'] = df['AdjC'].rolling(75).mean()
-    
-    # 🚨 空データを直近の数値で埋め、少数点以下を排除してフォーマットを固定
-    df[['MA5', 'MA25', 'MA75']] = df[['MA5', 'MA25', 'MA75']].ffill().round(0)
+    df_plot = df.copy()
+
+    # データ欠落を防ぐ安全装置
+    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
+    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
+    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
 
     fig = go.Figure()
     
-    # 1. ローソク足
+    # 1. ローソク足（原型のまま、余計なホバー操作を全排除）
     fig.add_trace(go.Candlestick(
-        x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
+        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 2. MA線（前詰めでデータ欠損を封じているため、確実にホバーに出現します）
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), hovertemplate='¥%{y:,.0f}'))
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), hovertemplate='¥%{y:,.0f}'))
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), hovertemplate='¥%{y:,.0f}'))
+    # 2. 目標線とMA線（Plotly純正の挙動に任せ、確実にホバーに出現させる）
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True))
     
-    # 3. 目標線
-    fig.add_trace(go.Scatter(
-        x=df['Date'], y=[targ_p]*len(df), mode='lines', name='買値目標', 
-        line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='¥%{y:,.0f}'
-    ))
+    last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=45) if len(df_plot) > 30 else df_plot['Date'].min()
     
-    last_date = df['Date'].max(); start_date = last_date - timedelta(days=45) if len(df) > 30 else df['Date'].min()
-    
-    # 4. 純正レイアウト（x unified の一括ホバー完全復元）
+    # 3. 純正レイアウト（x unified）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
         xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
@@ -668,7 +660,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         hovermode="x unified", 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
     
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
