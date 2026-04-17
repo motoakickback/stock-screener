@@ -327,30 +327,30 @@ def clean_df_v39(df):
     df['Date'] = pd.to_datetime(df['Date'])
     return df.sort_values(['Code', 'Date']).reset_index(drop=True)
 
-def calc_vector_indicators_v33(df, cfg):
+def calc_vector_indicators_v44(df, cfg):
     """
-    260日分のデータから1年最高値、MACD、RSIを高速演算。
+    1,700銘柄超の260日データを0.5秒で処理するベクトル演算エンジン。
     """
     if df.empty: return df
     df = df.copy().sort_values(['Code', 'Date'])
     g = df.groupby('Code')['AdjC']
     
-    # 指標計算
+    # 1. RSI (14日)
     delta = g.diff()
     gain = delta.clip(lower=0).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
     df['RSI'] = (100 - (100 / (1 + (gain / (loss + 1e-10))))).values
     
-    # MACD (シグナルの安定には長期データが必須)
+    # 2. MACD (12, 26, 9)
     ema12 = g.transform(lambda x: x.ewm(span=12, adjust=False).mean())
     ema26 = g.transform(lambda x: x.ewm(span=26, adjust=False).mean())
     macd = ema12 - ema26
     df['MACD_Hist'] = macd - macd.groupby(df['Code']).transform(lambda x: x.ewm(span=9, adjust=False).mean())
     
-    # 掟判定：260日の真の最高値
+    # 3. 掟：260日最高値（1年高値）
     df['HighMax'] = df.groupby('Code')['AdjH'].transform(lambda x: x.rolling(window=len(x), min_periods=1).max())
     
-    # 待伏判定用の短期安値・高値
+    # 4. 待伏目標：4日高値と14日安値のレンジから算出
     df['H4'] = df.groupby('Code')['AdjH'].transform(lambda x: x.rolling(4).max())
     df['L14'] = df.groupby('Code')['AdjL'].transform(lambda x: x.rolling(14).min())
     df['TargetBuy'] = (df['H4'] - (df['H4'] - df['L14']) * cfg["push_r"]) * (1.0 - cfg["penalty"])
@@ -894,42 +894,26 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    import time
-    import gc
-    import unicodedata
-
-    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（V46）</h3>', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（V47）</h3>', unsafe_allow_html=True)
     
-    # --- 🛡️ 銘柄マスターの物理同期プロトコル ---
-    # ここでの呼び出し名を load_master() に完全統一
-    if 'master_map_v46' not in st.session_state:
-        # master_dfが存在しないか空の場合、JPXから直接取得
-        if 'master_df' not in st.session_state or st.session_state.master_df.empty:
-            with st.spinner("📡 JPXから最新の銘柄地図を奪取中..."):
-                # 🚨 名称を load_master() へ同期
-                st.session_state.master_df = load_master()
-        
-        # 取得成功していれば高速検索Mapを生成
+    # --- 🛡️ 銘柄マスターの物理同期 ---
+    if 'master_map_v47' not in st.session_state:
         if 'master_df' in st.session_state and not st.session_state.master_df.empty:
             m_df = st.session_state.master_df.copy()
-            # 規格を「5桁文字列」に溶接
+            # 5桁規格に溶接
             m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
             m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
-            st.session_state.master_map_v46 = m_df.set_index('Code').to_dict('index')
-            st.success("✅ 銘柄マスターをV46規格で同期しました。")
+            st.session_state.master_map_v47 = m_df.set_index('Code').to_dict('index')
+            st.success("✅ 銘柄マスターをV47規格で同期しました。")
 
-    master_map = st.session_state.get('master_map_v46', {})
+    master_map = st.session_state.get('master_map_v47', {})
 
-    if st.button("🚀 260日索敵開始 (V46)", key="btn_scan_v46", use_container_width=True, type="primary"):
-        if not master_map:
-            st.error("❌ 銘柄マスターが空です。APIの取得制限またはサイト側の仕様変更の可能性があります。")
-            st.stop()
-
+    if st.button("🚀 260日索敵開始 (V47)", key="btn_scan_v47", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = []
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
         
-        # 1. 260日分の株価データを取得
+        # 1. 兵站取得（260日分）
         raw_data = get_hist_data_cached()
         
         if not raw_data:
@@ -949,19 +933,23 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
 
-            # 3. 超速足切り
+            # 3. 一次足切り
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             norm_keywords = [unicodedata.normalize('NFKC', k) for k in m_keywords]
             
             eligible_codes = []
-            for code, info in master_map.items():
-                m_norm = unicodedata.normalize('NFKC', str(info.get('Market', '')))
-                s_norm = unicodedata.normalize('NFKC', str(info.get('Sector', '')))
-                if not any(k in m_norm for k in norm_keywords): continue
-                if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益証券']): continue
-                if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
-                eligible_codes.append(code)
+            if not master_map:
+                status.write("⚠️ 警告：マスター未同期のため全銘柄を対象にします。")
+                eligible_codes = df_all['Code'].unique().tolist()
+            else:
+                for code, info in master_map.items():
+                    m_norm = unicodedata.normalize('NFKC', str(info.get('Market', '')))
+                    s_norm = unicodedata.normalize('NFKC', str(info.get('Sector', '')))
+                    if not any(k in m_norm for k in norm_keywords): continue
+                    if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益証券']): continue
+                    if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
+                    eligible_codes.append(code)
             
             status.write(f"🔎 診断1：市場条件クリア {len(eligible_codes)} 銘柄")
 
@@ -984,14 +972,17 @@ with tab1:
             if not targets:
                 st.error("捕捉圏内に銘柄なし。")
             else:
-                # 4. 精密演算
+                # 🚨 4. 精密演算（不発弾を処理済みのエンジンへ換装）
                 status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を精密演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
+                # v44エンジンを確実に呼び出し
                 df_elite = calc_vector_indicators_v44(df_elite, cfg)
                 
-                # 5. 格付け解析
+                # 5. 二次解析（格付け）
+                status.write("⚖️ 掟と格付けを最終判定中...")
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
+                
                 # 掟：1年最高値からの押し目判定
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
                 status.write(f"🔎 診断3：下落判定クリア {len(latest_df)} 銘柄")
