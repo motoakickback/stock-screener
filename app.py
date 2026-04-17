@@ -476,17 +476,31 @@ def get_fundamentals(code):
     return None
 
 @st.cache_data(ttl=86400)
-def load_master():
+def load_master_v45():
+    """
+    JPX公式サイトからExcelを直接取得し、5桁規格に完全溶接する。
+    """
+    import re
+    import requests
+    from io import BytesIO
     try:
+        # 1. JPX統計ページからExcelのリンクを抽出
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
+            # 2. Excelファイルをダウンロード
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            # xlrdエンジンで読み込み、必要な列を抽出
             df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            df['Code'] = df['Code'].astype(str) + "0"
+            
+            # 🚨 物理解毒：8306.0 などの小数点浮動を排除し、4桁を5桁(83060)へ
+            df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
+            df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+            
             return df
-    except: pass
+    except Exception as e:
+        st.error(f"マスター取得エラー: {e}")
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -877,52 +891,44 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（再始動）</h3>', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵（V45）</h3>', unsafe_allow_html=True)
     
-    # --- 🛡️ 1. マスターデータの物理復旧プロトコル ---
-    # 変数名の不一致を解消し、空なら即座に再生成する
-    if 'master_map_final' not in st.session_state:
-        # master_df自体が空、もしくは存在しない場合
+    # --- 🛡️ 銘柄マスターの物理同期 ---
+    if 'master_map_v45' not in st.session_state:
+        # master_dfが存在しないか空の場合、JPXから直接取得
         if 'master_df' not in st.session_state or st.session_state.master_df.empty:
-            status_m = st.info("📡 銘柄マスターが見当たりません。再ロードを試行中...")
-            try:
-                # 🚨 ボス、ここにある「get_master_data()」を、
-                # ボスの環境でマスターデータを取得している関数名に正確に書き換えてください。
-                # 例: st.session_state.master_df = load_jpx_master() 
-                # もし不明なら、このifブロック全体を「master_df = pd.read_csv(...)」等に書き換えます。
-                pass 
-            except:
-                st.error("❌ マスターデータの自動復旧に失敗。手動で初期化してください。")
+            with st.spinner("📡 JPXから最新の銘柄地図を奪取中..."):
+                st.session_state.master_df = load_master_v45()
         
-        # master_dfが存在する場合、規格を「5桁文字列」に溶接してマップを作成
-        if 'master_df' in st.session_state and not st.session_state.master_df.empty:
-            m_df = st.session_state.master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-            # 物理解毒（0ヒット対策：8306.0 -> 83060）
-            m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
-            m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
-            st.session_state.master_map_final = m_df.set_index('Code').to_dict('index')
-            st.success("✅ 銘柄マスターの同期を完了。索敵準備よし。")
+        # 取得成功していれば高速検索Mapを生成
+        if not st.session_state.master_df.empty:
+            m_df = st.session_state.master_df.copy()
+            st.session_state.master_map_v45 = m_df.set_index('Code').to_dict('index')
+            st.success("✅ 銘柄マスターをV45規格で同期しました。")
 
-    master_map = st.session_state.get('master_map_final', {})
+    master_map = st.session_state.get('master_map_v45', {})
 
-    if st.button("🚀 260日索敵開始 (V42)", key="btn_scan_v42", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V45)", key="btn_scan_v45", use_container_width=True, type="primary"):
+        if not master_map:
+            st.error("❌ 銘柄マスターの取得に失敗しました。サイト側の仕様変更の可能性があります。")
+            st.stop()
+
         st.session_state.tab1_scan_results = []
-        status = st.status("📊 索敵プロトコル展開中...", expanded=True)
+        status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
         
-        # 1. 兵站（株価）ロード
+        # 1. 260日分の株価データを取得
         raw_data = get_hist_data_cached()
         
         if not raw_data:
-            status.update(label="❌ API応答なし", state="error")
+            status.update(label="❌ API応答なし。兵站の確保に失敗。", state="error")
         else:
-            # 2. 洗浄・規格統一
-            status.write("⚙️ データを物理洗浄・規格統一中...")
+            # 2. 物理洗浄
+            status.write("⚙️ データを物理洗浄中...")
             df_all = clean_df_v39(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
             
-            # --- 🕵️ 診断開始 ---
             cfg = {
                 "min": float(st.session_state.f1_min),
                 "max": float(st.session_state.f1_max),
@@ -931,32 +937,24 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
 
-            # A. 市場・セクター足切り
+            # 3. 超速足切り
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             norm_keywords = [unicodedata.normalize('NFKC', k) for k in m_keywords]
             
             eligible_codes = []
-            if not master_map:
-                status.write("⚠️ 警告：マスターデータが依然として空です。市場フィルタを緊急バイパスします。")
-                # 🚨 緊急救済：マスターがない場合は、全銘柄を候補として通す（0ヒットを力ずくで回避）
-                eligible_codes = df_all['Code'].unique().tolist()
-            else:
-                for code, info in master_map.items():
-                    m_norm = unicodedata.normalize('NFKC', str(info.get('Market', '')))
-                    s_norm = unicodedata.normalize('NFKC', str(info.get('Sector', '')))
-                    if not any(k in m_norm for k in norm_keywords): continue
-                    if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益証券']): continue
-                    if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
-                    eligible_codes.append(code)
+            for code, info in master_map.items():
+                m_norm = unicodedata.normalize('NFKC', str(info.get('Market', '')))
+                s_norm = unicodedata.normalize('NFKC', str(info.get('Sector', '')))
+                if not any(k in m_norm for k in norm_keywords): continue
+                if st.session_state.f7_ex_etf and any(k in m_norm for k in ['ETF', 'REIT', '投信', '受益証券']): continue
+                if st.session_state.f8_ex_bio and '医薬品' in s_norm: continue
+                eligible_codes.append(code)
             
-            status.write(f"🔎 診断1：市場・セクター審査通過 {len(eligible_codes)} 銘柄")
+            status.write(f"🔎 診断1：市場条件クリア {len(eligible_codes)} 銘柄")
 
-            # B. 価格足切り
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
-            
-            # 救済：最新日にデータがなければ1日遡る
             if current.empty:
                 u_dates = sorted(df_all['Date'].unique())
                 if u_dates:
@@ -969,24 +967,26 @@ with tab1:
                 (current['Code'].isin(eligible_codes))
             ]['Code'].unique().tolist()
             
-            status.write(f"🔎 診断2：価格審査（{cfg['min']}〜{cfg['max']}円）通過 {len(targets)} 銘柄")
+            status.write(f"🔎 診断2：価格審査通過 {len(targets)} 銘柄")
 
             if not targets:
-                st.error("捕捉圏内に銘柄が残りませんでした。価格帯または市場設定を再度確認してください。")
+                st.error("捕捉圏内に銘柄なし。")
             else:
-                # 3. テクニカル演算
-                status.write(f"⚙️ {len(targets)} 銘柄の潮流を精密演算中...")
+                # 4. 精密演算
+                status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を精密演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
-                df_elite = calc_vector_indicators_v28(df_elite, cfg)
+                # 前のターンで定義したV44演算エンジンを使用（定義されているか要確認）
+                df_elite = calc_vector_indicators_v44(df_elite, cfg)
                 
-                # 4. 二次解析（格付け）
+                # 5. 格付け解析
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
-                # 掟：1年最高値からの押し目
+                # 掟：1年最高値からの押し目判定
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
-                status.write(f"🔎 診断3：下落判定 通過 {len(latest_df)} 銘柄")
+                status.write(f"🔎 診断3：下落判定クリア {len(latest_df)} 銘柄")
                 
-                prev_date = df_elite['Date'].unique()[-2]
+                u_dates = df_elite['Date'].unique()
+                prev_date = u_dates[-2] if len(u_dates) > 1 else u_dates[-1]
                 prev_map = df_elite[df_elite['Date'] == prev_date].set_index('Code')['MACD_Hist'].to_dict()
                 
                 candidate_list = []
@@ -1005,8 +1005,7 @@ with tab1:
                         })
                     except: continue
 
-                status.write(f"🔎 診断4：最終格付け審査 通過 {len(candidate_list)} 銘柄")
-
+                status.write(f"🔎 診断4：最終格付け審査クリア {len(candidate_list)} 銘柄")
                 candidate_list.sort(key=lambda x: x['score'], reverse=True)
                 final_hit = candidate_list[:30]
                 
@@ -1021,6 +1020,10 @@ with tab1:
         st.success(f"🎯 ターゲット捕捉: {len(res)} 銘柄")
         st.code(code_str, language="text")
         
+        # 待伏目標価格の算出根拠（ボスへのリマインド）
+        st.info("💡 待伏目標価格は、直近4日の最高値 $H_4$ と14日の最安値 $L_{14}$ を用いて以下の通り算出されています：")
+        st.latex(r"Target = (H_4 - (H_4 - L_{14}) \times \text{push\_r}) \times (1 - \text{penalty})")
+
         for r in res:
             m_info = master_map.get(r['Code'], {})
             t_rank, t_bg = r.get('triage_rank', '不明'), r.get('triage_bg', '#455a64')
