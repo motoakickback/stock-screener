@@ -1815,7 +1815,7 @@ with tab5:
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
     target_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
 
-    # --- 1. データロードと型の物理矯正 ---
+    # --- 1. 物理初期化およびロード（ここでのみ型を強制固定する） ---
     if 'frontline_df' not in st.session_state or st.session_state.frontline_df is None:
         if os.path.exists(FRONTLINE_FILE):
             try:
@@ -1824,30 +1824,26 @@ with tab5:
                 temp_df = temp_df.rename(columns=rename_map)
                 for col in target_cols:
                     if col not in temp_df.columns: temp_df[col] = np.nan if col != "銘柄" else ""
+                
+                # ロード時に型のクリーニングを完結させる
+                temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
+                num_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
+                for c in num_cols:
+                    temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
+                
                 st.session_state.frontline_df = temp_df[target_cols]
             except:
                 st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # 🚨 エディタ用DFのクリーンアップ（小数点の物理排除）
-    clean_df = st.session_state.frontline_df.copy()
-    
-    # 銘柄コードから「.0」を排除し、純粋な文字列へ強制
-    clean_df['銘柄'] = clean_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
-    
-    # 数値列のNaN対応と強制変換
-    num_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
-    for c in num_cols:
-        if c in clean_df.columns:
-            clean_df[c] = pd.to_numeric(clean_df[c], errors='coerce')
-
-    # --- 2. 司令部エディタ ---
-    edited_df = st.data_editor(
-        clean_df,
+    # --- 2. 司令部エディタ (物理ロック：session_stateを直接接続) ---
+    # 🚨 ポイント：加工した copy を渡さず、session_state そのものを流し込むことでリセットを防止
+    st.session_state.frontline_df = st.data_editor(
+        st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
-        key="frontline_editor_v_clean",
+        key="frontline_editor_v_stable", # キーを刷新しキャッシュの干渉を排除
         hide_index=True,
         column_config={
             "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
@@ -1859,21 +1855,22 @@ with tab5:
             "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
         }
     )
-    st.session_state.frontline_df = edited_df
 
     # --- 3. コマンドユニット ---
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
-            # 🚨 同期対象の銘柄もクリーンアップして通信へ渡す
             codes = [str(c).replace('.0', '').strip() for c in st.session_state.frontline_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
             if codes:
                 with st.spinner("J-Quants 接続中..."):
                     new_prices = fetch_current_prices_fast(codes)
                     if new_prices:
+                        # 同期処理
                         for c_code, c_price in new_prices.items():
-                            # DataFrame側の銘柄も文字列として厳密比較し、一致すれば代入
                             st.session_state.frontline_df.loc[st.session_state.frontline_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code), '現在値'] = c_price
+                        
+                        # 同期直後も型を再整理
+                        st.session_state.frontline_df['銘柄'] = st.session_state.frontline_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
                     else:
@@ -1893,11 +1890,9 @@ with tab5:
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
     for index, row in st.session_state.frontline_df.iterrows():
-        # 🚨 描画時の銘柄判定でも小数を排除
         ticker = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker or ticker == "nan": continue
         
-        # 🚨 全ての数値を安全な整数（int）として取り出す
         def to_i(v):
             try: return int(float(v)) if pd.notna(v) and v != "" else 0
             except: return 0
