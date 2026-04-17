@@ -839,7 +839,13 @@ with tab1:
     master_map_t1 = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+        
+        # 🚨 【ここを差し替え：物理解毒プロトコル】
+        # 1. 小数点(.0)を確実に分離して整数部のみ取得し、空白を除去
+        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).str.split('.').str[0].str.strip()
+        # 2. 4桁（例: 8306）の場合のみ、末尾に「0」を付与して5桁規格へ統一
+        m_df_tmp['Code'] = m_df_tmp['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+
         master_map_t1 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
