@@ -1514,48 +1514,52 @@ with tab3:
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
                     st.markdown("---")
-                    d_p = r['df_chart'].copy(); d_p['display_date'] = d_p['Date'].dt.strftime('%m/%d')
+                    d_p = r['df_chart'].copy()
                     
-                    # 🚨 物理解毒：型変換バグを封殺
+                    # 🚨 物理解毒：型を float64 に統一し、バグを封殺
                     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
                         if col in d_p.columns: 
-                            d_p[col] = d_p[col].astype('float64')
+                            d_p[col] = pd.to_numeric(d_p[col], errors='coerce').astype('float64')
 
-                    # 🚨 修正ポイント：ホバーテンプレートを「日本語・改行・￥付き」で完全再構築
-                    # <extra></extra> で右側のトレース名を消し、スッキリさせます
-                    h_template = (
-                        "<b>価格：</b><br>"
-                        "始値：￥%{open:,.0f}<br>"
-                        "高値：￥%{high:,.0f}<br>"
-                        "安値：￥%{low:,.0f}<br>"
-                        "終値：￥%{close:,.0f}"
-                        "<extra></extra>"
-                    )
-
+                    # 🚨 修正の核心：xには display_date ではなく、生の d_p['Date'] を渡す
                     fig = go.Figure(data=[go.Candlestick(
-                        x=d_p['display_date'], 
-                        open=d_p['AdjO'], 
-                        high=d_p['AdjH'], 
-                        low=d_p['AdjL'], 
-                        close=d_p['AdjC'], 
+                        x=d_p['Date'], 
+                        open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'], 
                         name="価格", 
-                        hovertemplate=h_template,
-                        increasing_line_color='#26a69a', 
-                        decreasing_line_color='#ef5350'
+                        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+                        hovertemplate="<b>価格：</b><br>始値：￥%{open:,.0f}<br>高値：￥%{high:,.0f}<br>安値：￥%{low:,.0f}<br>終値：￥%{close:,.0f}<extra></extra>"
                     )])
                     
-                    # 目標およびMA線も「￥」付きに統一
+                    # 各MA線と目標線
                     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
                         if m_c in d_p.columns: 
-                            fig.add_trace(go.Scatter(x=d_p['display_date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hovertemplate=f"{m_n}：￥%{{y:,.0f}}<extra></extra>"))
-                            
-                    fig.add_trace(go.Scatter(x=d_p['display_date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2), hovertemplate="目標：￥%{y:,.0f}<extra></extra>"))
+                            fig.add_trace(go.Scatter(x=d_p['Date'], y=d_p[m_c], name=m_n, line=dict(color=m_col, width=1.5), hovertemplate=f"{m_n}：￥%{{y:,.0f}}<extra></extra>"))
                     
-                    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=80), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", template="plotly_dark", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5), xaxis=dict(showgrid=False, type='category'), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888")))
+                    fig.add_trace(go.Scatter(x=d_p['Date'], y=[r['bt_val']]*len(d_p), name="目標", line=dict(color='#FFD700', dash='dot', width=2), hovertemplate="目標：￥%{y:,.0f}<extra></extra>"))
                     
-                    # キャッシュ破壊キー（末尾をv3へ更新）
-                    chart_key_v3 = f"t3_chart_final_{r['code']}_{index}_v3"
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=chart_key_v3)
+                    # 初期表示（3ヶ月）と全期間（1年）の計算
+                    last_date = d_p['Date'].max()
+                    initial_start = last_date - timedelta(days=90)
+
+                    fig.update_layout(
+                        height=450, margin=dict(l=0, r=0, t=10, b=80), 
+                        hovermode="x unified", template="plotly_dark", 
+                        dragmode="pan", # 🚨 最初から左右に移動（パン）可能
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(
+                            type='date', # 🚨 明示的に日付軸として指定
+                            tickformat='%m/%d', # 🚨 表示はボスの好む "04/17" 形式に強制
+                            range=[initial_start, last_date + timedelta(days=2)], # 初期3ヶ月表示
+                            fixedrange=False,
+                            rangeslider=dict(visible=True, thickness=0.05) # スライダーで1年分を俯瞰
+                        ), 
+                        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", tickfont=dict(color="#888"), fixedrange=False),
+                        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+                    )
+                    
+                    # 識別子を _v6 に更新
+                    chart_key_v6 = f"t3_chart_final_{r['code']}_{index}_v6"
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True}, key=chart_key_v6)
                     
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
