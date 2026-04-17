@@ -1015,7 +1015,7 @@ with tab1:
                 status.update(label=f"🎯 索敵完了：{len(final_hit)} 銘柄捕捉（処理時間: {t_end - t_start:.2f}秒）", state="complete")
                 st.session_state.tab1_scan_results = final_hit
 
-    # --- 📜 UI描画プロトコル：Turn 18 神聖復元 ---
+    # --- 📜 UI描画プロトコル：Turn 18 完璧なる復元 ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
         
@@ -1025,18 +1025,33 @@ with tab1:
         st.markdown("##### 📋 照準（TAB3）転送用コード")
         st.code(code_str, language="text")
         
+        # --- 🛡️ 銘柄名同期の物理強化 ---
+        # 描画直前にマスターを再スキャンし、確実に名称を紐付ける
+        master_lookup = {}
+        if 'master_df' in st.session_state and not st.session_state.master_df.empty:
+            m_tmp = st.session_state.master_df.copy()
+            # 規格を「5桁文字列」に完全固定（例: 8306.0 -> 83060）
+            m_tmp['Code'] = m_tmp['Code'].astype(str).str.split('.').str[0].str.strip()
+            m_tmp['Code'] = m_tmp['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
+            master_lookup = m_tmp.set_index('Code').to_dict('index')
+
         for r in res:
-            # マスターデータからの確実な引き出し（5桁規格で照合）
-            m_info = master_map.get(r['Code'], {})
+            # 5桁規格でマスターから銘柄名を取得
+            code_key = str(r['Code'])
+            m_info = master_lookup.get(code_key, {})
             comp_name = m_info.get('CompanyName', '不明')
             
-            # バッジ装飾：Turn 18 規格
+            # 🚨 「不明」が残る場合の最終手段：(2379) だけであればJ-Quantsデータから銘柄名を推測
+            if comp_name == '不明' and 'CompanyName' in r:
+                comp_name = r['CompanyName']
+            
+            # バッジ装飾：Turn 18 規格（ rank/bg を確実に反映 ）
             t_rank = r.get('triage_rank', '不明')
             t_bg = r.get('triage_bg', '#455a64')
             t_badge = f'<span style="background-color: {t_bg}; color: white; padding: 2px 10px; border-radius: 4px; font-weight: bold; margin-left: 8px;">{t_rank}</span>'
 
             # 銘柄タイトル行
-            st.markdown(f"#### ({r['Code'][:4]}) {comp_name} {t_badge}", unsafe_allow_html=True)
+            st.markdown(f"#### ({code_key[:4]}) {comp_name} {t_badge}", unsafe_allow_html=True)
 
             # 3カラム・メトリック構成：Turn 18 完全準拠
             c1, c2, c3 = st.columns(3)
@@ -1045,10 +1060,12 @@ with tab1:
             c1.metric("終値", f"{int(r['lc']):,}円")
             
             # 2. 待伏目標：現在値との乖離をデルタ表示
+            # 🚨 目標値(1,796) - 現在値(1,805) = -9円（下落必要分）を算出
             target_val = int(r['target'])
             current_val = int(r['lc'])
             diff = target_val - current_val
-            # デルタカラー：目標値より高ければ「要下落」のため inverse（赤）表示
+            
+            # Turn 18の美学に基づき、ラベルは「待伏目標」へ固定
             c2.metric("待伏目標", f"{target_val:,}円", delta=f"{diff}円", delta_color="inverse")
             
             # 3. RSI
