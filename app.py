@@ -830,9 +830,14 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
+    import datetime as dt_module
+    import concurrent.futures
+    import gc
+
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
+    # マスターデータの事前辞書化
     master_map_t1 = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
@@ -847,22 +852,21 @@ with tab1:
     if run_scan_t1:
         st.session_state.tab1_scan_results = None
         gc.collect() 
-        with st.spinner("マクロ気象を計算に織り込み中..."):
+        with st.spinner("戦域の気象条件を計算中..."):
             raw = get_hist_data_cached()
             if raw:
+                # --- 第1段階：広域ベクトルフィルタ（超高速） ---
                 full_df = clean_df(pd.DataFrame(raw))
                 full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
                 
-                # --- 🛡️ マクロ連動パラメータの注入 ---
                 push_penalty = st.session_state.get('push_penalty', 0.0)
-                
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min),
                     "f1_max": float(st.session_state.f1_max),
                     "f2_m30": float(st.session_state.f2_m30),
                     "f3_drop": float(st.session_state.f3_drop),
                     "push_r": float(st.session_state.push_r),
-                    "push_penalty": push_penalty, # 改修2：地合いによる深掘り
+                    "push_penalty": push_penalty,
                     "f9_min14": float(st.session_state.f9_min14),
                     "f9_max14": float(st.session_state.f9_max14),
                     "limit_d": int(st.session_state.limit_d),
@@ -882,35 +886,41 @@ with tab1:
                 v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
                 avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
-                df = full_df[full_df['Code'].isin(valid_codes)]
+                # 判定対象のみに絞り込み
+                df_target = full_df[full_df['Code'].isin(valid_codes)]
 
-                def scan_unit_t1_parallel(code, group, cfg, v_avg):
+                # --- 第2段階：並列・電撃スキャンエンジン ---
+                def scan_unit_t1_optimized(code, group, cfg, v_avg):
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
+                    
+                    # 高速判定1：20日急騰除外
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                     
+                    # 高速判定2：高値からの下落率
                     h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
                     if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
                     
+                    # 高速判定3：14日ボラティリティ
                     r4h = h_vals[-4:]; h4 = r4h.max()
                     g_max_idx = len(h_vals) - 4 + r4h.argmax()
                     l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
-
                     if l14 <= 0 or h4 <= l14: return None
                     wh = h4 / l14
                     if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
-                    
+
+                    # 🚨 ここまで生き残った銘柄（全体の約10%）のみに重い処理を実行
+                    # 安全判定：赤字除外（通信が発生するため、ここで実行）
                     if cfg["f12_ex_overvalued"]:
                         f_data = get_fundamentals(code[:4])
                         if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     rsi, _, _, _ = get_fast_indicators(c_vals)
-                    # 💎 改修2：地合いが悪い時は、より深い位置（push_penalty分）で指値を待つ
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
-                    target_buy = h4 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) # 深掘り補正
+                    target_buy = (h4 - base_push) * (1.0 - cfg["push_penalty"])
                     
+                    # 掟スコアリング
                     score = 4
                     if 1.3 <= wh <= 2.0: score += 1
                     if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
@@ -931,14 +941,14 @@ with tab1:
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-                    futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df.groupby('Code')}
+                    futures = {exe.submit(scan_unit_t1_optimized, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df_target.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         try:
                             res = f.result()
                             if res: results.append(res)
                         except: pass
                 
-                # 💎 改修3：セクター分散フィルター
+                # 第3段階：セクター分散フィルター
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 filtered_results = []
                 sector_counts = {}
@@ -951,6 +961,7 @@ with tab1:
                 
                 st.session_state.tab1_scan_results = filtered_results
 
+    # --- UI描画エンジン（変更なし・神聖保持） ---
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（マクロ連動・セクター分散適用済）")
@@ -989,7 +1000,7 @@ with tab1:
             m_cols[2].metric("最新終値", f"{int(r['lc']):,}円")
             m_cols[3].metric("平均出来高", f"{int(r['avg_vol']):,}株")
             m_cols[4].markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 買値目標(連動済)</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{int(r['target_buy']):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>""", unsafe_allow_html=True)
-
+            
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
