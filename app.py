@@ -630,50 +630,45 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     if df is None or df.empty: return
     df_plot = df.copy()
 
-    # 1. 欠落データの強制補完
-    for col, w in [('MA5', 5), ('MA25', 25), ('MA75', 75)]:
-        if col not in df_plot.columns: df_plot[col] = df_plot['AdjC'].rolling(w).mean()
+    # 1. 安全装置（万が一データが欠落していてもここで強制計算）
+    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
+    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
+    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
 
-    # 🚨 2. 最終物理兵器：「ピュアな文字列」として全データを事前に構築する
-    hover_texts = []
-    for _, row in df_plot.iterrows():
-        m5 = row.get('MA5'); m25 = row.get('MA25'); m75 = row.get('MA75')
-        m5_s = f"¥{m5:,.0f}" if pd.notna(m5) else "---"
-        m25_s = f"¥{m25:,.0f}" if pd.notna(m25) else "---"
-        m75_s = f"¥{m75:,.0f}" if pd.notna(m75) else "---"
-        
-        # ボスの指定した完全順序でHTMLテキスト化
-        text = f"目標：¥{float(targ_p):,.0f}<br>MA5：{m5_s}<br>MA25：{m25_s}<br>MA75：{m75_s}"
-        hover_texts.append(text)
+    # 2. Pandasの毒(float32やNaN)を抜き、Plotlyが100%認識できるPythonネイティブ型へ解毒
+    y_ma5 = [float(x) if pd.notna(x) else None for x in df_plot['MA5']]
+    y_ma25 = [float(x) if pd.notna(x) else None for x in df_plot['MA25']]
+    y_ma75 = [float(x) if pd.notna(x) else None for x in df_plot['MA75']]
 
     fig = go.Figure()
-
-    # 🚨 3. ローソク足に全データを「文字列」として抱え込ませる（Plotlyのバグを100%無効化）
+    
+    # ローソク足
     fig.add_trace(go.Candlestick(
-        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'],
-        name='価格', text=hover_texts,
-        hovertemplate="Open：¥%{open:,.0f}<br>High：¥%{high:,.0f}<br>Low：¥%{low:,.0f}<br>Close：¥%{close:,.0f}<br>%{text}<extra></extra>",
-        increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
+        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
-
-    # 🚨 4. 他の線は「描画のみ」とし、ホバー干渉の元凶を完全に切断 (hoverinfo='skip')
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA5'], mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True, hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA25'], mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True, hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA75'], mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True, hoverinfo='skip'))
-
+    
+    # 目標とMA線（一括ホバーに確実に並ぶ純正フォーマット）
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), mode='lines', name='目標', line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate='%{y:,.0f}'))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma5, mode='lines', name='MA5', line=dict(color='rgba(156, 39, 176, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma25, mode='lines', name='MA25', line=dict(color='rgba(33, 150, 243, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=y_ma75, mode='lines', name='MA75', line=dict(color='rgba(255, 152, 0, 0.7)', width=1.5), connectgaps=True, hovertemplate='%{y:,.0f}'))
+    
     last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=45) if len(df_plot) > 30 else df_plot['Date'].min()
-
-    # 5. 純正レイアウト
+    
+    # 純正レイアウト
     fig.update_layout(
-        height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True,
-        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"),
-        yaxis=dict(tickformat=",.0f", side="right"),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        hovermode="x unified",
+        height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
+        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
+        yaxis=dict(tickformat=",.0f", side="right"), 
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified", 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=chart_key)
+    
+    # 🚨 最終物理破壊：keyの末尾に「_v2」を付け、Streamlitの古いキャッシュを強制的に殺す
+    cache_breaker_key = f"{chart_key}_v2" if chart_key else "chart_v2"
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False}, key=cache_breaker_key)
     
 # --- 4. サイドバー UI (絶対永続化・物理ロック版) ---
 st.sidebar.title("🛠️ 戦術コンソール")
