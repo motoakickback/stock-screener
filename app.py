@@ -42,8 +42,8 @@ def calc_vector_indicators_v27(df):
     df = df.copy().sort_values(['Code', 'Date'])
     g = df.groupby('Code')['AdjC']
     
-    # RSI
-    delta = g.diff()T
+    # 🚨 SyntaxErrorを修正：末尾の「T」を物理排除
+    delta = g.diff()
     gain = delta.clip(lower=0).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
     df['RSI'] = (100 - (100 / (1 + (gain / (loss + 1e-10))))).values
@@ -848,10 +848,6 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    import datetime as dt_module
-    import concurrent.futures
-    import gc
-
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・最終迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
@@ -864,7 +860,7 @@ with tab1:
     
     master_map = st.session_state.get('master_map_v27', {})
 
-    if st.button("🚀 索敵開始 (v27: 爆速・必中)", key="btn_scan_v27", use_container_width=True, type="primary"):
+    if st.button("🚀 索敵開始 (v27.1: 不純物除去済)", key="btn_scan_v27_1", use_container_width=True, type="primary"):
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         gc.collect()
         
@@ -894,14 +890,14 @@ with tab1:
             if not targets:
                 st.warning("捕捉圏内に銘柄なし。")
             else:
-                # 🚨 テクニカル一括計算 (1700銘柄を1秒で完了)
+                # テクニカル一括計算
                 status.write("⚙️ テクニカル演算エンジン起動...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 df_elite = calc_vector_indicators_v27(df_elite)
                 del df_all
                 
-                # 二次解析（並列計算：ただし財務APIはここでは呼ばない！）
-                def analyze_v27_fast(code, group):
+                # 二次解析（並列計算）
+                def analyze_v27_fixed(code, group):
                     try:
                         if len(group) < 20: return None
                         latest, prev = group.iloc[-1], group.iloc[-2]
@@ -925,19 +921,18 @@ with tab1:
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as exe:
-                    futures = {exe.submit(analyze_v27_fast, c, g): c for c, g in df_elite.groupby('Code')}
+                    futures = {exe.submit(analyze_v27_fixed, c, g): c for c, g in df_elite.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         res = f.result()
                         if res: results.append(res)
                 
-                # 🚨 最終財務チェック（精鋭上位30銘柄に限定：これで爆速化）
+                # 最終財務チェック（精鋭上位30銘柄に限定）
                 status.write(f"🏅 候補 {len(results)} 銘柄から精鋭30件の財務を最終確認...")
                 results.sort(key=lambda x: x['score'], reverse=True)
                 final_hit = []
                 for r in results:
                     if len(final_hit) >= 30: break
                     if st.session_state.f12_ex_overvalued:
-                        # ここで初めてAPIを叩く（最大30回のみ）
                         f_data = get_fundamentals(r['Code'][:4])
                         if f_data and ((f_data.get("op", 0) or 0) < 0): continue
                     final_hit.append(r)
@@ -956,7 +951,7 @@ with tab1:
             st.markdown(f"### ({r['Code'][:4]}) {m_info.get('CompanyName', '不明')} {t_badge}", unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
             c1.metric("現在値", f"{int(r['lc']):,}円"); c2.metric("目標値", f"{int(r['target']):,}円", delta=f"{int(r['lc']-r['target'])}円", delta_color="inverse"); c3.metric("RSI", f"{r['RSI']:.1f}%")
-            draw_chart(r['df'], r['target'], chart_key=f"tab1_v27_{r['Code']}")
+            draw_chart(r['df'], r['target'], chart_key=f"tab1_v27_1_{r['Code']}")
             
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
