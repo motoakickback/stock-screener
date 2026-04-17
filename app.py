@@ -14,6 +14,41 @@ import gc
 import pytz
 import datetime as dt_module
 
+# --- 🛡️ 1. 規格統一エンジン（新規追加） ---
+def normalize_code_global(c):
+    """
+    あらゆる形式（8306, 8306.0, "8306", "83060"）を、
+    物理的に『5桁の文字列 "83060"』に統一する。
+    これがないと、どれだけ検索しても「0ヒット」のままになる。
+    """
+    try:
+        if pd.isna(c): return ""
+        # 小数点以下を切り捨て（8306.0 -> 8306）
+        s = str(c).split('.')[0].strip()
+        # 4桁なら末尾に0を付与して5桁にする
+        if len(s) == 4: return s + "0"
+        return s
+    except: return ""
+
+# --- 2. 既存の clean_df をこれに置き換え ---
+def clean_df(df):
+    r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
+              'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume'}
+    df = df.rename(columns=r_cols)
+    
+    # 🚨 ここで新設した normalize_code_global を使用
+    if 'Code' in df.columns:
+        df['Code'] = df['Code'].apply(normalize_code_global)
+    
+    for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
+            
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjC']).reset_index(drop=True)
+    return df
+    
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
     <style>
@@ -305,35 +340,46 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-def clean_df(df):
-    r_cols = {'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'AdjustmentVolume': 'Volume', 'Volume': 'Volume'}
-    df = df.rename(columns=r_cols)
-    for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
-        if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
-        if 'Code' in df.columns:
-            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-        df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
-    return df
-
 def calc_vector_indicators(df):
+    """
+    テクニカル演算エンジン。全銘柄に適用すると30秒以上かかるため、
+    【絞り込み後の精鋭】にのみ適用する運用を推奨。
+    """
+    if df.empty: return df
     df = df.copy()
-    delta = df.groupby('Code')['AdjC'].diff()
-    gain = delta.where(delta > 0, 0); loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
-    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
-    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
-    ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
-    ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
+    
+    # 🚨 高速演算：groupbyの回数を最小限に抑える
+    groups = df.groupby('Code')
+    
+    # RSI
+    delta = groups['AdjC'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
+    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).values.astype('float32')
+    
+    # MACD
+    ema12 = groups['AdjC'].ewm(span=12, adjust=False).mean().values
+    ema26 = groups['AdjC'].ewm(span=26, adjust=False).mean().values
     macd = ema12 - ema26
-    signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
+    # MACD Signal (MACDに対してさらにEWM)
+    df['MACD_tmp'] = macd
+    signal = df.groupby('Code')['MACD_tmp'].ewm(span=9, adjust=False).mean().values
     df['MACD_Hist'] = (macd - signal).astype('float32')
-    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
-    df['MA5'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
-    df['MA75'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
-    tr = pd.concat([df['AdjH']-df['AdjL'], (df['AdjH']-df.groupby('Code')['AdjC'].shift(1)).abs(), (df['AdjL']-df.groupby('Code')['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
+    df.drop(columns=['MACD_tmp'], inplace=True)
+    
+    # 各種MA
+    df['MA5'] = groups['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
+    df['MA25'] = groups['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
+    df['MA75'] = groups['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
+    
+    # ATR
+    tr = pd.concat([df['AdjH']-df['AdjL'], 
+                    (df['AdjH']-groups['AdjC'].shift(1)).abs(), 
+                    (df['AdjL']-groups['AdjC'].shift(1)).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
+    
     return df
 
 def calc_technicals(df):
@@ -834,46 +880,31 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・極地迎撃スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # --- 🛡️ 1. 規格統一：コード正規化関数（物理排除パッチ） ---
-    def normalize_code_v16(c):
-        try:
-            # float/int/str を問わず、純粋な4桁数字を取り出し5桁文字列にする
-            s = str(c).split('.')[0].strip()
-            if len(s) == 4: return s + "0"
-            return s
-        except: return ""
-
-    # マスターデータの高速インデックス化
+    # --- 🛡️ 1. マスターデータの規格統一 (v16.1) ---
     if 'master_map_v16' not in st.session_state:
         if not master_df.empty:
             m_df = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-            m_df['CleanCode'] = m_df['Code'].apply(normalize_code_v16)
+            # 🚨 機関部 normalize_code_global と完全に同期
+            m_df['CleanCode'] = m_df['Code'].apply(normalize_code_global)
             m_df = m_df[m_df['CleanCode'] != ""].drop_duplicates(subset='CleanCode')
             st.session_state.master_map_v16 = m_df.set_index('CleanCode').to_dict('index')
-            del m_df
     
     master_map = st.session_state.get('master_map_v16', {})
 
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
-    if st.button("🚀 電撃索敵を開始 (V16)", key="btn_scan_v16"):
+    if st.button("🚀 電撃索敵を開始 (物理改修版)", key="btn_scan_v16_final"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
-        with st.spinner("電撃スキャン実行中... (目標10秒以内)"):
+        with st.spinner("戦域を高速スキャン中..."):
             raw_data = get_hist_data_cached()
             if raw_data:
-                # 2. 高速データフレーム化 & 規格統一
-                df_all = pd.DataFrame(raw_data)
+                # 2. 物理洗浄：機関部の clean_df を使用
+                df_all = clean_df(pd.DataFrame(raw_data))
                 del raw_data
                 
-                # 🚨 0ヒット対策：コードを確実に "83060" 形式の文字列に統一
-                df_all['Code'] = df_all['Code'].apply(normalize_code_v16)
-                for col in ['AdjC', 'AdjH', 'AdjL']:
-                    df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
-                df_all = df_all.dropna(subset=['Code', 'AdjC'])
-
-                # --- ⚡ 3. 超高速先行フィルタリング（1秒以内） ---
+                # --- ⚡ 3. 超高速先行フィルタリング（37秒を10秒へ） ---
                 c_f = {
                     "min_p": float(st.session_state.f1_min),
                     "max_p": float(st.session_state.f1_max),
@@ -882,18 +913,18 @@ with tab1:
                     "penalty": st.session_state.get('push_penalty', 0.0)
                 }
 
-                # 最新価格と市場で、数千銘柄を数百銘柄へ
+                # 最新日の価格と市場で、4000銘柄を100〜200銘柄へ絞り込む
                 latest_date = df_all['Date'].max()
                 current_batch = df_all[df_all['Date'] == latest_date]
                 
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
                 
-                # 有効な市場に属するコードをセットで保持
+                # 該当市場の5桁コードセット
                 valid_market_codes = {code for code, info in master_map.items() 
                                      if any(k in str(info['Market']) for k in m_keywords)}
 
-                # 物理絞り込み
+                # ベクトル演算による高速除外
                 target_codes = current_batch[
                     (current_batch['AdjC'] >= c_f["min_p"]) & 
                     (current_batch['AdjC'] <= c_f["max_p"]) &
@@ -903,23 +934,22 @@ with tab1:
                 if not target_codes:
                     st.warning("捕捉圏内に銘柄がありません。価格帯または市場設定を確認してください。")
                 else:
-                    # 🚨 爆速の核心：精鋭（数百件）に対してのみテクニカルを計算
+                    # 🚨 爆速化の核心：絞り込まれた精鋭のみ、機関部の計算エンジンへ
                     df_elite = df_all[df_all['Code'].isin(target_codes)].sort_values(['Code', 'Date'])
-                    # 機関部のベクトル演算を精鋭のみに実行
                     df_elite = calc_vector_indicators(df_elite)
                     del df_all
                     gc.collect()
 
                     # --- 🎯 4. 精鋭解析（並列計算） ---
-                    def analyze_unit_v16(code, group, cfg):
+                    def analyze_unit_final(code, group, cfg):
                         try:
-                            # 既にベクトル演算済みのデータを使用
+                            # 既に計算済みの指標を取得
                             latest = group.iloc[-1]
                             prev = group.iloc[-2]
                             c_vals = group['AdjC'].values
                             lc, h_vals, l_vals = c_vals[-1], group['AdjH'].values, group['AdjL'].values
                             
-                            # 形状判定
+                            # テクニカル形状判定
                             hmax = h_vals.max()
                             if lc < hmax * (1 + cfg["drop_r"]): return None
                             
@@ -928,7 +958,7 @@ with tab1:
                             l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
                             if l14 <= 0 or h4 <= l14: return None
                             
-                            # 重い財務チェックを最後尾へ
+                            # 重い外部検索を最小限に
                             if st.session_state.f12_ex_overvalued:
                                 f_data = get_fundamentals(code[:4])
                                 if f_data and ((f_data.get("op", 0) or 0) < 0): return None
@@ -936,13 +966,7 @@ with tab1:
                             target_buy = (h4 - (h4 - l14) * cfg["push_r"]) * (1.0 - cfg["penalty"])
                             rsi = float(latest.get('RSI', 50))
                             
-                            # スコアリング
-                            score = 4
-                            if 1.3 <= (h4/l14) <= 2.0: score += 1
-                            if (len(h_vals) - 1 - g_max_idx) <= int(st.session_state.limit_d): score += 1
-                            if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                            if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
-                            
+                            # 格付け（共通関数 get_triage_info を使用）
                             rank, bg, t_score, _ = get_triage_info(
                                 float(latest.get('MACD_Hist', 0)), 
                                 float(prev.get('MACD_Hist', 0)), 
@@ -955,19 +979,21 @@ with tab1:
                                 'Code': str(code), 'lc': float(lc), 'RSI': rsi, 'target_buy': float(target_buy), 
                                 'reach_rate': float((target_buy / lc) * 100), 
                                 'triage_rank': rank, 'triage_bg': bg, 
-                                't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14)
+                                't_score': t_score, 'score': 4, # シンプルスコアリング
+                                'high_4d': float(h4), 'low_14d': float(l14)
                             }
                         except: return None
 
                     results = []
+                    # サーバー負荷を考慮し4スレッド
                     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
-                        futures = {exe.submit(analyze_unit_v16, c, g, c_f): c for c, g in df_elite.groupby('Code')}
+                        futures = {exe.submit(analyze_unit_final, c, g, c_f): c for c, g in df_elite.groupby('Code')}
                         for f in concurrent.futures.as_completed(futures):
                             res = f.result()
                             if res: results.append(res)
                     
-                    # セクター分散
-                    sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
+                    # 戦績ソートとセクター分散
+                    sorted_raw = sorted(results, key=lambda x: (x['t_score']), reverse=True)
                     final_list, sec_counts = [], {}
                     for r in sorted_raw:
                         sec = master_map.get(r['Code'], {}).get('Sector', '不明')
@@ -980,7 +1006,7 @@ with tab1:
     # --- 📜 UI描画 ---
     if st.session_state.tab1_scan_results:
         res = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏捕捉完了: {len(res)} 銘柄捕捉 (V16 規格統一版)")
+        st.success(f"🎯 待伏捕捉完了: {len(res)} 銘柄捕捉 (機関部・規格完全同期済)")
         
         code_str = " ".join([r['Code'][:4] for r in res])
         st.code(code_str, language="text")
@@ -990,7 +1016,7 @@ with tab1:
             m_info = master_map.get(r['Code'], {})
             m_text = str(m_info.get('Market', ''))
             
-            # バッジ装飾
+            # 市場別バッジ（ボスの資産）
             if 'プライム' in m_text: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🏢 大型</span>'
             elif 'グロース' in m_text: b_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🚀 新興</span>'
             else: b_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{m_text[:4]}</span>'
