@@ -306,30 +306,33 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-def clean_df_v52(df):
+def clean_df_v53(df):
     """
-    100万行のデータから『出来高(Volume)』を絶対に逃さない洗浄エンジン。
+    100万行のデータからノイズ(.0)を排除し、出来高(Volume)を物理固定する。
     """
-    # 🚨 列名の名寄せ：AdjustmentVolume を最優先、次点で Volume を確保
+    # 1. 出来高の確保（J-Quantsの全カラム名に対応）
     if 'AdjustmentVolume' in df.columns:
         df['Volume'] = df['AdjustmentVolume']
-    
+    elif 'Volume' not in df.columns:
+        df['Volume'] = 0 # 欠損時は0で埋めてエラーを防ぐ
+
+    # 2. 列名の名寄せ
     r_cols = {
         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
         'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'
     }
     df = df.rename(columns=r_cols)
     
-    # 🚨 銘柄コードの物理解毒（8306.0 -> 83060）
+    # 3. 🚨 銘柄コードの物理解毒（浮動小数点 .0 を完全に抹殺）
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
         df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
     
-    # 必須列を確実にスライス（Volumeを落とさない）
-    target_cols = ['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume']
-    df = df[[c for c in target_cols if c in df.columns]]
+    # 4. 必須列の抽出
+    t_cols = ['Code', 'Date', 'AdjH', 'AdjL', 'AdjC', 'Volume']
+    df = df[[c for c in t_cols if c in df.columns]]
     
-    # 型変換：出来高は大きな数値になるため float32 で確保
+    # 5. 型変換：出来高(Volume)を確実に float32 に
     df = df.dropna(subset=['Code', 'AdjC'])
     for c in ['AdjH', 'AdjL', 'AdjC', 'Volume']:
         if c in df.columns: 
@@ -338,15 +341,15 @@ def clean_df_v52(df):
     df['Date'] = pd.to_datetime(df['Date'])
     return df.sort_values(['Code', 'Date']).reset_index(drop=True)
 
-def calc_vector_indicators_v52(df, cfg):
+def calc_vector_indicators_v53(df, cfg):
     """
-    UIが要求する『平均出来高(avg_vol)』を含む全変数をベクトル演算。
+    UI要求変数(avg_vol, high_4d, target_buy)をベクトル演算で一斉生成。
     """
     if df.empty: return df
     df = df.copy().sort_values(['Code', 'Date'])
     g = df.groupby('Code')
     
-    # 1. RSI / MACD
+    # 1. テクニカル指標
     delta = g['AdjC'].diff()
     gain = delta.clip(lower=0).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean()
@@ -357,17 +360,15 @@ def calc_vector_indicators_v52(df, cfg):
     macd = ema12 - ema26
     df['MACD_Hist'] = macd - macd.groupby(df['Code']).transform(lambda x: x.ewm(span=9, adjust=False).mean())
     
-    # 2. 掟判定・UI変数
+    # 2. 掟判定とUI変数（NaN防止の min_periods=1）
     df['HighMax'] = g['AdjH'].transform(lambda x: x.rolling(window=len(x), min_periods=1).max())
-    df['high_4d'] = g['AdjH'].transform(lambda x: x.rolling(4).max())
-    df['low_14d'] = g['AdjL'].transform(lambda x: x.rolling(14).min())
-    
-    # 🚨 出来高平均（直近5営業日）
+    df['high_4d'] = g['AdjH'].transform(lambda x: x.rolling(4, min_periods=1).max())
+    df['low_14d'] = g['AdjL'].transform(lambda x: x.rolling(14, min_periods=1).min())
     df['avg_vol'] = g['Volume'].transform(lambda x: x.rolling(5, min_periods=1).mean())
     
-    # 3. 目標価格と到達度
+    # 3. 待伏目標と到達度
     df['target_buy'] = (df['high_4d'] - (df['high_4d'] - df['low_14d']) * cfg["push_r"]) * (1.0 - cfg["penalty"])
-    df['reach_rate'] = (df['AdjC'] / df['target_buy']) * 100
+    df['reach_rate'] = (df['AdjC'] / (df['target_buy'] + 1e-10)) * 100
     
     return df.fillna(0)
 
@@ -910,16 +911,17 @@ tactics_mode = st.session_state.sidebar_tactics
 with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵レーダー</h3>', unsafe_allow_html=True)
     
-    # --- 🛡️ 銘柄マスターの物理同期 ---
+    # --- 🛡️ 銘柄マスターの物理同期（不一致を許さない再溶接） ---
     if 'master_df' in st.session_state and not st.session_state.master_df.empty:
         m_df = st.session_state.master_df.copy()
+        # 🚨 ここでも「.0」を抹殺して5桁に固定
         m_df['Code'] = m_df['Code'].astype(str).str.split('.').str[0].str.strip()
         m_df['Code'] = m_df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
         master_map_t1 = m_df.set_index('Code').to_dict('index')
     else:
         master_map_t1 = {}
 
-    if st.button("🚀 260日索敵開始 (V52)", key="btn_scan_v52", use_container_width=True, type="primary"):
+    if st.button("🚀 260日索敵開始 (V53)", key="btn_scan_v53", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = []
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_start = time.time()
@@ -928,8 +930,8 @@ with tab1:
         if not raw_data:
             status.update(label="❌ API応答なし", state="error")
         else:
-            status.write("⚙️ データを物理洗浄・出来高を同期中...")
-            df_all = clean_df_v52(pd.DataFrame(raw_data))
+            status.write("⚙️ データを物理洗浄中（コードと出来高を固定）...")
+            df_all = clean_df_v53(pd.DataFrame(raw_data))
             del raw_data
             gc.collect()
             
@@ -940,7 +942,7 @@ with tab1:
                 "penalty": float(st.session_state.get('push_penalty', 0.0))
             }
 
-            # 厳格足切り
+            # 厳格足切り（表記ゆれ正規化）
             m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
             m_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ','二部']
             norm_keywords = [unicodedata.normalize('NFKC', k) for k in m_keywords]
@@ -954,17 +956,24 @@ with tab1:
             
             latest_date = df_all['Date'].max()
             current = df_all[df_all['Date'] == latest_date]
-            targets = current[(current['AdjC'] >= cfg["min"]) & (current['AdjC'] <= cfg["max"]) & (current['Code'].isin(eligible_codes))]['Code'].unique().tolist()
+            
+            # ここが全滅回避の急所：Codeの型を確実に一致させて絞り込む
+            targets = current[
+                (current['AdjC'] >= cfg["min"]) & 
+                (current['AdjC'] <= cfg["max"]) & 
+                (current['Code'].isin(eligible_codes))
+            ]['Code'].unique().tolist()
 
             if not targets:
-                st.error("捕捉圏内に銘柄なし。")
+                st.error(f"捕捉圏内に銘柄なし。対象候補 {len(eligible_codes)} 銘柄中、価格条件に合うものが存在しません。")
             else:
                 status.write(f"⚙️ {len(targets)} 銘柄の260日潮流を演算中...")
                 df_elite = df_all[df_all['Code'].isin(targets)].copy()
                 del df_all
-                df_elite = calc_vector_indicators_v52(df_elite, cfg)
+                df_elite = calc_vector_indicators_v53(df_elite, cfg)
                 
                 latest_df = df_elite[df_elite['Date'] == latest_date].copy()
+                # 掟：1年最高値からの押し目判定
                 latest_df = latest_df[latest_df['AdjC'] >= latest_df['HighMax'] * (1 + cfg["drop"])]
                 
                 u_dates = df_elite['Date'].unique()
