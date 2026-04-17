@@ -654,10 +654,10 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     
     last_date = df_plot['Date'].max(); start_date = last_date - timedelta(days=365) if len(df_plot) > 200 else df_plot['Date'].min()
     
-    # 4. レイアウト（純正 x unified）
+    # 4. レイアウト（修正済み：構文エラーを物理排除）
     fig.update_layout(
         height=450, margin=dict(l=0, r=60, t=30, b=40), xaxis_rangeslider_visible=True, 
-        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"365
+        xaxis=dict(range=[start_date, last_date + timedelta(days=0.5)], type="date"), 
         yaxis=dict(tickformat=",.0f", side="right"), 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified", 
