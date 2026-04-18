@@ -573,11 +573,11 @@ def get_fast_indicators(prices):
     diff = np.diff(p[-15:]); g = np.sum(np.maximum(diff, 0)); l = np.sum(np.abs(np.minimum(diff, 0)))
     rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
 
-# --- 🛡️ 3. 格付けエンジン：色彩規律修正版 ---
+# --- 🛡️ 3. 格付けエンジン：色彩階級規律（V68：視認性強化版） ---
 
 def get_triage_info(m_hist, p_hist, rsi, lc, target, mode="待伏"):
     """
-    色彩規律：Plus/Good = Green (#26a69a / #2e7d32), Minus/Bad = Red (#ef5350)
+    色彩規律（ボスの指定）：S(濃緑), A(薄緑), B(青), C/圏外(濃赤)
     """
     score = 0
     # MACD改善度
@@ -594,18 +594,18 @@ def get_triage_info(m_hist, p_hist, rsi, lc, target, mode="待伏"):
     elif reach < 5: score += 1
 
     if mode == "待伏":
-        # 🟢 良いニュアンスは全て緑系へ統一
-        if score >= 7: return "S級待伏🔥", "#1b5e20", score, "極めて良好"
-        if score >= 5: return "A級待伏💎", "#2e7d32", score, "良好"
-        if score >= 3: return "B級待伏🛡️", "#43a047", score, "監視"
-        return "圏外💀", "#ef5350", score, "見送り" # 🔴 悪いニュアンスは赤
-    return "圏外💀", "#ef5350", 0, "不明"
+        # 🚨 ボス指定のカラーパレットを物理適用
+        if score >= 7: return "S級待伏🔥", "#1b5e20", score, "極めて良好" # 濃い緑
+        if score >= 5: return "A級待伏💎", "#81c784", score, "良好"     # 薄い緑
+        if score >= 3: return "B級待伏🛡️", "#1976d2", score, "監視"     # 青
+        return "圏外💀", "#b71c1c", score, "見送り"                      # 濃い赤
+    return "圏外💀", "#b71c1c", 0, "不明"
 
 def get_assault_triage_info(gc_days, lc, rsi, df_group, is_strict=False):
     """
-    強襲格付け：赤系を排除し、攻撃的な緑（High-Voltage Green）へ転換
+    強襲格付け：ボスの新色彩規律へ物理換装
     """
-    if gc_days == 0: return "圏外 💀", "#ef5350", 0, "GC未発生"
+    if gc_days == 0: return "圏外 💀", "#b71c1c", 0, "GC未発生"
     
     score = 0
     # GC鮮度
@@ -620,23 +620,23 @@ def get_assault_triage_info(gc_days, lc, rsi, df_group, is_strict=False):
     elif vol_now > vol_ma * 1.5: score += 20
     
     # RSI過熱監視
-    if rsi > 75: score -= 20 # 過熱はマイナス
+    if rsi > 75: score -= 20
     
-    # 🟢 攻撃的な緑（Neon Green）で「攻めの善」を表現
-    if score >= 70: return "S級強襲⚡", "#00c853", score, "電撃戦"
-    if score >= 50: return "A級強襲🔥", "#43a047", score, "追撃可"
-    if score >= 30: return "B級強襲📈", "#66bb6a", score, "小競り合い"
-    return "圏外 💀", "#ef5350", score, "燃料不足"
+    # 🚨 強襲モードも「緑＝攻めの善」へ統一
+    if score >= 70: return "S級強襲⚡", "#1b5e20", score, "電撃戦"   # 濃い緑
+    if score >= 50: return "A級強襲🔥", "#81c784", score, "追撃可"   # 薄い緑
+    if score >= 30: return "B級強襲📈", "#1976d2", score, "小競り合い" # 青
+    return "圏外 💀", "#b71c1c", score, "燃料不足"                    # 濃い赤
 
-# --- 🛰️ 4. マクロ（日経平均）表示回路：色彩反転版 ---
+# --- 🛰️ 4. マクロ（日経平均）表示回路：色彩規律・最終物理固定 ---
 
-def display_nikkei_macro_v67():
+def display_nikkei_macro_v68():
     """
-    日経平均の「プラス＝緑 / マイナス＝赤」を物理執行
+    日経平均の色彩逆転を物理修正：プラス＝緑(#26a69a) / マイナス＝赤(#ef5350)
     """
-    # 1. データ取得（ボスの yfinance バックアップ系統を使用）
     try:
         import yfinance as yf
+        # 安定性を期して2日分取得し、変化を物理判定
         n225 = yf.Ticker("^N225").history(period="2d")
         if len(n225) >= 2:
             now_p = n225['Close'].iloc[-1]
@@ -648,18 +648,22 @@ def display_nikkei_macro_v67():
     except:
         now_p, diff, pct = 0, 0, 0
 
-    # 🚨 色彩規律の適用
-    # Streamlit標準：delta_color="normal" は「プラス＝緑」
-    # カスタムHTML：物理コードで指定
-    macro_color = "#26a69a" if diff >= 0 else "#ef5350"
-    bg_color = "rgba(38, 166, 154, 0.1)" if diff >= 0 else "rgba(239, 83, 80, 0.1)"
-    sign = "+" if diff >= 0 else ""
+    # 🚨 色彩ロジックの完全解体と再構築
+    # 良い＝緑 / 悪い＝赤 に絶対固定
+    if diff >= 0:
+        macro_color = "#26a69a" # 緑
+        bg_color = "rgba(38, 166, 154, 0.1)"
+        sign = "+"
+    else:
+        macro_color = "#ef5350" # 赤
+        bg_color = "rgba(239, 83, 80, 0.1)"
+        sign = "" # diff自体にマイナスが付くため
 
     st.sidebar.markdown(f"""
-        <div style="padding: 12px; border-radius: 8px; background: {bg_color}; border-left: 5px solid {macro_color}; margin-bottom: 10px;">
-            <div style="font-size: 12px; color: #aaa; margin-bottom: 4px;">NIKKEI 225 INDEX</div>
-            <div style="font-size: 22px; font-weight: bold; color: #fff;">{now_p:,.0f}<span style="font-size: 14px; margin-left: 4px;">JPY</span></div>
-            <div style="font-size: 15px; font-weight: bold; color: {macro_color};">
+        <div style="padding: 12px; border-radius: 8px; background: {bg_color}; border-left: 5px solid {macro_color}; margin-bottom: 10px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 11px; color: #aaa; letter-spacing: 1px; margin-bottom: 4px;">NIKKEI 225 MARKET INDEX</div>
+            <div style="font-size: 24px; font-weight: 800; color: #fff; line-height: 1;">{now_p:,.0f}<span style="font-size: 14px; margin-left: 4px; font-weight: 400; color: #888;">JPY</span></div>
+            <div style="font-size: 16px; font-weight: bold; color: {macro_color}; margin-top: 6px;">
                 {sign}{diff:,.2f} ({sign}{pct:.2f}%)
             </div>
         </div>
