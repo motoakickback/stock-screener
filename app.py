@@ -1584,15 +1584,13 @@ with tab3:
                 for res in scope_results: res['r_val'] = rank_order.get(re.sub(r'[^SAB圏外]', '', res['rank']), 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
 
-# --- 📺 5. 神聖UI描画エンジン（V77.3：聖典UI復元・3ヶ月初期表示・イベント警告版） ---
-                # 🚨 ボス提供のTurn 33/35コードをマスターとし、1pxの狂いもなく描画を執行。
+                # --- 📺 5. 神聖UI描画エンジン（V77.9：オートズーム・垂直拡張・究極ホバー版） ---
                 for index, r in enumerate(scope_results):
                     st.divider()
                     
-                    # 1. バッジ等の基本UI・物理配線（ボスの資産を完全復旧）
+                    # 1. バッジ等の基本UI・物理配線（聖典UI維持）
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
-                    
                     if 'プライム' in m_lower or '一部' in m_lower: 
                         m_badge = f'<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
@@ -1606,15 +1604,13 @@ with tab3:
                     
                     st.markdown(f"""<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}{gc_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span></div></div>""", unsafe_allow_html=True)
                     
-                    # 🚨 警告灯ユニット（決算・権利日警告を赤色表示）
+                    # 🚨 V77警告灯（決算・権利日：赤表示）
                     if r.get('alerts'):
                         for alert in r['alerts']:
-                            # ボスの判定規律：🟢⚡🔥以外は st.error (赤) で射出
                             st.success(alert) if any(m in alert for m in ["🟢", "⚡", "🔥"]) else st.error(alert)
 
-                    # --- 2. 三連カラム展開（メトリクス・黄金目標・ATR） ---
+                    # --- 2. 三連カラム展開 ---
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
-                    
                     with sc_left:
                         lc_v, h14_v, l14_v = int(r['lc']), int(r['h14']), int(r['l14'])
                         atr_v = r.get('atr_val', 0); atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
@@ -1651,6 +1647,7 @@ with tab3:
                         """, unsafe_allow_html=True)
 
                     with sc_right:
+                        # ATRマトリクス表示
                         c_target, current_atr = r['bt_val'], r['atr_val']
                         rec_tps = [2.0, 3.0] if any(m in r['rank'] for m in ["⚡", "🔥", "S"]) else [0.5, 1.0]
                         html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:{C_UP}; border-bottom:2px solid {C_UP}; margin-bottom:8px;'>【利確目安】</div>"
@@ -1665,14 +1662,22 @@ with tab3:
                             html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                    # --- 📈 3. 究極ホバー搭載 Plotly チャート（V77：個別3ヶ月表示） ---
+                    # --- 📈 3. 究極ホバー搭載 Plotly チャート（V77.9：ズーム＆拡張版） ---
                     st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
                     d_p = r['df_chart'].copy()
                     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
-                        if col in d_p.columns:
-                            d_p[col] = pd.to_numeric(d_p[col], errors='coerce').astype('float64')
+                        if col in d_p.columns: d_p[col] = pd.to_numeric(d_p[col], errors='coerce').astype('float64')
+
+                    # 🚨 物理執行：表示期間（90日）の最高/最安値を抽出し、Y軸をオートズーム
+                    last_d = d_p['Date'].max()
+                    display_range_d = 90
+                    df_visible = d_p[d_p['Date'] >= (last_d - timedelta(days=display_range_d))]
+                    # 目標価格も含めてY軸を調整
+                    y_min = min(df_visible['AdjL'].min(), r['bt_val']) * 0.99
+                    y_max = max(df_visible['AdjH'].max(), r['bt_val']) * 1.01
 
                     fig = go.Figure()
+                    # メインローソク足（8項目ホバー完備）
                     fig.add_trace(go.Candlestick(
                         x=d_p['Date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'],
                         name="株価本体", increasing_line_color=C_UP, decreasing_line_color=C_DOWN,
@@ -1680,30 +1685,33 @@ with tab3:
                         hovertemplate="始値：￥%{customdata[0]:,d}<br>終値：￥%{customdata[1]:,d}<br>高値：￥%{customdata[2]:,d}<br>安値：￥%{customdata[3]:,d}<extra></extra>"
                     ))
 
-                    # 究極ホバー同期：MA3本 & 目標線
-                    line_cfgs = [('MA5', '#ffca28', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
-                    for col, color, label in line_cfgs:
+                    # MA3本
+                    for col, color, label in [('MA5', '#ffca28', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]:
                         if col in d_p.columns:
                             fig.add_trace(go.Scatter(x=d_p['Date'], y=d_p[col], name=col, line=dict(color=color, width=1.5), hovertemplate=f"{label}￥%{{y:,.0f}}<extra></extra>"))
                     
+                    # 目標ライン
                     fig.add_trace(go.Scatter(x=d_p['Date'], y=[r['bt_val']]*len(d_p), name="目標価格", line=dict(color='#FFD700', dash='dot', width=2), hovertemplate=f"目標：￥{int(r['bt_val']):,}<extra></extra>"))
 
-                    # 🚨 物理執行：初期表示を90日（3ヶ月）に制限し、1年分を遡及可能にする
-                    last_d = d_p['Date'].max()
                     fig.update_layout(
-                        height=450, margin=dict(l=0, r=0, t=10, b=80),
+                        height=600, # 🚨 垂直拡張（450 -> 600）
+                        margin=dict(l=0, r=0, t=10, b=80),
                         hovermode="x unified", template="plotly_dark", dragmode="pan",
                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                         xaxis=dict(
                             type='date', tickformat='%m/%d',
-                            range=[last_d - timedelta(days=45), last_d + timedelta(days=2)], # 🚨 3ヶ月初期表示
-                            rangeslider=dict(visible=True, thickness=0.05) # 🚨 スライダーで1年分保持
+                            range=[last_d - timedelta(days=display_range_d), last_d + timedelta(days=2)], # 初期表示90日
+                            rangeslider=dict(visible=True, thickness=0.04) # 1年分保持
                         ),
-                        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", fixedrange=False),
-                        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+                        yaxis=dict(
+                            showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", 
+                            range=[y_min, y_max], # 🚨 物理執行：オートズーム適用
+                            fixedrange=False
+                        ),
+                        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                         hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=13, font_family="monospace")
                     )
-                    st.plotly_chart(fig, use_container_width=True, key=f"t3_v77_final_ui_{r['code']}_{index}")
+                    st.plotly_chart(fig, use_container_width=True, key=f"t3_v77_9_final_{r['code']}_{index}")
 
             # メモリ解放
             gc.collect()
