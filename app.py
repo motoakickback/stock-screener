@@ -416,7 +416,7 @@ def render_macro_board():
                     tickformat='%m/%d', 
                     gridcolor='rgba(255,255,255,0.05)',
                     # ここで半年（180日）を射程に捉える
-                    range=[last_d - timedelta(days=30), last_d + pd.Timedelta(hours=12)]
+                    range=[last_d - timedelta(days=14), last_d + pd.Timedelta(hours=12)]
                 )
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="nikkei_macro_chart_v77_7")
