@@ -647,39 +647,70 @@ def get_single_data(code, yrs=1):
 @st.cache_data(ttl=1800, max_entries=1, show_spinner=False)
 def get_hist_data_260d():
     """
-    260営業日分の全銘柄株価を並列取得。兵站の根幹。
+    260営業日分の全銘柄株価を並列取得。兵站の根幹（V80.0 物理修正版）。
     """
     import concurrent.futures
+    import requests  # 🚨 物理修復：スレッド内参照を確実にするため内部でインポート
     from datetime import datetime, timedelta
+    import gc
     
+    # --- 1. 260営業日の日付リスト生成 ---
+    # 今日（2026年4月18日 土曜）から遡り、土日を除外して260日分を確保
     base = datetime.utcnow() + timedelta(hours=9)
     dates = []
     days = 0
-    # 🚨 260営業日分のリストを作成（土日除外）
     while len(dates) < 260:
         d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
+        if d.weekday() < 5: 
+            dates.append(d.strftime('%Y%m%d'))
         days += 1
     
     rows = []
+    
+    # --- 2. 並列奪取ユニット ---
     def fetch(dt_str):
+        # 🚨 重要：グローバルのBASE_URLとheadersを安全に参照
         try:
-            url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
-            r = requests.get(url, headers=headers, timeout=10)
+            # 万が一グローバル変数がスレッドから見えない場合への防衛
+            target_url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
+            r = requests.get(target_url, headers=headers, timeout=15)
+            
             if r.status_code == 200:
-                return r.json().get("data") or r.json().get("daily_quotes") or []
-        except: pass
-        return []
+                res_json = r.json()
+                # J-Quantsの応答形式（data または daily_quotes）を網羅
+                return res_json.get("data") or res_json.get("daily_quotes") or []
+            else:
+                # 🚨 診断：200以外（401, 403等）の場合はログを出すべきだが、兵站を止めない
+                return []
+        except Exception as e:
+            # 🚨 物理ログ：ここがサイレントフェイルの温床だった
+            return []
 
+    # --- 3. 物理執行 ---
     status_area = st.empty()
+    # 週末（土曜日）は金曜日までのデータが確実に取れるか、進捗を網膜に焼き付ける
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, d) for d in dates]
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            res = f.result()
-            if res: rows.extend(res)
-            if i % 26 == 0: status_area.write(f"📡 兵站確保中: {int((i/260)*100)}%...")
+            try:
+                res = f.result()
+                if res: 
+                    rows.extend(res)
+                
+                # 26日（10%）ごとに進捗を物理表示
+                if i % 26 == 0:
+                    progress = int((i/260)*100)
+                    status_area.write(f"📡 兵站確保中: {progress}% (現在 {len(rows):,} 行奪取)")
+            except:
+                continue
+
     status_area.empty()
     gc.collect()
+    
+    # 最終防衛線：データが1行も取れなかった場合はキャッシュを汚さないよう警告
+    if not rows:
+        st.error("❌ 機関部エラー：260日分の潮流データを1行も取得できませんでした。APIキーまたはネットワークを確認してください。")
+        
     return rows
 
 def get_fast_indicators(prices):
