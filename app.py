@@ -305,15 +305,15 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- ⚙️ 5. 物理解毒エンジン（前回の AdjO 修正を包含） ---
+# --- ⚙️ 5. 物理解毒エンジン（AdjO対応・V69） ---
 
 def clean_df_v66(df):
     """
-    始値(AdjO)の確保と、色彩規律に基づいた数値型の解毒
+    始値(AdjO)の確保と、物理数値型の解毒
     """
     if df.empty: return df
     
-    # 出来高物理確保
+    # 出来高
     v_col = next((col for col in df.columns if col in ['Volume', 'AdjustmentVolume', 'AdjVo', 'Vo']), None)
     df['Volume_Fixed'] = pd.to_numeric(df[v_col], errors='coerce').fillna(0) if v_col else 0
 
@@ -325,19 +325,17 @@ def clean_df_v66(df):
     }
     df = df.rename(columns=r_cols)
     
-    # 銘柄コード正規化
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
         df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
     
-    # AdjOを含む主要5列を抽出
     target_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume_Fixed']
     df = df[[c for c in target_cols if c in df.columns]].copy()
     
-    # AdjO 欠落時の最終防衛線
+    # AdjO 欠落補完（KeyError対策）
     if 'AdjO' not in df.columns: df['AdjO'] = df['AdjC']
     
-    # float64 物理固定
+    # 数値型解毒
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume_Fixed']:
         df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('float64')
             
@@ -573,11 +571,12 @@ def get_fast_indicators(prices):
     diff = np.diff(p[-15:]); g = np.sum(np.maximum(diff, 0)); l = np.sum(np.abs(np.minimum(diff, 0)))
     rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
 
-# --- 🛡️ 3. 格付けエンジン：色彩階級規律（V68：視認性強化版） ---
+# --- 🛡️ 3. 格付けエンジン：階級別色彩規律（V69：視認性極大化版） ---
 
 def get_triage_info(m_hist, p_hist, rsi, lc, target, mode="待伏"):
     """
-    色彩規律（ボスの指定）：S(濃緑), A(薄緑), B(青), C/圏外(濃赤)
+    色彩規律（ボスの最終指令）：
+    S(濃緑:#1b5e20), A(薄緑:#81c784), B(青:#1976d2), C/圏外(濃赤:#b71c1c)
     """
     score = 0
     # MACD改善度
@@ -594,7 +593,7 @@ def get_triage_info(m_hist, p_hist, rsi, lc, target, mode="待伏"):
     elif reach < 5: score += 1
 
     if mode == "待伏":
-        # 🚨 ボス指定のカラーパレットを物理適用
+        # 🚨 ボス指定：階級別パレットを物理固定
         if score >= 7: return "S級待伏🔥", "#1b5e20", score, "極めて良好" # 濃い緑
         if score >= 5: return "A級待伏💎", "#81c784", score, "良好"     # 薄い緑
         if score >= 3: return "B級待伏🛡️", "#1976d2", score, "監視"     # 青
@@ -622,48 +621,47 @@ def get_assault_triage_info(gc_days, lc, rsi, df_group, is_strict=False):
     # RSI過熱監視
     if rsi > 75: score -= 20
     
-    # 🚨 強襲モードも「緑＝攻めの善」へ統一
+    # 🚨 階級別パレット適用
     if score >= 70: return "S級強襲⚡", "#1b5e20", score, "電撃戦"   # 濃い緑
     if score >= 50: return "A級強襲🔥", "#81c784", score, "追撃可"   # 薄い緑
     if score >= 30: return "B級強襲📈", "#1976d2", score, "小競り合い" # 青
     return "圏外 💀", "#b71c1c", score, "燃料不足"                    # 濃い赤
 
-# --- 🛰️ 4. マクロ（日経平均）表示回路：色彩規律・最終物理固定 ---
+# --- 🛰️ 4. マクロ（日経平均）表示回路：get_macro_weather 物理連動版 ---
 
-def display_nikkei_macro_v68():
+def display_nikkei_macro_v69():
     """
-    日経平均の色彩逆転を物理修正：プラス＝緑(#26a69a) / マイナス＝赤(#ef5350)
+    ボスの get_macro_weather データを使用し、色彩を「絶対的緑＝上昇」へ強制固定する。
     """
-    try:
-        import yfinance as yf
-        # 安定性を期して2日分取得し、変化を物理判定
-        n225 = yf.Ticker("^N225").history(period="2d")
-        if len(n225) >= 2:
-            now_p = n225['Close'].iloc[-1]
-            prev_p = n225['Close'].iloc[-2]
-            diff = now_p - prev_p
-            pct = (diff / prev_p) * 100
-        else:
-            now_p, diff, pct = 0, 0, 0
-    except:
-        now_p, diff, pct = 0, 0, 0
+    # 1. ボスの定義した上部関数 get_macro_weather() からデータを抽出
+    weather_data = get_macro_weather()
+    
+    if not weather_data or "nikkei" not in weather_data:
+        st.sidebar.error("📡 マクロ気象データが受信できません")
+        return
 
-    # 🚨 色彩ロジックの完全解体と再構築
-    # 良い＝緑 / 悪い＝赤 に絶対固定
+    n_data = weather_data["nikkei"]
+    price = n_data.get("price", 0)
+    diff = n_data.get("diff", 0)
+    pct = n_data.get("pct", 0)
+
+    # 🚨 日本式（赤＝上昇）を物理破壊し、グローバル（緑＝上昇）へ固定
     if diff >= 0:
-        macro_color = "#26a69a" # 緑
+        macro_color = "#26a69a" # 鮮やかな緑
         bg_color = "rgba(38, 166, 154, 0.1)"
         sign = "+"
     else:
-        macro_color = "#ef5350" # 赤
+        macro_color = "#ef5350" # 鮮やかな赤
         bg_color = "rgba(239, 83, 80, 0.1)"
-        sign = "" # diff自体にマイナスが付くため
+        sign = "" # diff にマイナスが含まれるため
 
+    # 2. サイドバー描画（ボスのUI資産を継承しつつ色を固定）
     st.sidebar.markdown(f"""
-        <div style="padding: 12px; border-radius: 8px; background: {bg_color}; border-left: 5px solid {macro_color}; margin-bottom: 10px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-size: 11px; color: #aaa; letter-spacing: 1px; margin-bottom: 4px;">NIKKEI 225 MARKET INDEX</div>
-            <div style="font-size: 24px; font-weight: 800; color: #fff; line-height: 1;">{now_p:,.0f}<span style="font-size: 14px; margin-left: 4px; font-weight: 400; color: #888;">JPY</span></div>
-            <div style="font-size: 16px; font-weight: bold; color: {macro_color}; margin-top: 6px;">
+        <div style="padding: 12px; border-radius: 8px; background: {bg_color}; border-left: 5px solid {macro_color}; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 11px; color: #aaa; letter-spacing: 1px; margin-bottom: 4px; font-weight: bold;">NIKKEI 225 MARKET STATUS</div>
+            <div style="font-size: 24px; font-weight: 800; color: #fff; line-height: 1;">{price:,.0f}<span style="font-size: 14px; margin-left: 4px; font-weight: 400; color: #888;">JPY</span></div>
+            <div style="font-size: 16px; font-weight: bold; color: {macro_color}; margin-top: 8px; display: flex; align-items: center;">
+                <span style="margin-right: 5px;">{'▲' if diff >= 0 else '▼'}</span>
                 {sign}{diff:,.2f} ({sign}{pct:.2f}%)
             </div>
         </div>
