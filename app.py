@@ -265,7 +265,7 @@ def get_macro_weather():
 def display_nikkei_macro_v70():
     """
     サイドバーでの日経平均表示。
-    ID衝突を避けるため、plotly_chartに一意のkeyを物理固定。
+    🚨 各タブ内ではなく、アプリのメインルートで1回だけ呼び出すこと。
     """
     weather_data = get_macro_weather()
     if not weather_data or "nikkei" not in weather_data:
@@ -283,14 +283,14 @@ def display_nikkei_macro_v70():
     st.sidebar.markdown(f"""
         <div style="padding: 10px; border-radius: 8px; background: {m_bg}; border-left: 5px solid {m_color}; margin-bottom: 5px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05);">
             <div style="font-size: 11px; color: #aaa; font-weight: bold; letter-spacing: 0.5px;">NIKKEI 225 MARKET STATUS</div>
-            <div style="font-size: 22px; font-weight: 800; color: #fff;">{n['price']:,.0f}<span style="font-size: 12px; color:#888; margin-left:3px;">JPY</span></div>
+            <div style="font-size: 22px; font-weight: 800; color: #fff;">{n['price']:,.0f}<span style="font-size: 14px; margin-left: 4px; font-weight: 400; color: #888;">JPY</span></div>
             <div style="font-size: 15px; font-weight: bold; color: {m_color}; margin-top: 2px;">
                 {sign}{diff:,.2f} ({sign}{n['pct']:.2f}%)
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. 1年潮流グラフ（左端最大化・MA25重畳）
+    # 2. 1年潮流グラフ
     df = n["df"]
     fig = go.Figure()
     
@@ -315,8 +315,8 @@ def display_nikkei_macro_v70():
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=11, font_family="monospace")
     )
-    # 🚨 重要：keyを追加して重複エラーを回避
-    st.sidebar.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="sidebar_nikkei_chart_v71")
+    # 🚨 重複エラーを物理的に殺すため、唯一無二のキー（V71_FIX）を指定
+    st.sidebar.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="sidebar_nikkei_chart_unique_v71_fix")
 
 def fetch_current_prices_fast(codes):
     """J-Quants API v2 から現在値を並列取得（小数点排除・型強制版）"""
@@ -931,9 +931,6 @@ with tab1:
     import pandas as pd
 
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵プロトコル</h3>', unsafe_allow_html=True)
-    
-    # マクロ表示（唯一のIDでサイドバーに描画）
-    display_nikkei_macro_v70()
     
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '🟢 平時')}")
     
@@ -1965,10 +1962,6 @@ with tab5:
 
     # 聖典UI：ヘッダー
     st.markdown('<h3 style="font-size: 24px;">📡 【交戦】フロンティア・モニター（色彩規律・完全正常化版）</h3>', unsafe_allow_html=True)
-    
-    # 日経平均1年潮流の表示（V70規格）
-    display_nikkei_macro_v70()
-
     st.markdown("---")
 
     # --- 🛡️ 1. 戦況データの読み込みと色彩規律の適用 ---
