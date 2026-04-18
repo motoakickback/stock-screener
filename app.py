@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components  # 🚨 物理修復：これが必要
 import pandas as pd
 import numpy as np
 import yfinance as yf
