@@ -1690,271 +1690,190 @@ with tab3:
             gc.collect()
                     
 with tab4:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
+    import plotly.graph_objects as go
+    import pandas as pd
+    import numpy as np
+    import time
+    import gc
+
+    # 聖典UI：ヘッダー
+    st.markdown('<h3 style="font-size: 24px;">⚙️ 【演習】仮想実弾テスト & 黄金比抽出</h3>', unsafe_allow_html=True)
+    st.caption("※ 索敵（TAB1）または照準（TAB3）で特定した銘柄に対し、過去1年間の『戦術適合率』をシミュレーションします。")
+
+    # --- 🛡️ 1. 仮想実弾テスト：戦術適合性の検証 ---
+    st.markdown("#### ⚔️ 仮想実弾テスト（バックテスト）")
     
-    # --- 🛡️ 状態初期化・物理ロック回路 ---
-    # 1. 物理デフォルト値と保存用キーの導通確認
-    tab4_defaults = {
-        "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)",
-        "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
-        "sim_push_r_val": st.session_state.get("push_r", 50.0),
-        "sim_pass_req_val": 7, "sim_rsi_lim_ambush_val": 45,
-        "sim_rsi_lim_assault_val": 70, "sim_time_risk_val": 5
-    }
+    col_t4_1, col_t4_2 = st.columns([2, 1])
+    with col_t4_1:
+        test_mode = st.radio(
+            "検証対象を選択", 
+            ["🌐 索敵リスト（TAB1）の精鋭", "🎯 精密照準（TAB3）の部隊"], 
+            horizontal=True, 
+            key="t4_test_mode_v75"
+        )
+    
+    with col_t4_2:
+        # 利確ラインの設定（検証用）
+        exit_pct = st.number_input("検証用利確目標 (%)", value=3.0, step=0.5, key="t4_exit_pct")
 
-    for k, v in tab4_defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-        # 🚨 物理リカバリー：意図しない0化を防止
-        elif isinstance(v, (int, float)) and st.session_state[k] == 0:
-            st.session_state[k] = v
-
-    # 2. モード切替検知とパラメーター自動再装填
-    current_mode = st.session_state.bt_mode_sim_v2
-    if "prev_mode_for_sync" not in st.session_state:
-        st.session_state.prev_mode_for_sync = current_mode
-
-    if st.session_state.prev_mode_for_sync != current_mode:
-        if "待伏" in current_mode:
-            st.session_state.sim_limit_d_val = 4
-            st.session_state.sim_sell_d_val = 10
+    if st.button("🔥 検習を開始（バックテスト実行）", use_container_width=True, type="primary", key="btn_run_bt_v75"):
+        # 1. 検証銘柄の特定（物理抽出）
+        target_codes = []
+        if "索敵" in test_mode:
+            if st.session_state.get('tab1_scan_results'):
+                # session_stateから4桁コードを抽出
+                target_codes = [str(r['Code'])[:4] for r in st.session_state.tab1_scan_results]
         else:
-            st.session_state.sim_limit_d_val = 3
-            st.session_state.sim_sell_d_val = 5
-        st.session_state.prev_mode_for_sync = current_mode
-        save_settings()
+            # TAB3のテキストエリアから4桁コードを正規表現で抽出
+            raw_t3 = st.session_state.get('t3_am_watch', '') + " " + st.session_state.get('t3_am_daily', '')
+            target_codes = list(dict.fromkeys(re.findall(r'(?<![A-Z0-9])[0-9]{4}(?![A-Z0-9])', raw_t3)))
 
-    # 3. サイドバーの「押し目率」変更を検知して演習値へ強制反映
-    current_sidebar_push = st.session_state.get("push_r", 50.0)
-    if "last_known_sidebar_push" not in st.session_state:
-        st.session_state.last_known_sidebar_push = current_sidebar_push
-
-    if st.session_state.last_known_sidebar_push != current_sidebar_push:
-        st.session_state.sim_push_r_val = current_sidebar_push
-        st.session_state.last_known_sidebar_push = current_sidebar_push
-        save_settings()
-
-    col_b1, col_b2 = st.columns([1, 1.8])
-    T4_FILE = f"saved_t4_codes_{user_id}.txt"
-    default_t4 = "7839\n6614"
-    if os.path.exists(T4_FILE):
-        try:
-            with open(T4_FILE, "r", encoding="utf-8") as f: default_t4 = f.read()
-        except: pass
-
-    with col_b1: 
-        st.markdown("🔍 **検証戦術**")
-        # 💎 物理ロック：key指定によりst.session_state.bt_mode_sim_v2と直結
-        st.radio("戦術モード", ["🌐 【待伏】鉄の掟 (押し目狙撃)", "⚡ 【強襲】GCブレイクアウト (順張り)"], key="bt_mode_sim_v2", on_change=save_settings)
-        bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, key="bt_codes_sim_v2")
-        run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True)
-        optimize_bt = st.button("🚀 戦術の黄金比率を抽出 (最適化)", use_container_width=True)
-        
-    with col_b2:
-        st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※ 戦術切替時、買い期限は自動で「待伏:4日 / 強襲:3日」に最適化されます。")
-        cp1, cp2, cp3, cp4 = st.columns(4)
-        
-        # 💎 物理ロック：value指定を廃止し、keyのみでステートと1:1接続。入力即保存。
-        cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp_val", on_change=save_settings)
-        cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl_val", on_change=save_settings)
-        cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d_val", on_change=save_settings)
-        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d_val", on_change=save_settings)
-        
-        st.divider()
-        if "待伏" in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
-            ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="sim_push_r_val", on_change=save_settings)
-            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="sim_pass_req_val", on_change=save_settings)
-            ct3.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_ambush_val", on_change=save_settings)
+        if not target_codes:
+            st.error("❌ 検証可能な銘柄がリストにありません。先にTAB1またはTAB3で銘柄をスキャンしてください。")
         else:
-            st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
-            ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_assault_val", on_change=save_settings)
-            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="sim_time_risk_val", on_change=save_settings)
-
-    if (run_bt or optimize_bt) and bt_c_in:
-        with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
-        t_codes = list(dict.fromkeys([c.upper() for c in re.findall(r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{4}(?![a-zA-Z0-9])', bt_c_in)]))
-        
-        if not t_codes: st.warning("有効なコードが見つかりません。")
-        else:
-            sim_tp = float(st.session_state.sim_tp_val)
-            sim_sl_i = float(st.session_state.sim_sl_val)
-            sim_limit_d = int(st.session_state.sim_limit_d_val)
-            sim_sell_d = int(st.session_state.sim_sell_d_val)
-            sim_push_r = float(st.session_state.sim_push_r_val)
-
-            is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
-            if is_ambush:
-                sim_pass_req = int(st.session_state.sim_pass_req_val)
-                sim_rsi_lim_ambush = int(st.session_state.sim_rsi_lim_ambush_val)
-                p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
-                p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
-                p1_name, p2_name = "Push率(%)", "要求Score"
+            status = st.status("⛓️ 潮流を遡及し、戦術適合性を検証中...", expanded=True)
+            results = []
+            
+            # 2. 兵站取得（260日潮流：V75規格）
+            raw_data = get_hist_data_260d()
+            if not raw_data:
+                status.update(label="❌ データ奪取失敗", state="error")
             else:
-                sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
-                sim_time_risk = int(st.session_state.sim_time_risk_val)
-                p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim_assault]
-                p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
-                p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
-            
-            with st.spinner("データをプリロード中（高速化処理）..."):
-                preloaded_data = {}
-                for c in t_codes:
-                    raw = get_single_data(c + "0", 2)
-                    if not raw or not raw.get('bars'): continue
-                    temp_df = pd.DataFrame(raw['bars'])
-                    if temp_df.empty: continue
-                    try: 
-                        clean_data = clean_df(temp_df)
-                        target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                        if not all(col in clean_data.columns for col in target_cols): continue
-                        clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
-                        processed_df = calc_technicals(clean_data)
-                        if processed_df is not None and isinstance(processed_df, pd.DataFrame) and len(processed_df) >= 35:
-                            preloaded_data[c] = processed_df
-                    except: continue
-
-            if not preloaded_data:
-                st.error("解析可能なデータが取得できませんでした。")
-                st.stop()
+                # 物理洗浄・一括演算
+                df_all = clean_df_v66(pd.DataFrame(raw_data))
+                cfg_bt = {"push_r": float(st.session_state.push_r)}
+                # 🚨 low_10d を含む V75 エンジンを適用
+                df_all = calc_vector_indicators_v66(df_all, cfg_bt)
                 
-            opt_results = []
-            total_iterations = len(p1_range) * len(p2_range)
-            current_iter = 0
-            p_bar = st.progress(0, f"戦術最適化の総当たり検証中... ({p1_name} × {p2_name})")
-
-            for t_p1 in p1_range:
-                for t_p2 in p2_range:
-                    current_iter += 1
-                    all_t = []
-                    for c, df in preloaded_data.items():
-                        if df is None or len(df) < 35: continue
-                        pos = None
-                        for i in range(35, len(df)):
-                            td = df.iloc[i]; prev = df.iloc[i-1]
-                            if pos is None:
-                                win_14 = df.iloc[i-15:i-1]; win_30 = df.iloc[i-31:i-1]
-                                lc_prev = prev['AdjC']; atr_prev = prev.get('ATR', 0)
-                                h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
-                                if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
-                                if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue
-                                
-                                if is_ambush:
-                                    r14 = h14 / l14
-                                    rsi_prev = prev.get('RSI', 50)
-                                    idxmax = win_14['AdjH'].idxmax()
-                                    d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                                    is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
-                                    bt_val = int(h14 - ((h14 - l14) * (t_p1 / 100.0)))
-                                    
-                                    if rsi_prev > sim_rsi_lim_ambush:
-                                        continue
-
-                                    score = 0
-                                    if 1.3 <= r14 <= 2.0: score += 1
-                                    if d_high <= sim_limit_d: score += 1 
-                                    if not is_dt: score += 1
-                                    if not is_hs: score += 1
-                                    if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
-                                    score += 4 
-                                    
-                                    if score >= t_p2:
-                                        if td['AdjL'] <= bt_val:
-                                            exec_p = min(td['AdjO'], bt_val)
-                                            pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-                                else:
-                                    rsi_prev = prev.get('RSI', 50); exp_days = int((lc_prev * (t_p2/100.0)) / atr_prev) if atr_prev > 0 else 99
-                                    gc_triggered = False; trigger_price = 0
-                                    for d_ago in range(1, int(sim_limit_d) + 1):
-                                        idx_eval = i - d_ago
-                                        if idx_eval >= 1:
-                                            if df.iloc[idx_eval].get('MACD_Hist', 0) > 0 and df.iloc[idx_eval-1].get('MACD_Hist', 0) <= 0:
-                                                gc_triggered = True
-                                                eval_h14 = df.iloc[max(0, idx_eval-14):idx_eval]['AdjH'].max()
-                                                eval_atr = df.iloc[idx_eval].get('ATR', 0)
-                                                eval_c = df.iloc[idx_eval]['AdjC']
-                                                trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
-                                                break
-                                    
-                                    if gc_triggered and rsi_prev <= t_p1 and exp_days < sim_time_risk:
-                                        if td['AdjH'] >= trigger_price:
-                                            exec_limit = trigger_price + (atr_prev * 0.2)
-                                            exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
-                                            pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
-                                            
-                            else:
-                                bp = pos['b_p']; held = i - pos['b_i']; sp = 0
-                                current_tp = sim_tp if is_ambush else t_p2
-                                e_atr = pos.get('entry_atr', prev.get('ATR', 0))
-                                t_price = pos.get('trigger', bp)
-                                
-                                sl_val = t_price - (e_atr * 1.0)
-                                tp_val = bp * (1 + (current_tp / 100.0))
-                                
-                                if td['AdjL'] <= sl_val: sp = min(td['AdjO'], sl_val)
-                                elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
-                                elif held >= sim_sell_d: sp = td['AdjC']
-                                
-                                if sp > 0:
-                                    sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
-                                    p_amt = int((sp - bp) * st.session_state.bt_lot)
-                                    all_t.append({'銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt})
-                                    pos = None
-                                    
-                    if all_t:
-                        p_df = pd.DataFrame(all_t)
-                        total_p = p_df['損益額(円)'].sum()
-                        win_r = len(p_df[p_df['損益額(円)'] > 0]) / len(p_df)
-                        opt_results.append({p1_name: t_p1, p2_name: t_p2, '総合利益(円)': total_p, '勝率': win_r, '取引回数': len(all_t)})
-                    p_bar.progress(current_iter / total_iterations)
-            
-            p_bar.empty()
-
-            if optimize_bt and opt_results:
-                st.markdown(f"### 🏆 {st.session_state.bt_mode_sim_v2.split()[1]}・最適化レポート")
-                opt_df = pd.DataFrame(opt_results).sort_values('総合利益(円)', ascending=False)
-                best = opt_df.iloc[0]
-                c1, c2, c3 = st.columns(3)
-                c1.metric(f"推奨 {p1_name}", f"{int(best[p1_name])} " + ("%" if is_ambush else ""))
-                c2.metric(f"推奨 {p2_name}", f"{int(best[p2_name])} " + ("点" if is_ambush else "%"))
-                c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
-                st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
-                st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
-                if is_ambush: st.info(f"💡 【推奨戦術】現在の地合いでは、高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高いと解析されます。")
-            elif run_bt:
-                if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できませんでした。")
+                status.write(f"📊 検証対象：{len(target_codes)} 銘柄 / 期間：直近1年")
+                
+                # 3. シミュレーション・ループ
+                for code in target_codes:
+                    api_code = code + "0"
+                    df_target = df_all[df_all['Code'] == api_code].copy()
+                    if len(df_target) < 60: continue
+                    
+                    hits = 0
+                    wins = 0
+                    
+                    # 過去の全営業日を走査
+                    for i in range(20, len(df_target) - 5):
+                        row = df_target.iloc[i]
+                        # 🚨 押し目ヒット判定：安値が目標買値を下回ったか
+                        if row['AdjL'] <= row['target_buy'] and row['target_buy'] > 0:
+                            hits += 1
+                            # 以降5日以内の最高値が利確ラインに達したか
+                            future_high = df_target.iloc[i+1 : i+6]['AdjH'].max()
+                            if future_high >= row['target_buy'] * (1 + (exit_pct / 100)):
+                                wins += 1
+                    
+                    if hits > 0:
+                        results.append({
+                            "銘柄": code,
+                            "交戦数": hits,
+                            "勝利": wins,
+                            "勝率 (%)": (wins / hits) * 100
+                        })
+                
+                # 4. 結果表示
+                if results:
+                    res_df = pd.DataFrame(results).sort_values("勝率 (%)", ascending=False)
+                    avg_win = res_df['勝率 (%)'].mean()
+                    
+                    st.success(f"✅ 検証完了：全軍平均勝率 {avg_win:.1f}%")
+                    st.dataframe(
+                        res_df.style.format({"勝率 (%)": "{:.1f}%"}),
+                        use_container_width=True, hide_index=True
+                    )
+                    
+                    # 戦果グラフ（色彩規律：緑）
+                    fig = go.Figure(data=[go.Bar(x=res_df["銘柄"], y=res_df["勝率 (%)"], marker_color=C_UP)])
+                    fig.update_layout(
+                        title=f"戦術適合率（目標: +{exit_pct}%）", 
+                        template="plotly_dark", height=300,
+                        yaxis=dict(title="勝率 (%)", range=[0, 105]),
+                        margin=dict(l=0, r=0, t=30, b=0)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
-                    tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
-                    tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
-                    st.success("🎯 バックテスト完了。")
-                    import plotly.express as px
-                    fig_eq = px.line(tdf, x='決済日', y='累積損益(円)', markers=True, title="💰 仮想資産推移 (Equity Curve)", color_discrete_sequence=["#FFD700"])
-                    fig_eq.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', margin=dict(l=20, r=20, t=40, b=20))
-                    st.plotly_chart(fig_eq, use_container_width=True)
+                    st.warning("⚠️ 指定された『押し目深さ（push_r）』に接触した銘柄が過去1年に存在しません。")
+                
+                status.update(label="演習任務完了", state="complete")
+    
+    st.markdown("---")
+    
+    # --- 🛡️ 2. 黄金比抽出：パラメータ最適化エンジン ---
+    st.markdown("#### 🏆 黄金比抽出（最適化エンジン）")
+    st.caption("対象銘柄群において、最も勝率が高くなる『押し目深さ (push_r)』を物理的に解明します。")
+
+    if st.button("⚖️ 黄金比（最強の押し目）を算出", use_container_width=True, type="secondary", key="btn_optimize_v75"):
+        # 索敵リストから対象を抽出
+        if not st.session_state.get('tab1_scan_results'):
+            st.error("❌ 先にTAB1で広域索敵を実行してください。")
+        else:
+            status_opt = st.status("📊 全パラメータ空間をスキャン中...", expanded=True)
+            
+            # 対象銘柄（TAB1の結果を全て使用）
+            target_codes = [str(r['Code'])[:4] for r in st.session_state.tab1_scan_results]
+            
+            raw_data = get_hist_data_260d()
+            if raw_data:
+                df_all = clean_df_v66(pd.DataFrame(raw_data))
+                
+                # 10刻みで勝率をスイープ検証
+                sweep_results = []
+                
+                for pr in range(10, 100, 10):
+                    total_hits = 0
+                    total_wins = 0
                     
-                    n_prof = tdf['損益額(円)'].sum()
-                    prof_color = "#26a69a" if n_prof > 0 else "#ef5350"
-                    st.markdown(f'<h3 style="color: {prof_color};">総合利益額: {n_prof:,} 円</h3>', unsafe_allow_html=True)
+                    # 各prにおける計算を実行
+                    df_sweep = calc_vector_indicators_v66(df_all, {"push_r": float(pr)})
                     
-                    m1, m2, m3, m4 = st.columns(4)
-                    tot = len(tdf); wins = len(tdf[tdf['損益額(円)'] > 0])
-                    m1.metric("トレード回数", f"{tot} 回")
-                    m2.metric("勝率", f"{round((wins/tot)*100,1)} %")
-                    m3.metric("平均損益額", f"{int(n_prof/tot):,} 円" if tot > 0 else "0 円")
-                    sloss = abs(tdf[tdf['損益額(円)'] <= 0]['損益額(円)'].sum())
-                    m4.metric("PF", round(tdf[tdf['損益額(円)'] > 0]['損益額(円)'].sum() / sloss, 2) if sloss > 0 else 'inf')
+                    for code in target_codes:
+                        api_code = code + "0"
+                        df_target = df_sweep[df_sweep['Code'] == api_code]
+                        if len(df_target) < 60: continue
+                        
+                        # 検証：接触判定
+                        for i in range(20, len(df_target) - 5):
+                            row = df_target.iloc[i]
+                            if row['AdjL'] <= row['target_buy'] and row['target_buy'] > 0:
+                                total_hits += 1
+                                if df_target.iloc[i+1 : i+6]['AdjH'].max() >= row['target_buy'] * 1.03:
+                                    total_wins += 1
                     
-                    def color_pnl_tab4(val):
-                        if isinstance(val, (int, float)):
-                            color = '#26a69a' if val > 0 else '#ef5350' if val < 0 else 'white'
-                            return f'color: {color}; font-weight: bold;'
-                        return ''
+                    win_rate = (total_wins / total_hits * 100) if total_hits > 0 else 0
+                    sweep_results.append({"push_r": pr, "交戦数": total_hits, "勝率": win_rate})
+                    status_opt.write(f" └ push_r {pr}：%：検証完了 (勝率 {win_rate:.1f}%)")
+
+                # 結果の可視化
+                opt_df = pd.DataFrame(sweep_results)
+                if not opt_df[opt_df['交戦数'] > 0].empty:
+                    st.markdown("#### 🏆 最適化レポート")
+                    best_row = opt_df.loc[opt_df['勝率'].idxmax()]
+                    st.success(f"🎯 黄金比は『 push_r = {int(best_row['push_r'])} 』です（期待勝率 {best_row['勝率']:.1f}%）。")
                     
-                    styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
-                    st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
+                    # 最適化グラフ
+                    fig_opt = go.Figure()
+                    fig_opt.add_trace(go.Scatter(
+                        x=opt_df["push_r"], y=opt_df["勝率"], 
+                        mode='lines+markers', line=dict(color=C_A, width=3),
+                        marker=dict(size=10, color=C_S)
+                    ))
+                    fig_opt.update_layout(
+                        title="押し目設定（push_r）別・平均勝率推移",
+                        xaxis=dict(title="push_r (数値が大きいほど深い押し目)"),
+                        yaxis=dict(title="勝率 (%)"),
+                        template="plotly_dark", height=300
+                    )
+                    st.plotly_chart(fig_opt, use_container_width=True)
+                else:
+                    st.warning("有効な交戦データが抽出できませんでした。銘柄数を増やすか、期間を再考してください。")
+            
+            status_opt.update(label="黄金比抽出完了", state="complete")
+    
+    gc.collect()
 
 with tab5:
     import pandas as pd
