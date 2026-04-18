@@ -235,14 +235,10 @@ C_OUT = "#b71c1c"     # 圏外・C：濃赤（排除）
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """
-    日経平均を取得。
-    計算用に1年分を確保し、表示部で半年へ絞り込む。
-    """
+    """日経平均を取得し、描画用の辞書を生成する"""
     try:
-        # ^N225: 日経平均株価
         tk = yf.Ticker("^N225")
-        df_ni = tk.history(period="1y") # MA25の計算安定のため1年分取得
+        df_ni = tk.history(period="1y")
         if not df_ni.empty:
             df_ni = df_ni.reset_index()
             # タイムゾーンの物理洗浄
@@ -250,9 +246,7 @@ def get_macro_weather():
                 df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             
             df_ni = df_ni.dropna(subset=['Close'])
-            
             if len(df_ni) >= 25:
-                # 25日移動平均線の算出
                 df_ni['MA25'] = df_ni['Close'].rolling(window=25).mean()
                 latest = df_ni.iloc[-1]
                 prev = df_ni.iloc[-2]
@@ -262,6 +256,7 @@ def get_macro_weather():
                         "price": float(latest['Close']),
                         "diff": float(latest['Close'] - prev['Close']),
                         "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                        "date": latest['Date'].strftime('%m/%d'), # 🚨 物理溶接：KeyErrorを鎮圧
                         "df": df_ni
                     }
                 }
