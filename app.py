@@ -305,23 +305,19 @@ def render_macro_board():
 
 render_macro_board()
 
-# --- ⚙️ 機関部：260日兵站・超速演算エンジン（V65） ---
+# --- ⚙️ 5. 物理解毒エンジン（前回の AdjO 修正を包含） ---
 
 def clean_df_v66(df):
     """
-    J-Quants v2 APIの出来高(Volume)および始値(AdjO)を確保し、物理解毒。
+    始値(AdjO)の確保と、色彩規律に基づいた数値型の解毒
     """
     if df.empty: return df
     
-    # 出来高の物理確保
+    # 出来高物理確保
     v_col = next((col for col in df.columns if col in ['Volume', 'AdjustmentVolume', 'AdjVo', 'Vo']), None)
-    if v_col:
-        df['Volume_Fixed'] = pd.to_numeric(df[v_col], errors='coerce').fillna(0)
-    else:
-        df['Volume_Fixed'] = 0
+    df['Volume_Fixed'] = pd.to_numeric(df[v_col], errors='coerce').fillna(0) if v_col else 0
 
-    # 始値・株価の名寄せ
-    # 🚨 'AdjustmentOpen' / 'Open' を 'AdjO' に統合するよう拡張
+    # 始値・株価名寄せ
     r_cols = {
         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
         'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
@@ -329,19 +325,19 @@ def clean_df_v66(df):
     }
     df = df.rename(columns=r_cols)
     
-    # 銘柄コードの正規化
+    # 銘柄コード正規化
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype(str).str.split('.').str[0].str.strip()
         df['Code'] = df['Code'].apply(lambda x: x + "0" if len(x) == 4 else x)
     
-    # 🚨 AdjO を target_cols に正式配備
+    # AdjOを含む主要5列を抽出
     target_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume_Fixed']
     df = df[[c for c in target_cols if c in df.columns]].copy()
     
-    # 万が一AdjOが欠落している場合は終値で補完（KeyErrorを物理的に殺す）
-    if 'AdjO' not in df.columns:
-        df['AdjO'] = df['AdjC']
+    # AdjO 欠落時の最終防衛線
+    if 'AdjO' not in df.columns: df['AdjO'] = df['AdjC']
     
+    # float64 物理固定
     for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume_Fixed']:
         df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('float64')
             
@@ -577,103 +573,97 @@ def get_fast_indicators(prices):
     diff = np.diff(p[-15:]); g = np.sum(np.maximum(diff, 0)); l = np.sum(np.abs(np.minimum(diff, 0)))
     rsi = 100 - (100 / (1 + (g / (l + 1e-10)))); return rsi, hist[-1], hist[-2], hist[-5:]
 
-def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    """
-    【待伏・強襲 共通格付けエンジン】
-    サイドバーの「戦術アルゴリズム」および「現在損切%」を物理反映。
-    """
-    # 🚨 サイドバー設定のリアルタイム取得
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
-    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
+# --- 🛡️ 3. 格付けエンジン：色彩規律修正版 ---
 
-    # MACDトレンド判定
-    if macd_hist > 0 and macd_hist_prev <= 0: macd_t = "GC直後"
-    elif macd_hist > macd_hist_prev: macd_t = "上昇拡大"
-    elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
-    else: macd_t = "減衰"
+def get_triage_info(m_hist, p_hist, rsi, lc, target, mode="待伏"):
+    """
+    色彩規律：Plus/Good = Green (#26a69a / #2e7d32), Minus/Bad = Red (#ef5350)
+    """
+    score = 0
+    # MACD改善度
+    if m_hist > p_hist: score += 3
+    elif m_hist > 0: score += 1
+    
+    # RSI水準
+    if rsi < 35: score += 2
+    elif rsi < 45: score += 1
+    
+    # 目標到達度
+    reach = ((lc - target) / lc * 100) if lc > 0 else 100
+    if reach < 2: score += 3
+    elif reach < 5: score += 1
 
-    # --- ⚡ 強襲（GC）モードの判定 ---
-    if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: 
-            return "圏外🚫", "#d32f2f", 0, macd_t
-        
-        # 狙撃優先モード：RSIの過熱感を許容し、勢いを重視
-        if is_assault_mode:
-            if gc_days == 1: return "S🔥", "#2e7d32", 5, "GC直後(1日目)"
-            return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
+    if mode == "待伏":
+        # 🟢 良いニュアンスは全て緑系へ統一
+        if score >= 7: return "S級待伏🔥", "#1b5e20", score, "極めて良好"
+        if score >= 5: return "A級待伏💎", "#2e7d32", score, "良好"
+        if score >= 3: return "B級待伏🛡️", "#43a047", score, "監視"
+        return "圏外💀", "#ef5350", score, "見送り" # 🔴 悪いニュアンスは赤
+    return "圏外💀", "#ef5350", 0, "不明"
+
+def get_assault_triage_info(gc_days, lc, rsi, df_group, is_strict=False):
+    """
+    強襲格付け：赤系を排除し、攻撃的な緑（High-Voltage Green）へ転換
+    """
+    if gc_days == 0: return "圏外 💀", "#ef5350", 0, "GC未発生"
+    
+    score = 0
+    # GC鮮度
+    if gc_days == 1: score += 50
+    elif gc_days == 2: score += 30
+    else: score += 10
+    
+    # 出来高エネルギー
+    vol_ma = df_group['Volume_Fixed'].tail(5).mean()
+    vol_now = df_group['Volume_Fixed'].iloc[-1]
+    if vol_now > vol_ma * 2: score += 30
+    elif vol_now > vol_ma * 1.5: score += 20
+    
+    # RSI過熱監視
+    if rsi > 75: score -= 20 # 過熱はマイナス
+    
+    # 🟢 攻撃的な緑（Neon Green）で「攻めの善」を表現
+    if score >= 70: return "S級強襲⚡", "#00c853", score, "電撃戦"
+    if score >= 50: return "A級強襲🔥", "#43a047", score, "追撃可"
+    if score >= 30: return "B級強襲📈", "#66bb6a", score, "小競り合い"
+    return "圏外 💀", "#ef5350", score, "燃料不足"
+
+# --- 🛰️ 4. マクロ（日経平均）表示回路：色彩反転版 ---
+
+def display_nikkei_macro_v67():
+    """
+    日経平均の「プラス＝緑 / マイナス＝赤」を物理執行
+    """
+    # 1. データ取得（ボスの yfinance バックアップ系統を使用）
+    try:
+        import yfinance as yf
+        n225 = yf.Ticker("^N225").history(period="2d")
+        if len(n225) >= 2:
+            now_p = n225['Close'].iloc[-1]
+            prev_p = n225['Close'].iloc[-2]
+            diff = now_p - prev_p
+            pct = (diff / prev_p) * 100
         else:
-            # バランスモード：RSIと日数を厳密に判定
-            if gc_days == 1: 
-                return ("S🔥", "#2e7d32", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
-            return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+            now_p, diff, pct = 0, 0, 0
+    except:
+        now_p, diff, pct = 0, 0, 0
 
-    # --- 🌐 待伏（押し目）モードの判定 ---
-    if bt == 0 or lc == 0: 
-        return "C👁️", "#616161", 1, macd_t
+    # 🚨 色彩規律の適用
+    # Streamlit標準：delta_color="normal" は「プラス＝緑」
+    # カスタムHTML：物理コードで指定
+    macro_color = "#26a69a" if diff >= 0 else "#ef5350"
+    bg_color = "rgba(38, 166, 154, 0.1)" if diff >= 0 else "rgba(239, 83, 80, 0.1)"
+    sign = "+" if diff >= 0 else ""
 
-    dist_pct = ((lc / bt) - 1) * 100 
-    
-    # 🛡️ 物理防衛線：現在損切%を超えた下落は、どんな好条件でも即「💀圏外」
-    if dist_pct < -sl_limit_pct: 
-        return "圏外💀", "#d32f2f", 0, f"損切突破({dist_pct:.1f}%)"
-
-    # 🏹 ランク評価ロジック
-    if is_assault_mode:
-        # 🎯 狙撃優先：目標価格(bt)への到達度を最優先。RSIが高くても強気にSを付与。
-        if dist_pct <= 2.0: return "S🔥", "#2e7d32", 5.5, macd_t
-        elif dist_pct <= 6.0: return "A⚡", "#ed6c02", 4.5, macd_t
-        elif dist_pct <= 10.0: return "B📈", "#0288d1", 3.5, macd_t
-    else:
-        # ⚖️ バランス：RSIの過熱感を厳密にチェックし、確実性を重視。
-        if dist_pct <= 2.0: 
-            return ("S🔥", "#2e7d32", 5, macd_t) if rsi <= 45 else ("A⚡", "#ed6c02", 4.5, macd_t) 
-        elif dist_pct <= 5.0: 
-            return ("A🪤", "#0288d1", 4.0, macd_t) if rsi <= 50 else ("B📈", "#0288d1", 3, macd_t)
-
-    return "C👁️", "#616161", 1, macd_t
-
-def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    """
-    【強襲専用 精密評価エンジン】
-    MA25乖離、RSI、戦術思想を統合して100点満点でスコアリング。
-    """
-    if gc_days <= 0 or df_chart is None or df_chart.empty: 
-        return "圏外 💀", "#424242", 0, ""
-
-    # 🚨 サイドバー設定の取得
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
-    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
-    
-    row = df_chart.iloc[-1]
-    ma25 = row.get('MA25', 0)
-    score = 50 
-
-    # 1. 移動平均線との導通チェック
-    if ma25 > 0:
-        if lc >= ma25 * 0.95: score += 10
-        if lc >= ma25: score += 10
-    
-    # 2. RSIによる加減点（思想により分岐）
-    if is_assault_mode:
-        # 狙撃優先：トレンドが出ている（RSI高め）を肯定
-        if 50 <= rsi_v <= 75: score += 15
-    else:
-        # バランス：過熱感を嫌う
-        if 50 <= rsi_v <= 65: score += 10
-        elif rsi_v > 70: score -= 20
-
-    # 3. 経過日数による減衰
-    score -= (gc_days - 1) * 5
-
-    # 🏅 最終ランク判定
-    if score >= 85 if is_strict else 80: rank, bg = "S🔥", "#2e7d32"
-    elif score >= 65 if is_strict else 60: rank, bg = "A⚡", "#ed6c02"
-    elif score >= 45 if is_strict else 40: rank, bg = "B📈", "#0288d1"
-    else: rank, bg = "C 💀", "#424242"
-
-    return rank, bg, score, f"GC {gc_days}日目"
+    st.sidebar.markdown(f"""
+        <div style="padding: 12px; border-radius: 8px; background: {bg_color}; border-left: 5px solid {macro_color}; margin-bottom: 10px;">
+            <div style="font-size: 12px; color: #aaa; margin-bottom: 4px;">NIKKEI 225 INDEX</div>
+            <div style="font-size: 22px; font-weight: bold; color: #fff;">{now_p:,.0f}<span style="font-size: 14px; margin-left: 4px;">JPY</span></div>
+            <div style="font-size: 15px; font-weight: bold; color: {macro_color};">
+                {sign}{diff:,.2f} ({sign}{pct:.2f}%)
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 def render_technical_radar(df, buy_price, tp_pct):
     if df.empty or len(df) < 2: return ""
