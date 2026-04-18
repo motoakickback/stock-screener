@@ -306,7 +306,7 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-def clean_df_v61(df):
+def clean_df_v62(df):
     """
     KeyErrorを物理排除し、260日分の規格を統一。
     """
@@ -336,9 +336,9 @@ def clean_df_v61(df):
     df['Date'] = pd.to_datetime(df['Date'])
     return df.sort_values(['Code', 'Date']).reset_index(drop=True)
 
-def calc_vector_indicators_v61(df, cfg):
+def calc_vector_indicators_v62(df, cfg):
     """
-    4,000銘柄の260日分を一括ベクトル演算。
+    4,000銘柄の260日分を一括ベクトル演算。UI要求キーと同期。
     """
     if df.empty: return df
     df = df.copy()
@@ -366,7 +366,11 @@ def calc_vector_indicators_v61(df, cfg):
     df['low_10d'] = g['AdjL'].transform(lambda x: x.rolling(10, min_periods=1).min())
     df['lc_20d_ago'] = g['AdjC'].shift(20)
     
+    # 🚨 重要：UI要求キー 'lc' に現在の終値を同期
+    df['lc'] = df['AdjC']
+    
     # 目標価格
+    # LaTeX: $$Target = (H_4 - (H_4 - L_{14}) \times \text{push\_r}) \times (1 - \text{penalty})$$
     df['target_buy'] = (df['high_4d'] - (df['high_4d'] - df['low_14d']) * (cfg["push_r"]/100.0)) * (1.0 - cfg["push_penalty"])
     df['reach_rate'] = (df['target_buy'] / (df['AdjC'] + 1e-10)) * 100
     
@@ -515,7 +519,7 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
-# --- ⚙️ 機関部：260日兵站・超速演算エンジン（V61） ---
+# --- ⚙️ 機関部：260日兵站・超速演算エンジン（V62） ---
 
 @st.cache_data(ttl=1800, max_entries=1, show_spinner=False)
 def get_hist_data_260d():
@@ -892,7 +896,7 @@ with tab1:
 
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
-    if st.button("🚀 260日・全軍索敵を開始", key="btn_scan_v61", use_container_width=True, type="primary"):
+    if st.button("🚀 260日・全軍索敵を開始", key="btn_scan_v62", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
@@ -912,7 +916,7 @@ with tab1:
             # 2. 物理洗浄
             t_step = time.time()
             status.write("⚙️ データを物理洗浄・規格統一中...")
-            df_all = clean_df_v61(pd.DataFrame(raw))
+            df_all = clean_df_v62(pd.DataFrame(raw))
             del raw; gc.collect()
             t_clean = time.time() - t_step
             status.write(f" └ ✅ 洗浄完了：{t_clean:.2f}秒")
@@ -935,7 +939,7 @@ with tab1:
             # 3. 演算
             t_step = time.time()
             status.write("⚙️ 4,000銘柄の260日テクニカルを一括演算中...")
-            df_all = calc_vector_indicators_v61(df_all, cfg)
+            df_all = calc_vector_indicators_v62(df_all, cfg)
             t_calc = time.time() - t_step
             status.write(f" └ ✅ 演算完了：{t_calc:.2f}秒")
 
@@ -989,7 +993,7 @@ with tab1:
                         if f_data.get('roe', 0) < 0 or f_data.get('op', 0) < 0: continue
                         if f_data.get('er', 100) < 10: continue
 
-                # 格付け取得
+                # 格付け取得（前日比ヒストグラム）
                 p_hist_rows = df_all[(df_all['Code']==code) & (df_all['Date'] < latest_date)]
                 if p_hist_rows.empty: continue
                 prev_hist = p_hist_rows.iloc[-1]['MACD_Hist']
@@ -1002,7 +1006,8 @@ with tab1:
                 
                 ret_1m = ((row['AdjC'] / (row['lc_20d_ago'] + 1e-10)) - 1) * 100
                 final_candidates.append({
-                    **row, 'triage_rank': rank, 'triage_bg': bg, 'score_priority': t_score, 
+                    **row, # 🚨 calc_vector_indicators_v62により 'lc' もここに含まれる
+                    'triage_rank': rank, 'triage_bg': bg, 'score_priority': t_score, 
                     'return_1m': ret_1m, 'Sector': master_map_active.get(code, {}).get('Sector', '不明'),
                     'CompanyName': master_map_active.get(code, {}).get('CompanyName', '不明'),
                     'Market': master_map_active.get(code, {}).get('Market', '不明')
@@ -1016,6 +1021,7 @@ with tab1:
                 df_res = pd.DataFrame(final_candidates).sort_values(
                     by=['score_priority', 'return_1m', 'RSI'], ascending=[False, True, True]
                 )
+                # 掟：各セクター上位3名
                 top_picks = df_res.groupby('Sector').head(3)
                 st.session_state.tab1_scan_results = top_picks.to_dict('records')
             t_final = time.time() - t_step
@@ -1023,7 +1029,7 @@ with tab1:
             t_total = time.time() - t_global_start
             status.update(label=f"🎯 索敵完了（総計: {t_total:.2f}秒）", state="complete")
 
-    # --- 📜 UI描画：聖典(image_582c20.png)の完全再現 ---
+    # --- 📜 UI描画：ボスの「聖典コード」完全再現 ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(res)} 銘柄（260日精密索敵・セクター分散済）")
