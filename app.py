@@ -1038,7 +1038,6 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵プロトコル</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '🟢 平時')}")
     
-    # --- 🛡️ 1. 銘柄マスターの物理同期 ---
     master_map_active = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
@@ -1050,55 +1049,26 @@ with tab1:
     if 'tab1_scan_results' not in st.session_state: 
         st.session_state.tab1_scan_results = None
     
-    # 🚀 2. 索敵実行ボタン（V79.8：衝突回避キー）
-    if st.button("🚀 260日・全軍索敵を開始", key="btn_scan_v79_8_tab1", use_container_width=True, type="primary"):
+    # 🚀 索敵実行ボタン（唯一無二のトリガー）
+    if st.button("🚀 260日・全軍索敵を開始", key="btn_scan_v71_tab1_final", use_container_width=True, type="primary"):
         st.session_state.tab1_scan_results = None
         gc.collect()
         
         status = st.status("📊 解析プロトコル展開中...", expanded=True)
         t_global_start = time.time()
         
-        # --- 📡 週末救済データ奪取シーケンス（NameError根絶版） ---
         status.write("📡 260日分の潮流データを奪取中...")
-        
-        # まずは既存の関数で試行
+        # 🚨 ボス提供の Turn 20 機関部を物理実行
         raw = get_hist_data_260d()
         
-        # 🚨 週末救済：土日のためMode 1が空の場合
-        if not raw or len(raw) < 100:
-            status.write("⚠️ 通常回線（Mode 1）不全。直近営業日（金曜）のデータを再索敵中...")
-            try:
-                # 🚨 ボスへの進言：get_hist_data_260d 自体が内部で日付固定されている場合、
-                # ここで代替の取得手段を執行します。
-                # NameErrorを避けるため、既存の get_single_data を使って主要インデックスから日付を特定
-                idx_data = get_single_data("00000", 2) # 日経平均等のヒストリカル
-                if idx_data and "bars" in idx_data:
-                    last_trading_date = idx_data["bars"][-1]["Date"]
-                    status.write(f"📅 最終営業日を確認：{last_trading_date}")
-                    # この日付を使って、再度 get_hist_data_260d() を叩く、
-                    # あるいは内部で Mode 2 が動くことを期待して再送。
-                    raw = get_hist_data_260d()
-            except:
-                pass
-
         if not raw:
-            status.update(label="❌ API応答なし。J-Quantsの週末メンテナンス、またはデータの断絶です。", state="error")
+            status.update(label="❌ API応答なし", state="error")
         else:
             try:
                 status.write("⚙️ データを物理洗浄・規格統一中...")
-                df_raw_tmp = pd.DataFrame(raw)
+                df_all = clean_df_v66(pd.DataFrame(raw))
+                del raw; gc.collect()
                 
-                # KeyError 'Code' 回避の物理溶接
-                if 'Code' not in df_raw_tmp.columns:
-                    if 'Local Code' in df_raw_tmp.columns:
-                        df_raw_tmp['Code'] = df_raw_tmp['Local Code'].astype(str) + "0"
-                    elif 'code' in df_raw_tmp.columns:
-                        df_raw_tmp['Code'] = df_raw_tmp['code'].astype(str)
-                
-                df_all = clean_df_v66(df_raw_tmp)
-                del raw; del df_raw_tmp; gc.collect()
-                
-                # 3. テクニカル一括演算
                 cfg = {
                     "push_r": float(st.session_state.push_r),
                     "f1_min": float(st.session_state.f1_min),
@@ -1133,7 +1103,7 @@ with tab1:
                     if code in gigi_codes: continue
                     eligible_codes.append(code)
 
-                # 4. 判定フィルター執行
+                # 🚨 low_10d を使った判定（V71復旧版）
                 df_step1 = df_latest[
                     (df_latest['Code'].isin(eligible_codes)) &
                     (df_latest['AdjC'] >= cfg["f1_min"]) & (df_latest['AdjC'] <= cfg["f1_max"]) &
@@ -1150,10 +1120,8 @@ with tab1:
                         if row['AdjC'] > row['LowMin260'] * 2.5: continue
                     
                     if cfg["f12_ex_overvalued"]:
-                        try:
-                            f_data = get_fundamentals(code[:4])
-                            if f_data and (f_data.get('roe', 0) < 0 or f_data.get('op', 0) < 0): continue
-                        except: pass
+                        f_data = get_fundamentals(code[:4])
+                        if f_data and (f_data.get('roe', 0) < 0 or f_data.get('op', 0) < 0): continue
 
                     p_hist_rows = df_all[(df_all['Code']==code) & (df_all['Date'] < latest_date)]
                     if p_hist_rows.empty: continue
@@ -1162,29 +1130,30 @@ with tab1:
                     rank, bg, t_score, _ = get_triage_info(float(row['MACD_Hist']), float(prev_hist), float(row['RSI']), row['AdjC'], row['target_buy'], mode="待伏")
                     if rank == "圏外💀": continue
                     
-                    m_info = master_map_active.get(code, {})
                     final_candidates.append({
                         **row, 'triage_rank': rank, 'triage_bg': bg, 'score_priority': t_score, 
-                        'Sector': m_info.get('Sector', '不明'),
-                        'CompanyName': m_info.get('CompanyName', f"銘柄 {code[:4]}"),
-                        'Market': m_info.get('Market', '不明')
+                        'return_1m': ((row['AdjC'] / (row['lc_20d_ago'] + 1e-10)) - 1) * 100,
+                        'Sector': master_map_active.get(code, {}).get('Sector', '不明'),
+                        'CompanyName': master_map_active.get(code, {}).get('CompanyName', '不明'),
+                        'Market': master_map_active.get(code, {}).get('Market', '不明')
                     })
                 
                 if final_candidates:
                     df_res = pd.DataFrame(final_candidates).sort_values(by=['score_priority', 'RSI'], ascending=[False, True])
                     st.session_state.tab1_scan_results = df_res.head(30).to_dict('records')
                 
-                status.update(label=f"🎯 待伏索敵完了（{time.time() - t_global_start:.1f}秒）", state="complete", expanded=False)
+                status.update(label=f"🎯 待伏索敵完了（{time.time() - t_global_start:.1f}秒）", state="complete")
 
             except Exception as e:
                 status.update(label="🚨 演算エラー", state="error")
                 st.error(f"詳細: {str(e)}")
 
-    # --- 📜 5. UI描画：ボスの聖典 ---
+    # --- 📜 8. UI描画：ボスの聖典（重複ボタン物理排除版） ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(res)} 銘柄（260日精密索敵済）")
         
+        # TAB3連携用コード
         sab_codes = " ".join([str(r['Code'])[:4] for r in res])
         st.code(sab_codes, language="text")
         
@@ -1193,6 +1162,7 @@ with tab1:
             c_code = str(r['Code'])
             m_lower = str(r.get('Market', '')).lower()
             
+            # 市場バッジ
             if 'プライム' in m_lower or '一部' in m_lower: 
                 m_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
@@ -1200,7 +1170,10 @@ with tab1:
             else: 
                 m_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r.get("Market","不明")}</span>'
             
+            # 階級バッジ（V71規律：S濃緑/A薄緑/B青/圏外赤）
             t_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
+            
+            # セクターバッジ
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {r.get("Sector", "不明")}</span>'
             
             st.markdown(f"""
@@ -1213,6 +1186,7 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
             
+            # メトリクスと黄金ボックス
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
             m_cols[0].metric("直近高値", f"{int(r['high_4d']):,}円")
             m_cols[1].metric("起点安値", f"{int(r['low_14d']):,}円")
