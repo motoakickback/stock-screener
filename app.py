@@ -1,16 +1,19 @@
 import streamlit as st
-import streamlit.components.v1 as components
+import requests
 import pandas as pd
-import numpy as np
-import yfinance as yf
-import plotly.graph_objects as go
-import concurrent.futures
-import unicodedata
-import re
 import os
-import gc
-import datetime as dt_module  # 🚨 物理修復：これが必要
+import re
+import json
 from datetime import datetime, timedelta
+from io import BytesIO
+import plotly.graph_objects as go
+import numpy as np
+import concurrent.futures
+import streamlit.components.v1 as components
+import gc
+import pytz
+import time
+import unicodedata
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
