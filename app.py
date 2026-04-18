@@ -1961,84 +1961,95 @@ with tab5:
     import numpy as np
 
     # 聖典UI：ヘッダー
-    st.markdown('<h3 style="font-size: 24px;">📡 【交戦】フロンティア・モニター（色彩規律・完全正常化版）</h3>', unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown('<h3 style="font-size: 24px;">📡 【交戦】フロンティア・モニター</h3>', unsafe_allow_html=True)
+    
+    # --- 🛡️ 1. 戦力配備：セッションステートの初期化 ---
+    # 手動入力用の空の器を物理確保
+    if 'frontline_df' not in st.session_state or st.session_state.frontline_df is None:
+        st.session_state.frontline_df = pd.DataFrame(columns=[
+            "Code", "銘柄名", "買値", "現在値", "損切", "目標", "損益(%)", "ステータス"
+        ])
 
-    # --- 🛡️ 1. 戦況データの読み込みと色彩規律の適用 ---
-    if 'frontline_df' not in st.session_state or st.session_state.frontline_df.empty:
-        st.warning("現在、交戦中の部隊（保有ポジション）は確認できません。照準（TAB3）から部隊を派遣してください。")
-    else:
-        # 表示用データのクローン作成
-        df_monitor = st.session_state.frontline_df.copy()
+    st.info("💡 下記のテーブルに直接入力して保有部隊を配備せよ。行の追加は末尾の「+」から可能。")
 
-        # 🚨 損益色彩規律：Plus/Good = Green (#26a69a), Minus/Bad = Red (#ef5350)
-        def style_profit_loss(val):
-            try:
-                # 数値型へ変換（文字列が含まれる可能性を排除）
-                num = float(str(val).replace('円', '').replace('%', '').replace(',', ''))
-                
-                if num > 0:
-                    return f'color: {C_UP}; font-weight: bold; background-color: rgba(38, 166, 154, 0.05);'
-                elif num < 0:
-                    return f'color: {C_DOWN}; font-weight: bold; background-color: rgba(239, 83, 80, 0.05);'
-                else:
-                    return 'color: #888;'
-            except:
-                return 'color: #ccc;'
-
-        # 🚨 カラム別の特定着色規律
-        def style_status(val):
-            if '利確' in str(val): return f'color: {C_UP}; font-weight: bold;'
-            if '損切' in str(val): return f'color: {C_DOWN}; font-weight: bold;'
-            if '追撃' in str(val): return f'color: {C_A}; font-weight: bold;'
-            return 'color: #ccc;'
-
-        # スタイリングの適用
-        # 損切、損益額、損益率の3項目に「マイナス＝赤」の掟を物理強制
-        styled_df = df_monitor.style.applymap(
-            style_profit_loss, 
-            subset=[col for col in ["損切", "損益額(円)", "損益(%)", "前日比"] if col in df_monitor.columns]
-        ).applymap(
-            style_status,
-            subset=[col for col in ["ステータス", "状況"] if col in df_monitor.columns]
-        )
-
-        # --- 📺 2. モニター描画 ---
-        st.markdown("#### ⚔️ 現在の交戦状況")
+    # --- ⚙️ 2. 物理演算：損益計算ロジック ---
+    def process_frontline(df):
+        if df.empty: return df
+        df = df.copy()
+        # 型の物理浄化
+        for col in ["買値", "現在値", "損切", "目標"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # 概要メトリクス（全軍の合計損益）
-        if "損益額(円)" in df_monitor.columns:
-            total_pl = df_monitor["損益額(円)"].sum()
-            pl_sign = "+" if total_pl >= 0 else ""
-            st.metric(
-                label="🚩 全軍合計純損益", 
-                value=f"{total_pl:,.0f}円", 
-                delta=f"{pl_sign}{total_pl:,.0f}円",
-                delta_color="normal" # normal設定により自動的にプラス=緑/マイナス=赤となる
+        # 損益率の自動計算（買値と現在値がある場合）
+        if "買値" in df.columns and "現在値" in df.columns:
+            df["損益(%)"] = df.apply(
+                lambda x: ((x["現在値"] / x["買値"]) - 1) * 100 if x["買値"] > 0 else 0.0,
+                axis=1
             )
+        return df
 
-        # データエディタまたはデータフレームで表示
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Code": st.column_config.TextColumn("銘柄"),
-                "損益(%)": st.column_config.NumberColumn("損益率", format="%.2f%%"),
-                "損益額(円)": st.column_config.NumberColumn("損益額", format="¥%d"),
-            }
-        )
+    # --- 🎨 3. 色彩規律スタイラー：マイナス＝赤、プラス＝緑 ---
+    def apply_color_discipline(df):
+        def color_logic(val):
+            try:
+                num = float(val)
+                if num > 0: return f'color: {C_UP}; font-weight: bold;'
+                if num < 0: return f'color: {C_DOWN}; font-weight: bold;'
+                return 'color: #888;'
+            except: return None
 
-        # --- ⚙️ 3. 戦域離脱（ポジション解消）UI ---
-        with st.expander("📝 任務完了（ポジションの決済記録）"):
-            st.markdown("決済した銘柄を選択して、報告タブ（TAB6）へ戦果を転送します。")
-            target_pos = st.selectbox("決済対象を選択", df_monitor["Code"].unique() if "Code" in df_monitor.columns else [])
-            
-            col_act1, col_act2 = st.columns(2)
-            exit_price = col_act1.number_input("最終決済価格", value=0.0)
-            if col_act2.button("🏁 任務完了・戦果を報告", use_container_width=True):
-                # ここにTAB6（報告）へのデータ移行ロジックを連結（現在は省略なしのUI全文）
-                st.toast(f"{target_pos} の戦果をアーカイブしました。")
+        def status_logic(val):
+            if '利確' in str(val): return f'background-color: rgba(38, 166, 154, 0.2); color: {C_UP};'
+            if '損切' in str(val): return f'background-color: rgba(239, 83, 80, 0.2); color: {C_DOWN};'
+            return None
+
+        # 🚨 損益(%)、損切、現在値等の列に規律を適用
+        return df.style.applymap(color_logic, subset=[c for c in ["損益(%)", "損切"] if c in df.columns])\
+                       .applymap(status_logic, subset=[c for c in ["ステータス"] if c in df.columns])
+
+    # --- 📺 4. 交戦エディタ：手動入力インターフェース ---
+    # process_frontlineを通してからエディタへ
+    edited_df = st.data_editor(
+        st.session_state.frontline_df,
+        num_rows="dynamic", # 🚨 これで行の追加・削除が自由自在
+        use_container_width=True,
+        hide_index=True,
+        key="frontline_editor_v71",
+        column_config={
+            "Code": st.column_config.TextColumn("コード", help="4桁または5桁", width="small"),
+            "銘柄名": st.column_config.TextColumn("銘柄名", width="medium"),
+            "買値": st.column_config.NumberColumn("買値", format="¥%d"),
+            "現在値": st.column_config.NumberColumn("現在値", format="¥%d"),
+            "損切": st.column_config.NumberColumn("損切ライン", format="¥%d", help="この値を下回ると赤色表示"),
+            "目標": st.column_config.NumberColumn("目標値", format="¥%d"),
+            "損益(%)": st.column_config.NumberColumn("損益(%)", format="%.2f%%", disabled=True),
+            "ステータス": st.column_config.SelectboxColumn(
+                "ステータス",
+                options=["交戦中", "利確準備", "損切警告", "追撃検討"]
+            )
+        }
+    )
+
+    # データの物理保存（入力された瞬間にステートを更新）
+    if not edited_df.equals(st.session_state.frontline_df):
+        st.session_state.frontline_df = process_frontline(edited_df)
+        st.rerun()
+
+    # --- 📊 5. 視覚的戦況報告 ---
+    if not st.session_state.frontline_df.empty:
+        df_final = st.session_state.frontline_df
+        total_pl_pct = df_final["損益(%)"].mean() if "損益(%)" in df_final.columns else 0
+        
+        c1, c2, c3 = st.columns(3)
+        # 🚨 メトリクスでも「プラス＝緑、マイナス＝赤」を物理強制
+        c1.metric("🚩 戦線平均騰落", f"{total_pl_pct:+.2f}%", delta=f"{total_pl_pct:.2f}%", delta_color="normal")
+        c2.metric("⚔️ 配備部隊数", f"{len(df_final)} 銘柄")
+        
+        st.markdown("---")
+        # 規律適用後の静止表示（確認用）
+        st.markdown("#### 🔍 戦域視認マップ")
+        st.table(apply_color_discipline(df_final))
 
     # メモリ解放
     gc.collect()
