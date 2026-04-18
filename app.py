@@ -943,13 +943,7 @@ master_df = load_master()
 tactics_mode = st.session_state.sidebar_tactics
 
 with tab1:
-    import time
-    import gc
-    import unicodedata
-    import pandas as pd
-
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】260日・広域精密索敵プロトコル</h3>', unsafe_allow_html=True)
-    
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '🟢 平時')}")
     
     master_map_active = {}
@@ -1318,17 +1312,6 @@ with tab2:
 with tab3:
     # --- 🛡️ 1. 物理防衛：変数の初期化（NameError根絶） ---
     run_scope = False
-    import time
-    import gc
-    import unicodedata
-    import re
-    import concurrent.futures
-    import numpy as np
-    import pandas as pd
-    import yfinance as yf
-    from datetime import datetime, timedelta
-    import plotly.graph_objects as go
-
     # 聖典UI：ヘッダー（ボスの原典通り）
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・V71究極ホバー）</h3>', unsafe_allow_html=True)
     
@@ -1666,14 +1649,6 @@ with tab3:
             gc.collect()
                     
 with tab4:
-    import pandas as pd
-    import numpy as np
-    import os
-    import re
-    import time
-    import gc
-    import plotly.graph_objects as go
-
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
     # --- 🛡️ 状態初期化・物理ロック回路 ---
@@ -1992,12 +1967,6 @@ with tab4:
     gc.collect()
 
 with tab5:
-    import pandas as pd
-    import numpy as np
-    import os
-    import yfinance as yf
-    import plotly.graph_objects as go
-
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 入力後にEnterで真下へ移動。完了後に『💾 変更を保存』を押せ。")
 
@@ -2245,7 +2214,6 @@ with tab5:
     gc.collect()
         
 with tab6:
-    import datetime as dt_module
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
     st.caption("※ 記録の編集は下部の『🛠️ 戦績編集コンソール』で行ってください。")
     
