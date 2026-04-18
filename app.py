@@ -1471,7 +1471,7 @@ with tab3:
                     status.update(label=f"🎯 {len(scope_results)} 銘柄の照準を固定完了", state="complete")
                     # (以下、第2ブロックへ続く)
 
-                # --- 📺 4. 神聖UI描画エンジン（V77.2：全天候・週末対応・究極ホバー執行） ---
+                # --- 📺 4. 神聖UI描画エンジン（V77.3：全天候・週末対応・タイポ物理修正） ---
                 # 🚨 演算結果 scope_results を優先度順に戦術カードとして展開
                 for index, r in enumerate(scope_results):
                     st.divider()
@@ -1499,12 +1499,11 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 🚨 警告灯ユニット（V77新機軸：決算・権利落ちを赤で物理執行）
+                    # 🚨 警告灯ユニット：決算・権利落ち
                     if r.get('event_alerts'):
                         for e_alert in r['event_alerts']:
-                            st.error(e_alert) # 物理的に赤い背景で網膜を刺激し、被弾を回避
+                            st.error(e_alert)
                     
-                    # 酒田五法等のテクニカルアラート
                     if r.get('sakata_alerts'):
                         for s_alert in r['sakata_alerts']:
                             st.success(s_alert)
@@ -1513,25 +1512,20 @@ with tab3:
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
                     with sc_left:
-                        st.metric("最新終値 (週末・休場対応)", f"¥{int(r['lc']):,}")
+                        st.metric("最新終値 (週末対応)", f"¥{int(r['lc']):,}")
                         st.metric("RSI (14d)", f"{r['rsi']:.1f}%")
                         if r['pbr'] > 0:
                             st.caption(f"PBR: {r['pbr']:.2f}倍 / PER: {r['per']:.1f}倍")
 
                     with sc_mid:
-                        # 買値目標：黄金の押し目ボックス
                         st.markdown(f"""
                             <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
                                 <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>🎯 買値目標 (物理同期)</div>
                                 <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}<span style="font-size:18px;">円</span></div>
-                                <div style='font-size:11px; color:#888; border-top:1px dashed #444; padding-top:8px; margin-top:5px;'>
-                                    期待される反発地点（260日潮流基準）
-                                </div>
                             </div>
                         """, unsafe_allow_html=True)
 
                     with sc_right:
-                        # 防衛線：最短撤退目安
                         st.markdown(f"""
                             <div style='background:rgba(255,255,255,0.05); padding:1rem; border-radius:8px; border-left:5px solid {C_DOWN};'>
                                 <div style='font-size:12px; color:#aaa; margin-bottom:8px;'>📊 損切・防衛目安 (物理整数)</div>
@@ -1539,16 +1533,14 @@ with tab3:
                                     <span style='color:{C_DOWN}; font-weight:bold;'>💀 撤退ライン (1.0 ATR想定)</span>
                                     <b style='font-size:1.4rem;'>¥{int(r['lc'] * 0.97):,}</b>
                                 </div>
-                                <div style='font-size:10px; color:#666; margin-top:4px;'>※ 直近の市場ノイズ幅に基づく最短防衛境界</div>
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # --- 📈 6ヶ月潮流グラフ & 8項目究極ホバー（V77.2） ---
+                    # --- 📈 6ヶ月潮流グラフ & 8項目究極ホバー ---
                     d_p = r['df_chart'].copy()
-                    
                     fig = go.Figure()
                     
-                    # 1-4. ローソク足本体（始/終/高/安）
+                    # 1-4. ローソク足
                     fig.add_trace(go.Candlestick(
                         x=d_p['Date'], open=d_p['AdjO'], high=d_p['AdjH'], low=d_p['AdjL'], close=d_p['AdjC'],
                         name="株価本体", increasing_line_color=C_UP, decreasing_line_color=C_DOWN,
@@ -1556,7 +1548,7 @@ with tab3:
                         hovertemplate="<b>始値</b>: ¥%{customdata[0]:,d}<br><b>終値</b>: ¥%{customdata[1]:,d}<br><b>高値</b>: ¥%{customdata[2]:,d}<br><b>安値</b>: ¥%{customdata[3]:,d}<extra></extra>"
                     ))
 
-                    # 5-7. 移動平均線（MA5, MA25, MA75）
+                    # 5-7. MA3本
                     for col, color, label in [('MA5', '#ffca28', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]:
                         if col in d_p.columns:
                             fig.add_trace(go.Scatter(
@@ -1565,22 +1557,22 @@ with tab3:
                                 hovertemplate=f"{label}¥%{{y:,.0f}}<extra></extra>"
                             ))
                     
-                    # 8. 買値目標ライン（黄金ドット）
+                    # 8. 目標ライン
                     fig.add_trace(go.Scatter(
-                        x=d_p['Date'], y=[r['bt_val']]*len(d_p), name="買値目標",
+                        x=d_p['Date'], y=[r['bt_val']]*len(d_p), name="目標",
                         line=dict(color='#FFD700', dash='dot', width=2),
                         hovertemplate=f"<b>目標</b>：¥{int(r['bt_val']):,}<extra></extra>"
                     ))
 
-                    # 🚨 レイアウト設定：V76規格（180日・半年集中）
-                    last_d = d_p['Date'].max()
+                    # 🚨 物理修正：変数名を last_date に統一
+                    last_date = d_p['Date'].max()
                     fig.update_layout(
                         height=450, margin=dict(l=0, r=0, t=10, b=80),
                         hovermode="x unified", template="plotly_dark",
                         xaxis=dict(
                             type='date', 
                             tickformat='%m/%d',
-                            range=[last_date - timedelta(days=180), last_date + timedelta(days=2)], # 🚨 V76：半年表示
+                            range=[last_date - timedelta(days=180), last_date + timedelta(days=2)], 
                             rangeslider=dict(visible=False)
                         ),
                         yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", fixedrange=False),
@@ -1588,8 +1580,7 @@ with tab3:
                         hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=13, font_family="monospace")
                     )
                     
-                    # 唯一無二のキーで射出
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"t3_v77_2_master_chart_{r['code']}_{index}")
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"t3_v77_3_master_chart_{r['code']}_{index}")
 
     # メモリ解放
     gc.collect()
