@@ -14,6 +14,10 @@ import gc
 import pytz
 import time
 import unicodedata
+import yfinance as yf
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
+import datetime as dt_module
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
