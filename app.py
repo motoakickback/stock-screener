@@ -1,5 +1,5 @@
 import streamlit as st
-import streamlit.components.v1 as components  # 🚨 物理修復：これが必要
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -9,6 +9,7 @@ import unicodedata
 import re
 import os
 import gc
+import datetime as dt_module  # 🚨 物理修復：これが必要
 from datetime import datetime, timedelta
 
 # --- 物理定数・色彩規律（V77.9） ---
