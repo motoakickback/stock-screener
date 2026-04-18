@@ -1375,7 +1375,7 @@ with tab3:
     run_scope = False
     
     # 聖典UI：ヘッダー
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（V77.9：全天候・週末対応）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（V78.1：週末データ救済・物理溶接版）</h3>', unsafe_allow_html=True)
     
     # 兵站ファイルパス
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
@@ -1409,9 +1409,9 @@ with tab3:
     with col_s2:
         st.markdown("#### 📑 階級判定規律")
         if is_ambush:
-            st.info("**🛡️ 【待伏】14点満点** / 押し目到達・MACD反転・酒田五法を重視。")
+            st.info("**🛡️ 【待伏】判定規律** / 260日高値からの押し目とRSI、酒田五法を複合判定。")
         else:
-            st.info("**⚡ 【強襲】90点満点** / GC鮮度・出来高・ROE（稼ぐ力）を重視。")
+            st.info("**⚡ 【強襲】判定規律** / MACDゴールデンクロスと出来高爆発、ROEを重視。")
 
     if run_scope:
         now_dt = datetime(2026, 4, 18)
@@ -1431,27 +1431,42 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密スキャン中..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を週末対応モードで解析中..."):
                 raw_data_dict = {}
 
-                # 📡 並列データ収集ユニット（グローバルインポート参照版）
-                def fetch_parallel_t3_v77(c):
+                # 📡 週末救済データ収集エンジン
+                def fetch_parallel_t3_v78(c):
                     try:
                         c_str = str(c); api_code = c_str + "0"
-                        # 🚨 週末対応：歴史データ(2)
+                        # 1. J-Quants歴史データ取得試行
                         data = get_single_data(api_code, 2)
                         
-                        # ファンダ捕捉
+                        # 🚨 週末/データ不全時のyfinance強制上書き
+                        if not data or not data.get('bars') or len(data['bars']) < 10:
+                            tk_yf = yf.Ticker(c_str + ".T")
+                            hist = tk_yf.history(period="1y")
+                            if not hist.empty:
+                                bars = []
+                                for dt_idx, row_yf in hist.iterrows():
+                                    bars.append({
+                                        'Date': dt_idx.strftime('%Y-%m-%d'),
+                                        'AdjustmentOpen': float(row_yf['Open']),
+                                        'AdjustmentHigh': float(row_yf['High']),
+                                        'AdjustmentLow': float(row_yf['Low']),
+                                        'AdjustmentClose': float(row_yf['Close']),
+                                        'Volume': float(row_yf['Volume'])
+                                    })
+                                data = {'bars': bars}
+                        
+                        if not data or not data.get('bars'): return c_str, None, None, None, None, None, []
+
+                        # ファンダ捕捉（yfinance予備網）
+                        tk = yf.Ticker(c_str + ".T")
                         f_data = get_fundamentals(c_str)
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         if f_data:
-                            r_per = f_data.get('per') or f_data.get('PER')
-                            r_pbr = f_data.get('pbr') or f_data.get('PBR')
-                            r_mcap = f_data.get('mcap') or f_data.get('marketCap')
-                            r_roe = f_data.get('roe') or f_data.get('ROE')
-
-                        # yfinance補完
-                        tk = yf.Ticker(c_str + ".T")
+                            r_per, r_pbr, r_mcap, r_roe = f_data.get('per'), f_data.get('pbr'), f_data.get('mcap'), f_data.get('roe')
+                        
                         try:
                             info = tk.info
                             r_per = r_per or info.get('forwardPE') or info.get('trailingPE')
@@ -1462,7 +1477,7 @@ with tab3:
                                 if raw_roe: r_roe = raw_roe * 100
                         except: pass
 
-                        # イベント捕捉
+                        # イベント警告捕捉
                         e_alerts = []
                         try:
                             cal = tk.calendar
@@ -1474,11 +1489,10 @@ with tab3:
                         except: pass
 
                         return c_str, data, r_per, r_pbr, r_mcap, r_roe, e_alerts
-                    except Exception as e:
-                        return str(c), None, None, None, None, None, []
+                    except: return str(c), None, None, None, None, None, []
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    futs = [exe.submit(fetch_parallel_t3_v77, c) for c in t_codes]
+                    futs = [exe.submit(fetch_parallel_t3_v78, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe, e_data = f.result()
@@ -1488,6 +1502,7 @@ with tab3:
                                 }
                         except: continue
 
+                # --- ⚙️ 4. 演算・判定ループ ---
                 scope_results = []
                 cfg_v71 = {"push_r": float(st.session_state.get('push_r', 50.0)), "push_penalty": 0.0}
 
@@ -1496,34 +1511,59 @@ with tab3:
                         target_key = str(c); raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue
                         
-                        df_chart_full = calc_vector_indicators_v66(clean_df_v66(pd.DataFrame(raw_s["data"]["bars"])), cfg_v71)
+                        # 🚨 物理洗浄：カラム名の完全同期
+                        df_raw = pd.DataFrame(raw_s["data"]["bars"])
+                        df_s = clean_df_v66(df_raw)
+                        df_chart_full = calc_vector_indicators_v66(df_s, cfg_v71)
+                        
                         for span in [5, 25, 75]:
                             df_chart_full[f'MA{span}'] = df_chart_full['AdjC'].rolling(span).mean()
                         
                         t_latest = df_chart_full.iloc[-1]
-                        lc = int(t_latest['AdjC'])
+                        t_prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else t_latest
+                        lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
+                        
+                        # 🚨 判定用パラメータの物理抽出
                         h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        bt_val = int(t_latest['target_buy'])
+                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                        ur_v, rsi_v, atr_v = (h14 - l14), float(t_latest.get('RSI', 50)), float(lc * 0.03)
                         
-                        m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(df_chart_full.iloc[-2].get('MACD_Hist', 0))
-                        rank, bg, t_score, _ = get_triage_info(m1, m2, float(t_latest['RSI']), lc, bt_val, mode="待伏" if is_ambush else "強襲")
+                        score, alerts, gc_days = 0, raw_s.get('events', []), 0
                         
-                        final_score = t_score + (2 if is_ambush and raw_s.get('pbr', 99) <= 5.0 else 0)
-                        if not is_ambush and raw_s.get('roe', 0) >= 10.0: final_score += 10
-
-                        c_name, c_market = f"銘柄 {c}", "不明"
-                        if not master_df.empty:
-                            m_row = master_df[master_df['Code'].astype(str) == target_key + "0"]
-                            if not m_row.empty: c_name, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Market']
+                        if is_ambush:
+                            score = 4
+                            bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
+                            # 🚨 bt_valが異常値（0以下等）にならないようガード
+                            bt_val = max(bt_val, int(l14))
+                            rank, bg, t_score, _ = get_triage_info(float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0)), rsi_v, lc, bt_val, mode="待伏")
+                            score += t_score
+                            if raw_s.get('pbr') and raw_s.get('pbr') <= 5.0: score += 2
+                            # 酒田
+                            body, shadow_l, full_r = abs(lc-lo), min(lc,lo)-ll, lh-ll
+                            if full_r > 0 and shadow_l > (body*2.5) and (shadow_l/full_r)>0.6 and rsi_v<45:
+                                alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
+                            rank_v71, bg_v71 = (("S級待伏🔥", C_S) if score >= 12 else ("A級待伏💎", C_A) if score >= 8 else ("B級待伏🛡️", C_B) if score >= 5 else ("圏外💀", C_OUT))
+                            reach_val = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
+                        else:
+                            bt_val = int(max(h14, lc + (atr_v * 0.5)))
+                            hist_vals = df_chart_full['MACD_Hist'].tail(5).values
+                            gc_score = 0
+                            if len(hist_vals)>=2 and hist_vals[-2]<0 and hist_vals[-1]>=0: gc_days, gc_score = 1, 50
+                            elif len(hist_vals)>=3 and hist_vals[-3]<0 and hist_vals[-1]>=0: gc_days, gc_score = 2, 30
+                            else: gc_days, gc_score = 3, 10
+                            if raw_s.get('roe') and raw_s.get('roe') >= 10.0: score += 10
+                            if rsi_v > 75: score -= 20
+                            score += gc_score
+                            rank_v71, bg_v71 = (("S級強襲⚡", C_S) if score >= 70 else ("A級強襲🔥", C_A) if score >= 50 else ("B級強襲📈", C_B) if score >= 30 else ("圏外💀", C_OUT))
+                            reach_val = (lc / h14) * 100 if h14 > 0 else 0
 
                         scope_results.append({
-                            'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'bt_val': bt_val, 'rsi': float(t_latest['RSI']),
-                            'rank': rank, 'bg': bg, 'score': final_score, 'df_chart': df_chart_full.tail(260),
+                            'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
+                            'rank': rank_v71, 'bg': bg_v71, 'score': score, 'gc_days': gc_days, 'df_chart': df_chart_full.tail(260), 'reach_val': reach_val,
                             'per': raw_s['per'], 'pbr': raw_s['pbr'], 'roe': raw_s['roe'], 'mcap': raw_s['mcap'],
-                            'market': c_market, 'alerts': raw_s['events'], 'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
-                            'gc_days': 0 # 必要に応じて計算
+                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'market': c_market, 'alerts': alerts
                         })
-                    except: continue
+                    except: continue # 🚨 ここでスキップされた銘柄を減らすため演算を堅牢化
 
                 rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results: res['r_val'] = rank_order.get(re.sub(r'[^SAB圏外]', '', res['rank']), 0)
