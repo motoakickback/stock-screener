@@ -1,23 +1,22 @@
 import streamlit as st
-import requests
 import pandas as pd
-import os
-import re
-import json
-from datetime import datetime, timedelta
-from io import BytesIO
-import plotly.graph_objects as go
 import numpy as np
-import concurrent.futures
-import streamlit.components.v1 as components
-import gc
-import pytz
-import time
-import unicodedata
 import yfinance as yf
-from datetime import datetime, timedelta
 import plotly.graph_objects as go
-import datetime as dt_module
+import concurrent.futures
+import unicodedata
+import re
+import os
+import gc
+from datetime import datetime, timedelta
+
+# --- 物理定数・色彩規律（V77.9） ---
+C_UP = "#26a69a"    # 緑（上昇）
+C_DOWN = "#ef5350"  # 赤（下落）
+C_S = "#ff1744"     # S級
+C_A = "#ff9100"     # A級
+C_B = "#00e676"     # B級
+C_OUT = "#9e9e9e"   # 圏外
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
