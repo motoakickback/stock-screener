@@ -1058,7 +1058,7 @@ with tab1:
         t_global_start = time.time()
         
         status.write("📡 260日分の潮流データを奪取中...")
-        # 🚨 ボス提供の Turn 20 機関部を物理実行
+        # 🚨 Turn 20：物理機関部
         raw = get_hist_data_260d()
         
         if not raw:
@@ -1103,7 +1103,7 @@ with tab1:
                     if code in gigi_codes: continue
                     eligible_codes.append(code)
 
-                # 🚨 low_10d を使った判定（V71復旧版）
+                # 🚨 low_10d を使った判定（V71復旧済み）
                 df_step1 = df_latest[
                     (df_latest['Code'].isin(eligible_codes)) &
                     (df_latest['AdjC'] >= cfg["f1_min"]) & (df_latest['AdjC'] <= cfg["f1_max"]) &
@@ -1148,7 +1148,7 @@ with tab1:
                 status.update(label="🚨 演算エラー", state="error")
                 st.error(f"詳細: {str(e)}")
 
-    # --- 📜 8. UI描画：ボスの聖典（重複ボタン物理排除版） ---
+    # --- 📜 8. UI描画：ボスの原典（Turn 18 物理継承） ---
     if st.session_state.get('tab1_scan_results'):
         res = st.session_state.tab1_scan_results
         st.success(f"🎯 待伏ロックオン: {len(res)} 銘柄（260日精密索敵済）")
@@ -1186,7 +1186,7 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
             
-            # メトリクスと黄金ボックス
+            # メトリクスと黄金ボックス（カラム比率 1:1:1:1.2:1.5）
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
             m_cols[0].metric("直近高値", f"{int(r['high_4d']):,}円")
             m_cols[1].metric("起点安値", f"{int(r['low_14d']):,}円")
