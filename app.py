@@ -1374,8 +1374,8 @@ with tab3:
     # --- 🛡️ 1. 物理防衛：変数の初期化 ---
     run_scope = False
     
-    # 聖典UI：ヘッダー（物理継承）
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（V78.2：診断ログ搭載・週末対応）</h3>', unsafe_allow_html=True)
+    # 聖典UI：ヘッダー
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（V78.3：データ構造・物理溶接版）</h3>', unsafe_allow_html=True)
     
     # 兵站ファイルパス
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
@@ -1408,13 +1408,10 @@ with tab3:
         
     with col_s2:
         st.markdown("#### 📑 階級判定規律")
-        if is_ambush:
-            st.info("**🛡️ 【待伏】規律** / 260日高値からの押し目度合い、RSI、MACD改善を評価。")
-        else:
-            st.info("**⚡ 【強襲】規律** / MACDのGC鮮度、出来高爆発、ROEを評価。")
+        st.info("週末対応モード：J-Quantsとyfinanceのデータを物理統合し、現在の戦況を解析します。")
 
     if run_scope:
-        now_dt = datetime(2026, 4, 18) # 土曜日物理固定
+        now_dt = datetime(2026, 4, 18)
         # 保存
         if is_ambush:
             st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
@@ -1427,17 +1424,15 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            # 🚨 診断ログエリアの配備
             with st.status(f"📡 {len(t_codes)} 銘柄を週末対応モードで解析中...", expanded=True) as status:
                 raw_data_dict = {}
 
-                def fetch_parallel_t3_v78_2(c):
+                def fetch_parallel_t3_v78_3(c):
                     try:
                         c_str = str(c); api_code = c_str + "0"
-                        # 週末対応：歴史データ(2)
                         data = get_single_data(api_code, 2)
                         
-                        # 物理上書き：J-Quantsが土曜日に空を返した場合のyfinance救済
+                        # 🚨 物理溶接：yfinance救済時にも 'Code' を付与
                         if not data or not data.get('bars') or len(data['bars']) < 10:
                             tk_yf = yf.Ticker(c_str + ".T")
                             hist = tk_yf.history(period="1y")
@@ -1445,6 +1440,7 @@ with tab3:
                                 bars = []
                                 for dt_idx, row_yf in hist.iterrows():
                                     bars.append({
+                                        'Code': api_code, # 🚨 必須項目
                                         'Date': dt_idx.strftime('%Y-%m-%d'),
                                         'AdjustmentOpen': float(row_yf['Open']),
                                         'AdjustmentHigh': float(row_yf['High']),
@@ -1487,16 +1483,16 @@ with tab3:
                     except: return str(c), None, None, None, None, None, []
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    futs = [exe.submit(fetch_parallel_t3_v78_2, c) for c in t_codes]
+                    futs = [exe.submit(fetch_parallel_t3_v78_3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
-                        res_c, res_data, r_per, r_pbr, r_mcap, r_roe, e_data = f.result()
-                        if res_data:
-                            raw_data_dict[str(res_c)] = {
-                                "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe, "events": e_data
-                            }
-                            status.write(f"✅ {res_c}: データ取得完了")
-                        else:
-                            status.write(f"❌ {res_c}: データ断絶。スキップします。")
+                        try:
+                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe, e_data = f.result()
+                            if res_data:
+                                raw_data_dict[str(res_c)] = {
+                                    "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe, "events": e_data
+                                }
+                                status.write(f"✅ {res_c}: データ取得完了")
+                        except: continue
 
                 scope_results = []
                 cfg_v71 = {"push_r": float(st.session_state.get('push_r', 50.0))}
@@ -1506,8 +1502,11 @@ with tab3:
                         target_key = str(c); raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue
                         
-                        # 物理洗浄：J-Quantsとyfinanceのカラム統合
+                        # 🚨 物理補完：DataFrame変換直後に 'Code' を強制注入
                         df_raw = pd.DataFrame(raw_s["data"]["bars"])
+                        if 'Code' not in df_raw.columns:
+                            df_raw['Code'] = target_key + "0"
+                        
                         df_s = clean_df_v66(df_raw)
                         df_chart_full = calc_vector_indicators_v66(df_s, cfg_v71)
                         
@@ -1518,7 +1517,9 @@ with tab3:
                         t_prev = df_chart_full.iloc[-2] if len(df_chart_full) > 1 else t_latest
                         lc = int(t_latest['AdjC'])
                         h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        bt_val = int(t_latest['target_buy']) # 演算エンジン内の計算値を採用
+                        
+                        # 🚨 target_buy の取得先を固定
+                        bt_val = int(t_latest['target_buy'])
                         
                         # 判定
                         m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
@@ -1526,12 +1527,6 @@ with tab3:
                         
                         final_score = t_score + (2 if is_ambush and raw_s.get('pbr', 99) <= 5.0 else 0)
                         if not is_ambush and raw_s.get('roe', 0) >= 10.0: final_score += 10
-
-                        # 🚨 診断：圏外になった理由をログへ（ボスの疑念を払拭）
-                        if "圏外" in rank:
-                            status.write(f"⚠️ {c}: 圏外判定 (スコア:{final_score}, RSI:{t_latest['RSI']:.1f}, 乖離:{(lc/bt_val-1)*100:.1f}%)")
-                        else:
-                            status.write(f"🎯 {c}: 【{rank}】捕捉 (スコア:{final_score})")
 
                         c_name, c_market = f"銘柄 {c}", "不明"
                         if not master_df.empty:
@@ -1542,16 +1537,16 @@ with tab3:
                             'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'bt_val': bt_val, 'rsi': float(t_latest['RSI']),
                             'rank': rank, 'bg': bg, 'score': final_score, 'df_chart': df_chart_full.tail(260),
                             'per': raw_s['per'], 'pbr': raw_s['pbr'], 'roe': raw_s['roe'], 'mcap': raw_s['mcap'],
-                            'market': c_market, 'alerts': raw_s['events'], 'source': "🛡️ 監視" if c in watch_in else "🚀 新規",
-                            'gc_days': 0
+                            'market': c_market, 'alerts': raw_s['events'], 'source': "🛡️ 監視" if c in watch_in else "🚀 新規"
                         })
+                        status.write(f"🎯 {c}: 【{rank}】解析成功")
                     except Exception as e:
                         status.write(f"🚨 {c}: 演算エラー - {str(e)}")
                         continue
 
                 status.update(label=f"🏁 解析完了: {len(scope_results)} 銘柄捕捉", state="complete")
 
-                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 1} # 圏外も表示するために1に設定
+                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 1}
                 for res in scope_results: res['r_val'] = rank_order.get(re.sub(r'[^SAB圏外]', '', res['rank']), 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score']), reverse=True)
 
