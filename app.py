@@ -227,45 +227,48 @@ C_A = "#81c784"       # A級：薄緑（良好）
 C_B = "#1976d2"       # B級：青（監視）
 C_OUT = "#b71c1c"     # 圏外・C：濃赤（排除）
 
-# --- 🌪️ 1. マクロ気象レーダー（1年潮流・MA25・精密ホバー版） ---
+# --- 🌪️ 1. マクロ気象レーダー（機関部：半年集中表示・MA25重畳版） ---
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
-    """日経平均をyfinanceから取得（1年分を確保・MA25算出）"""
+    """
+    日経平均を取得。
+    計算用に1年分を確保し、表示部で半年へ絞り込む。
+    """
     try:
-        import yfinance as yf
-        import pandas as pd
+        # ^N225: 日経平均株価
         tk = yf.Ticker("^N225")
-        # 🚨 1年（260営業日）分の潮流を物理確保
-        df_ni = tk.history(period="1y")
+        df_ni = tk.history(period="1y") # MA25の計算安定のため1年分取得
         if not df_ni.empty:
             df_ni = df_ni.reset_index()
+            # タイムゾーンの物理洗浄
             if df_ni['Date'].dt.tz is not None:
                 df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
             
             df_ni = df_ni.dropna(subset=['Close'])
+            
             if len(df_ni) >= 25:
-                # 📈 MA25の物理演算
+                # 25日移動平均線の算出
                 df_ni['MA25'] = df_ni['Close'].rolling(window=25).mean()
                 latest = df_ni.iloc[-1]
                 prev = df_ni.iloc[-2]
+                
                 return {
                     "nikkei": {
                         "price": float(latest['Close']),
                         "diff": float(latest['Close'] - prev['Close']),
                         "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
-                        "df": df_ni,
-                        "date": latest['Date'].strftime('%m/%d')
+                        "df": df_ni
                     }
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Macro Fetch Error: {e}")
     return None
 
 def display_nikkei_macro_v70():
     """
     サイドバーでの日経平均表示。
-    🚨 各タブ内ではなく、アプリのメインルートで1回だけ呼び出すこと。
+    🚨 射程を365日から180日（半年）へ短縮し、視認性を強化。
     """
     weather_data = get_macro_weather()
     if not weather_data or "nikkei" not in weather_data:
@@ -274,26 +277,27 @@ def display_nikkei_macro_v70():
     n = weather_data["nikkei"]
     diff = n["diff"]
     
-    # 色彩規律：プラス＝緑 / マイナス＝赤
+    # 色彩規律：プラス＝緑(C_UP) / マイナス＝赤(C_DOWN)
     m_color = C_UP if diff >= 0 else C_DOWN
     m_bg = "rgba(38, 166, 154, 0.1)" if diff >= 0 else "rgba(239, 83, 80, 0.1)"
     sign = "+" if diff >= 0 else ""
 
-    # 1. 数値パネル表示
+    # 1. 数値パネル（整数化表示）
     st.sidebar.markdown(f"""
         <div style="padding: 10px; border-radius: 8px; background: {m_bg}; border-left: 5px solid {m_color}; margin-bottom: 5px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-size: 11px; color: #aaa; font-weight: bold; letter-spacing: 0.5px;">NIKKEI 225 MARKET STATUS</div>
-            <div style="font-size: 22px; font-weight: 800; color: #fff;">{n['price']:,.0f}<span style="font-size: 14px; margin-left: 4px; font-weight: 400; color: #888;">JPY</span></div>
+            <div style="font-size: 11px; color: #aaa; font-weight: bold; letter-spacing: 0.5px;">NIKKEI 225 (6-MONTH FOCUS)</div>
+            <div style="font-size: 22px; font-weight: 800; color: #fff;">{int(n['price']):,}<span style="font-size: 12px; color:#888; margin-left:4px;">JPY</span></div>
             <div style="font-size: 15px; font-weight: bold; color: {m_color}; margin-top: 2px;">
                 {sign}{diff:,.2f} ({sign}{n['pct']:.2f}%)
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. 1年潮流グラフ
+    # 2. 半年潮流グラフ（左端最大化・MA25重畳）
     df = n["df"]
     fig = go.Figure()
     
+    # ローソク足
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         name="日経225", increasing_line_color=C_UP, decreasing_line_color=C_DOWN,
@@ -301,22 +305,32 @@ def display_nikkei_macro_v70():
         hovertemplate="始値: ¥%{customdata[0]:,.0f}<br>終値: ¥%{customdata[1]:,.0f}<br>高値: ¥%{customdata[2]:,.0f}<br>安値: ¥%{customdata[3]:,.0f}<extra></extra>"
     ))
     
+    # 移動平均線(MA25)
     fig.add_trace(go.Scatter(
         x=df['Date'], y=df['MA25'], name="MA25", line=dict(color='#42a5f5', width=1.5),
         hovertemplate="MA25: ¥%{y:,.0f}<extra></extra>"
     ))
 
+    # 🚨 レイアウト設定：rangeを180日に固定
+    last_date = df['Date'].max()
     fig.update_layout(
         height=160, margin=dict(l=0, r=0, t=0, b=0),
-        xaxis=dict(type='date', visible=False, range=[df['Date'].max() - timedelta(days=365), df['Date'].max() + timedelta(days=2)]),
-        yaxis=dict(visible=False, side="right"),
-        showlegend=False, template="plotly_dark",
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(
+            type='date', 
+            visible=False, 
+            range=[last_date - timedelta(days=180), last_date + timedelta(days=2)] # 🚨 射程を半年に物理固定
+        ),
+        yaxis=dict(visible=False, side="right", fixedrange=False),
+        showlegend=False, 
+        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=11, font_family="monospace")
     )
-    # 🚨 重複エラーを物理的に殺すため、唯一無二のキー（V71_FIX）を指定
-    st.sidebar.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="sidebar_nikkei_chart_unique_v71_fix")
+
+    # 重複回避の唯一無二キー
+    st.sidebar.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="sidebar_nikkei_chart_v76_6months")
 
 def fetch_current_prices_fast(codes):
     """J-Quants API v2 から現在値を並列取得（小数点排除・型強制版）"""
