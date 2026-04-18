@@ -363,22 +363,69 @@ weather = get_macro_weather()
 nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
 
 def render_macro_board():
+    """日経平均サマリーと半年潮流チャートの描画部"""
     data = get_macro_weather()
     if data and "nikkei" in data:
-        ni = data["nikkei"]; df = ni["df"]; color = "#ef5350" if ni['diff'] >= 0 else "#26a69a"; sign = "+" if ni['diff'] >= 0 else ""
+        ni = data["nikkei"]
+        df = ni["df"]
+        
+        # 色彩規律：ボスの提示コードを維持（日経平均の騰落判定）
+        color = "#ef5350" if ni['diff'] >= 0 else "#26a69a" 
+        sign = "+" if ni['diff'] >= 0 else ""
+        
         c1, c2 = st.columns([1, 2.5])
+        
         with c1:
-            st.markdown(f'<div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;"><div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div><div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div><div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div></div>', unsafe_allow_html=True)
+            # 🚨 ni["date"] は get_macro_weather で物理注入済みであることを前提に描画
+            st.markdown(f"""
+                <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div>
+                    <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div>
+                    <div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
         with c2:
+            # MA25の計算（データ自体は1年分保持）
             df['MA25'] = df['Close'].rolling(window=25).mean()
+            
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA25'], name='25日線', mode='lines', line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'))
-            fig.update_layout(height=160, margin=dict(l=10, r=40, t=10, b=10), xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'), xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=12)]))
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            # 日経平均（折れ線）
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Close'], name='日経平均', mode='lines', 
+                line=dict(color='#FFD700', width=2), 
+                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
+            ))
+            # 25日線（点線）
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
+                line=dict(color='rgba(255, 255, 255, 0.4)', width=1, dash='dot'), 
+                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+            ))
+            
+            # 🚨 物理執行：初期表示を180日（半年）に固定
+            last_d = df['Date'].max()
+            fig.update_layout(
+                height=160, margin=dict(l=10, r=40, t=10, b=10),
+                xaxis_rangeslider_visible=False,
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                showlegend=False, hovermode="x unified",
+                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)'),
+                xaxis=dict(
+                    type='date', 
+                    tickformat='%m/%d', 
+                    gridcolor='rgba(255,255,255,0.05)',
+                    # ここで半年（180日）を射程に捉える
+                    range=[last_d - timedelta(days=180), last_d + pd.Timedelta(hours=12)]
+                )
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="nikkei_macro_chart_v77_7")
+            
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
-    else: st.warning("📡 外部気象レーダー応答なし")
+    else: 
+        st.warning("📡 外部気象レーダー応答なし")
 
+# 実行
 render_macro_board()
 
 # --- ⚙️ 1. 機関部：260日兵站・超速演算エンジン（V71：完全復旧版） ---
