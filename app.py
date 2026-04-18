@@ -1649,7 +1649,7 @@ with tab3:
                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                         xaxis=dict(
                             type='date', tickformat='%m/%d',
-                            range=[last_d - timedelta(days=30), last_d + timedelta(days=2)], # 🚨 3ヶ月初期表示
+                            range=[last_d - timedelta(days=45), last_d + timedelta(days=2)], # 🚨 3ヶ月初期表示
                             rangeslider=dict(visible=True, thickness=0.05) # 🚨 スライダーで1年分保持
                         ),
                         yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", side="right", fixedrange=False),
