@@ -319,7 +319,6 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
-
 def clean_df(df):
     """英字銘柄(523A等)を物理保護し、型の物理解毒を行う"""
     r_cols = {
@@ -929,7 +928,8 @@ with tab1:
     master_map_t1 = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+        # 🚨 英字銘柄（523A等）を物理保護しつつ規格化
+        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t1 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
@@ -945,12 +945,14 @@ with tab1:
         t_global_start = time.time()
         
         with st.spinner("マクロ気象を計算に織り込み中..."):
-            raw = get_hist_data_cached()
+            # 🚨 物理配線：cache_keyを装填しTypeErrorを根絶
+            raw = get_hist_data_cached(cache_key)
             t_fetch = time.time()
             
             if raw:
                 full_df = clean_df(pd.DataFrame(raw))
-                full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+                # 🚨 英字銘柄対応の規格統一
+                full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                 
                 push_penalty = st.session_state.get('push_penalty', 0.0)
                 
@@ -1010,15 +1012,19 @@ with tab1:
                     if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
                     
                     dist_pct = ((lc / target_buy) - 1) * 100
-                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0 # 🚨 色修正(ネガティブ赤)
-                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5 # 🚨 色修正(ポジティブ緑)
+                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
+                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
                     elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
                     else: rank, bg, t_score = "B📈", "#0288d1", 3.5
+
+                    # 🚨 新兵装：陰の極みを検知
+                    is_ultimate = check_oversold_ultimate(group)
 
                     return {
                         'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
                         'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
-                        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg)
+                        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
+                        'ultimate': is_ultimate
                     }
 
                 results = []
@@ -1043,7 +1049,7 @@ with tab1:
                 st.session_state.tab1_scan_results = filtered_results
                 t_calc = time.time()
                 
-                # 🚨 プロファイル出力
+                # 🚨 プロファイル出力（原本通り）
                 st.markdown(f"""
                 <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
                     <b>⏱️ スキャンプロファイル (TAB1)</b><br>
@@ -1070,8 +1076,10 @@ with tab1:
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
             
+            # 🚨 新兵装：「陰の極み」バッジの物理表示
+            u_badge = '<span style="background-color: #26a69a; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem; box-shadow: 0 0 10px rgba(38,166,154,0.5);">💎 陰の極み</span>' if r.get('ultimate') else ""
             t_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
-            score_val = r["score"]; score_color = "#26a69a" if score_val >= 8 else "#ff5722"; score_bg = "rgba(38, 166, 154, 0.15)" if score_val >= 8 else "rgba(255, 87, 34, 0.15)" # 🚨 色修正
+            score_val = r["score"]; score_color = "#26a69a" if score_val >= 8 else "#ff5722"; score_bg = "rgba(38, 166, 154, 0.15)" if score_val >= 8 else "rgba(255, 87, 34, 0.15)"
             score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
             
@@ -1079,7 +1087,7 @@ with tab1:
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{t_badge}{score_badge}{sector_badge}
+                        {badge_html}{u_badge}{t_badge}{score_badge}{sector_badge}
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r["RSI"]:.1f}%</span>
                         <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_rate']:.1f}%</span>
                     </div>
@@ -1103,7 +1111,8 @@ with tab2:
     master_map_t2 = {}
     if not master_df.empty:
         m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+        # 🚨 英字銘柄（523A等）対応の物理保護
+        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
@@ -1123,14 +1132,16 @@ with tab2:
 
         with st.spinner("地合いによる過熱感を検知中..."):
             try:
-                raw = get_hist_data_cached()
+                # 🚨 物理配線：cache_keyを引数に渡しTypeErrorを根絶
+                raw = get_hist_data_cached(cache_key)
                 t_fetch = time.time()
                 
                 if not raw:
                     st.error("J-Quants APIからの応答が途絶。")
                 else:
                     full_df = clean_df(pd.DataFrame(raw))
-                    full_df['Code'] = full_df['Code'].astype(str).str.replace(r'^(\d{4})$', r'\10', regex=True)
+                    # 🚨 英字銘柄対応の規格統一
+                    full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                     for col in ['AdjC', 'AdjH', 'AdjL']:
                         if col in full_df.columns:
                             full_df[col] = full_df[col].astype('float32')
@@ -1211,7 +1222,7 @@ with tab2:
                     st.session_state.tab2_scan_results = filtered_results
                     t_calc = time.time()
                     
-                    # 🚨 プロファイル出力
+                    # 🚨 プロファイル出力（原本通り）
                     st.markdown(f"""
                     <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
                         <b>⏱️ スキャンプロファイル (TAB2)</b><br>
@@ -1381,7 +1392,8 @@ with tab3:
                 def fetch_parallel_t3(c):
                     try:
                         c_str = str(c)
-                        api_code = c_str + "0"
+                        # 🚨 英字銘柄(523A等)対応：4文字なら末尾0付与、それ以外なら維持
+                        api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         
                         data = get_single_data(api_code, 1)
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
@@ -1453,7 +1465,8 @@ with tab3:
                         raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue 
 
-                        api_code = target_key + "0"
+                        # 🚨 5桁規格化
+                        api_code = target_key if len(target_key) >= 5 else target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
                         if not master_df.empty:
@@ -1463,7 +1476,6 @@ with tab3:
 
                         res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
 
-                        # 🚨 ROEの%調整（0.15等の小数救済）
                         if res_roe is not None and 0 < abs(res_roe) < 1.0: res_roe = res_roe * 100
 
                         if raw_mcap is not None:
@@ -1514,7 +1526,6 @@ with tab3:
                                 alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
                                 score += 5
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
-                            # 🚨 ランク色の物理適用（ポジティブ＝緑）
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
@@ -1527,9 +1538,8 @@ with tab3:
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
                                 alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
                             if res_roe is not None and res_roe >= 10.0: score += 10
-                            score = gc_score + 10 if (res_roe is not None and res_roe >= 10.0) else gc_score
+                            score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-                            # 🚨 ランク色の物理適用（ポジティブ＝緑）
                             rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
 
                         scope_results.append({
@@ -1653,13 +1663,14 @@ with tab3:
                             html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                    # テクニカル計器の物理描画
+                    # テクニカル計器の物理描画（陰の極み配線済）
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     
                     st.markdown("---")
-                    # 🚨 draw_chartの呼び出し（ホバー8項目・右余白ゼロ・範囲ズーム適用版）
+                    # 🚨 draw_chartの呼び出し（ホバー8項目・右余白ゼロ・範囲ズーム・19時パージ同期版）
                     draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_{r['code']}_{index}")
                     
+# --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
     
@@ -1774,7 +1785,9 @@ with tab4:
             with st.spinner("データをプリロード中（高速化処理）..."):
                 preloaded_data = {}
                 for c in t_codes:
-                    raw = get_single_data(c + "0", 2)
+                    # 🚨 英字銘柄規格化
+                    api_code = c if len(c) >= 5 else c + "0"
+                    raw = get_single_data(api_code, 2)
                     if not raw or not raw.get('bars'): continue
                     temp_df = pd.DataFrame(raw['bars'])
                     if temp_df.empty: continue
@@ -1811,14 +1824,13 @@ with tab4:
                                 lc_prev = prev['AdjC']; atr_prev = prev.get('ATR', 0)
                                 h14 = win_14['AdjH'].max(); l14 = win_14['AdjL'].min()
                                 if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
-                                if atr_prev < 10 or (atr_prev / lc_prev) < 0.01: continue
+                                if atr_prev < 1 or (atr_prev / lc_prev) < 0.01: continue
                                 
                                 if is_ambush:
                                     r14 = h14 / l14
                                     rsi_prev = prev.get('RSI', 50)
                                     idxmax = win_14['AdjH'].idxmax()
                                     d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                                    is_dt = check_double_top(win_30); is_hs = check_head_shoulders(win_30)
                                     bt_val = int(h14 - ((h14 - l14) * (t_p1 / 100.0)))
                                     
                                     if rsi_prev > sim_rsi_lim_ambush:
@@ -1827,8 +1839,8 @@ with tab4:
                                     score = 0
                                     if 1.3 <= r14 <= 2.0: score += 1
                                     if d_high <= sim_limit_d: score += 1 
-                                    if not is_dt: score += 1
-                                    if not is_hs: score += 1
+                                    if not check_double_top(win_30): score += 1
+                                    if not check_head_shoulders(win_30): score += 1
                                     if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
                                     score += 4 
                                     
@@ -1927,7 +1939,7 @@ with tab4:
                     styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
 
-# --- 9. タブコンテンツ (TAB5: 交戦モニター) ---
+# --- 10. タブコンテンツ (TAB5: 交戦モニター) ---
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 銘柄コードと株数を入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
@@ -1972,7 +1984,8 @@ with tab5:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切', 'lot': '株数'}
                 temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
-                temp_df['銘柄'] = temp_df['銘銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
+                # 🚨 英字銘柄等の規格統一（.0削除 ＆ 文字列化）
+                temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
                 num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
                 for c in num_cols:
                     temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
@@ -2008,13 +2021,16 @@ with tab5:
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
+            # 🚨 規格化済みのコードリスト作成
             codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
             if codes:
                 with st.spinner("J-Quants 接続中..."):
                     new_prices = fetch_current_prices_fast(codes)
                     if new_prices:
                         for c_code, c_price in new_prices.items():
-                            working_df.loc[working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code), '現在値'] = c_price
+                            # 🚨 物理照合：規格化したコードでマッチング
+                            mask = working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
+                            working_df.loc[mask, '現在値'] = c_price
                         st.session_state.frontline_df = working_df.copy()
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
@@ -2035,13 +2051,17 @@ with tab5:
     
     name_map = {}
     if not master_df.empty:
-        name_map = dict(zip(master_df['Code'].astype(str), master_df['CompanyName']))
+        # 🚨 英字銘柄対応：マスタ側のコードを5桁規格化してマップ作成
+        master_df_tmp = master_df.copy()
+        master_df_tmp['Code_Str'] = master_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+        name_map = dict(zip(master_df_tmp['Code_Str'], master_df_tmp['CompanyName']))
 
     for index, row in working_df.iterrows():
         ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
         
-        ticker_search = ticker_raw + "0" if len(ticker_raw) == 4 else ticker_raw
+        # 🚨 5桁規格化して名称検索
+        ticker_search = ticker_raw if len(ticker_raw) >= 5 else ticker_raw + "0"
         company_name = name_map.get(ticker_search, "不明銘柄")
 
         def to_i(v):
@@ -2076,12 +2096,12 @@ with tab5:
         """, unsafe_allow_html=True)
 
         m_cols = st.columns([1, 1, 1.2, 1, 1])
-        # 🚨 損切の％を赤表示にするため delta_color="normal" へ修正（マイナス値＝赤）
+        # 🚨 損切の％を赤表示にするため delta_color="normal" 物理固定（マイナス値＝赤）
         m_cols[0].metric("損切目安", f"¥{final_sl:,}", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="normal")
         m_cols[1].metric("買値", f"¥{buy:,}")
         
         with m_cols[2]:
-            # 🚨 順序を「現在値 / 騰落率」に変更し、フォントサイズを13pxへ拡大
+            # 🚨 騰落状況の物理描画（原本の順序・フォントサイズ維持）
             st.markdown(f"""
                 <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
                     <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 損益状況</div>
@@ -2106,7 +2126,7 @@ with tab5:
             fig.add_trace(go.Scatter(
                 x=[cur], y=[0], mode="markers", 
                 marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), 
-                hovertemplate=f"部隊: {company_name}<br>現在地: ¥%{{x:,.0f}}<br>損益: ¥{profit_amt:+,}<extra></extra>"
+                hovertemplate=f"現在地: ¥%{{x:,.0f}}<br>損益: ¥{profit_amt:+,}<extra></extra>"
             ))
             
             fig.update_layout(
@@ -2115,13 +2135,15 @@ with tab5:
                 xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), 
                 margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
             )
-            st.plotly_chart(fig, use_container_width=True, key=f"bar_{ticker_raw}_{index}", config={'displayModeBar': False})
+            # 🚨 19時パージキーを物理同期
+            st.plotly_chart(fig, use_container_width=True, key=f"frontline_bar_{ticker_raw}_{index}_{cache_key}", config={'displayModeBar': False})
         
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
     if active_squads == 0:
         st.info("部隊未展開。有効な銘柄コードがないか、保存されていません。")
         
+# --- 11. タブコンテンツ (TAB6: 戦績ダッシュボード) ---
 with tab6:
     import datetime as dt_module
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
@@ -2131,9 +2153,10 @@ with tab6:
     
     # --- 🛡️ 1. 物理初期化回路 ---
     def get_scale_for_code(code):
-        api_code = str(code) if len(str(code)) == 5 else str(code) + "0"
+        # 🚨 英字銘柄（523A等）対応の5桁規格化
+        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
         if not master_df.empty:
-            m_row = master_df[master_df['Code'] == api_code]
+            m_row = master_df[master_df['Code'].astype(str) == api_code]
             if not m_row.empty:
                 scale_val = str(m_row.iloc[0].get('Scale', ''))
                 return "🏢 大型/中型" if any(x in scale_val for x in ["Core30", "Large70", "Mid400"]) else "🚀 小型/新興"
