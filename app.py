@@ -775,7 +775,9 @@ master_df = load_master_filtered()
 if master_df.empty:
     st.error("🚨 致命的エラー：JPX銘柄マスタの兵站確保に失敗しました。")
     st.stop()
-    
+
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 待伏", "⚡ 強襲", "🎯 照準", "⚙️ 演習", "⛺ 戦線", "📁 戦歴"])
+
 # --- 12. タブコンテンツ (TAB1: 待伏レーダー) ---
 with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
