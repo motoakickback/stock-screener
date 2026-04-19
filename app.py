@@ -1389,330 +1389,304 @@ with tab3:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
-                # --- 📡 4. 並列データ収集ユニット（523A 救済・特権回路） ---
-                def fetch_parallel_t3(c):
+                # --- 📡 4. TAB3専用：並列データ収集ユニット（4桁・5桁物理同期 ＆ 予備電源） ---
+        def fetch_parallel_t3(c):
+            try:
+                c_str = str(c).upper().strip()
+                # 🚨 物理同期：J-Quants用の5桁規格（523A -> 523A0）
+                api_code = c_str if len(c_str) >= 5 else c_str + "0"
+                
+                data = None
+                # 英字銘柄（523A等）は yfinance 予備電源を優先起動
+                if not c_str.isdigit():
                     try:
-                        c_str = str(c).upper()
-                        # 🚨 5桁規格化（J-Quants用）
-                        api_code = c_str if len(c_str) >= 5 else c_str + "0"
-                        
-                        data = None
-                        # 🚨 英字銘柄（523A等）は、まず yf から兵站を確保する（J-Quantsの不備を回避）
-                        is_alpha = not c_str.isdigit()
-                        
-                        if is_alpha:
-                            try:
-                                import yfinance as yf
-                                tk = yf.Ticker(c_str + ".T")
-                                hist = tk.history(period="1y")
-                                if not hist.empty:
-                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
-                                             'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
-                                             'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
-                                             'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
-                                    data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                            except: pass
+                        import yfinance as yf
+                        tk = yf.Ticker(c_str + ".T")
+                        hist = tk.history(period="1y")
+                        if not hist.empty:
+                            bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
+                                     'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
+                                     'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
+                                     'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
+                            data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
+                    except: pass
 
-                        # yfで取れなかった、または数字銘柄の場合は J-Quants へ
-                        if not data:
-                            data = get_single_data(api_code, 1)
+                # yfで取れなかった、または数字銘柄の場合は J-Quants 正典へ
+                if not data:
+                    data = get_single_data(api_code, 1)
 
-                        # 🚨 J-Quantsもyf(英字以外)も全滅した場合の最終バックアップ
-                        if not data or not data.get("bars"):
-                            try:
-                                import yfinance as yf
-                                hist = yf.Ticker(c_str + ".T").history(period="1y")
-                                if not hist.empty:
-                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 'AdjO': float(row['Open']), 
-                                             'AdjH': float(row['High']), 'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
-                                             'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
-                                    data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                            except: pass
-
-                        # ファンダメンタルズ取得
-                        f_data = get_fundamentals(c_str)
-                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
-                        if f_data:
-                            r_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
-                            r_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
-                            r_mcap = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
-                            r_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
-
-                        return c_str, data, r_per, r_pbr, r_mcap, r_roe
-                    except Exception:
-                        return str(c), None, None, None, None, None
-
-                raw_data_dict = {}
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                    futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
-                    for f in concurrent.futures.as_completed(futs):
-                        try:
-                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
-                            if res_data:
-                                raw_data_dict[str(res_c)] = {
-                                    "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe
-                                }
-                        except:
-                            continue
-
-                t_fetch = time.time()
-
-                # --- ⚙️ 5. 解析計算ループ（原本ロジック 100% 垂直復元） ---
-                scope_results = []
-                for c in t_codes:
+                # 最終バックアップ：全滅時の yf 強制補完
+                if not data or not data.get("bars"):
                     try:
-                        target_key = str(c).upper()
-                        raw_s = raw_data_dict.get(target_key)
-                        if not raw_s: continue 
+                        import yfinance as yf
+                        hist = yf.Ticker(c_str + ".T").history(period="1y")
+                        if not hist.empty:
+                            bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
+                                     'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
+                                     'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
+                                     'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
+                            data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
+                    except: pass
 
-                        # 🚨 5桁規格化
-                        api_code = target_key if len(target_key) >= 5 else target_key + "0"
-                        c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
-                        
-                        if not master_df.empty:
+                # ファンダメンタルズ取得（原本ロジック）
+                f_data = get_fundamentals(c_str)
+                r_per = (f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')) if f_data else None
+                r_pbr = (f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')) if f_data else None
+                r_mcap = (f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')) if f_data else None
+                r_roe = (f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')) if f_data else None
+
+                return c_str, {"data": data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe}
+            except Exception:
+                return str(c), None
+
+        # --- 🚀 並列実行セクション ---
+        t_global_start = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(t_codes))) as executor:
+            results = list(executor.map(fetch_parallel_t3, t_codes))
+        
+        # 🚨 物理同期：入力キーを確実に紐付け
+        raw_data_dict = {res[0]: res[1] for res in results if res[1] is not None}
+        t_fetch = time.time()
+
+        # --- ⚙️ 5. 解析計算ループ（原本ロジック 100% 垂直復元版） ---
+        scope_results = []
+        for c in t_codes:
+            try:
+                target_key = str(c).upper().strip()
+                raw_s = raw_data_dict.get(target_key)
+                if not raw_s: continue 
+
+                api_code = target_key if len(target_key) >= 5 else target_key + "0"
+                c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
+                
+                if not master_df.empty:
+                    m_row = master_df[master_df['Code'].astype(str) == api_code]
+                    if not m_row.empty:
+                        c_name, c_sector, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Sector'], m_row.iloc[0]['Market']
+
+                res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
+
+                # 財務情報の原本整形
+                if res_roe is not None and 0 < abs(res_roe) < 1.0: res_roe *= 100
+                if raw_mcap is not None:
+                    if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap/1e12:.2f}兆円"
+                    elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap/1e8:.0f}億円"
+                    else: res_mcap_str = f"{int(raw_mcap):,}"
+                else: res_mcap_str = "-"
+
+                bars = (raw_s.get("data") or {}).get("bars", [])
+
+                # --- 🛡️ IPO検閲（物理クラッシュ封鎖 ＆ 523A生存） ---
+                if st.session_state.f5_ipo:
+                    try:
+                        if target_key.isdigit() and not master_df.empty:
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
-                                c_name, c_sector, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Sector'], m_row.iloc[0]['Market']
+                                ld_col = [col for col in m_row.columns if 'Listing' in col]
+                                if ld_col:
+                                    ld_val = m_row.iloc[0][ld_col[0]]
+                                    if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                        # 🚨 物理同期：Naive/Aware衝突を排除
+                                        target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                        now_dt = datetime.now().replace(tzinfo=None)
+                                        if (now_dt - target_dt).days < 365: continue
+                                    else:
+                                        # 上場日不明個体もパージ
+                                        continue
+                    except: pass
 
-                        res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
+                # --- 🛡️ 兵站データ不足銘柄の最終防衛線 ---
+                if not bars or len(bars) < 20:
+                    scope_results.append({
+                        'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                        'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                        'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
+                        'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
+                        'alerts': ["⚠️ 兵站データ不足"], 'error': True
+                    })
+                    continue
 
-                        # ROEの原本救済ロジック
-                        if res_roe is not None and 0 < abs(res_roe) < 1.0: 
-                            res_roe = res_roe * 100
-
-                        if raw_mcap is not None:
-                            if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
-                            elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
-                            else: res_mcap_str = f"{int(raw_mcap):,}"
-                        else: res_mcap_str = "-"
-
-                        bars = raw_s.get("data", {}).get("bars", [])
-
-                        # --- 🛡️ IPO検閲（原本の260日思想を維持しつつ、物理クラッシュを封鎖） ---
-                        if st.session_state.f5_ipo:
-                            try:
-                                # 英字銘柄は一本釣りを尊重して通し、数字銘柄は厳密に判定
-                                if target_key.isdigit():
-                                    m_row = master_df[master_df['Code'].astype(str) == api_code]
-                                    if not m_row.empty:
-                                        ld_col = [col for col in m_row.columns if 'Listing' in col]
-                                        if ld_col:
-                                            ld_val = m_row.iloc[0][ld_col[0]]
-                                            if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                                # 🚨 物理同期：タイムゾーン衝突を排除（.replace(tzinfo=None)）
-                                                target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
-                                                now_dt = datetime.now().replace(tzinfo=None)
-                                                # 実績1年（365日）未満のIPOをパージ
-                                                if (now_dt - target_dt).days < 365:
-                                                    continue
-                                            else:
-                                                # 上場日不明な不審個体もパージ
-                                                continue
-                            except: pass
-
-                        # --- 🛡️ データ不足銘柄の最終防衛線 ---
-                        if not bars or len(bars) < 20:
-                            scope_results.append({
-                                'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                'alerts': ["⚠️ 兵站データ不足"], 'error': True
-                            })
-                            continue
-
-                        df_raw = pd.DataFrame(bars)
-                        if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
-                        df_s = clean_df(df_raw)
-                        try: df_chart_full = calc_technicals(df_s.copy())
-                        except: df_chart_full = df_s.copy()
-                        
-                        t_latest, t_prev, t_pprev = df_chart_full.iloc[-1], df_chart_full.iloc[-2], df_chart_full.iloc[-3]
-                        lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
-                        pc, po, ph, pl = float(t_prev['AdjC']), float(t_prev['AdjO']), float(t_prev['AdjH']), float(t_prev['AdjL'])
-                        ppc, ppo, pph = float(t_pprev['AdjC']), float(t_pprev['AdjO']), float(t_pprev['AdjH'])
-                        
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
-                        ur_v, rsi_v = (h14 - l14), float(t_latest.get('RSI', 50))
-                        atr_v = float(t_latest.get('ATR', lc * 0.05))
-                        df_mini = df_chart_full.tail(260).copy()
-                        
-                        score, alerts, gc_days = 0, [], 0
-                        
-                        # 🚨 物理復元：地雷イベント検知回路
-                        alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
-
-                        if is_ambush:
-                            score = 4
-                            bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
-                            m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
-                            _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
-                            score += t_score
-                            if res_pbr is not None and res_pbr <= 5.0: score += 2
-                            
-                            # 【酒田】たくり線（原本の泥臭い判定式）
-                            body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
-                            if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
-                                alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
-                                score += 5
-                            
-                            # 原本波形パターンの物理復旧
-                            if check_double_bottom(df_chart_full.tail(31)):
-                                alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転。")
-                            if check_oversold_ultimate(df_chart_full):
-                                alerts.append("💎 【陰の極み】最終波形。絶好の狙撃ポイント。")
-
-                            reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
-                            rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
-                        else:
-                            bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                            hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            gc_score, gc_days = 0, 0
-                            if len(hist_vals) >= 2:
-                                if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 1, 60
-                                elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
-                                else: gc_score = 5
-                            
-                            # 【酒田】三尊・ダブルトップ原本判定
-                            if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
-                            if check_double_top(df_chart_full.tail(31)):
-                                alerts.append("🔴 【酒田】二重天井（ダブルトップ）形成の兆候。")
-
-                            if res_roe is not None and res_roe >= 10.0: score += 10
-                            score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
-                            reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-                            rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
-
-                        scope_results.append({
-                            'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_mini, 
-                            'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                            'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                            'alerts': alerts, 'error': False
-                        })
-                    except Exception:
-                        continue
-
-                # スコア順ソート
-                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
-                for res in scope_results:
-                    clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
-                    res['r_val'] = rank_order.get(clean_rank, 0)
-                scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
+                # --- ⚙️ テクニカル解析（原本 100% 復元） ---
+                df_raw = pd.DataFrame(bars)
+                if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
+                df_s = clean_df(df_raw)
+                try: df_chart_full = calc_technicals(df_s.copy())
+                except: df_chart_full = df_s.copy()
                 
-                t_calc = time.time()
+                t_latest, t_prev, t_pprev = df_chart_full.iloc[-1], df_chart_full.iloc[-2], df_chart_full.iloc[-3]
+                lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
+                pc, po, ph, pl = float(t_prev['AdjC']), float(t_prev['AdjO']), float(t_prev['AdjH']), float(t_prev['AdjL'])
+                ppc, ppo, pph = float(t_pprev['AdjC']), float(t_pprev['AdjO']), float(t_pprev['AdjH'])
+                
+                h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                ur_v, rsi_v = (h14 - l14), float(t_latest.get('RSI', 50))
+                atr_v = float(t_latest.get('ATR', lc * 0.05))
+                df_mini = df_chart_full.tail(260).copy()
+                
+                score, alerts, gc_days = 0, [], 0
+                
+                # 🚨 物理復旧：地雷イベント検知回路
+                alerts.extend(check_event_mines(target_key, (raw_s.get("data") or {}).get("events")))
 
-                # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元） ---
-                st.markdown(f"""
-                <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
-                    <b>⏱️ スキャンプロファイル (TAB3)</b><br>
-                    ・並列データ収集（J-Quants / yfinance）: {t_fetch - t_global_start:.2f}秒<br>
-                    ・解析・スコアリング処理: {t_calc - t_fetch:.2f}秒<br>
-                    <b>・合計: {t_calc - t_global_start:.2f}秒</b>
+                if is_ambush:
+                    score = 4
+                    bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
+                    m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
+                    _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                    score += t_score
+                    if res_pbr is not None and res_pbr <= 5.0: score += 2
+                    
+                    # 🏺 酒田：たくり線
+                    body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
+                    if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
+                        alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
+                        score += 5
+                    
+                    if check_double_bottom(df_chart_full.tail(31)):
+                        alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転。")
+                        score += 3
+                    
+                    if check_oversold_ultimate(df_chart_full):
+                        alerts.append("💎 【陰の極み】最終波形。絶好の狙撃ポイント。")
+                        score += 7
+
+                    reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
+                    rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
+                
+                else:
+                    bt_val = int(max(h14, lc + (atr_v * 0.5)))
+                    hist_vals = df_mini['MACD_Hist'].tail(5).values
+                    gc_score, gc_days = 0, 0
+                    if len(hist_vals) >= 2:
+                        if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 1, 60
+                        elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
+                        else: gc_score = 5
+                    
+                    # 🏺 酒田：三尊
+                    if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
+                        alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
+                        score -= 10
+                    
+                    # 🏺 酒田：二重天井
+                    if check_double_top(df_chart_full.tail(31)):
+                        alerts.append("🔴 【酒田】二重天井（ダブルトップ）形成の兆候。")
+                        score -= 5
+
+                    if res_roe is not None and res_roe >= 10.0: score += 10
+                    score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
+                    reach_rate = (lc / h14) * 100 if h14 > 0 else 0
+                    rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
+
+                scope_results.append({
+                    'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
+                    'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_mini, 
+                    'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
+                    'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
+                    'alerts': alerts, 'error': False
+                })
+            except Exception:
+                continue
+
+        t_calc = time.time()
+        # ソート（原本ロジック）
+        rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
+        scope_results = sorted(scope_results, key=lambda x: (rank_order.get(re.sub(r'[^SABC圏外]', '', x['rank']), 0), x['score'], x['reach_val']), reverse=True)
+
+        # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元・CSS装飾完全版） ---
+        st.markdown(f"""
+        <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
+            <b>⏱️ スキャンプロファイル (TAB3)</b><br>
+            ・並列データ収集: {t_fetch - t_global_start:.2f}秒 / 解析スコアリング: {t_calc - t_fetch:.2f}秒<br>
+            <b>・合計: {t_calc - t_global_start:.2f}秒 (銘柄数: {len(scope_results)})</b>
+        </div>
+        """, unsafe_allow_html=True)
+
+        for index, r in enumerate(scope_results):
+            st.divider()
+            
+            source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
+            m_lower = str(r['market']).lower()
+            if 'プライム' in m_lower or '一部' in m_lower: 
+                m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+            else: 
+                m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
+            
+            s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
+            t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
+            gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC発動 {r['gc_days']}日目</span>" if r.get('gc_days', 0) > 0 else ""
+            
+            st.markdown(f"""
+                <div style="margin-bottom: 0.8rem;">
+                    <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        {m_badge}{t_badge}{gc_badge}
+                        <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">🏭 {r['sector']}</span>
+                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
+                    </div>
                 </div>
+            """, unsafe_allow_html=True)
+            
+            # 🚨 警告灯
+            if r.get('alerts'):
+                for alert in r['alerts']:
+                    if any(mark in alert for mark in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
+                    elif any(mark in alert for mark in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
+                    else: st.warning(alert)
+
+            if r['error']:
+                st.warning("⚠️ データの取得に失敗しました。")
+                continue
+            
+            # 🏺 3カラム計器パネル（原本の詳細レイアウト垂直復元）
+            sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+            
+            with sc_left:
+                lc_v, h14_v, l14_v, ur_v = int(r['lc']), int(r['h14']), int(r['l14']), int(r['ur'])
+                atr_v = r.get('atr_val', 0); atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
+                c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{h14_v:,}円"); c_m2.metric("起点安値", f"{l14_v:,}円")
+                c_m3, c_m4 = st.columns(2); c_m3.metric("波高(14d)", f"{ur_v:,}円"); c_m4.metric("最新終値", f"{lc_v:,}円")
+                st.metric("🌪️ 1ATR", f"{int(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
+            
+            with sc_mid:
+                roe_v, per_v, pbr_v = r.get('roe'), r.get('per'), r.get('pbr')
+                roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v else "-", "#ef5350")
+                per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v else "-", "#ef5350")
+                pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
+                box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
+                st.markdown(f"""
+                    <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
+                        <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+                        <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div>
+                        <div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'>
+                            <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+                            <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+                            <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+                        </div>
+                        <div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+                            <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r['mcap']}</span>
+                        </div>
+                    </div>
                 """, unsafe_allow_html=True)
 
-                for index, r in enumerate(scope_results):
-                    st.divider()
-                    
-                    # 規模・市場バッジ生成（原本通り）
-                    source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
-                    m_lower = str(r['market']).lower()
-                    if 'プライム' in m_lower or '一部' in m_lower: 
-                        m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
-                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                    else: 
-                        m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
-                    
-                    s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
-                    t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC発動 {r['gc_days']}日目</span>" if r.get('gc_days', 0) > 0 else ""
-                    
-                    # 銘柄ヘッダー
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                {m_badge}{t_badge}{gc_badge}
-                                <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">🏭 {r['sector']}</span>
-                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # 🚨 警告灯ループ
-                    if r.get('alerts'):
-                        for alert in r['alerts']:
-                            if any(mark in alert for mark in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
-                            elif any(mark in alert for mark in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
-                            else: st.warning(alert)
+            with sc_right:
+                # 🏺 黄金比ATRマトリクス（全ステップ 0.5〜3.0 垂直復旧）
+                c_target = r['bt_val']; atr_v = r['atr_val'] if r['atr_val'] > 0 else c_target * 0.05
+                html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
+                for m in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]:
+                    val = int(c_target + (atr_v * m)); pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
+                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>+{m}nd <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                html_matrix += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
+                for m in [0.5, 1.0, 1.5, 2.0]:
+                    val = int(c_target - (atr_v * m)); pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
+                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px;'><span>-{m}nd <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span></span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                    if r.get('error'):
-                        st.warning("⚠️ データの取得に失敗しました。")
-                        continue
-                    
-                    # 3カラム計器パネル（原本の詳細配置を垂直復元）
-                    sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
-                    
-                    with sc_left:
-                        def safe_int_v(val):
-                            try: return int(val) if val is not None and not pd.isna(val) else 0
-                            except: return 0
-                        h14_v, l14_v, ur_v, lc_v = safe_int_v(r['h14']), safe_int_v(r['l14']), safe_int_v(r['ur']), safe_int_v(r['lc'])
-                        atr_v = r.get('atr_val', 0); atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
-                        c_m1, c_m2 = st.columns(2); c_m1.metric("直近高値", f"{h14_v:,}円"); c_m2.metric("起点安値", f"{l14_v:,}円")
-                        c_m3, c_m4 = st.columns(2); c_m3.metric("波高(14d)", f"{ur_v:,}円"); c_m4.metric("最新終値", f"{lc_v:,}円")
-                        st.metric("🌪️ 1ATR", f"{safe_int_v(atr_v):,}円", f"ボラ: {atr_pct:.1f}%", delta_color="off")
-                    
-                    with sc_mid:
-                        roe_v, per_v, pbr_v = r.get('roe'), r.get('per'), r.get('pbr')
-                        roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v else "-", "#ef5350")
-                        per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v else "-", "#ef5350")
-                        pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
-                        mcap_s, box_title = r.get('mcap', "-"), ("🎯 買値目標" if is_ambush else "🎯 トリガー")
-                        
-                        st.markdown(f"""
-                            <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
-                                <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
-                                <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div>
-                                <div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'>
-                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
-                                </div>
-                                <div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-                                    <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{mcap_s}</span>
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                    with sc_right:
-                        # 動的ATRマトリクス（原本 100% 垂直復元）
-                        c_target = r['bt_val']
-                        atr_v = r['atr_val'] if r['atr_val'] > 0 else r['bt_val'] * 0.05
-                        is_agg = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
-                        rec_tps = [2.0, 3.0] if is_agg else [0.5, 1.0]
-                        html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
-                        for m in [0.5, 1.0, 2.0, 3.0]:
-                            val = int(c_target + (atr_v * m)); pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
-                            style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;" if m in rec_tps else "padding:3px 6px;"
-                            label = "<span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span>" if m in rec_tps else ""
-                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct:+.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                        html_matrix += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
-                        for m in [0.5, 1.0, 2.0]:
-                            val = int(c_target - (atr_v * m)); pct = (1 - (val / c_target)) * 100 if c_target > 0 else 0
-                            style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;" if m == 1.0 else "padding:3px 6px;"
-                            label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
-                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                        st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
-
-                    st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
-                    st.markdown("---")
-                    # 🚨 物理配線：Duplicate防止
-                    draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_{r['code']}_{index}_{cache_key}")
+            # レーダーチャート ＆ メインチャート
+            st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
+            draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_sacred_{r['code']}_{index}_{cache_key}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
