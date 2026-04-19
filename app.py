@@ -1137,8 +1137,12 @@ with tab2:
     
     master_map_t2 = {}
     if not master_df.empty:
-        m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-        # 🚨 英字銘柄（523A等）対応の物理保護
+        # 🚨 座標A：上場日データを含むカラムを特定し、マスタ展開に加える
+        ld_cols = [col for col in master_df.columns if 'Listing' in col]
+        target_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+        m_df_tmp = master_df[target_cols].copy()
+        
+        # 🚨 英字銘柄（523A等）対応の物理保護 ＆ 規格化
         m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
@@ -1190,7 +1194,30 @@ with tab2:
                     
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
-                    m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
+                    
+                    # 🚨 座標B：【強襲検問所】索敵対象（m_targets）の生成ループ
+                    m_targets = []
+                    now_dt = datetime.now().replace(tzinfo=None)
+                    
+                    for code_key, m_info in master_map_t2.items():
+                        # 1. 市場名による足切り
+                        if any(k in str(m_info['Market']) for k in target_keywords):
+                            # 2. IPO除外設定（f4_ipo）がONの場合の検閲
+                            if st.session_state.get('f4_ipo') or st.session_state.get('f5_ipo'):
+                                # 上場日カラムを特定
+                                ld_key = next((k for k in m_info.keys() if 'Listing' in k), None)
+                                if ld_key:
+                                    ld_val = m_info[ld_key]
+                                    if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                        target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                        # 🎯 365日未満（523A等）は、強襲リストへの登録を拒否
+                                        if (now_dt - target_dt).days < 365:
+                                            continue
+                                    else:
+                                        # 上場日不明も安全のため除外
+                                        continue
+                            
+                            m_targets.append(code_key)
                     
                     latest_date = full_df['Date'].max()
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
@@ -1301,7 +1328,6 @@ with tab2:
             m_cols[0].metric("最新終値", f"{int(lc_v):,}円")
             m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
             m_cols[2].metric("ボラ(推定)", f"{int(atr_v):,}円")
-            # 🚨 損失・ネガティブ要素＝赤色(#ef5350)
             m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{int(d_price):,}円</div></div>', unsafe_allow_html=True)
             m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{int(t_price):,}円</div></div>', unsafe_allow_html=True)
             
