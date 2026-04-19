@@ -570,41 +570,48 @@ def render_technical_radar(df, buy_price, tp_pct):
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     if df is None or df.empty: return
-    
     df_plot = df.copy()
+    # 型の物理解毒（ホバー消失防止）
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
         if col in df_plot.columns:
             df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
 
     fig = go.Figure()
     
-    # 1. ローソク足 (上昇:緑, 下落:赤)
+    # 1. ローソク足（🚨 ホバー表示項目：始値、終値、高値、安値）
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
-        name='価格', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        hovertemplate="始値：%{open:,.0f}<br>終値：%{close:,.0f}<br>高値：%{high:,.0f}<br>安値：%{low:,.0f}<extra></extra>"
     ))
     
-    # 2. 各MA線
+    # 2. 目標線（🚨 ホバー表示順序のためここに追加）
+    fig.add_trace(go.Scatter(
+        x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', 
+        line=dict(color='#FFD700', width=2, dash='dash'),
+        hovertemplate="目標：%{y:,.0f}<extra></extra>"
+    ))
+    
+    # 3. 各MA線（🚨 ホバー表示項目：MA5, MA25, MA75）
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: 
-            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
+            fig.add_trace(go.Scatter(
+                x=df_plot['Date'], y=df_plot[m_c], name=m_n, 
+                line=dict(color=m_col, width=1.5), connectgaps=True,
+                hovertemplate=f"{m_n}：%{{y:,.0f}}<extra></extra>"
+            ))
             
-    # 3. 目標線
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    
-    # 🚨 物理計算：1年分データを保持しつつ、初期ズーム（2ヶ月: 60日）を強制設定
+    # 🚨 物理計算：1年分データを保持しつつ、初期ズーム（2ヶ月）を強制設定
     last_date = df_plot['Date'].max()
     initial_start = last_date - timedelta(days=60) 
     
-    # Y軸のゆとり確保のための最大・最小値計算
     y_min, y_max = df_plot['AdjL'].min(), df_plot['AdjH'].max()
 
-    # 4. レイアウト（高さ600pxへ拡張）
     fig.update_layout(
-        height=600, # 🚨 450から600へ拡張
-        margin=dict(l=0, r=60, t=30, b=40), 
+        height=600, 
+        margin=dict(l=0, r=0, t=30, b=40), # 🚨 右余白を物理削除(r=0)
         hovermode="x unified",
-        dragmode="pan", 
+        dragmode="zoom", # 🚨 範囲選択拡大を実装
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(
             type="date",
@@ -614,17 +621,17 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         ),
         yaxis=dict(
             tickformat=",.0f", side="right", fixedrange=False,
-            autorange=True, range=[y_min * 0.95, y_max * 1.10] # 🚨 Y軸の上方に余白を持たせる
+            autorange=True, range=[y_min * 0.95, y_max * 1.10] # Y軸上方拡張
         ), 
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
     
-    cache_key = f"{chart_key}_v7" if chart_key else "chart_v7"
+    # 🚨 ツールバー削除設定
+    cache_key = f"{chart_key}_v8" if chart_key else "chart_v8"
     st.plotly_chart(fig, use_container_width=True, config={
-        'displayModeBar': True, 
+        'displayModeBar': False, # ツールバーを非表示化
         'scrollZoom': True, 
-        'displaylogo': False,
-        'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'autoScale2d']
+        'displaylogo': False
     }, key=cache_key)
 
 # --- 4. サイドバー UI ---
@@ -1084,6 +1091,7 @@ with tab2:
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・UI完全復元版）</h3>', unsafe_allow_html=True)
     
+    # --- 🛡️ 1. 兵站管理：ファイルパスの物理定義 ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
@@ -1095,23 +1103,52 @@ with tab3:
                 return f.read()
         return ""
 
-    if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
-    if "t3_am_daily" not in st.session_state: st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
-    if "t3_as_watch" not in st.session_state: st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
-    if "t3_as_daily" not in st.session_state: st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
+    # --- 🛡️ 2. 通信記録の復元（セッションステート同期） ---
+    if "t3_am_watch" not in st.session_state:
+        st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
+    if "t3_am_daily" not in st.session_state:
+        st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
+    if "t3_as_watch" not in st.session_state:
+        st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
+    if "t3_as_daily" not in st.session_state:
+        st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode")
+        scope_mode = st.radio(
+            "🎯 解析モードを選択", 
+            ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], 
+            key="t3_scope_mode"
+        )
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
         if is_ambush:
-            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120, key="t3_am_watch_ui")
-            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120, key="t3_am_daily_ui")
+            watch_in = st.text_area(
+                "🌐 【待伏】主力監視部隊", 
+                value=st.session_state.t3_am_watch, 
+                height=120, 
+                key="t3_am_watch_ui"
+            )
+            daily_in = st.text_area(
+                "🌐 【待伏】本日新規部隊", 
+                value=st.session_state.t3_am_daily, 
+                height=120, 
+                key="t3_am_daily_ui"
+            )
         else:
-            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120, key="t3_as_watch_ui")
-            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120, key="t3_as_daily_ui")
+            watch_in = st.text_area(
+                "⚡ 【強襲】主力監視部隊", 
+                value=st.session_state.t3_as_watch, 
+                height=120, 
+                key="t3_as_watch_ui"
+            )
+            daily_in = st.text_area(
+                "⚡ 【強襲】本日新規部隊", 
+                value=st.session_state.t3_as_daily, 
+                height=120, 
+                key="t3_as_daily_ui"
+            )
             
         run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary")
         
@@ -1135,6 +1172,7 @@ with tab3:
                 - **目的**: 圧倒的な熱量を持つ初動個体を捕捉し、短期間での爆発的利得を狙う攻撃ロジック。
             """)
 
+    # --- 🛡️ 3. 解析・描画実行エンジン ---
     if run_scope:
         if is_ambush:
             st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
@@ -1153,12 +1191,13 @@ with tab3:
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
-            # 🚨 プロファイリング用タイマー
+            # 🚨 プロファイリング開始
             t_global_start = time.time()
             
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
+                # --- 📡 3. 並列データ収集ユニット ---
                 def fetch_parallel_t3(c):
                     try:
                         c_str = str(c)
@@ -1226,6 +1265,7 @@ with tab3:
 
                 t_fetch = time.time()
 
+                # --- ⚙️ 5. 解析計算ループ ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1294,7 +1334,7 @@ with tab3:
                                 alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
                                 score += 5
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
-                            # 🚨 ランク色を厳格化 (ポジティブ＝緑)
+                            # 🚨 ランク色の物理適用（ポジティブ＝緑）
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
@@ -1309,7 +1349,7 @@ with tab3:
                             if res_roe is not None and res_roe >= 10.0: score += 10
                             score = gc_score + 10 if (res_roe is not None and res_roe >= 10.0) else gc_score
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
-                            # 🚨 ランク色を厳格化 (ポジティブ＝緑)
+                            # 🚨 ランク色の物理適用（ポジティブ＝緑）
                             rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
 
                         scope_results.append({
@@ -1320,16 +1360,18 @@ with tab3:
                             'alerts': alerts, 
                             'error': False
                         })
-                    except: continue
+                    except Exception:
+                        continue
 
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
                     res['r_val'] = rank_order.get(clean_rank, 0)
                 scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
-                t_calc = time.time()
                 
-                # 🚨 プロファイル出力
+                t_calc = time.time()
+
+                # 🚨 1. プロファイル出力（タイマー計測結果の物理表示）
                 st.markdown(f"""
                 <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
                     <b>⏱️ スキャンプロファイル (TAB3)</b><br>
@@ -1339,22 +1381,28 @@ with tab3:
                 </div>
                 """, unsafe_allow_html=True)
 
+                # 🚨 2. 個別銘柄の神聖UI描画ループ
                 for index, r in enumerate(scope_results):
                     st.divider()
                     
+                    # 市場バッジ・ソースバッジの物理生成
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
-                    if 'プライム' in m_lower or '一部' in m_lower: m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                    else: m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
+                    if 'プライム' in m_lower or '一部' in m_lower: 
+                        m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: 
+                        m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                    else: 
+                        m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
                     
                     s_badge = f"<span style='background-color:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px;'>{r['source']}</span>"
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
-                    # 🚨 GCのバッジも緑統一
                     gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC発動 {r['gc_days']}日目</span>" if r.get('gc_days', 0) > 0 else ""
                     
+                    # 銘柄ヘッダー（Turn 18形式の神聖維持）
                     st.markdown(f"""<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}{gc_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span></div></div>""", unsafe_allow_html=True)
                     
+                    # 警告灯の出力
                     if r.get('alerts'):
                         for alert in r['alerts']:
                             if any(mark in alert for mark in ["🟢", "⚡", "🔥"]):
@@ -1366,7 +1414,9 @@ with tab3:
                         st.warning("⚠️ データの取得に失敗しました。")
                         continue
                     
+                    # 3カラム計器パネル
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                    
                     with sc_left:
                         def safe_int(val):
                             try:
@@ -1382,7 +1432,6 @@ with tab3:
                     with sc_mid:
                         roe_v, per_v, pbr_v = r.get('roe'), r.get('per'), r.get('pbr')
                         roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"
-                        # 🚨 財務指標のカラー厳格化
                         roe_c = "#26a69a" if (roe_v is not None and roe_v >= 10.0) else "#ef5350"
                         per_s = f"{per_v:.1f}倍" if per_v is not None else "-"
                         per_c = "#26a69a" if (per_v is not None and per_v <= 20.0) else "#ef5350"
@@ -1424,10 +1473,11 @@ with tab3:
                             html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
+                    # テクニカル計器の物理描画
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     
                     st.markdown("---")
-                    # 機関部の draw_chart がここで呼び出されます
+                    # 🚨 draw_chartの呼び出し（ホバー8項目・右余白ゼロ・範囲ズーム適用版）
                     draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_{r['code']}_{index}")
                     
 with tab4:
