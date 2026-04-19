@@ -928,13 +928,31 @@ if 'master_map_shared' not in st.session_state:
         del m_df_tmp
         gc.collect()
 
-# 共有マップを変数「master_map_common」として展開
-master_map_common = st.session_state.get('master_map_shared', {})
+# --- 5. タブ構成の直前：兵站のロードと加工 ---
 
-# --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
-# 🚨 修正：load_masterの実行行。すべての定義が終わったここで行う。
+# 1️⃣ まず、大元のデータを読み込む（これが最優先）
 master_df = load_master()
 
+# 2️⃣ 次に、読み込んだデータを「共有マップ」に加工する
+if 'master_map_shared' not in st.session_state:
+    if master_df is not None and not master_df.empty:
+        # 上場日カラムを特定して抽出
+        ld_cols = [col for col in master_df.columns if 'Listing' in col]
+        t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+        tmp = master_df[t_cols].copy()
+        
+        # 英字銘柄（523A等）対応の規格化
+        tmp['Code'] = tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+        
+        # 共有マップとして保存
+        st.session_state.master_map_shared = tmp.set_index('Code').to_dict('index')
+        del tmp
+        gc.collect()
+
+# 3️⃣ 加工された共有マップを変数に展開
+master_map_common = st.session_state.get('master_map_shared', {})
+
+# 4️⃣ 最後に、タブを定義する
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
