@@ -1148,11 +1148,6 @@ with tab2:
     
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     
-        # 🚨 英字銘柄（523A等）対応の物理保護 ＆ 規格化
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-        master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
-        del m_df_tmp
-
     col_t2_1, col_t2_2 = st.columns(2)
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
     if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
@@ -1205,7 +1200,7 @@ with tab2:
                     m_targets = []
                     now_dt = datetime.now().replace(tzinfo=None)
                     
-                    for code_key, m_info in master_map_t2.items():
+                    for code_key, m_info in master_map_common.items():
                         # 1. 市場名による足切り
                         if any(k in str(m_info['Market']) for k in target_keywords):
                             # 2. IPO除外設定（f4_ipo）がONの場合の検閲
@@ -1273,7 +1268,7 @@ with tab2:
                     filtered_results = []
                     sector_counts = {}
                     for r in sorted_raw:
-                        sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
+                        sector = master_map_common.get(str(r['Code']), {}).get('Sector', '不明')
                         if sector_counts.get(sector, 0) < 3:
                             filtered_results.append(r)
                             sector_counts[sector] = sector_counts.get(sector, 0) + 1
