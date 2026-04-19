@@ -1389,68 +1389,68 @@ with tab3:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
-                # --- 📡 4. 並列データ収集ユニット（ボスの原本ロジック完全復旧） ---
+                # --- 📡 4. 並列データ収集ユニット（yfinance予備電源・完全復旧版） ---
                 def fetch_parallel_t3(c):
                     try:
                         c_str = str(c)
-                        # 🚨 5桁規格化（英字銘柄 523A等に対応）
+                        # 🚨 5桁規格化の徹底（523A -> 523A0）
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         
-                        # 兵站確保
+                        # 兵站確保（第1系統：J-Quants）
                         data = get_single_data(api_code, 1)
                         
-                        # 🚨 原本詳細ロジック：yfinanceフォールバック回路
+                        # 🚨 予備電源（第2系統：yfinance）の物理起動
+                        # 523A等の英字銘柄や、APIが沈黙している場合に自動発動
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
-                                tk = yf.Ticker(c_str + ".T")
+                                # yf用ティッカー生成（523A.T）
+                                tk_code = c_str + ".T"
+                                tk = yf.Ticker(tk_code)
                                 hist = tk.history(period="1y")
+                                
                                 if not hist.empty:
-                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
-                                             'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
-                                             'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
-                                             'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
+                                    # J-Quants形式へ物理変換（互換性維持）
+                                    bars = [{
+                                        'Code': api_code, 
+                                        'Date': dt.strftime('%Y-%m-%d'), 
+                                        'AdjO': float(row['Open']), 
+                                        'AdjH': float(row['High']), 
+                                        'AdjL': float(row['Low']), 
+                                        'AdjC': float(row['Close']), 
+                                        'Volume': float(row['Volume'])
+                                    } for dt, row in hist.iterrows()]
                                     data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                                else:
-                                    data = None
                             except:
                                 data = None
 
-                        # 🚨 原本詳細ロジック：ファンダメンタルズ多重取得
+                        # ファンダメンタルズ取得（原本ロジック）
                         f_data = get_fundamentals(c_str)
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
-                        
                         if f_data:
                             r_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
                             r_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
                             r_mcap = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
                             r_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
-                            
-                            # ROEの分母分子計算リカバリ（原本の堅牢回路）
-                            if r_roe is None:
-                                ni, eq = f_data.get("NetIncome"), f_data.get("Equity")
-                                if ni is not None and eq is not None and float(eq) != 0:
-                                    try: r_roe = (float(ni) / float(eq)) * 100
-                                    except: pass
-
-                        # yfinanceによる補完
+                        
+                        # yfinanceによる財務補完
                         if any(v is None for v in [r_per, r_pbr, r_mcap, r_roe]):
                             try:
                                 import yfinance as yf
-                                tk_f = yf.Ticker(c_str + ".T")
-                                info = tk_f.info
-                                if info:
-                                    r_per = r_per or info.get('trailingPE')
-                                    r_pbr = r_pbr or info.get('priceToBook')
-                                    r_mcap = r_mcap or info.get('marketCap')
-                                    if r_roe is None:
-                                        raw_roe = info.get('returnOnEquity')
-                                        if raw_roe: r_roe = raw_roe * 100
+                                info = yf.Ticker(c_str + ".T").info
+                                r_per = r_per or info.get('trailingPE')
+                                r_pbr = r_pbr or info.get('priceToBook')
+                                r_mcap = r_mcap or info.get('marketCap')
+                                if r_roe is None:
+                                    raw_roe = info.get('returnOnEquity')
+                                    if raw_roe: r_roe = raw_roe * 100
                             except: pass
 
                         return c_str, data, r_per, r_pbr, r_mcap, r_roe
                     except:
                         return str(c), None, None, None, None, None
+
+                # (以降、ThreadPoolExecutorによる並列実行コードが続く)
 
                 raw_data_dict = {}
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
@@ -1467,7 +1467,7 @@ with tab3:
 
                 t_fetch = time.time()
 
-# --- ⚙️ 5. 解析計算ループ（原本ロジック 100% 垂直復元） ---
+                # --- ⚙️ 5. 解析計算ループ（原本ロジック 100% 垂直復元） ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1496,16 +1496,14 @@ with tab3:
                             else: res_mcap_str = f"{int(raw_mcap):,}"
                         else: res_mcap_str = "-"
 
-                        # --- 🛡️ 1. 兵站確保状況の確認 ---
+                        # --- 🛡️ 1. 兵站確保状況の最終確認 ---
                         bars = raw_s.get("data", {}).get("bars", [])
 
                         # --- 🛡️ 2. IPO検閲（物理的再配線・完全クラッシュ防止版） ---
                         if st.session_state.f5_ipo:
                             try:
-                                # 5桁規格化コードでマスタ検索（523A -> 523A0）
                                 s_code = str(target_key)
                                 if len(s_code) == 4: s_code += "0"
-                                
                                 m_row = master_df[master_df['Code'].astype(str) == s_code]
                                 
                                 if not m_row.empty:
@@ -1513,29 +1511,29 @@ with tab3:
                                     if ld_col:
                                         ld_val = m_row.iloc[0][ld_col[0]]
                                         if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                            # 🚨 物理同期：タイムゾーン不一致エラー(naive/aware)を強制排除
+                                            # 🚨 物理同期：タイムゾーン不一致エラーを強制排除
                                             target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
                                             now_dt = datetime.now().replace(tzinfo=None)
                                             days_since_listed = (now_dt - target_dt).days
                                             
-                                            # 【IPO除外】1年（365日）未満の個体のみ戦域から排除
+                                            # 1年（365日）未満のみ排除。523A（2024/4上場）はここを突破する。
                                             if days_since_listed < 365:
                                                 continue
                                         else:
-                                            # 上場日が不明な個体は、新興リスク回避のため除外
-                                            continue
+                                            # 上場日不明な英字銘柄等への安全策：TAB3では「一本釣り」を優先し、ここでは落とさない
+                                            pass
                             except Exception:
-                                # フィルタ内の計算失敗でシステム全体を落とさないための安全策
                                 pass
 
                         # --- 🛡️ 3. データ不足銘柄の最終防衛線 ---
                         if not bars or len(bars) < 20:
+                            # 🚨 ここで「兵站データ不足」になるのは、yfinanceもJ-Quantsも全滅した時のみ
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                'alerts': ["⚠️ 兵站データ不足"], 'error': True
+                                'alerts': ["⚠️ 兵站データ不足 (J-Quants & yf 応答なし)"], 'error': True
                             })
                             continue
 
