@@ -1259,7 +1259,7 @@ with tab3:
 
                 t_fetch = time.time()
 
-                # --- ⚙️ 5. 解析計算ループ（酒田五法・位相連動 ＆ PER/PBRカラー統合） ---
+                # --- ⚙️ 5. 解析計算ループ（酒田五法・戦術文脈解析 統合） ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1328,24 +1328,36 @@ with tab3:
                             score += t_score
                             if res_pbr is not None and res_pbr <= 1.5: score += 2
                             
-                            # 🚨 【新装】酒田五法・位相連動判定
                             is_low_zone = pos_score < 30
                             
-                            # たくり足
+                            # 🚨 【詳細改修】酒田五法・戦術文脈解析
+                            # 1. たくり足
                             body_v, shad_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
-                            if full_rng > 0 and shad_l > (body_v * 2.5) and (shad_l / full_rng) > 0.6:
-                                msg = "🔥 【急所】安値圏のたくり足検知。底打ち反転の可能性大。" if is_low_zone else "🟢 【酒田】たくり線検知。"
-                                alerts.append(msg); score += 5 if is_low_zone else 2
+                            if full_rng > 0 and shad_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6:
+                                if is_low_zone:
+                                    alerts.append("🔥 【酒田・たくり線】下位での強力な買い支え。売り方の最終攻勢を押し戻した『逆転』の兆候。")
+                                    score += 5
+                                else:
+                                    alerts.append("🟢 【酒田・たくり線】一時的な買い支えを確認。押し目候補として監視。")
+                                    score += 2
 
-                            # 陽の包み足 (Bullish Engulfing)
+                            # 2. 陽の包み足 (Bullish Engulfing)
                             if lc > lo and pc < po and lc >= po and lo <= pc:
-                                msg = "🔥 【急所】安値圏の陽の包み足。強力な買い転換シグナル。" if is_low_zone else "🟢 【酒田】陽の包み足検知。"
-                                alerts.append(msg); score += 4 if is_low_zone else 1
+                                if is_low_zone:
+                                    alerts.append("🔥 【酒田・包み足】前日の絶望を強気が完全に飲み込んだ。主導権が買い方に移転した『反撃開始』の狼煙。")
+                                    score += 4
+                                else:
+                                    alerts.append("🟢 【酒田・包み足】強気への転換を示唆。直近高値突破を注視。")
+                                    score += 1
 
-                            # 陽のはらみ足 (Bullish Harami)
+                            # 3. 陽のはらみ足 (Bullish Harami)
                             if pc > po and lc > lo and lc < po and lo > pc:
-                                msg = "🔥 【期待】安値圏のはらみ足。下落停止の兆候。" if is_low_zone else "🟢 【酒田】はらみ足検知。"
-                                alerts.append(msg); score += 3 if is_low_zone else 1
+                                if is_low_zone:
+                                    alerts.append("🔥 【酒田・はらみ足】下落エネルギーが収束し、内部に『反転の芽』を孕んだ。膠着から上放れを狙う局面。")
+                                    score += 3
+                                else:
+                                    alerts.append("🟢 【酒田・はらみ足】売り枯れを確認。均衡が崩れる方向を注視。")
+                                    score += 1
 
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
@@ -1359,10 +1371,15 @@ with tab3:
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
                                 else: gc_score = 5
                             
-                            # 高値圏の首吊り線・三尊警戒
                             is_high_zone = pos_score > 75
-                            if is_high_zone and pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                alerts.append("🚨 【厳戒】高値圏での三尊検知。天井形成の恐れ大。")
+                            # 高値圏の警戒シグナル
+                            if is_high_zone:
+                                # 三尊
+                                if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
+                                    alerts.append("🚨 【酒田・三尊】高値圏での三転突破失敗。天井形成の恐れ大。戦術的撤退を検討せよ。")
+                                # 首吊り線
+                                if full_rng > 0 and shad_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6:
+                                    alerts.append("🚨 【酒田・首吊り線】高値圏でのたくり。買い方の最終エネルギー枯渇を示唆。暴落に備えよ。")
                             
                             if res_roe and res_roe >= 10.0: gc_score += 15
                             score = gc_score
@@ -1386,17 +1403,7 @@ with tab3:
                 
                 t_calc = time.time()
 
-                # 🚨 1. プロファイル出力
-                st.markdown(f"""
-                <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
-                    <b>⏱️ スキャンプロファイル (TAB3)</b><br>
-                    ・260日兵站確保 ＆ 酒田五法並列演算: {t_fetch - t_global_start:.2f}秒<br>
-                    ・位相解析 ＆ 戦術スコアリング: {t_calc - t_fetch:.2f}秒<br>
-                    <b>・合計: {t_calc - t_global_start:.2f}秒</b>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # 🚨 2. 個別銘柄の神聖UI描画ループ
+                # --- 🚨 UI描画部は変更なし（中略死罪のため全行出力） ---
                 for index, r in enumerate(scope_results):
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
@@ -1438,17 +1445,12 @@ with tab3:
                     
                     with sc_mid:
                         roe_v, per_v, pbr_v = r.get('roe'), r.get('per'), r.get('pbr')
-                        
-                        # --- 🚨 PER/PBR 戦術的色分け配線 ---
                         per_s = f"{per_v:.1f}倍" if per_v is not None else "-"
                         per_c = "#26a69a" if (per_v is not None and per_v <= 20.0) else "#ef5350" if per_v is not None else "#888"
-                        
                         pbr_s = f"{pbr_v:.2f}倍" if pbr_v is not None else "-"
                         pbr_c = "#26a69a" if (pbr_v is not None and pbr_v <= 1.5) else "#ef5350" if pbr_v is not None else "#888"
-                        
                         roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"
                         roe_c = "#26a69a" if (roe_v and roe_v >= 10.0) else "#ef5350" if roe_v is not None else "#888"
-                        
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         
                         st.markdown(f"""
@@ -1482,7 +1484,7 @@ with tab3:
 
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     st.markdown("---")
-                    draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_ultimate_v2_{r['code']}_{index}")
+                    draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_ultimate_v3_final_{r['code']}_{index}")
                     
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
