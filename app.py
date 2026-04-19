@@ -1457,7 +1457,7 @@ with tab3:
 
                 t_fetch = time.time()
 
-                # --- ⚙️ 5. 解析計算ループ（英字銘柄・救済配線） ---
+                # --- ⚙️ 5. 解析計算ループ（全件パージ救済 ＆ 物理クラッシュ封鎖） ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1465,6 +1465,7 @@ with tab3:
                         raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue 
 
+                        # 🚨 5桁規格化の徹底
                         api_code = target_key if len(target_key) >= 5 else target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
@@ -1476,35 +1477,38 @@ with tab3:
                         res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
                         bars = raw_s.get("data", {}).get("bars", [])
 
-                        # --- 🛡️ IPO検閲（523A 救済ロジック） ---
+                        # --- 🛡️ IPO検閲（523A等・英字銘柄 ＆ 不明個体救済） ---
                         if st.session_state.f5_ipo:
-                            # 英字銘柄（523A等）は、データさえあればIPO判定をスキップ（TAB3の利便性優先）
-                            if target_key.isdigit():
-                                try:
+                            try:
+                                # 数字4桁銘柄のみ厳密にチェック。英字銘柄やマスタ不明は「一本釣り」の意思を尊重して通す。
+                                if target_key.isdigit():
                                     m_row = master_df[master_df['Code'].astype(str) == api_code]
                                     if not m_row.empty:
                                         ld_col = [col for col in m_row.columns if 'Listing' in col]
                                         if ld_col:
                                             ld_val = m_row.iloc[0][ld_col[0]]
-                                            if pd.notna(ld_val):
+                                            if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                                # 🚨 物理同期：タイムゾーン衝突を排除
                                                 target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
                                                 now_dt = datetime.now().replace(tzinfo=None)
+                                                # 1年未満の真のIPOのみを弾く
                                                 if (now_dt - target_dt).days < 365:
-                                                    continue
-                                except: pass
+                                                    continue 
+                            except:
+                                pass # 判定エラー時は安全のためスルー（表示させる）
 
-                        # --- 🛡️ 最終防衛線：データがない場合のみ「兵站不足」を表示 ---
+                        # --- 🛡️ 最終防衛線：極端にデータが少ない場合のみ除外 ---
                         if not bars or len(bars) < 10:
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                'alerts': ["⚠️ 兵站データ不足 (yf/JQ 応答なし)"], 'error': True
+                                'alerts': ["⚠️ 兵站データ不足"], 'error': True
                             })
                             continue
 
-                        # --- 🛡️ 4. 正常計算（クラッシュ地点を通過） ---
+                        # --- 🛡️ 正常計算（ここを通過できれば表示される） ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
@@ -1523,8 +1527,6 @@ with tab3:
                         df_mini = df_chart_full.tail(260).copy()
                         
                         score, alerts, gc_days = 0, [], 0
-                        
-                        # 🚨 物理復元：地雷イベント検知回路
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
 
                         if is_ambush:
@@ -1535,13 +1537,11 @@ with tab3:
                             score += t_score
                             if res_pbr is not None and res_pbr <= 5.0: score += 2
                             
-                            # 【酒田】たくり線（原本の泥臭い判定式）
                             body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
                             if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
                                 alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
                                 score += 5
                             
-                            # 原本波形パターンの物理復旧
                             if check_double_bottom(df_chart_full.tail(31)):
                                 alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転。")
                             if check_oversold_ultimate(df_chart_full):
@@ -1558,7 +1558,6 @@ with tab3:
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
                                 else: gc_score = 5
                             
-                            # 【酒田】三尊・ダブルトップ原本判定
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
                                 alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
                             if check_double_top(df_chart_full.tail(31)):
@@ -1579,12 +1578,6 @@ with tab3:
                     except Exception:
                         continue
 
-                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
-                for res in scope_results:
-                    clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
-                    res['r_val'] = rank_order.get(clean_rank, 0)
-                scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
-                
                 t_calc = time.time()
 
                 # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元） ---
