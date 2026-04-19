@@ -1079,16 +1079,24 @@ with tab1:
                             if res: results.append(res)
                         except: pass
                 
+                # --- 🎯 スキャン結果の最終選別（セクター分散適用） ---
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 filtered_results = []
                 sector_counts = {}
+                
                 for r in sorted_raw:
-                    sector = master_map_t1.get(str(r['Code']), {}).get('Sector', '不明')
+                    # 🚨 物理同期：master_map_t1 を master_map_common に置換
+                    sector = master_map_common.get(str(r['Code']), {}).get('Sector', '不明')
+                    
+                    # 同一セクターは最大3銘柄までに制限し、分散を図る
                     if sector_counts.get(sector, 0) < 3:
                         filtered_results.append(r)
                         sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                    
+                    # 最終リストは30銘柄でカットオフ
                     if len(filtered_results) >= 30: break
                 
+                # 成果物を session_state へ格納
                 st.session_state.tab1_scan_results = filtered_results
                 t_calc = time.time()
                 
