@@ -906,27 +906,27 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
 
 st.sidebar.caption(f"KEY: {cache_key}")
 
-# ==========================================
-# 🛡️ 共有兵站セクション：メモリ最適化（ここを溶接）
-# ==========================================
-if 'master_map_shared' not in st.session_state:
-    if not master_df.empty:
-        # 上場日カラムを動的に捕捉
-        ld_cols = [col for col in master_df.columns if 'Listing' in col]
-        t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
-        
-        # 必要な列のみを抽出し、型を最適化してメモリ消費を最小化
-        tmp = master_df[t_cols].copy()
-        # 英字銘柄（523A等）対応の規格化
-        tmp['Code'] = tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-        
-        # session_stateに一度だけ格納
-        st.session_state.master_map_shared = tmp.set_index('Code').to_dict('index')
-        del tmp
-        gc.collect() # 💡 残骸を強制清掃
-
-# 共有マップを変数に展開
-master_map_common = st.session_state.get('master_map_shared', {})
+	# ==========================================
+	# 🛡️ 共有兵站セクション：メモリ最適化（ここを溶接）
+	# ==========================================
+	if 'master_map_shared' not in st.session_state:
+	    if not master_df.empty:
+	        # 上場日カラムを動的に捕捉
+	        ld_cols = [col for col in master_df.columns if 'Listing' in col]
+	        t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+	        
+	        # 必要な列のみを抽出し、型を最適化してメモリ消費を最小化
+	        tmp = master_df[t_cols].copy()
+	        # 英字銘柄（523A等）対応の規格化
+	        tmp['Code'] = tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+	        
+	        # session_stateに一度だけ格納
+	        st.session_state.master_map_shared = tmp.set_index('Code').to_dict('index')
+	        del tmp
+	        gc.collect() # 💡 残骸を強制清掃
+	
+	# 共有マップを変数に展開
+	master_map_common = st.session_state.get('master_map_shared', {})
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
 # 🚨 修正：load_masterの実行行。すべての定義が終わったここで行う。
