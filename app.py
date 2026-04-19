@@ -777,14 +777,14 @@ with tab1:
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
                     
-                    # 🚨 【ボス厳命】f2_m30：直近22営業日の「安値」からの倍率を判定
+                    # 🚨 【修正】IPOフィルター（上場1年未満/200営業日未満）の物理配線
+                    if cfg.get("f5_ipo", True) and len(group) < 200:
+                        return None
+                    
+                    # 🚨 【修正】f2_m30：直近22営業日の安値基準
                     recent_22 = group.tail(22)
                     low_22 = recent_22['AdjL'].min()
                     if low_22 > 0 and (lc / low_22) > cfg["f2_m30"]: return None
-                    
-                    h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
-                    # 年間高値からの下落除外 (f3)
-                    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
                     
                     # 波形・テクニカル解析
                     r4h = h_vals[-4:]; h4 = r4h.max()
@@ -1265,36 +1265,25 @@ with tab3:
                     try:
                         target_key = str(c)
                         raw_s = raw_data_dict.get(target_key)
-                        if not raw_s: continue 
-
+                        
                         api_code = target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
-                        
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
                                 c_name, c_sector, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Sector'], m_row.iloc[0]['Market']
 
-                        res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
+                        bars = raw_s.get("data", {}).get("bars", []) if raw_s else []
                         
-                        if res_roe is not None and 0 < abs(res_roe) < 1.0: 
-                            res_roe = res_roe * 100
-
-                        if raw_mcap is not None:
-                            if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
-                            elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
-                            else: res_mcap_str = f"{int(raw_mcap):,}"
-                        else: 
-                            res_mcap_str = "-"
-
-                        bars = raw_s.get("data", {}).get("bars", [])
+                        # 🚨 【修正】エラー表示の詳細化 ＆ IPO判定
                         if not bars or len(bars) < 30:
+                            reason = "⚠️ 営業日数不足（上場直後の可能性）" if (bars and len(bars) < 200) else "⚠️ API取得エラー"
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                                'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                'alerts': ["⚠️ データ取得失敗"], 'pos_score': 50, 'error': True
+                                'per': None, 'pbr': None, 'roe': None, 'mcap': "-",
+                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
+                                'alerts': [reason], 'pos_score': 50, 'error': True
                             })
                             continue
 
