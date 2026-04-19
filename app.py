@@ -1282,7 +1282,7 @@ with tab2:
 with tab3:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・UI完全復元版）</h3>', unsafe_allow_html=True)
     
-    # 兵站ファイルパス
+    # --- 🛡️ 1. 兵站管理：ファイルパスの物理定義 ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
@@ -1290,44 +1290,77 @@ with tab3:
 
     def load_t3_text(file_path):
         if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f: return f.read()
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
         return ""
 
-    # 通信記録の復元
-    if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
-    if "t3_am_daily" not in st.session_state: st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
-    if "t3_as_watch" not in st.session_state: st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
-    if "t3_as_daily" not in st.session_state: st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
+    # --- 🛡️ 2. 通信記録の復元（セッションステート同期） ---
+    if "t3_am_watch" not in st.session_state:
+        st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
+    if "t3_am_daily" not in st.session_state:
+        st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
+    if "t3_as_watch" not in st.session_state:
+        st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
+    if "t3_as_daily" not in st.session_state:
+        st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🚨 物理同期：Duplicateエラー防止のためcache_keyをキーに連結
+        # 🚨 物理固定：入力ウィジェットのキーからcache_keyを排除（入力文字の消失を防止）
         scope_mode = st.radio(
             "🎯 解析モードを選択", 
             ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], 
-            key=f"t3_scope_mode_{cache_key}"
+            key="t3_scope_mode_vfinal_fixed"
         )
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
         if is_ambush:
-            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120, key=f"t3_am_watch_ui_{cache_key}")
-            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120, key=f"t3_am_daily_ui_{cache_key}")
+            watch_in = st.text_area(
+                "🌐 【待伏】主力監視部隊", 
+                value=st.session_state.t3_am_watch, 
+                height=120, 
+                key="t3_am_watch_ui_vfinal"
+            )
+            daily_in = st.text_area(
+                "🌐 【待伏】本日新規部隊", 
+                value=st.session_state.t3_am_daily, 
+                height=120, 
+                key="t3_am_daily_ui_vfinal"
+            )
         else:
-            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120, key=f"t3_as_watch_ui_{cache_key}")
-            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120, key=f"t3_as_daily_ui_{cache_key}")
+            watch_in = st.text_area(
+                "⚡ 【強襲】主力監視部隊", 
+                value=st.session_state.t3_as_watch, 
+                height=120, 
+                key="t3_as_watch_ui_vfinal"
+            )
+            daily_in = st.text_area(
+                "⚡ 【強襲】本日新規部隊", 
+                value=st.session_state.t3_as_daily, 
+                height=120, 
+                key="t3_as_daily_ui_vfinal"
+            )
             
-        run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_{cache_key}")
+        run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key="t3_run_btn_vfinal")
         
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush:
-            st.info("**🛡️ 待伏（アンブッシュ）モード**：底打ち反転の迎撃戦。三尊・ダブルボトム等の波形に加え、地雷イベント（決算・権利落ち）を徹底監視します。")
+            st.info("""
+                **🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**
+                - **判定核**: MACD好転 ＆ たくり線・二重底検知。
+                - **地雷監視**: 決算・権利落ち・過熱感を自動検知。
+            """)
         else:
-            st.info("**⚡ 強襲（アサルト）モード**：トレンド初動の電撃戦。GC鮮度とブレイクアウト強度、ROE等の品質保証をチェックします。")
+            st.info("""
+                **⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**
+                - **判定核**: ブレイクアウト強度 ＆ GC鮮度判定。
+            """)
 
+    # --- 🛡️ 3. 解析・描画実行エンジン ---
     if run_scope:
-        # 状態保存
+        # 状態の即時保存
         if is_ambush:
             st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
             with open(T3_AM_WATCH_FILE, "w", encoding="utf-8") as f: f.write(watch_in)
@@ -1340,46 +1373,64 @@ with tab3:
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
-        t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z](?![A-Z0-9])', all_text)]))
+        
+        # 🚨 強化型Regex: 4桁（523A）または5桁（72030）を柔軟に捕捉
+        t_codes = list(dict.fromkeys([c for c in re.findall(r'[0-9]{3}[0-9A-Z][0-9]?', all_text)]))
         
         if not t_codes:
-            st.warning("有効な銘柄コードが確認できません。")
+            st.error("🚨 銘柄コードが検出されませんでした。入力欄を確認してください。")
+            st.stop()
         else:
             t_global_start = time.time()
+            
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
-                # 📡 並列データ収集ユニット
+                # --- 📡 4. 並列データ収集ユニット（ボスの原本ロジック垂直復元） ---
                 def fetch_parallel_t3(c):
                     try:
-                        c_str = str(c); api_code = c_str if len(c_str) >= 5 else c_str + "0"
+                        c_str = str(c)
+                        # 🚨 5桁規格化
+                        api_code = c_str if len(c_str) >= 5 else c_str + "0"
+                        
+                        # 兵站確保：19時パージ cache_key を装填
                         data = get_single_data(api_code, 1, cache_key)
+                        
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
-                                tk = yf.Ticker(c_str + ".T"); hist = tk.history(period="1y")
+                                tk = yf.Ticker(c_str + ".T")
+                                hist = tk.history(period="1y")
                                 if not hist.empty:
-                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 'AdjO': float(row['Open']), 'AdjH': float(row['High']), 'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
+                                    bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
+                                             'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
+                                             'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
+                                             'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
                                     data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                            except: pass
+                            except: data = None
+
                         f_data = get_fundamentals(c_str)
                         return c_str, data, f_data
                     except: return str(c), None, None
 
+                raw_data_dict = {}
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
-                        res_c, res_data, res_f = f.result()
-                        if res_data: raw_data_dict[str(res_c)] = {"data": res_data, "f_data": res_f}
+                        try:
+                            res_c, res_data, res_f = f.result()
+                            if res_data: raw_data_dict[str(res_c)] = {"data": res_data, "f_data": res_f}
+                        except: continue
 
                 t_fetch = time.time()
+
+                # --- ⚙️ 5. 解析計算ループ（原本パターンの再結合） ---
                 scope_results = []
                 for c in t_codes:
                     try:
                         target_key = str(c); raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue 
 
-                        # 規格化・マスタ照合
                         api_code = target_key if len(target_key) >= 5 else target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         if not master_df.empty:
@@ -1392,15 +1443,15 @@ with tab3:
                         df_s = clean_df(pd.DataFrame(bars))
                         df_chart_full = calc_technicals(df_s.copy())
                         
-                        # 🚨 【全機能復旧】警告メッセージの生成（ここを殺していたのが原因）
                         alerts = []
-                        # 1. 地雷イベント判定
+                        # 🚨 地雷イベント検知（原本通り）
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
-                        # 2. 波形パターン判定
+
+                        # 🚨 酒田パターン ＆ 特殊波形（原本通り）
                         if check_head_shoulders(df_chart_full.tail(40)): alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
-                        if check_double_top(df_chart_full.tail(31)): alerts.append("🔴 【酒田】二重天井（ダブルトップ）形成の兆候。")
-                        if check_double_bottom(df_chart_full.tail(31)): alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転の急所。")
-                        if check_oversold_ultimate(df_chart_full): alerts.append("💎 【陰の極み】最終波形。絶好の狙撃ポイント。")
+                        if check_double_top(df_chart_full.tail(31)): alerts.append("🔴 【酒田】二重天井（ダブルトップ）形成。")
+                        if check_double_bottom(df_chart_full.tail(31)): alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。")
+                        if check_oversold_ultimate(df_chart_full): alerts.append("💎 【陰の極み】最終波形。絶好の狙撃点。")
 
                         t_latest, t_prev = df_chart_full.iloc[-1], df_chart_full.iloc[-2]
                         lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
@@ -1415,14 +1466,14 @@ with tab3:
                             m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
-                            # たくり判定
-                            if (lh - ll) > 0 and (min(lc, lo) - ll) > (abs(lc - lo) * 2.5) and rsi_v < 45:
-                                alerts.append("🟢 【酒田】たくり線（下髭）検知。底打ち反転。"); score += 5
+                            # 【酒田】たくり線
+                            if (lh - ll) > 0 and (min(lc, lo) - ll) > (abs(lc - lo) * 2.2) and rsi_v < 45:
+                                alerts.append("🟢 【酒田】たくり線検知。底打ち反転。"); score += 5
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
                             bt_val = int(max(h14, lc + (atr_v * 0.5))); hist_vals = df_chart_full['MACD_Hist'].tail(5).values
-                            gc_score = 5; gc_days = 0
+                            gc_score, gc_days = 5, 0
                             if len(hist_vals) >= 2:
                                 if hist_vals[-2] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 1, 60
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
@@ -1431,16 +1482,15 @@ with tab3:
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
                             rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
 
-                        # ファンダメンタルズ整形
-                        f_raw = raw_s.get("f_data"); roe_val = (f_raw.get("roe") or 0) if f_raw else 0
-                        if 0 < abs(roe_val) < 1.0: roe_val = roe_val * 100
-                        scope_results.append({'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v, 'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_chart_full.tail(260), 'per': f_raw.get('per') if f_raw else None, 'pbr': f_raw.get('pbr') if f_raw else None, 'roe': roe_val, 'mcap': f_raw.get('cap') if f_raw else "-", 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False})
+                        f_raw = raw_s.get("f_data"); roe_v = (f_raw.get("roe") or 0) if f_raw else 0
+                        if 0 < abs(roe_v) < 1.0: roe_v = roe_v * 100
+                        scope_results.append({'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v, 'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_chart_full.tail(260), 'per': f_raw.get('per') if f_raw else None, 'pbr': f_raw.get('pbr') if f_raw else None, 'roe': roe_v, 'mcap': f_raw.get('cap') if f_raw else "-", 'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 'alerts': alerts, 'error': False})
                     except: continue
 
                 scope_results = sorted(scope_results, key=lambda x: (x['score'], x['reach_val']), reverse=True)
                 t_calc = time.time()
 
-# 🚨 1. プロファイル出力（原本通りの計測表示）
+                # 🚨 1. プロファイル出力（原本通りの計測表示）
                 st.markdown(f"""
                 <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
                     <b>⏱️ スキャンプロファイル (TAB3)</b><br>
@@ -1560,7 +1610,7 @@ with tab3:
                         
                         st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                    # テクニカル計器盤
+                    # 🚨 テクニカル計器盤
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     
                     st.markdown("---")
