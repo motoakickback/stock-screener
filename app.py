@@ -950,11 +950,6 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-# 🚨 英字銘柄（523A等）を物理保護しつつ規格化
-m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-master_map_t1 = m_df_tmp.set_index('Code').to_dict('index')
-del m_df_tmp
-
     if 'tab1_scan_results' not in st.session_state: st.session_state.tab1_scan_results = None
     
     run_scan_t1 = st.button("🚀 索敵開始", key="btn_scan_t1_macro")
