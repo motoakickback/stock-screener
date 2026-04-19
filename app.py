@@ -84,6 +84,22 @@ def check_password():
     
 if not check_password(): st.stop()
 
+# --- 🚀 修正：get_cache_keyの定義（物理配線ポイント） ---
+def get_cache_key():
+    """JST 19:00にキャッシュを自動クリアするためのキー生成"""
+    try:
+        tz = pytz.timezone('Asia/Tokyo')
+        now = datetime.now(tz)
+        # 19時前なら前日の19時、19時以降なら当日の19時を基準とする
+        if now.hour < 19:
+            reset_base = (now - timedelta(days=1)).replace(hour=19, minute=0, second=0, microsecond=0)
+        else:
+            reset_base = now.replace(hour=19, minute=0, second=0, microsecond=0)
+        return f"iron_rule_v2026_{reset_base.strftime('%Y%m%d_%H')}"
+    except Exception:
+        # 万が一pytz等でエラーが出た場合のフォールバック
+        return datetime.now().strftime('%Y%m%d_H')
+
 # --- 🚁 司令部へ帰還ボタン ---
 components.html(
     """
@@ -197,31 +213,6 @@ def get_macro_weather():
                 }
     except: pass
     return None
-
-def fetch_current_prices_fast(codes):
-    results = {}
-    base = datetime.utcnow() + timedelta(hours=9)
-    f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
-    def fetch_single(code):
-        clean_code = str(code).replace('.0', '').strip()
-        api_code = clean_code if len(clean_code) >= 5 else clean_code + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        try:
-            r = requests.get(url, headers=headers, timeout=3.0)
-            if r.status_code == 200:
-                data = r.json().get("daily_quotes") or r.json().get("data") or []
-                if data:
-                    latest = sorted(data, key=lambda x: x['Date'])[-1]
-                    val = latest.get("Close") or latest.get("C") or latest.get("AdjC")
-                    if val is not None: return code, float(val)
-        except: pass
-        return code, None
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futs = {executor.submit(fetch_single, c): c for c in codes}
-        for f in concurrent.futures.as_completed(futs):
-            c_code, price = f.result()
-            if price is not None: results[c_code] = price
-    return results
 
 weather = get_macro_weather()
 
