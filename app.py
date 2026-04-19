@@ -231,7 +231,7 @@ def clean_df(df):
     return df
 
 def calc_vector_indicators(df):
-    """テクニカル指標の一括ベクトル演算（float32・メモリ節約版）"""
+    """テクニカル指標の一括ベクトル演算（float32版）"""
     df = df.copy()
     if df.empty: return df
     
@@ -266,17 +266,82 @@ def calc_vector_indicators(df):
 def calc_technicals(df):
     return calc_vector_indicators(df)
 
-# --- 4. 兵站管理：JPXマスタ ＆ 先行フィルタ（修正版：load_masterの物理復元） ---
+# --- 4. パターン検知ロジック（神聖復元 ＆ 位相解析） ---
+
+def check_double_top(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values; l = df_sub['AdjL'].values
+        if len(v) < 6: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+        if len(peaks) >= 2:
+            p2_idx, p2_val = peaks[-1]; p1_idx, p1_val = peaks[-2]
+            if abs(p2_val - p1_val) / max(p2_val, p1_val) < 0.05:
+                valley = min(l[p1_idx:p2_idx+1]) if p2_idx > p1_idx else p1_val
+                if valley < min(p1_val, p2_val) * 0.95 and c[-1] < p2_val * 0.97: return True
+        return False
+    except: return False
+
+def check_head_shoulders(df_sub):
+    try:
+        v = df_sub['AdjH'].values; c = df_sub['AdjC'].values
+        if len(v) < 8: return False
+        peaks = []
+        for i in range(1, len(v)-1):
+            if v[i] == max(v[i-1:i+2]):
+                if not peaks or (i - peaks[-1][0] > 1): peaks.append((i, v[i]))
+        if len(peaks) >= 3:
+            p3_idx, p3_val = peaks[-1]; p2_idx, p2_val = peaks[-2]; p1_idx, p1_val = peaks[-3]
+            if p2_val > p1_val and p2_val > p3_val and abs(p3_val - p1_val) / max(p3_val, p1_val) < 0.10 and c[-1] < p3_val * 0.97: return True
+        return False
+    except: return False
+
+def check_double_bottom(df_sub):
+    try:
+        l = df_sub['AdjL'].values; c = df_sub['AdjC'].values; h = df_sub['AdjH'].values
+        if len(l) < 6: return False
+        valleys = []
+        for i in range(1, len(l)-1):
+            if l[i] == min(l[i-1:i+2]):
+                if not valleys or (i - valleys[-1][0] > 1): valleys.append((i, l[i]))
+        if len(valleys) >= 2:
+            v2_idx, v2_val = valleys[-1]; v1_idx, v1_val = valleys[-2]
+            if abs(v2_val - v1_val) / min(v2_val, v1_val) < 0.05:
+                peak = max(h[v1_idx:v2_idx+1]) if v2_idx > v1_idx else v1_val
+                if peak > max(v1_val, v2_val) * 1.04 and c[-1] > v2_val * 1.01: return True
+        return False
+    except: return False
+
+# 🚨 【修正：物理配線】analyze_context の復元
+def analyze_context(group_260):
+    """260日データから価格位置と文脈メッセージを生成"""
+    if group_260.empty or len(group_260) < 20: return {"pos": 50, "msgs": []}
+    lc = group_260['AdjC'].iloc[-1]
+    h260 = group_260['AdjH'].max()
+    l260 = group_260['AdjL'].min()
+    pos = ((lc - l260) / (h260 - l260) * 100) if (h260 - l260) > 0 else 50
+    
+    msgs = []
+    if pos >= 80:
+        msgs.append("⚠️ 【警戒】現在値は年足最高値圏。三尊等の反転波形は強力な売りシグナル（首吊り線警戒）。")
+    elif pos <= 20:
+        msgs.append("🔥 【期待】現在値は年足最安値圏。たくり足等の反転波形は大底打ち・反撃の急所。")
+    else:
+        msgs.append(f"⚖️ 【巡航】現在値はレンジ中間圏 ({pos:.1f}%)。テクニカル通りの推移を注視。")
+    return {"pos": pos, "msgs": msgs}
+
+# --- 5. 兵站管理：マスタ ＆ 財務エンジン（完全復元） ---
 
 @st.cache_data(ttl=86400)
 def load_master():
-    """JPXから東証全銘柄リストをExcel取得（ボスの資産：完全復元）"""
+    """JPXマスタ取得エンジン（xlrd対応）"""
     try:
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            # xlrdが必要
             df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
             df['Code'] = df['Code'].astype(str) + "0"
@@ -286,33 +351,23 @@ def load_master():
     return pd.DataFrame()
 
 def load_master_filtered():
-    """サイドバーの設定を最上流で反映させ、スキャンスピードを極限までブーストする"""
+    """死にフィルターを物理排除したマスタ取得"""
     m_df = load_master()
     if m_df.empty: return m_df
-    
-    # f7: ETF/REIT/投資法人/受益証券 除外
     if st.session_state.get('f7_ex_etf', True):
-        etf_keywords = ['ETF', 'REIT', '投資法人', '受益証券', 'カントリーファンド', 'インフラファンド', '優先出資']
+        etf_keywords = ['ETF', 'REIT', '投資法人', '受益証券', 'カントリーファンド', 'インフラファンド']
         m_df = m_df[~m_df['Market'].str.contains('|'.join(etf_keywords), na=False)]
         m_df = m_df[~m_df['CompanyName'].str.contains('|'.join(etf_keywords), na=False)]
-    
-    # f8: 医薬品(バイオ)除外
     if st.session_state.get('f8_ex_bio', True):
         m_df = m_df[m_df['Sector'] != '医薬品']
-        
-    # f6: 信用リスク・疑義注記（gigi_inputに入力されたコードを排除）
     if st.session_state.get('f6_risk', True):
         gigi = str(st.session_state.get('gigi_input', ""))
         risk_codes = [c.strip() + "0" for c in re.split(r'[, \n]+', gigi) if len(c.strip()) >= 4]
-        if risk_codes:
-            m_df = m_df[~m_df['Code'].isin(risk_codes)]
-            
+        if risk_codes: m_df = m_df[~m_df['Code'].isin(risk_codes)]
     return m_df
 
-# --- 5. 財務情報取得路 ---
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
 def get_fundamentals(code):
-    """J-Quants API から財務情報を取得"""
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     try:
@@ -321,73 +376,50 @@ def get_fundamentals(code):
             data = r.json().get("statements", [])
             if not data: return None
             latest = data[0]
-            res = {
-                "op": latest.get("OperatingProfit"),
-                "cap": latest.get("MarketCapitalization"),
-                "er": latest.get("EquityRatio"),
-                "roe": None, "pbr": None, "per": None
-            }
-            net_income = latest.get("NetIncome")
-            equity = latest.get("Equity")
-            if net_income is not None and equity is not None:
-                try: 
-                    res["roe"] = (float(net_income) / float(equity)) * 100
-                except (ZeroDivisionError, ValueError): 
-                    res["roe"] = 0.0
+            res = {"op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), "er": latest.get("EquityRatio"), "roe": None, "pbr": None, "per": None}
+            ni, eq = latest.get("NetIncome"), latest.get("Equity")
+            if ni is not None and eq is not None:
+                try: res["roe"] = (float(ni) / float(eq)) * 100
+                except: res["roe"] = 0.0
             return res
-    except Exception: pass
+    except: pass
     return None
 
-# --- 6. ヒストリカルデータ取得エンジン（物理復元 ＆ 19時リセット配線） ---
+# --- 6. ヒストリカル取得（19時リセット連動） ---
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
 def get_single_data(code, yrs=1):
-    """個別銘柄のデータを取得（TAB3、TAB4用）"""
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
-    f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
-    t_d = base.strftime('%Y%m%d')
-    result = {"bars": [], "events": {"dividend": [], "earnings": []}}
+    f_d, t_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
+    result = {"bars": []}
     try:
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
         url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
-        if r_bars.status_code == 200:
-            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except Exception: pass
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200: result["bars"] = r.json().get("daily_quotes") or r.json().get("data") or []
+    except: pass
     return result
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_hist_data_cached(cache_key_str):
-    """
-    全銘柄のヒストリカルデータを取得。
-    cache_key_str が更新される（19時リセット）ことで物理的にパージされる。
-    """
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
-    dates = []
-    days = 0
-    # 260日分の営業日（土日除く）リストを作成
+    dates, days = [], 0
     while len(dates) < 260:
         d = base - timedelta(days=days)
-        if d.weekday() < 5:
-            dates.append(d.strftime('%Y%m%d'))
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
         days += 1
         if days > 400: break 
-        
     rows = []
-    def fetch_day(dt):
+    def f_day(dt):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            if r.status_code == 200:
-                return r.json().get("data", [])
-        except: pass
-        return []
-        
+            return r.json().get("data", []) if r.status_code == 200 else []
+        except: return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
-        futs = [exe.submit(fetch_day, dt) for dt in dates]
+        futs = [exe.submit(f_day, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
             if res: rows.extend(res)
-            
     gc.collect()
     return rows
 
