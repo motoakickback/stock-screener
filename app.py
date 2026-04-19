@@ -1496,7 +1496,39 @@ with tab3:
                             else: res_mcap_str = f"{int(raw_mcap):,}"
                         else: res_mcap_str = "-"
 
+                        # --- 🛡️ 1. 兵站確保状況の確認 ---
                         bars = raw_s.get("data", {}).get("bars", [])
+
+                        # --- 🛡️ 2. IPO検閲（物理的再配線・完全クラッシュ防止版） ---
+                        if st.session_state.f5_ipo:
+                            try:
+                                # 5桁規格化コードでマスタ検索（523A -> 523A0）
+                                s_code = str(target_key)
+                                if len(s_code) == 4: s_code += "0"
+                                
+                                m_row = master_df[master_df['Code'].astype(str) == s_code]
+                                
+                                if not m_row.empty:
+                                    ld_col = [c for c in m_row.columns if 'Listing' in c]
+                                    if ld_col:
+                                        ld_val = m_row.iloc[0][ld_col[0]]
+                                        if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                            # 🚨 物理同期：タイムゾーン不一致エラー(naive/aware)を強制排除
+                                            target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                            now_dt = datetime.now().replace(tzinfo=None)
+                                            days_since_listed = (now_dt - target_dt).days
+                                            
+                                            # 【IPO除外】1年（365日）未満の個体のみ戦域から排除
+                                            if days_since_listed < 365:
+                                                continue
+                                        else:
+                                            # 上場日が不明な個体は、新興リスク回避のため除外
+                                            continue
+                            except Exception:
+                                # フィルタ内の計算失敗でシステム全体を落とさないための安全策
+                                pass
+
+                        # --- 🛡️ 3. データ不足銘柄の最終防衛線 ---
                         if not bars or len(bars) < 20:
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -1507,8 +1539,7 @@ with tab3:
                             })
                             continue
 
-                        # 🚨 修正箇所：この1行を挿入して検問所を再起動する
-                        if st.session_state.f5_ipo and len(bars) < 250: continue
+                        # --- 🛡️ 4. 正常計算（クラッシュ地点を通過） ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
