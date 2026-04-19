@@ -470,14 +470,13 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
 
     return "C👁️", "#616161", 1, macd_t
 
-
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    """強襲モード専用：25日線との距離、RSI、鮮度を複合した精密判定"""
     if gc_days <= 0 or df_chart is None or df_chart.empty: 
         return "圏外 💀", "#424242", 0, ""
 
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
+    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
     
     row = df_chart.iloc[-1]
     ma25 = row.get('MA25', 0)
@@ -509,11 +508,13 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 
 # --- 📺 UI描画関数 ---
 def render_technical_radar(df, buy_price, tp_pct):
-    """ボスの計器盤を物理復元 ＆ 『陰の極み』検知配線"""
     if df.empty or len(df) < 2: return ""
-    latest = df.iloc[-1]; prev = df.iloc[-2]
-    rsi = latest.get('RSI', 50); macd_hist = latest.get('MACD_Hist', 0)
-    macd_hist_prev = prev.get('MACD_Hist', 0); atr = latest.get('ATR', 0)
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    rsi = latest.get('RSI', 50)
+    macd_hist = latest.get('MACD_Hist', 0)
+    macd_hist_prev = prev.get('MACD_Hist', 0)
+    atr = latest.get('ATR', 0)
     
     # 🚨 カラーコード厳格化：売られすぎ＝緑（ポジ）、買われすぎ＝赤（ネガ）
     rsi_color = "#26a69a" if rsi <= 30 else "#4db6ac" if rsi <= 45 else "#888888" 
@@ -528,7 +529,7 @@ def render_technical_radar(df, buy_price, tp_pct):
     if check_oversold_ultimate(df):
         macd_display = "💎 【陰の極み】底打ち最終波形 💎"
         macd_color = "#26a69a"
-        bg_glow = "box-shadow: 0 0 20px rgba(38, 166, 154, 0.8); border: 2px solid #26a69a;"
+        bg_glow = "box-shadow: 0 0 15px rgba(38, 166, 154, 0.6); border: 2px solid #26a69a;"
     elif macd_t == "GC直後": 
         macd_display = "🔥🔥🔥 激熱 GC発動中 🔥🔥🔥"
         macd_color = "#ff5722"
@@ -547,36 +548,52 @@ def render_technical_radar(df, buy_price, tp_pct):
         bg_glow = "border-left: 4px solid #FFD700;"
         
     days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
+    
     return f'<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}"><div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>'
 
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
-    """右余白ゼロ、初期2ヶ月ズーム、全ホバー情報を備えた原本チャート"""
     if df is None or df.empty: return
     df_plot = df.copy()
+    
+    # 型の物理解毒（ホバー消失防止）
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
         if col in df_plot.columns:
             df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
 
     fig = go.Figure()
     
+    # 1. ローソク足
     fig.add_trace(go.Candlestick(
-        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        x=df_plot['Date'], 
+        open=df_plot['AdjO'], 
+        high=df_plot['AdjH'], 
+        low=df_plot['AdjL'], 
+        close=df_plot['AdjC'], 
+        name='株価', 
+        increasing_line_color='#26a69a', 
+        decreasing_line_color='#ef5350',
         hovertemplate="始値：%{open:,.0f}<br>終値：%{close:,.0f}<br>高値：%{high:,.0f}<br>安値：%{low:,.0f}<extra></extra>"
     ))
     
+    # 2. 目標線
     fig.add_trace(go.Scatter(
-        x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', 
+        x=df_plot['Date'], 
+        y=[targ_p]*len(df_plot), 
+        name='目標', 
         line=dict(color='#FFD700', width=2, dash='dash'),
         hovertemplate="目標：%{y:,.0f}<extra></extra>"
     ))
     
+    # 3. 各MA線
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: 
             fig.add_trace(go.Scatter(
-                x=df_plot['Date'], y=df_plot[m_c], name=m_n, 
-                line=dict(color=m_col, width=1.5), connectgaps=True,
+                x=df_plot['Date'], 
+                y=df_plot[m_c], 
+                name=m_n, 
+                line=dict(color=m_col, width=1.5), 
+                connectgaps=True,
                 hovertemplate=f"{m_n}：%{{y:,.0f}}<extra></extra>"
             ))
             
@@ -589,7 +606,8 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         margin=dict(l=0, r=0, t=30, b=40), 
         hovermode="x unified",
         dragmode="zoom",
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(
             type="date",
             range=[initial_start, last_date + timedelta(days=2)],
@@ -597,71 +615,102 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
             rangeslider=dict(visible=True, thickness=0.05), 
         ),
         yaxis=dict(
-            tickformat=",.0f", side="right", fixedrange=False,
-            autorange=True, range=[y_min * 0.95, y_max * 1.10]
+            tickformat=",.0f", 
+            side="right", 
+            fixedrange=False,
+            autorange=True, 
+            range=[y_min * 0.95, y_max * 1.10]
         ), 
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+        legend=dict(
+            orientation="h", 
+            yanchor="top", 
+            y=-0.1, 
+            xanchor="center", 
+            x=0.5
+        )
     )
     
-    c_key = f"{chart_key}_{cache_key}" if chart_key else f"chart_{cache_key}"
+    # 🚨 ツールバーなどを無効化
+    cache_key_final = f"{chart_key}_v8" if chart_key else "chart_v8"
     st.plotly_chart(fig, use_container_width=True, config={
         'displayModeBar': False, 
         'scrollZoom': True, 
         'displaylogo': False
-    }, key=c_key)
+    }, key=cache_key_final)
 
 
-# --- 4. サイドバー UI（原本装飾復元） ---
-st.sidebar.markdown("""
-    <div style='background-color: #1b5e20; padding: 1.2rem; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 20px;'>
-        <h1 style='text-align: center; color: #ffffff; font-size: 22px; margin: 0; font-weight: 900; letter-spacing: 2px;'>🛠️ TACTICAL CONSOLE</h1>
-        <div style='text-align: center; color: #a5d6a7; font-size: 10px; margin-top: 5px;'>IRON RULE SYSTEM Ver. 2026.4</div>
-    </div>
-""", unsafe_allow_html=True)
+# --- 4. サイドバー UI ---
+st.sidebar.title("🛠️ 戦術コンソール")
 
+# ==========================================
+# 🌐 マクロ地合い連動システム
+# ==========================================
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
 use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
 st.session_state.push_penalty = 0.0
 st.session_state.rsi_penalty = 0
-st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
+st.session_state.macro_alert = "🟢 平時（通常ロジック稼動）"
 
 if use_macro:
     api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
     manual_pct = st.sidebar.number_input(
-        "日経騰落率（API値自動入力 %）", 
+        "日経騰落率（API値自動入力 / 手動変更可 %）", 
         value=float(api_nikkei_pct), 
         step=0.1, 
         format="%.2f",
-        help="暴落シミュレーションをする場合は数値を書き換えてください。"
+        help="暴落シミュレーションをする場合は、この数値をさらに低く書き換えてください。"
     )
 
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  
         st.session_state.rsi_penalty = 20     
-        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）"
+        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）: 買値目標+10%深掘り / RSI上限-20"
     elif manual_pct <= -1.0:
         st.session_state.push_penalty = 0.05  
         st.session_state.rsi_penalty = 10     
-        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）"
+        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）: 買値目標+5%深掘り / RSI上限-10"
     else:
-        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
+        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）: 通常ロジック稼動"
 
 st.sidebar.divider()
+# ==========================================
+
 
 st.sidebar.header("📍 ターゲット選別")
+
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, key="preset_market", on_change=save_settings)
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    options=market_options, 
+    index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, 
+    key="preset_market", 
+    on_change=save_settings
+)
 
 push_r_options = ["25.0%", "50.0%", "61.8%"]
-st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    options=push_r_options, 
+    index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1, 
+    key="preset_push_r", 
+    on_change=apply_presets
+)
 
 tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(st.session_state.sidebar_tactics) if st.session_state.sidebar_tactics in tactics_options else 0, key="sidebar_tactics", on_change=save_settings)
+st.sidebar.selectbox(
+    "戦術アルゴリズム", 
+    options=tactics_options, 
+    index=tactics_options.index(st.session_state.sidebar_tactics) if st.session_state.sidebar_tactics in tactics_options else 0, 
+    key="sidebar_tactics", 
+    on_change=save_settings
+)
 
 st.sidebar.divider()
 
+
 st.sidebar.header("🔍 ピックアップルール")
+
 c1, c2 = st.sidebar.columns(2)
 with c1:
     st.number_input("価格下限(円)", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
@@ -684,9 +733,11 @@ st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.ses
 
 st.sidebar.divider()
 
+
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.bt_lot), step=100, key="bt_lot", on_change=save_settings)
-st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("目標到達の猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=save_settings)
+
 
 st.sidebar.header("💰 売りルール")
 st.sidebar.number_input("利確目標(%)", value=int(st.session_state.bt_tp), step=1, key="bt_tp", on_change=save_settings)
@@ -701,6 +752,7 @@ st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.bt
 
 st.sidebar.divider()
 
+
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_etf), key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=save_settings)
@@ -709,19 +761,21 @@ st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.gigi_in
 
 st.sidebar.divider()
 
+
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
     st.session_state.tab2_scan_results = None
     st.rerun()
 
-if st.sidebar.button("💾 設定を保存", use_container_width=True):
+if st.sidebar.button("💾 現在の設定を保存", use_container_width=True):
     save_settings()
     st.toast("全設定を永久保存した。")
 
 st.sidebar.caption(f"KEY: {cache_key}")
 
-# --- 5. タブ構成（原本 ＆ 19:00パージ同期） ---
+
+# --- 5. タブ構成 ---
 master_df = load_master()
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
