@@ -1762,8 +1762,6 @@ with tab5:
             editors.forEach(editor => {
                 editor.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
-                        // Enter押下時にデフォルトの挙動（トップ移動等）を阻止
-                        // 下矢印キーイベントをシミュレートして直下セルへ移動
                         const downArrowEvent = new KeyboardEvent('keydown', {
                             key: 'ArrowDown',
                             code: 'ArrowDown',
@@ -1776,7 +1774,6 @@ with tab5:
                 }, true);
             });
         };
-        // 監視の開始
         const observer = new MutationObserver(patchDataEditor);
         observer.observe(doc.body, { childList: true, subtree: true });
         patchDataEditor();
@@ -1786,7 +1783,6 @@ with tab5:
     )
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
-    # 🚨 「株数」カラムを物理配線に保持
     target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
     # --- 1. 物理初期化 ---
@@ -1796,7 +1792,7 @@ with tab5:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切', 'lot': '株数'}
                 temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
-                temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
+                temp_df['銘柄'] = temp_df['銘銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
                 num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
                 for c in num_cols:
                     temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
@@ -1809,12 +1805,12 @@ with tab5:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # --- 2. 司令部エディタ (Keyを固定してフォーカス喪失を防止) ---
+    # --- 2. 司令部エディタ ---
     working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
-        key="frontline_editor_stable_v1", # 固定Keyにより跳ね返りを防止
+        key="frontline_editor_stable_vfinal",
         hide_index=True,
         column_config={
             "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
@@ -1853,11 +1849,10 @@ with tab5:
 
     st.markdown("---")
 
-    # --- 4. 戦況描画ユニット (企業名・株数・損益金額反映版) ---
+    # --- 4. 戦況描画ユニット ---
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
-    # マスターDFからの企業名検索マップ
     name_map = {}
     if not master_df.empty:
         name_map = dict(zip(master_df['Code'].astype(str), master_df['CompanyName']))
@@ -1892,7 +1887,6 @@ with tab5:
         elif tp2 > 0 and cur >= tp2: st_text, st_color, bg_rgba = "🏆 任務完了", "#ab47bc", "rgba(171, 71, 188, 0.15)"
         else: st_text, st_color, bg_rgba = "🟢 巡航中", "#26a69a", "rgba(38, 166, 154, 0.15)"
 
-        # 🚨 ヘッダーに企業名を物理刻印
         st.markdown(f"""
             <div style="margin-bottom: 5px;">
                 <span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker_raw}] {company_name}</span>
@@ -1902,15 +1896,17 @@ with tab5:
         """, unsafe_allow_html=True)
 
         m_cols = st.columns([1, 1, 1.2, 1, 1])
-        m_cols[0].metric("損切目安", f"¥{final_sl:,}", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="inverse")
+        # 🚨 損切の％を赤表示にするため delta_color="normal" へ修正（マイナス値＝赤）
+        m_cols[0].metric("損切目安", f"¥{final_sl:,}", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="normal")
         m_cols[1].metric("買値", f"¥{buy:,}")
         
         with m_cols[2]:
+            # 🚨 順序を「現在値 / 騰落率」に変更し、フォントサイズを13pxへ拡大
             st.markdown(f"""
                 <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
                     <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 損益状況</div>
                     <div style="font-size: 20px; color: #fff; font-weight: bold;">¥{profit_amt:+,}</div>
-                    <div style="font-size: 10px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}% / ¥{cur:,}</div>
+                    <div style="font-size: 13px; color: {st_color}; font-weight: bold;">¥{cur:,} / {cur_pct:+.2f}%</div>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -1927,7 +1923,6 @@ with tab5:
             for p_v, p_n, p_c in [(final_sl,"🛡️ 損切","#ef5350"),(buy,"🏁 買値","#ffca28"),(tp1,"🎯 利確1","#26a69a"),(tp2,"🏆 利確2","#42a5f5")]:
                 if p_v > 0: fig.add_trace(go.Scatter(x=[p_v], y=[0], mode="markers", marker=dict(size=10, color=p_c), hovertemplate=f"{p_n}: ¥%{{x:,.0f}}<extra></extra>"))
             
-            # 🚨 グラフタイトルやホバーにも企業名を反映可能だが、シンプルさを維持するためホバーに集約
             fig.add_trace(go.Scatter(
                 x=[cur], y=[0], mode="markers", 
                 marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), 
