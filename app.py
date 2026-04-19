@@ -1389,7 +1389,7 @@ with tab3:
             with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
                 raw_data_dict = {}
                 
-                # --- 📡 4. TAB3専用：並列データ収集ユニット（4桁・5桁物理同期 ＆ 予備電源） ---
+        # --- 📡 4. TAB3専用：並列データ収集ユニット（4桁・5桁物理同期 ＆ 予備電源） ---
         def fetch_parallel_t3(c):
             try:
                 c_str = str(c).upper().strip()
@@ -1397,7 +1397,7 @@ with tab3:
                 api_code = c_str if len(c_str) >= 5 else c_str + "0"
                 
                 data = None
-                # 英字銘柄（523A等）は yfinance 予備電源を優先起動
+                # A. 英字銘柄（523A等）は yfinance 予備電源を優先起動（J-Quantsの欠落を物理回避）
                 if not c_str.isdigit():
                     try:
                         import yfinance as yf
@@ -1411,11 +1411,11 @@ with tab3:
                             data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
                     except: pass
 
-                # yfで取れなかった、または数字銘柄の場合は J-Quants 正典へ
+                # B. 数字銘柄、またはyfで取れなかった場合は J-Quants 正典へ
                 if not data:
                     data = get_single_data(api_code, 1)
 
-                # 最終バックアップ：全滅時の yf 強制補完
+                # C. 最終バックアップ：全滅時の yf 強制補完
                 if not data or not data.get("bars"):
                     try:
                         import yfinance as yf
@@ -1428,13 +1428,14 @@ with tab3:
                             data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
                     except: pass
 
-                # ファンダメンタルズ取得（原本ロジック）
+                # D. ファンダメンタルズ取得（原本ロジック）
                 f_data = get_fundamentals(c_str)
                 r_per = (f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')) if f_data else None
                 r_pbr = (f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')) if f_data else None
                 r_mcap = (f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')) if f_data else None
                 r_roe = (f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')) if f_data else None
 
+                # キーを「入力そのまま（4桁等）」に固定し、データを返却
                 return c_str, {"data": data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe}
             except Exception:
                 return str(c), None
@@ -1444,7 +1445,7 @@ with tab3:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(t_codes))) as executor:
             results = list(executor.map(fetch_parallel_t3, t_codes))
         
-        # 🚨 物理同期：入力キーを確実に紐付け
+        # 🚨 物理同期：入力コードをキーとして辞書を再構築
         raw_data_dict = {res[0]: res[1] for res in results if res[1] is not None}
         t_fetch = time.time()
 
@@ -1476,7 +1477,7 @@ with tab3:
 
                 bars = (raw_s.get("data") or {}).get("bars", [])
 
-                # --- 🛡️ IPO検閲（物理クラッシュ封鎖 ＆ 523A生存） ---
+                # --- 🛡️ IPO検閲（物理クラッシュ封鎖版） ---
                 if st.session_state.f5_ipo:
                     try:
                         if target_key.isdigit() and not master_df.empty:
@@ -1486,7 +1487,7 @@ with tab3:
                                 if ld_col:
                                     ld_val = m_row.iloc[0][ld_col[0]]
                                     if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                        # 🚨 物理同期：Naive/Aware衝突を排除
+                                        # 🚨 物理同期：タイムゾーン衝突エラーを強制排除
                                         target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
                                         now_dt = datetime.now().replace(tzinfo=None)
                                         if (now_dt - target_dt).days < 365: continue
@@ -1506,7 +1507,7 @@ with tab3:
                     })
                     continue
 
-                # --- ⚙️ テクニカル解析（原本 100% 復元） ---
+                # --- ⚙️ テクニカル解析原本 ---
                 df_raw = pd.DataFrame(bars)
                 if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                 df_s = clean_df(df_raw)
@@ -1529,6 +1530,7 @@ with tab3:
                 # 🚨 物理復旧：地雷イベント検知回路
                 alerts.extend(check_event_mines(target_key, (raw_s.get("data") or {}).get("events")))
 
+                # 【待伏判定ロジック】
                 if is_ambush:
                     score = 4
                     bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
@@ -1543,10 +1545,12 @@ with tab3:
                         alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
                         score += 5
                     
+                    # 🏺 酒田：二重底
                     if check_double_bottom(df_chart_full.tail(31)):
                         alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転。")
                         score += 3
                     
+                    # 🏺 酒田：陰の極み
                     if check_oversold_ultimate(df_chart_full):
                         alerts.append("💎 【陰の極み】最終波形。絶好の狙撃ポイント。")
                         score += 7
@@ -1554,6 +1558,7 @@ with tab3:
                     reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                     rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                 
+                # 【強襲判定ロジック】
                 else:
                     bt_val = int(max(h14, lc + (atr_v * 0.5)))
                     hist_vals = df_mini['MACD_Hist'].tail(5).values
@@ -1686,7 +1691,7 @@ with tab3:
 
             # レーダーチャート ＆ メインチャート
             st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
-            draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_sacred_{r['code']}_{index}_{cache_key}")
+            draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_sacred_v4_{r['code']}_{index}_{cache_key}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
