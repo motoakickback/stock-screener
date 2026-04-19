@@ -1092,7 +1092,7 @@ with tab2:
             
 # --- 14. タブコンテンツ (TAB3: 精密スコープ) ---
 with tab3:
-    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・UI完全復元 ＆ 位相解析版）</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（酒田五法・位相連動型 ＆ UI完全統合版）</h3>', unsafe_allow_html=True)
     
     # --- 🛡️ 1. 兵站管理：ファイルパスの物理定義 ---
     T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
@@ -1121,7 +1121,7 @@ with tab3:
         scope_mode = st.radio(
             "🎯 解析モードを選択", 
             ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], 
-            key="t3_scope_mode_final_2026"
+            key="t3_scope_mode_ultimate_fixed_color_v3"
         )
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
@@ -1160,19 +1160,16 @@ with tab3:
         if is_ambush:
             st.info("""
                 **🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**
-                - **主戦場**: 直近高安の黄金比（半値・61.8%押し等）における底堅いエリア。
-                - **判定核**: MACDの好転に加え、「たくり足」「陽の包み足」等の強い反転波形を検知。
-                - **安全装置**: PBR 5.0倍以下の割安性を評価し、投げ売り後の「大底圏」を狙い撃つ。
-                - **目的**: 恐怖の中で反転の予兆を掴み、リスクリワードの最大化を図る迎撃ロジック。
+                - **主戦場**: 260日位相の安値圏（20%以下）。
+                - **酒田五法判定**: 「たくり足」「陽の包み足」「はらみ足」を位相連動で精密検知。
+                - **財務安全装置**: PBR 1.5倍以下をポジティブ（緑）評価。
             """)
         else:
             st.info("""
                 **⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**
-                - **主戦場**: 14日高値周辺。均衡が崩れ、上昇へのエネルギーが解放される瞬間。
-                - **判定核**: MACDゴールデンクロスの「鮮度（発生1〜3日）」、および出来高の急増（5日平均1.5倍〜）。
-                - **突破力**: 直近高値の物理突破（ブレイクアウト）を評価し、上昇加速局面へ同乗。
-                - **品質保証**: ROE 10.0%以上の「稼ぐ力」を条件とし、RSIで過熱感（高値掴み）を監視。
-                - **目的**: 圧倒的な熱量を持つ初動個体を捕捉し、短期間での爆発的利得を狙う攻撃ロジック。
+                - **主戦場**: MACD GC直後の上昇加速局面。
+                - **酒田五法判定**: 高値圏での「三尊」「首吊り線」等のダマシを位相解析で警告。
+                - **品質保証**: ROE 10.0%以上の「稼ぐ力」を条件に攻撃続行。
             """)
 
     # --- 🛡️ 3. 解析・描画実行エンジン ---
@@ -1189,23 +1186,20 @@ with tab3:
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
-        # 🚨 【ボスの資産】 lookbehind/lookaheadを用いた精密正規表現の完全復元
         t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z](?![A-Z0-9])', all_text)]))
         
         if not t_codes:
             st.warning("有効な銘柄コードが確認できません。")
         else:
             t_global_start = time.time()
-            with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
+            with st.spinner(f"全 {len(t_codes)} 銘柄を酒田五法 ＆ 位相解析中..."):
                 raw_data_dict = {}
-                
-                # --- 📡 3. 並列データ収集ユニット（復元：yfinanceバックアップ ＆ 財務多重補完） ---
+
                 def fetch_parallel_t3(c):
                     try:
                         c_str = str(c); api_code = c_str + "0"
                         data = get_single_data(api_code, 1)
                         
-                        # 🚨 【ボスの資産】 データ欠損時の yfinance バックアップ路の完全復元
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -1234,7 +1228,6 @@ with tab3:
                                     try: r_roe = (float(ni) / float(eq)) * 100
                                     except: pass
 
-                        # 🚨 【ボスの資産】 yfinance による Fundamental 救済路の完全復元
                         if any(v is None for v in [r_per, r_pbr, r_mcap, r_roe]):
                             try:
                                 import yfinance as yf
@@ -1266,7 +1259,7 @@ with tab3:
 
                 t_fetch = time.time()
 
-                # --- ⚙️ 5. 解析計算ループ（位相解析 ＆ 物理配線統合） ---
+                # --- ⚙️ 5. 解析計算ループ（酒田五法・位相連動 ＆ PER/PBRカラー統合） ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1277,7 +1270,6 @@ with tab3:
                         api_code = target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
-                        # マスターデータからの属性取得
                         if not master_df.empty:
                             m_row = master_df[master_df['Code'].astype(str) == api_code]
                             if not m_row.empty:
@@ -1285,11 +1277,9 @@ with tab3:
 
                         res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
                         
-                        # ROEの表示単位調整
                         if res_roe is not None and 0 < abs(res_roe) < 1.0: 
                             res_roe = res_roe * 100
 
-                        # 時価総額の単位換算
                         if raw_mcap is not None:
                             if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
                             elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
@@ -1303,17 +1293,17 @@ with tab3:
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                                'source': "🛡️ 監視" if c in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
+                                'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
                                 'alerts': ["⚠️ データ取得失敗"], 'pos_score': 50, 'error': True
                             })
                             continue
 
-                        # データ洗浄・テクニカル演算
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
                         df_chart_full = calc_technicals(df_s)
                         
+                        # 🚨 【物理復元】酒田五法解析用・生データ抽出
                         t_latest, t_prev, t_pprev = df_chart_full.iloc[-1], df_chart_full.iloc[-2], df_chart_full.iloc[-3]
                         lc, lo, lh, ll = float(t_latest['AdjC']), float(t_latest['AdjO']), float(t_latest['AdjH']), float(t_latest['AdjL'])
                         pc, po, ph, pl = float(t_prev['AdjC']), float(t_prev['AdjO']), float(t_prev['AdjH']), float(t_prev['AdjL'])
@@ -1324,35 +1314,43 @@ with tab3:
                         l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v = h14 - l14
                         
-                        # --- 🚨 位相分析 (Context Analysis) ---
                         df_mini = df_chart_full.tail(260).copy()
                         ctx = analyze_context(df_mini)
-                        pos_score = ctx['pos'] # 現在の価格位置（0-100%）
+                        pos_score = ctx['pos']
 
                         score, alerts, gc_days = 0, [], 0
                         
                         if is_ambush:
-                            # 待伏（押し目）ロジック
                             score = 4
                             bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
                             m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
-                            if res_pbr is not None and res_pbr <= 5.0: score += 2
+                            if res_pbr is not None and res_pbr <= 1.5: score += 2
                             
-                            # 【酒田五法】位相連動型・たくり足解析
-                            body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
-                            if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6:
-                                if pos_score < 25:
-                                    alerts.append("🔥 【反撃】底値圏でのたくり足。大底打ち・上昇転換の急所。")
-                                    score += 5
-                                else:
-                                    alerts.append("⚠️ 【中立】たくり足検知。ただし位相は底値圏外。")
+                            # 🚨 【新装】酒田五法・位相連動判定
+                            is_low_zone = pos_score < 30
                             
+                            # たくり足
+                            body_v, shad_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
+                            if full_rng > 0 and shad_l > (body_v * 2.5) and (shad_l / full_rng) > 0.6:
+                                msg = "🔥 【急所】安値圏のたくり足検知。底打ち反転の可能性大。" if is_low_zone else "🟢 【酒田】たくり線検知。"
+                                alerts.append(msg); score += 5 if is_low_zone else 2
+
+                            # 陽の包み足 (Bullish Engulfing)
+                            if lc > lo and pc < po and lc >= po and lo <= pc:
+                                msg = "🔥 【急所】安値圏の陽の包み足。強力な買い転換シグナル。" if is_low_zone else "🟢 【酒田】陽の包み足検知。"
+                                alerts.append(msg); score += 4 if is_low_zone else 1
+
+                            # 陽のはらみ足 (Bullish Harami)
+                            if pc > po and lc > lo and lc < po and lo > pc:
+                                msg = "🔥 【期待】安値圏のはらみ足。下落停止の兆候。" if is_low_zone else "🟢 【酒田】はらみ足検知。"
+                                alerts.append(msg); score += 3 if is_low_zone else 1
+
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
-                            # 強襲（トレンド）ロジック
+                            # 強襲モード
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             gc_score, gc_days = 0, 0
@@ -1361,12 +1359,10 @@ with tab3:
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
                                 else: gc_score = 5
                             
-                            # 【酒田五法】位相連動型・三尊警戒解析
-                            if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
-                                if pos_score > 75:
-                                    alerts.append("🚨 【厳戒】高値圏での三尊検知。天井形成・トレンド転換の強力な警告。")
-                                else:
-                                    alerts.append("🔴 【酒田】三尊形状を検知。警戒レベルを維持。")
+                            # 高値圏の首吊り線・三尊警戒
+                            is_high_zone = pos_score > 75
+                            if is_high_zone and pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
+                                alerts.append("🚨 【厳戒】高値圏での三尊検知。天井形成の恐れ大。")
                             
                             if res_roe and res_roe >= 10.0: gc_score += 15
                             score = gc_score
@@ -1380,9 +1376,8 @@ with tab3:
                             'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
                             'alerts': alerts + ctx['msgs'], 'pos_score': pos_score, 'error': False
                         })
-                    except Exception: continue
+                    except: continue
 
-                # ランク ＞ スコア ＞ 到達度 の順で厳格ソート
                 rank_order = {"S": 4, "A": 3, "B": 2, "C": 1, "圏外": 0}
                 for res in scope_results:
                     clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
@@ -1391,17 +1386,17 @@ with tab3:
                 
                 t_calc = time.time()
 
-                # 🚨 1. プロファイル出力 (タイマー計測結果)
+                # 🚨 1. プロファイル出力
                 st.markdown(f"""
                 <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
                     <b>⏱️ スキャンプロファイル (TAB3)</b><br>
-                    ・260日兵站確保 ＆ 並列データ収集: {t_fetch - t_global_start:.2f}秒<br>
+                    ・260日兵站確保 ＆ 酒田五法並列演算: {t_fetch - t_global_start:.2f}秒<br>
                     ・位相解析 ＆ 戦術スコアリング: {t_calc - t_fetch:.2f}秒<br>
                     <b>・合計: {t_calc - t_global_start:.2f}秒</b>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 🚨 2. 個別銘柄の神聖UI描画ループ (Turn 18形式を1pxのズレなく復元)
+                # 🚨 2. 個別銘柄の神聖UI描画ループ
                 for index, r in enumerate(scope_results):
                     st.divider()
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
@@ -1417,10 +1412,8 @@ with tab3:
                     t_badge = f"<span style='background-color:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; margin-left:10px; font-weight:bold;'>🎯 優先度: {r['rank']}</span>"
                     gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC {r['gc_days']}日目</span>" if r.get('gc_days', 0) > 0 else ""
 
-                    # 銘柄ヘッダー
                     st.markdown(f"""<div style="margin-bottom: 0.8rem;"><h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">{s_badge} ({r['code']}) {r['name']}</h3><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">{m_badge}{t_badge}{gc_badge}<span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['rsi']:.1f}%</span><span style="background-color: rgba(255,255,255,0.1); padding: 2px 8px; border-radius:4px; font-size:12px; color:#aaa;">位相: {r['pos_score']:.1f}%</span></div></div>""", unsafe_allow_html=True)
                     
-                    # 警告灯・戦術メッセージ出力
                     if r.get('alerts'):
                         for alert in r['alerts']:
                             if any(mark in alert for mark in ["🟢", "⚡", "🔥", "反撃", "期待"]): st.success(alert)
@@ -1430,7 +1423,6 @@ with tab3:
                         st.warning("⚠️ データの取得に失敗しました。")
                         continue
                     
-                    # 計器パネル
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     with sc_left:
                         def safe_int(val):
@@ -1446,10 +1438,17 @@ with tab3:
                     
                     with sc_mid:
                         roe_v, per_v, pbr_v = r.get('roe'), r.get('per'), r.get('pbr')
-                        roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"
-                        roe_c = "#26a69a" if (roe_v and roe_v >= 10.0) else "#ef5350"
+                        
+                        # --- 🚨 PER/PBR 戦術的色分け配線 ---
                         per_s = f"{per_v:.1f}倍" if per_v is not None else "-"
+                        per_c = "#26a69a" if (per_v is not None and per_v <= 20.0) else "#ef5350" if per_v is not None else "#888"
+                        
                         pbr_s = f"{pbr_v:.2f}倍" if pbr_v is not None else "-"
+                        pbr_c = "#26a69a" if (pbr_v is not None and pbr_v <= 1.5) else "#ef5350" if pbr_v is not None else "#888"
+                        
+                        roe_s = f"{roe_v:.1f}%" if roe_v is not None else "-"
+                        roe_c = "#26a69a" if (roe_v and roe_v >= 10.0) else "#ef5350" if roe_v is not None else "#888"
+                        
                         box_title = "🎯 買値目標" if is_ambush else "🎯 トリガー"
                         
                         st.markdown(f"""
@@ -1457,8 +1456,8 @@ with tab3:
                                 <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
                                 <div style='font-size:2.4rem; font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{int(r['bt_val']):,}円</div>
                                 <div style='display:flex; justify-content:space-around; margin-top:10px; font-size:12px; border-top:1px dashed #444; padding-top:10px;'>
-                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:#fff; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:#fff; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+                                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
                                     <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
                                 </div>
                                 <div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
@@ -1483,8 +1482,7 @@ with tab3:
 
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     st.markdown("---")
-                    # 🚨 最終パッチ：ホバー8項目・ズーム・右余白ゼロ版チャート
-                    draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_ultimate_fixed_{r['code']}_{index}")
+                    draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_ultimate_v2_{r['code']}_{index}")
                     
 with tab4:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
