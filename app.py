@@ -251,7 +251,8 @@ def render_macro_board():
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
         
-        c1, c2 = st.columns([1, 2.5])
+        # 🚨 カラム比率を調整し、グラフ側(c2)を拡大。
+        c1, c2 = st.columns([1, 4]) 
         with c1:
             st.markdown(f'<div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;"><div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div><div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div><div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div></div>', unsafe_allow_html=True)
         with c2:
@@ -263,15 +264,18 @@ def render_macro_board():
             
             y_min, y_max = df['Close'].min(), df['Close'].max()
             fig.update_layout(
-                height=220, # マクロボード用に少し高さを確保
-                margin=dict(l=10, r=40, t=15, b=10), 
+                height=220, 
+                # 🚨 左側のマージン(l)を0にし、金額パネルに隣接させる。
+                margin=dict(l=0, r=40, t=15, b=10), 
                 xaxis_rangeslider_visible=False, 
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                 showlegend=False, hovermode="x unified", 
-                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05]), # 🚨 上方拡張
-                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)])
+                # 🚨 fixedrange=True で操作(ズーム/パン)をロック。
+                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True), 
+                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
             )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            # 🚨 ツールバーなどを無効化
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
     else: st.warning("📡 外部気象レーダー応答なし")
 
