@@ -1747,44 +1747,78 @@ with tab4:
                     styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                     st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
 
+# --- 9. タブコンテンツ (TAB5: 交戦モニター) ---
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 銘柄コードを入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
+    st.caption("※ 銘柄コードと株数を入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
+
+    # 🚨 【物理パッチ】Enterで直下移動 ＆ トップへの跳ね返り防止スクリプト
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        const patchDataEditor = () => {
+            const editors = doc.querySelectorAll('div[data-testid="stDataEditor"]');
+            editors.forEach(editor => {
+                editor.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        // Enter押下時にデフォルトの挙動（トップ移動等）を阻止
+                        // 下矢印キーイベントをシミュレートして直下セルへ移動
+                        const downArrowEvent = new KeyboardEvent('keydown', {
+                            key: 'ArrowDown',
+                            code: 'ArrowDown',
+                            keyCode: 40,
+                            which: 40,
+                            bubbles: true
+                        });
+                        e.target.dispatchEvent(downArrowEvent);
+                    }
+                }, true);
+            });
+        };
+        // 監視の開始
+        const observer = new MutationObserver(patchDataEditor);
+        observer.observe(doc.body, { childList: true, subtree: true });
+        patchDataEditor();
+        </script>
+        """,
+        height=0,
+    )
 
     FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
-    target_cols = ["銘柄", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
+    # 🚨 「株数」カラムを物理配線に保持
+    target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
-    # --- 1. 物理初期化（ソース・オブ・トゥルース） ---
+    # --- 1. 物理初期化 ---
     if 'frontline_df' not in st.session_state:
         if os.path.exists(FRONTLINE_FILE):
             try:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
-                rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切'}
+                rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切', 'lot': '株数'}
                 temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
-                
-                # 型の完全浄化（この1回のみ実行）
                 temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
-                num_cols = ["買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
+                num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
                 for c in num_cols:
                     temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
                 
+                default_lot = int(st.session_state.get("bt_lot", 100))
+                temp_df['株数'] = temp_df['株数'].fillna(default_lot)
                 st.session_state.frontline_df = temp_df
             except:
                 st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # --- 2. 司令部エディタ (物理分離：入力ソースを固定) ---
-    # 🚨 諸悪の根源である「st.session_state.frontline_df = st.data_editor(...)」を破壊。
-    # 🚨 入力用には不変の「frontline_df」を渡し、編集結果は別変数「working_df」で受ける。
+    # --- 2. 司令部エディタ (Keyを固定してフォーカス喪失を防止) ---
     working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
         use_container_width=True,
-        key="frontline_editor_fixed_v5", # キーを刷新してキャッシュを焼き払う
+        key="frontline_editor_stable_v1", # 固定Keyにより跳ね返りを防止
         hide_index=True,
         column_config={
             "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
+            "株数": st.column_config.NumberColumn("株数", format="%d", min_value=0),
             "買値": st.column_config.NumberColumn("買値", format="%d"),
             "現在値": st.column_config.NumberColumn("現在値", format="%d"),
             "損切": st.column_config.NumberColumn("損切", format="%d"),
@@ -1797,22 +1831,17 @@ with tab5:
     # --- 3. コマンドユニット ---
     col_c1, col_c2 = st.columns(2)
     with col_c1:
-        # 同期や保存の時だけ、エディタの結果をソースに書き戻す
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
             codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
             if codes:
                 with st.spinner("J-Quants 接続中..."):
                     new_prices = fetch_current_prices_fast(codes)
                     if new_prices:
-                        # working_dfに反映
                         for c_code, c_price in new_prices.items():
                             working_df.loc[working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code), '現在値'] = c_price
-                        # ソースを更新して再起動
                         st.session_state.frontline_df = working_df.copy()
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
-                    else:
-                        st.error("🚨 APIから有効な現在値を取得できませんでした。")
             else:
                 st.warning("同期対象の銘柄コードがありません。")
 
@@ -1824,19 +1853,27 @@ with tab5:
 
     st.markdown("---")
 
-    # --- 4. 戦況描画ユニット (working_dfを参照してリアルタイム描画) ---
+    # --- 4. 戦況描画ユニット (企業名・株数・損益金額反映版) ---
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
-    # ここでは working_df（現在の編集中の値）をベースに描画する
+    # マスターDFからの企業名検索マップ
+    name_map = {}
+    if not master_df.empty:
+        name_map = dict(zip(master_df['Code'].astype(str), master_df['CompanyName']))
+
     for index, row in working_df.iterrows():
-        ticker = str(row.get('銘柄', '')).replace('.0', '').strip()
-        if not ticker or ticker == "nan" or ticker == "None": continue
+        ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
+        if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
         
+        ticker_search = ticker_raw + "0" if len(ticker_raw) == 4 else ticker_raw
+        company_name = name_map.get(ticker_search, "不明銘柄")
+
         def to_i(v):
             try: return int(float(v)) if pd.notna(v) and str(v).strip() != "" else 0
             except: return 0
 
+        qty = to_i(row.get('株数', 0))
         buy, cur = to_i(row['買値']), to_i(row['現在値'])
         tp1, tp2 = to_i(row['第1利確']), to_i(row['第2利確'])
         atr_v = float(row['atr']) if pd.notna(row['atr']) and str(row['atr']).strip() != "" else float(buy * 0.03)
@@ -1845,6 +1882,7 @@ with tab5:
         
         final_sl = to_i(row['損切']) if to_i(row['損切']) > 0 else int(buy - (atr_v * sl_mult)) if buy > 0 else 0
         cur_pct = ((cur / buy) - 1) * 100 if buy > 0 and cur > 0 else 0.0
+        profit_amt = (cur - buy) * qty if buy > 0 and cur > 0 else 0
         sl_pct = ((final_sl / buy) - 1) * 100 if buy > 0 and final_sl > 0 else 0.0
 
         if cur <= 0: st_text, st_color, bg_rgba = "📡 待機中", "#888888", "rgba(136, 136, 136, 0.1)"
@@ -1854,14 +1892,27 @@ with tab5:
         elif tp2 > 0 and cur >= tp2: st_text, st_color, bg_rgba = "🏆 任務完了", "#ab47bc", "rgba(171, 71, 188, 0.15)"
         else: st_text, st_color, bg_rgba = "🟢 巡航中", "#26a69a", "rgba(38, 166, 154, 0.15)"
 
-        st.markdown(f'<div style="margin-bottom: 5px;"><span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker}]</span><span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span></div>', unsafe_allow_html=True)
+        # 🚨 ヘッダーに企業名を物理刻印
+        st.markdown(f"""
+            <div style="margin-bottom: 5px;">
+                <span style="font-size: 18px; font-weight: bold; color: #fff;">部隊 [{ticker_raw}] {company_name}</span>
+                <span style="font-size: 14px; font-weight: bold; color: {st_color}; margin-left: 15px;">{st_text}</span>
+                <span style="font-size: 14px; color: #aaa; margin-left: 10px;">(兵力: {qty:,}株)</span>
+            </div>
+        """, unsafe_allow_html=True)
 
         m_cols = st.columns([1, 1, 1.2, 1, 1])
         m_cols[0].metric("損切目安", f"¥{final_sl:,}", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="inverse")
         m_cols[1].metric("買値", f"¥{buy:,}")
         
         with m_cols[2]:
-            st.markdown(f'<div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;"><div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 現在値</div><div style="font-size: 20px; color: #fff; font-weight: bold;">¥{cur:,}</div><div style="font-size: 10px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}%</div></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+                <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
+                    <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 損益状況</div>
+                    <div style="font-size: 20px; color: #fff; font-weight: bold;">¥{profit_amt:+,}</div>
+                    <div style="font-size: 10px; color: {st_color}; font-weight: bold;">{cur_pct:+.2f}% / ¥{cur:,}</div>
+                </div>
+            """, unsafe_allow_html=True)
             
         m_cols[3].metric("利確1", f"¥{tp1:,}" if tp1 > 0 else "---")
         m_cols[4].metric("利確2", f"¥{tp2:,}" if tp2 > 0 else "---")
@@ -1872,11 +1923,24 @@ with tab5:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=[mi, mx], y=[0, 0], mode='lines', line=dict(color="#444", width=2), hoverinfo='skip'))
             fig.add_trace(go.Scatter(x=[buy, cur], y=[0, 0], mode='lines', line=dict(color="rgba(38,166,154,0.6)" if cur>=buy else "rgba(239,83,80,0.6)", width=12), hoverinfo='skip'))
+            
             for p_v, p_n, p_c in [(final_sl,"🛡️ 損切","#ef5350"),(buy,"🏁 買値","#ffca28"),(tp1,"🎯 利確1","#26a69a"),(tp2,"🏆 利確2","#42a5f5")]:
                 if p_v > 0: fig.add_trace(go.Scatter(x=[p_v], y=[0], mode="markers", marker=dict(size=10, color=p_c), hovertemplate=f"{p_n}: ¥%{{x:,.0f}}<extra></extra>"))
-            fig.add_trace(go.Scatter(x=[cur], y=[0], mode="markers", marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), hovertemplate="現在地: ¥%{x:,.0f}<extra></extra>"))
-            fig.update_layout(height=70, showlegend=False, yaxis=dict(showticklabels=False, range=[-1,1], fixedrange=True), xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False)
-            st.plotly_chart(fig, use_container_width=True, key=f"bar_{ticker}_{index}")
+            
+            # 🚨 グラフタイトルやホバーにも企業名を反映可能だが、シンプルさを維持するためホバーに集約
+            fig.add_trace(go.Scatter(
+                x=[cur], y=[0], mode="markers", 
+                marker=dict(size=18, symbol="cross-thin", line=dict(width=3, color=st_color)), 
+                hovertemplate=f"部隊: {company_name}<br>現在地: ¥%{{x:,.0f}}<br>損益: ¥{profit_amt:+,}<extra></extra>"
+            ))
+            
+            fig.update_layout(
+                height=70, showlegend=False, 
+                yaxis=dict(showticklabels=False, range=[-1,1], fixedrange=True), 
+                xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), 
+                margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
+            )
+            st.plotly_chart(fig, use_container_width=True, key=f"bar_{ticker_raw}_{index}", config={'displayModeBar': False})
         
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
