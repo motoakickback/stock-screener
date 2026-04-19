@@ -1507,6 +1507,8 @@ with tab3:
                             })
                             continue
 
+                        # 🚨 修正箇所：この1行を挿入して検問所を再起動する
+                        if st.session_state.f5_ipo and len(bars) < 250: continue
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
