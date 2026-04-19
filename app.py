@@ -1508,28 +1508,31 @@ with tab3:
                             # --- 🛡️ 1. 兵站確保状況の確認 ---
                             bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                            # --- 🛡️ 2. IPO検閲（物理的再配線・完全クラッシュ防止版） ---
+                            # --- 🛡️ 2. IPO検閲（論理破綻の修復版） ---
                             if st.session_state.f5_ipo:
                                 try:
-                                    # 数字銘柄は厳密チェック
-                                    if target_key.isdigit():
-                                        m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
-                                        if not m_row.empty:
-                                            ld_col = [col for col in m_row.columns if 'Listing' in col]
-                                            if ld_col:
-                                                ld_val = m_row.iloc[0][ld_col[0]]
-                                                if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                                    # 🚨 物理同期：タイムゾーン不一致エラー(naive/aware)を強制排除
-                                                    target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
-                                                    now_dt = datetime.now().replace(tzinfo=None)
-                                                    days_since_listed = (now_dt - target_dt).days
-                                                    
-                                                    # 【IPO除外】1年（365日）未満の個体のみ戦域から排除
-                                                    if days_since_listed < 365:
-                                                        continue
-                                                else:
-                                                    # 上場日が不明な個体は除外
+                                    # 🚨 物理同期：isdigit() を撤廃し、英字銘柄(523A等)も検閲対象に含める
+                                    m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
+                                    
+                                    if not m_row.empty:
+                                        ld_col = [col for col in m_row.columns if 'Listing' in col]
+                                        if ld_col:
+                                            ld_val = m_row.iloc[0][ld_col[0]]
+                                            if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                                # 🚨 物理同期：タイムゾーン不一致を強制排除
+                                                target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                                now_dt = datetime.now().replace(tzinfo=None)
+                                                days_since_listed = (now_dt - target_dt).days
+                                                
+                                                # 【IPO除外】1年（365日）未満の個体は、ここで確実に戦域から排除
+                                                if days_since_listed < 365:
                                                     continue
+                                            else:
+                                                # 上場日が不明な個体も、安全のため原本通り除外
+                                                continue
+                                    else:
+                                        # マスターDFに存在しない銘柄も検閲不能として除外
+                                        continue
                                 except Exception:
                                     pass
 
