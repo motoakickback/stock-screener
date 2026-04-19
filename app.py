@@ -777,16 +777,22 @@ if master_df.empty:
     st.stop()
 
 # ==========================================
-# 🚨 物理復元：サイドバー ＆ 司令部 (The Control Room)
+# 🚨 物理復元：神聖サイドバー ＆ 司令部 (The Control Room)
 # ==========================================
 
-st.sidebar.title("🛠️ 戦術コンソール")
+# サイドバータイトル（神聖HTML装飾）
+st.sidebar.markdown("""
+    <div style='background-color: #1b5e20; padding: 1.2rem; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 20px;'>
+        <h1 style='text-align: center; color: #ffffff; font-size: 22px; margin: 0; font-weight: 900; letter-spacing: 2px;'>🛠️ TACTICAL CONSOLE</h1>
+        <div style='text-align: center; color: #a5d6a7; font-size: 10px; margin-top: 5px;'>IRON RULE SYSTEM Ver. 2026.4</div>
+    </div>
+""", unsafe_allow_html=True)
 
-# --- 1. 地合い連動・気象アラート ---
-st.sidebar.header("🌪️ マクロ気象連動")
-use_macro = st.sidebar.toggle("地合い連動フィルタを有効化", value=True, help="日経平均の暴落時に自動で押し目・RSIの閾値を厳格化します。")
+# --- 1. 地合い連動・マクロ気象アラート ---
+st.sidebar.markdown("<h3 style='font-size: 16px; border-left: 4px solid #2e7d32; padding-left: 8px; color: #eee;'>🌪️ マクロ気象連動</h3>", unsafe_allow_html=True)
+use_macro = st.sidebar.toggle("地合い連動フィルタを有効化", value=True, help="日経平均の暴落時に自動で防衛ラインを厳格化します。")
 
-# 地合い変数の物理初期化
+# 地合い変数の物理初期化（システム・ステート同期）
 st.session_state.push_penalty = 0.0
 st.session_state.rsi_penalty = 0
 st.session_state.macro_alert = "🟢 平時 (Normal)"
@@ -804,14 +810,15 @@ if use_macro and weather:
         st.session_state.macro_alert = "🟠 警戒 (Caution)"
         st.sidebar.warning(f"【注意】地合い悪化 ({n_pct:+.2f}%)。防衛ラインを5%引き下げます。")
     else:
-        st.sidebar.success(f"【巡航】地合い安定 ({n_pct:+.2f}%)。標準戦術を維持。")
+        st.sidebar.success(f"【巡航】地合い安定 ({n_pct:+.2f}%)。")
 else:
-    st.sidebar.info("地合い連動：OFF")
+    st.sidebar.info("地合い連動：OFF (Manual Mode)")
 
-st.sidebar.markdown("---")
+st.sidebar.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
 
 # --- 2. ターゲット設定 ＆ プリセット ---
-st.sidebar.header("📍 ターゲット設定")
+st.sidebar.markdown("<h3 style='font-size: 16px; border-left: 4px solid #2e7d32; padding-left: 8px; color: #eee;'>📍 ターゲット設定</h3>", unsafe_allow_html=True)
+
 st.sidebar.selectbox(
     "市場ターゲット", 
     ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], 
@@ -820,7 +827,7 @@ st.sidebar.selectbox(
 )
 
 st.sidebar.selectbox(
-    "押し目プリセット", 
+    "押し目プリセット (Fibonacci)", 
     ["25.0%", "50.0%", "61.8%"], 
     key="preset_push_r", 
     on_change=apply_presets
@@ -833,39 +840,58 @@ st.sidebar.selectbox(
     on_change=save_settings
 )
 
-st.sidebar.markdown("---")
+st.sidebar.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
 
 # --- 3. スキャンルール（物理足切り設定） ---
-st.sidebar.header("🔍 スキャンルール")
+st.sidebar.markdown("<h3 style='font-size: 16px; border-left: 4px solid #2e7d32; padding-left: 8px; color: #eee;'>🔍 スキャンルール</h3>", unsafe_allow_html=True)
 
+# 2カラム構成の維持
 col_f1, col_f2 = st.sidebar.columns(2)
-col_f1.number_input("価格下限", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
-col_f2.number_input("価格上限", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=save_settings)
+with col_f1:
+    st.number_input("価格下限 (Min)", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
+with col_f2:
+    st.number_input("価格上限 (Max)", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=save_settings)
 
-st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.f2_m30), step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("波高下限(倍)", value=float(st.session_state.f9_min14), step=0.05, key="f9_min14", on_change=save_settings)
+st.sidebar.number_input("1ヶ月暴騰上限 (f2/m30)", value=float(st.session_state.f2_m30), step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("波高下限 (f9/Volatility)", value=float(st.session_state.f9_min14), step=0.05, key="f9_min14", on_change=save_settings)
 
-st.sidebar.checkbox("IPO除外 (上場1年/200日未満)", key="f5_ipo", on_change=save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+# 足切りフラグの物理配線
+st.sidebar.checkbox("🚀 IPO除外 (上場1年/200日未満)", key="f5_ipo", on_change=save_settings)
+st.sidebar.checkbox("📉 非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
 
-st.sidebar.markdown("---")
+st.sidebar.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
 
-# --- 4. 除外リスト（gigiコード） ---
-st.sidebar.header("🚫 物理排除リスト")
+# --- 4. 物理排除リスト（gigiコード） ---
+st.sidebar.markdown("<h3 style='font-size: 16px; border-left: 4px solid #ef5350; padding-left: 8px; color: #ef5350;'>🚫 物理排除リスト</h3>", unsafe_allow_html=True)
 st.sidebar.text_area(
     "信用リスク・疑義銘柄コード", 
     key="gigi_input", 
-    help="カンマまたは改行区切り。ここに入力された銘柄はスキャンから永久に抹殺されます。",
+    placeholder="例: 2134, 3350, 6172...",
+    help="ここに入力された銘柄はスキャン・解析から永久に抹殺されます。",
     on_change=save_settings
 )
 
-st.sidebar.caption(f"最終同期キー: {cache_key}")
+# 兵站ステータス
+st.sidebar.markdown(f"""
+    <div style='background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; margin-top: 20px;'>
+        <div style='font-size: 10px; color: #888;'>兵站同期ステータス</div>
+        <div style='font-size: 11px; color: #26a69a; font-family: monospace;'>KEY: {cache_key}</div>
+    </div>
+""", unsafe_allow_html=True)
 
 # ==========================================
-# 🚨 ここでタブを定義
+# 🚨 生命線：タブの物理定義（Engine ↔ UI Bridge）
 # ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 待伏", "⚡ 強襲", "🎯 照準", "⚙️ 演習", "⛺ 戦線", "📁 戦歴"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🌐 待伏 (Ambush)", 
+    "⚡ 強襲 (Assault)", 
+    "🎯 照準 (Scope)", 
+    "⚙️ 演習 (Sim)", 
+    "⛺ 戦線 (Front)", 
+    "📁 戦歴 (History)"
+])
 
+# この直後に with tab1: 等の各タブコンテンツを結合せよ
 # --- 12. タブコンテンツ (TAB1: 待伏レーダー) ---
 with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
