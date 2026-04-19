@@ -927,7 +927,11 @@ with tab1:
     
     master_map_t1 = {}
     if not master_df.empty:
-        m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
+        # 🚨 座標A：上場日（Listing...）を含むカラムを動的に捕捉してメモリに展開
+        ld_cols = [col for col in master_df.columns if 'Listing' in col]
+        target_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+        m_df_tmp = master_df[target_cols].copy()
+        
         # 🚨 英字銘柄（523A等）を物理保護しつつ規格化
         m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t1 = m_df_tmp.set_index('Code').to_dict('index')
@@ -967,7 +971,30 @@ with tab1:
 
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
-                m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
+                
+                # 🚨 座標B：【真の検問所】索敵対象リスト（m_targets）の生成時にIPOを除外
+                m_targets = []
+                now_dt = datetime.now().replace(tzinfo=None)
+                
+                for code_key, m_info in master_map_t1.items():
+                    # 1. 市場による足切り
+                    if any(k in str(m_info['Market']) for k in target_keywords):
+                        # 2. IPO除外設定（f4_ipo）がONの場合の検閲
+                        if st.session_state.get('f4_ipo') or st.session_state.get('f5_ipo'):
+                            # 上場日カラムを探す
+                            ld_key = next((k for k in m_info.keys() if 'Listing' in k), None)
+                            if ld_key:
+                                ld_val = m_info[ld_key]
+                                if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                    target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                    # 🎯 365日未満（523A等）は、ここでリストに加えず排除（continue）
+                                    if (now_dt - target_dt).days < 365:
+                                        continue
+                                else:
+                                    # 上場日不明はリスク回避のため排除
+                                    continue
+                        # 検問を通過した個体のみ索敵リストへ
+                        m_targets.append(code_key)
                 
                 latest_date = full_df['Date'].max()
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
