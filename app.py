@@ -907,52 +907,37 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
 st.sidebar.caption(f"KEY: {cache_key}")
 
 # ==========================================
-# 🛡️ 共有兵站セクション：メモリ最適化・完全垂直復旧版
+# 🛡️ 5. 兵站確保・共有マップ構築（物理同期・完全版）
 # ==========================================
+
+# 1️⃣ 【最優先：弾薬確保】大元のマスタデータを読み込む
+# これが全ての「if master_df...」系ロジックより上に位置している必要がある。
+master_df = load_master()
+
+# 2️⃣ 【次に：共有マップ構築】読み込んだデータをメモリ効率化のために加工
 if 'master_map_shared' not in st.session_state:
-    if not master_df.empty:
+    if master_df is not None and not master_df.empty:
         # 上場日カラム（ListingDate等）を動的に特定
         ld_cols = [col for col in master_df.columns if 'Listing' in col]
         t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
         
-        # 必要な列のみを抽出（メモリ消費を最小化）
-        m_df_tmp = master_df[t_cols].copy()
-        
-        # 🎯 951行目：英字銘柄（523A等）対応の規格化（インデントを4マスに固定）
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-        
-        # session_stateに一度だけ格納し、全タブで共通兵站として利用
-        st.session_state.master_map_shared = m_df_tmp.set_index('Code').to_dict('index')
-        
-        # 兵站（メモリ）の清掃
-        del m_df_tmp
-        gc.collect()
-
-# --- 5. タブ構成の直前：兵站のロードと加工 ---
-
-# 1️⃣ まず、大元のデータを読み込む（これが最優先）
-master_df = load_master()
-
-# 2️⃣ 次に、読み込んだデータを「共有マップ」に加工する
-if 'master_map_shared' not in st.session_state:
-    if master_df is not None and not master_df.empty:
-        # 上場日カラムを特定して抽出
-        ld_cols = [col for col in master_df.columns if 'Listing' in col]
-        t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+        # 必要な列のみを抽出（メモリクラッシュ防止）
         tmp = master_df[t_cols].copy()
         
         # 英字銘柄（523A等）対応の規格化
         tmp['Code'] = tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         
-        # 共有マップとして保存
+        # 共通マップとして session_state に保存（物理同期）
         st.session_state.master_map_shared = tmp.set_index('Code').to_dict('index')
+        
+        # 兵站（メモリ）の強制清掃
         del tmp
         gc.collect()
 
-# 3️⃣ 加工された共有マップを変数に展開
+# 3️⃣ 【展開】全タブで利用する共有変数「master_map_common」を定義
 master_map_common = st.session_state.get('master_map_shared', {})
 
-# 4️⃣ 最後に、タブを定義する
+# 4️⃣ 【UI】原本のタブ構成を物理展開
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
@@ -961,7 +946,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⛺ 【戦線】交戦モニター", 
     "📁 【戦歴】交戦データベース"
 ])
-tactics_mode = st.session_state.sidebar_tactics
+tactics_mode = st.session_state.get('sidebar_tactics', '⚖️ バランス')
 
 # --- 6. タブコンテンツ (TAB1: 待伏レーダー) ---
 with tab1:
