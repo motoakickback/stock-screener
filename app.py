@@ -1340,6 +1340,7 @@ with tab2:
             
 # --- 8. タブコンテンツ (TAB3: 精密スコープ) ---
 with tab3:
+        # 🚨 物理同期：タイトル装飾を原本通りに復元
         st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・UI完全復元版）</h3>', unsafe_allow_html=True)
         
         # --- 🛡️ 1. 兵站管理：ファイルパスの物理定義 ---
@@ -1366,11 +1367,11 @@ with tab3:
 
         col_s1, col_s2 = st.columns([1.2, 1.8])
         with col_s1:
-            # 🚨 物理同期：Duplicateエラー防止のためcache_keyをキーに連結
+            # 🚨 鎮圧パッチ：keyを物理的に絶対重複しない「t3_radio_final_fix」へ固定
             scope_mode = st.radio(
                 "🎯 解析モードを選択", 
                 ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], 
-                key=f"t3_scope_mode_vfinal_{cache_key}"
+                key="t3_radio_final_fix"
             )
             is_ambush = "待伏" in scope_mode
             st.markdown("---")
@@ -1380,217 +1381,30 @@ with tab3:
                     "🌐 【待伏】主力監視部隊", 
                     value=st.session_state.t3_am_watch, 
                     height=120, 
-                    key=f"t3_am_watch_ui_vfinal"
+                    key="t3_am_watch_ui_vfinal_fix"
                 )
                 daily_in = st.text_area(
                     "🌐 【待伏】本日新規部隊", 
                     value=st.session_state.t3_am_daily, 
                     height=120, 
-                    key=f"t3_am_daily_ui_vfinal"
+                    key="t3_am_daily_ui_vfinal_fix"
                 )
             else:
                 watch_in = st.text_area(
                     "⚡ 【強襲】主力監視部隊", 
                     value=st.session_state.t3_as_watch, 
                     height=120, 
-                    key=f"t3_as_watch_ui_vfinal"
+                    key="t3_as_watch_ui_vfinal_fix"
                 )
                 daily_in = st.text_area(
                     "⚡ 【強襲】本日新規部隊", 
                     value=st.session_state.t3_as_daily, 
                     height=120, 
-                    key=f"t3_as_daily_ui_vfinal"
+                    key="t3_as_daily_ui_vfinal_fix"
                 )
                 
-            run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_vfinal_{cache_key}")
-            
-        with col_s2:
-            st.markdown("#### 🔍 索敵ステータス")
-            if is_ambush:
-                st.info("""
-                    **🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**
-                    - **主戦場**: 直近高安の黄金比（半値・61.8%押し等）における底堅いエリア。
-                    - **判定核**: MACDの好転に加え、「たくり足」「陽の包み足」等の強い反転波形を検知。
-                    - **安全装置**: PBR 5.0倍以下の割安性を評価し、投げ売り後の「大底圏」を狙い撃つ。
-                    - **目的**: 恐怖の中で反転の予兆を掴み、リスクリワードの最大化を図る迎撃ロジック。
-                """)
-            else:
-                st.info("""
-                    **⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**
-                    - **主戦場**: 14日高値周辺。均衡が崩れ、上昇へのエネルギーが解放される瞬間。
-                    - **判定核**: MACDゴールデンクロスの「鮮度（発生1〜3日）」、および出来高の急増（5日平均1.5倍〜）。
-                    - **突破力**: 直近高値の物理突破（ブレイクアウト）を評価し、上昇加速局面へ同乗。
-                    - **品質保証**: ROE 10.0%以上の「稼ぐ力」を条件とし、RSIで過熱感（高値掴み）を監視。
-                    - **目的**: 圧倒的な熱量を持つ初動個体を捕捉し、短期間での爆発的利得を狙う攻撃ロジック。
-                """)
-
-        # --- 🛡️ 3. 解析・描画実行エンジン ---
-        if run_scope:
-            if is_ambush:
-                st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
-                for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
-                    with open(f, "w", encoding="utf-8") as file: file.write(d)
-            else:
-                st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
-                for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
-                    with open(f, "w", encoding="utf-8") as file: file.write(d)
-
-            import unicodedata
-            raw_all_text = watch_in + " " + daily_in
-            all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
-            t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z][0-9]?(?![A-Z0-9])', all_text)]))
-            
-            if not t_codes:
-                st.warning("有効な銘柄コードが確認できません。")
-            else:
-                t_global_start = time.time()
-                
-                with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
-                    raw_data_dict = {}
-                    
-                    # --- 📡 4. 並列データ収集ユニット（ボスの原本ロジック完全復旧 ＋ 523A物理パッチ） ---
-                    def fetch_parallel_t3(c):
-                        try:
-                            c_str = str(c).upper().strip()
-                            # 🚨 物理同期：J-Quants規格
-                            api_code = c_str if len(c_str) >= 5 else c_str + "0"
-                            
-                            # 兵站確保
-                            data = get_single_data(api_code, 1)
-                            
-                            # 🚨 原本詳細：yfinanceフォールバック回路
-                            if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
-                                try:
-                                    import yfinance as yf
-                                    tk = yf.Ticker(c_str + ".T")
-                                    hist = tk.history(period="1y")
-                                    if not hist.empty:
-                                        bars = [{'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'), 
-                                                 'AdjO': float(row['Open']), 'AdjH': float(row['High']), 
-                                                 'AdjL': float(row['Low']), 'AdjC': float(row['Close']), 
-                                                 'Volume': float(row['Volume'])} for dt, row in hist.iterrows()]
-                                        data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                                    else:
-                                        data = None
-                                except:
-                                    data = None
-
-                            # 🚨 原本詳細：ファンダメンタルズ多重取得
-                            f_data = get_fundamentals(c_str)
-                            r_per, r_pbr, r_mcap, r_roe = None, None, None, None
-                            
-                            if f_data:
-                                r_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE')
-                                r_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
-                                r_mcap = f_data.get('mcap') or f_data.get('MCAP') or f_data.get('marketCap')
-                                r_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
-                                
-                                # 🚨 不足していた10行の一部：ROE算出リカバリ
-                                if r_roe is None:
-                                    ni, eq = f_data.get("NetIncome"), f_data.get("Equity")
-                                    if ni is not None and eq is not None and float(eq) != 0:
-                                        try: r_roe = (float(ni) / float(eq)) * 100
-                                        except: pass
-
-                            # 🚨 不足していた10行の一部：yfによる財務補完
-                            if any(v is None for v in [r_per, r_pbr, r_mcap, r_roe]):
-                                try:
-                                    import yfinance as yf
-                                    tk_f = yf.Ticker(c_str + ".T")
-                                    info = tk_f.info
-                                    if info:
-                                        r_per = r_per or info.get('trailingPE')
-                                        r_pbr = r_pbr or info.get('priceToBook')
-                                        r_mcap = r_mcap or info.get('marketCap')
-                                        if r_roe is None:
-                                            raw_roe = info.get('returnOnEquity')
-                                            if raw_roe: r_roe = raw_roe * 100
-                                except: pass
-
-                            return c_str, data, r_per, r_pbr, r_mcap, r_roe
-                        except:
-                            return str(c), None, None, None, None, None
-
-                    raw_data_dict = {}
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-                        futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
-                        for f in concurrent.futures.as_completed(futs):
-                            try:
-                                res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
-                                if res_data:
-                                    raw_data_dict[str(res_c)] = {
-                                        "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe
-                                    }
-                            except:
-                                continue
-
-                    t_fetch = time.time()
-
-				# --- 8. タブコンテンツ (TAB3: 精密スコープ) ---
-with tab3:
-        st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">🎯 【照準】精密スコープ（戦術ウェイト・UI完全復元版）</h3>', unsafe_allow_html=True)
-        
-        # --- 🛡️ 1. 兵站管理：ファイルパスの物理定義 ---
-        T3_AM_WATCH_FILE = f"saved_t3_am_watch_{user_id}.txt"
-        T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
-        T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
-        T3_AS_DAILY_FILE = f"saved_t3_as_daily_{user_id}.txt"
-
-        def load_t3_text(file_path):
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    return f.read()
-            return ""
-
-        # --- 🛡️ 2. 通信記録の復元（セッションステート同期） ---
-        if "t3_am_watch" not in st.session_state:
-            st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
-        if "t3_am_daily" not in st.session_state:
-            st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
-        if "t3_as_watch" not in st.session_state:
-            st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
-        if "t3_as_daily" not in st.session_state:
-            st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
-
-        col_s1, col_s2 = st.columns([1.2, 1.8])
-        with col_s1:
-            # 🚨 物理同期：Duplicateエラー防止のためcache_keyをキーに連結
-            scope_mode = st.radio(
-                "🎯 解析モードを選択", 
-                ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], 
-                key=f"t3_scope_mode_vfinal_{cache_key}"
-            )
-            is_ambush = "待伏" in scope_mode
-            st.markdown("---")
-            
-            if is_ambush:
-                watch_in = st.text_area(
-                    "🌐 【待伏】主力監視部隊", 
-                    value=st.session_state.t3_am_watch, 
-                    height=120, 
-                    key=f"t3_am_watch_ui_vfinal"
-                )
-                daily_in = st.text_area(
-                    "🌐 【待伏】本日新規部隊", 
-                    value=st.session_state.t3_am_daily, 
-                    height=120, 
-                    key=f"t3_am_daily_ui_vfinal"
-                )
-            else:
-                watch_in = st.text_area(
-                    "⚡ 【強襲】主力監視部隊", 
-                    value=st.session_state.t3_as_watch, 
-                    height=120, 
-                    key=f"t3_as_watch_ui_vfinal"
-                )
-                daily_in = st.text_area(
-                    "⚡ 【強襲】本日新規部隊", 
-                    value=st.session_state.t3_as_daily, 
-                    height=120, 
-                    key=f"t3_as_daily_ui_vfinal"
-                )
-                
-            run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_vfinal_{cache_key}")
+            # 🚨 物理同期：ボタンIDも固定
+            run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key="t3_run_btn_final_fix")
             
         with col_s2:
             st.markdown("#### 🔍 索敵ステータス")
@@ -1725,8 +1539,8 @@ with tab3:
                             api_code = target_key if len(target_key) >= 5 else target_key + "0"
                             c_name, c_sector, c_market = f"銘柄 {target_key}", "不明", "不明"
                             
+                            # 🚨 物理同期：master_df / master_map_common による名簿照合
                             if not master_df.empty:
-                                # 🚨 物理同期：共通マップ（master_map_common）等による名簿照合
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
                                 if not m_row.empty:
                                     c_name = m_row.iloc[0]['CompanyName']
@@ -1734,7 +1548,7 @@ with tab3:
                                     c_market = m_row.iloc[0]['Market']
 
                             # --- 🛡️ IPO検閲（物理同期・完全封鎖版） ---
-                            if st.session_state.f5_ipo:
+                            if st.session_state.get('f5_ipo', False):
                                 try:
                                     m_row_check = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
                                     if m_row_check.empty:
@@ -1750,6 +1564,7 @@ with tab3:
                                         
                                     target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
                                     now_dt = datetime.now().replace(tzinfo=None)
+                                    # 365日未満（523A等）を確実にパージ
                                     if (now_dt - target_dt).days < 365:
                                         continue
                                         
@@ -1939,12 +1754,8 @@ with tab3:
                             def safe_int_v(val):
                                 try: return int(val) if val is not None and not pd.isna(val) else 0
                                 except: return 0
-                            h14_v = safe_int_v(r['h14'])
-                            l14_v = safe_int_v(r['l14'])
-                            ur_v = safe_int_v(r['ur'])
-                            lc_v = safe_int_v(r['lc'])
-                            atr_v = r.get('atr_val', 0)
-                            atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
+                            h14_v = safe_int_v(r['h14']); l14_v = safe_int_v(r['l14']); ur_v = safe_int_v(r['ur']); lc_v = safe_int_v(r['lc'])
+                            atr_v = r.get('atr_val', 0); atr_pct = (atr_v / lc_v * 100) if lc_v > 0 else 0
                             
                             c_m1, c_m2 = st.columns(2)
                             c_m1.metric("直近高値", f"{h14_v:,}円")
@@ -1981,7 +1792,7 @@ with tab3:
                             atr_v = r['atr_val'] if r['atr_val'] > 0 else r['bt_val'] * 0.05
                             is_agg = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
                             rec_tps = [2.0, 3.0] if is_agg else [0.5, 1.0]
-                            html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:26a69a; margin-bottom:8px;'>【利確目安】</div>"
+                            html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{int(c_target):,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                             for m in [0.5, 1.0, 2.0, 3.0]:
                                 val = int(c_target + (atr_v * m))
                                 pct = ((val / c_target) - 1) * 100 if c_target > 0 else 0
