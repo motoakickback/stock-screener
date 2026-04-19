@@ -989,7 +989,7 @@ with tab1:
                 m_targets = []
                 now_dt = datetime.now().replace(tzinfo=None)
                 
-                for code_key, m_info = master_map_common.get(c_code, {})
+                for code_key, m_info in master_map_common.itens():
                     # 1. 市場による足切り
                     if any(k in str(m_info['Market']) for k in target_keywords):
                         # 2. IPO除外設定（f4_ipo）がONの場合の検閲
