@@ -1457,7 +1457,7 @@ with tab3:
 
                 t_fetch = time.time()
 
-                # --- ⚙️ 5. 解析計算ループ（全件パージ救済 ＆ 物理クラッシュ封鎖） ---
+                # --- ⚙️ 5. 解析計算ループ（原本ロジック 100% 垂直復元） ---
                 scope_results = []
                 for c in t_codes:
                     try:
@@ -1465,7 +1465,7 @@ with tab3:
                         raw_s = raw_data_dict.get(target_key)
                         if not raw_s: continue 
 
-                        # 🚨 5桁規格化の徹底
+                        # 🚨 5桁規格化
                         api_code = target_key if len(target_key) >= 5 else target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {c}", "不明", "不明"
                         
@@ -1475,12 +1475,23 @@ with tab3:
                                 c_name, c_sector, c_market = m_row.iloc[0]['CompanyName'], m_row.iloc[0]['Sector'], m_row.iloc[0]['Market']
 
                         res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
+
+                        # ROEの原本救済ロジック
+                        if res_roe is not None and 0 < abs(res_roe) < 1.0: 
+                            res_roe = res_roe * 100
+
+                        if raw_mcap is not None:
+                            if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
+                            elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
+                            else: res_mcap_str = f"{int(raw_mcap):,}"
+                        else: res_mcap_str = "-"
+
                         bars = raw_s.get("data", {}).get("bars", [])
 
-                        # --- 🛡️ IPO検閲（523A等・英字銘柄 ＆ 不明個体救済） ---
+                        # --- 🛡️ IPO検閲（原本の260日思想を維持しつつ、物理クラッシュを封鎖） ---
                         if st.session_state.f5_ipo:
                             try:
-                                # 数字4桁銘柄のみ厳密にチェック。英字銘柄やマスタ不明は「一本釣り」の意思を尊重して通す。
+                                # 英字銘柄は一本釣りを尊重して通し、数字銘柄は厳密に判定
                                 if target_key.isdigit():
                                     m_row = master_df[master_df['Code'].astype(str) == api_code]
                                     if not m_row.empty:
@@ -1488,17 +1499,19 @@ with tab3:
                                         if ld_col:
                                             ld_val = m_row.iloc[0][ld_col[0]]
                                             if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                                # 🚨 物理同期：タイムゾーン衝突を排除
+                                                # 🚨 物理同期：タイムゾーン衝突を排除（.replace(tzinfo=None)）
                                                 target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
                                                 now_dt = datetime.now().replace(tzinfo=None)
-                                                # 1年未満の真のIPOのみを弾く
+                                                # 実績1年（365日）未満のIPOをパージ
                                                 if (now_dt - target_dt).days < 365:
-                                                    continue 
-                            except:
-                                pass # 判定エラー時は安全のためスルー（表示させる）
+                                                    continue
+                                            else:
+                                                # 上場日不明な不審個体もパージ
+                                                continue
+                            except: pass
 
-                        # --- 🛡️ 最終防衛線：極端にデータが少ない場合のみ除外 ---
-                        if not bars or len(bars) < 10:
+                        # --- 🛡️ データ不足銘柄の最終防衛線 ---
+                        if not bars or len(bars) < 20:
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
@@ -1508,7 +1521,6 @@ with tab3:
                             })
                             continue
 
-                        # --- 🛡️ 正常計算（ここを通過できれば表示される） ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
@@ -1527,6 +1539,8 @@ with tab3:
                         df_mini = df_chart_full.tail(260).copy()
                         
                         score, alerts, gc_days = 0, [], 0
+                        
+                        # 🚨 物理復元：地雷イベント検知回路
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
 
                         if is_ambush:
@@ -1537,11 +1551,13 @@ with tab3:
                             score += t_score
                             if res_pbr is not None and res_pbr <= 5.0: score += 2
                             
+                            # 【酒田】たくり線（原本の泥臭い判定式）
                             body_v, shadow_l, full_rng = abs(lc - lo), min(lc, lo) - ll, lh - ll
                             if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
                                 alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
                                 score += 5
                             
+                            # 原本波形パターンの物理復旧
                             if check_double_bottom(df_chart_full.tail(31)):
                                 alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。底打ち反転。")
                             if check_oversold_ultimate(df_chart_full):
@@ -1558,6 +1574,7 @@ with tab3:
                                 elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0: gc_days, gc_score = 2, 40
                                 else: gc_score = 5
                             
+                            # 【酒田】三尊・ダブルトップ原本判定
                             if pph > ph and lh > ph and abs(pph - lh) < (pph * 0.02) and rsi_v > 70:
                                 alerts.append("🔴 【酒田】三尊警戒。戦域は天井圏。")
                             if check_double_top(df_chart_full.tail(31)):
@@ -1578,6 +1595,13 @@ with tab3:
                     except Exception:
                         continue
 
+                # スコア順ソート
+                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
+                for res in scope_results:
+                    clean_rank = re.sub(r'[^SABC圏外]', '', res['rank'])
+                    res['r_val'] = rank_order.get(clean_rank, 0)
+                scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
+                
                 t_calc = time.time()
 
                 # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元） ---
@@ -1593,7 +1617,7 @@ with tab3:
                 for index, r in enumerate(scope_results):
                     st.divider()
                     
-                    # 規模・市場バッジの物理生成（原本通り）
+                    # 規模・市場バッジ生成（原本通り）
                     source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                     m_lower = str(r['market']).lower()
                     if 'プライム' in m_lower or '一部' in m_lower: 
@@ -1619,7 +1643,7 @@ with tab3:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # 🚨 物理復旧：警告灯表示ループ
+                    # 🚨 警告灯ループ
                     if r.get('alerts'):
                         for alert in r['alerts']:
                             if any(mark in alert for mark in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
@@ -1666,7 +1690,7 @@ with tab3:
                         """, unsafe_allow_html=True)
 
                     with sc_right:
-                        # 動的ATRマトリクス（原本通りの推奨ラベル ＆ 色彩）
+                        # 動的ATRマトリクス（原本 100% 垂直復元）
                         c_target = r['bt_val']
                         atr_v = r['atr_val'] if r['atr_val'] > 0 else r['bt_val'] * 0.05
                         is_agg = any(mark in r['rank'] for mark in ["⚡", "🔥", "S"])
@@ -1687,7 +1711,7 @@ with tab3:
 
                     st.markdown(render_technical_radar(r['df_chart'], r['bt_val'], st.session_state.bt_tp), unsafe_allow_html=True)
                     st.markdown("---")
-                    # 🚨 物理配線：Duplicateエラー防止のためcache_keyを同期
+                    # 🚨 物理配線：Duplicate防止
                     draw_chart(r['df_chart'], r['bt_val'], chart_key=f"t3_chart_final_{r['code']}_{index}_{cache_key}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
