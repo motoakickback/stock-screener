@@ -1944,31 +1944,43 @@ with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
     st.caption("※ 銘柄コードと株数を入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
 
-    # 🚨 【物理パッチ】Enterで直下移動 ＆ トップへの跳ね返り防止スクリプト
+    # 🚨 【物理パッチ】Enter信号をArrowDownに変換し、左上リセットを物理的に封殺するスクリプト
     components.html(
         """
         <script>
         const doc = window.parent.document;
-        const patchDataEditor = () => {
+        const sniperEntryPatch = () => {
             const editors = doc.querySelectorAll('div[data-testid="stDataEditor"]');
             editors.forEach(editor => {
+                // 既存のリスナーとの衝突を防ぐため、一度クリアする代わりにキャプチャフェーズで奪取
+                if (editor.dataset.sniperPatched === 'true') return;
+                
                 editor.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
-                        const downArrowEvent = new KeyboardEvent('keydown', {
+                        // ブラウザ標準のEnter挙動（再描画・左上遷移）を阻止
+                        e.stopPropagation();
+                        
+                        // 物理的に「下矢印キー」のイベントを生成し、セル移動を強制
+                        const downEvent = new KeyboardEvent('keydown', {
                             key: 'ArrowDown',
                             code: 'ArrowDown',
                             keyCode: 40,
                             which: 40,
-                            bubbles: true
+                            bubbles: true,
+                            cancelable: true
                         });
-                        e.target.dispatchEvent(downArrowEvent);
+                        e.target.dispatchEvent(downEvent);
                     }
-                }, true);
+                }, true); // Capture phaseで確実に実行
+                
+                editor.dataset.sniperPatched = 'true';
             });
         };
-        const observer = new MutationObserver(patchDataEditor);
+        
+        // 描画遅延に対応するため監視を継続
+        const observer = new MutationObserver(sniperEntryPatch);
         observer.observe(doc.body, { childList: true, subtree: true });
-        patchDataEditor();
+        sniperEntryPatch();
         </script>
         """,
         height=0,
@@ -1984,7 +1996,7 @@ with tab5:
                 temp_df = pd.read_csv(FRONTLINE_FILE)
                 rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切', 'lot': '株数'}
                 temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
-                # 🚨 英字銘柄等の規格統一（.0削除 ＆ 文字列化）
+                # 🚨 5桁規格化 ＆ 文字列化
                 temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
                 num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
                 for c in num_cols:
@@ -1999,6 +2011,7 @@ with tab5:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
     # --- 2. 司令部エディタ ---
+    # 🚨 安定化のため、keyにcache_keyを混ぜず固定（再描画によるフォーカス喪失を抑制）
     working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -2021,14 +2034,12 @@ with tab5:
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
-            # 🚨 規格化済みのコードリスト作成
             codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
             if codes:
                 with st.spinner("J-Quants 接続中..."):
                     new_prices = fetch_current_prices_fast(codes)
                     if new_prices:
                         for c_code, c_price in new_prices.items():
-                            # 🚨 物理照合：規格化したコードでマッチング
                             mask = working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
                             working_df.loc[mask, '現在値'] = c_price
                         st.session_state.frontline_df = working_df.copy()
@@ -2051,7 +2062,6 @@ with tab5:
     
     name_map = {}
     if not master_df.empty:
-        # 🚨 英字銘柄対応：マスタ側のコードを5桁規格化してマップ作成
         master_df_tmp = master_df.copy()
         master_df_tmp['Code_Str'] = master_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         name_map = dict(zip(master_df_tmp['Code_Str'], master_df_tmp['CompanyName']))
@@ -2060,7 +2070,6 @@ with tab5:
         ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
         
-        # 🚨 5桁規格化して名称検索
         ticker_search = ticker_raw if len(ticker_raw) >= 5 else ticker_raw + "0"
         company_name = name_map.get(ticker_search, "不明銘柄")
 
@@ -2096,12 +2105,10 @@ with tab5:
         """, unsafe_allow_html=True)
 
         m_cols = st.columns([1, 1, 1.2, 1, 1])
-        # 🚨 損切の％を赤表示にするため delta_color="normal" 物理固定（マイナス値＝赤）
         m_cols[0].metric("損切目安", f"¥{final_sl:,}", f"{sl_pct:+.1f}%" if sl_pct != 0 else None, delta_color="normal")
         m_cols[1].metric("買値", f"¥{buy:,}")
         
         with m_cols[2]:
-            # 🚨 騰落状況の物理描画（原本の順序・フォントサイズ維持）
             st.markdown(f"""
                 <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
                     <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 損益状況</div>
@@ -2135,7 +2142,6 @@ with tab5:
                 xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), 
                 margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
             )
-            # 🚨 19時パージキーを物理同期
             st.plotly_chart(fig, use_container_width=True, key=f"frontline_bar_{ticker_raw}_{index}_{cache_key}", config={'displayModeBar': False})
         
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
