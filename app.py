@@ -687,7 +687,7 @@ def render_technical_radar(df, buy_price, tp_pct):
     
     _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
     
-    # 🚨 陰の極み判定を統合（Part 2/3で定義した関数を使用）
+    # 🚨 陰の極み判定を統合
     if check_oversold_ultimate(df):
         macd_display = "💎 【陰の極み】底打ち最終波形 💎"
         macd_color = "#26a69a"
@@ -766,7 +766,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
 
     fig.update_layout(
         height=600, 
-        margin=dict(l=0, r=0, t=30, b=40), # 🚨 右余白物理削除
+        margin=dict(l=0, r=0, t=30, b=40), 
         hovermode="x unified",
         dragmode="zoom",
         paper_bgcolor='rgba(0,0,0,0)', 
@@ -800,13 +800,9 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     }, key=f"{chart_key or 'chart'}_{cache_key}")
 
 
-# --- 4. サイドバー UI（神聖UI原本復元） ---
-st.sidebar.markdown("""
-    <div style='background-color: #1b5e20; padding: 1.2rem; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 20px;'>
-        <h1 style='text-align: center; color: #ffffff; font-size: 22px; margin: 0; font-weight: 900; letter-spacing: 2px;'>🛠️ TACTICAL CONSOLE</h1>
-        <div style='text-align: center; color: #a5d6a7; font-size: 10px; margin-top: 5px;'>IRON RULE SYSTEM Ver. 2026.4</div>
-    </div>
-""", unsafe_allow_html=True)
+# --- 4. サイドバー UI（原典 100% 復旧） ---
+# 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
+st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- 🌐 マクロ地合い連動システム ---
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
