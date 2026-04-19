@@ -906,6 +906,28 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
 
 st.sidebar.caption(f"KEY: {cache_key}")
 
+# ==========================================
+# 🛡️ 共有兵站セクション：メモリ最適化（ここを溶接）
+# ==========================================
+if 'master_map_shared' not in st.session_state:
+    if not master_df.empty:
+        # 上場日カラムを動的に捕捉
+        ld_cols = [col for col in master_df.columns if 'Listing' in col]
+        t_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
+        
+        # 必要な列のみを抽出し、型を最適化してメモリ消費を最小化
+        tmp = master_df[t_cols].copy()
+        # 英字銘柄（523A等）対応の規格化
+        tmp['Code'] = tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+        
+        # session_stateに一度だけ格納
+        st.session_state.master_map_shared = tmp.set_index('Code').to_dict('index')
+        del tmp
+        gc.collect() # 💡 残骸を強制清掃
+
+# 共有マップを変数に展開
+master_map_common = st.session_state.get('master_map_shared', {})
+
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
 # 🚨 修正：load_masterの実行行。すべての定義が終わったここで行う。
 master_df = load_master()
@@ -925,13 +947,6 @@ with tab1:
     st.markdown(f'<h3 style="font-size: 24px;">🎯 【待伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    master_map_t1 = {}
-    if not master_df.empty:
-        # 🚨 座標A：上場日（Listing...）を含むカラムを動的に捕捉してメモリに展開
-        ld_cols = [col for col in master_df.columns if 'Listing' in col]
-        target_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
-        m_df_tmp = master_df[target_cols].copy()
-        
         # 🚨 英字銘柄（523A等）を物理保護しつつ規格化
         m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t1 = m_df_tmp.set_index('Code').to_dict('index')
@@ -976,7 +991,7 @@ with tab1:
                 m_targets = []
                 now_dt = datetime.now().replace(tzinfo=None)
                 
-                for code_key, m_info in master_map_t1.items():
+                for code_key, m_info = master_map_common.get(c_code, {})
                     # 1. 市場による足切り
                     if any(k in str(m_info['Market']) for k in target_keywords):
                         # 2. IPO除外設定（f4_ipo）がONの場合の検閲
@@ -1097,7 +1112,7 @@ with tab1:
         
         for r in light_results:
             st.divider()
-            c_code = str(r['Code']); m_info = master_map_t1.get(c_code, {})
+            c_code = str(r['Code']); m_info = master_map_common.get(c_code, {})
             m_lower = str(m_info.get('Market', '')).lower()
             if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
@@ -1135,13 +1150,6 @@ with tab2:
     
     if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     
-    master_map_t2 = {}
-    if not master_df.empty:
-        # 🚨 座標A：上場日データを含むカラムを特定し、マスタ展開に加える
-        ld_cols = [col for col in master_df.columns if 'Listing' in col]
-        target_cols = ['Code', 'CompanyName', 'Market', 'Sector'] + ld_cols
-        m_df_tmp = master_df[target_cols].copy()
-        
         # 🚨 英字銘柄（523A等）対応の物理保護 ＆ 規格化
         m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
@@ -1300,7 +1308,7 @@ with tab2:
 
         for r in res_list:
             st.divider()
-            c_code = str(r['Code']); m_info = master_map_t2.get(c_code, {})
+            c_code = str(r['Code']); m_info = master_map_common.get(c_code, {})
             m_lower = str(m_info.get('Market', '')).lower()
             if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
