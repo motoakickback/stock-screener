@@ -776,6 +776,94 @@ if master_df.empty:
     st.error("🚨 致命的エラー：JPX銘柄マスタの兵站確保に失敗しました。")
     st.stop()
 
+# ==========================================
+# 🚨 物理復元：サイドバー ＆ 司令部 (The Control Room)
+# ==========================================
+
+st.sidebar.title("🛠️ 戦術コンソール")
+
+# --- 1. 地合い連動・気象アラート ---
+st.sidebar.header("🌪️ マクロ気象連動")
+use_macro = st.sidebar.toggle("地合い連動フィルタを有効化", value=True, help="日経平均の暴落時に自動で押し目・RSIの閾値を厳格化します。")
+
+# 地合い変数の物理初期化
+st.session_state.push_penalty = 0.0
+st.session_state.rsi_penalty = 0
+st.session_state.macro_alert = "🟢 平時 (Normal)"
+
+if use_macro and weather:
+    n_pct = weather['nikkei']['pct']
+    if n_pct <= -2.0:
+        st.session_state.push_penalty = 0.10
+        st.session_state.rsi_penalty = 20
+        st.session_state.macro_alert = "🔴 厳戒 (Crisis)"
+        st.sidebar.error(f"【警報】日経平均急落 ({n_pct:+.2f}%)。防衛ラインを10%引き下げ、RSI閾値を厳格化します。")
+    elif n_pct <= -1.0:
+        st.session_state.push_penalty = 0.05
+        st.session_state.rsi_penalty = 10
+        st.session_state.macro_alert = "🟠 警戒 (Caution)"
+        st.sidebar.warning(f"【注意】地合い悪化 ({n_pct:+.2f}%)。防衛ラインを5%引き下げます。")
+    else:
+        st.sidebar.success(f"【巡航】地合い安定 ({n_pct:+.2f}%)。標準戦術を維持。")
+else:
+    st.sidebar.info("地合い連動：OFF")
+
+st.sidebar.markdown("---")
+
+# --- 2. ターゲット設定 ＆ プリセット ---
+st.sidebar.header("📍 ターゲット設定")
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"], 
+    key="preset_market", 
+    on_change=save_settings
+)
+
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    ["25.0%", "50.0%", "61.8%"], 
+    key="preset_push_r", 
+    on_change=apply_presets
+)
+
+st.sidebar.selectbox(
+    "戦術アルゴリズム", 
+    ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"], 
+    key="sidebar_tactics", 
+    on_change=save_settings
+)
+
+st.sidebar.markdown("---")
+
+# --- 3. スキャンルール（物理足切り設定） ---
+st.sidebar.header("🔍 スキャンルール")
+
+col_f1, col_f2 = st.sidebar.columns(2)
+col_f1.number_input("価格下限", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
+col_f2.number_input("価格上限", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=save_settings)
+
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.f2_m30), step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("波高下限(倍)", value=float(st.session_state.f9_min14), step=0.05, key="f9_min14", on_change=save_settings)
+
+st.sidebar.checkbox("IPO除外 (上場1年/200日未満)", key="f5_ipo", on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=save_settings)
+
+st.sidebar.markdown("---")
+
+# --- 4. 除外リスト（gigiコード） ---
+st.sidebar.header("🚫 物理排除リスト")
+st.sidebar.text_area(
+    "信用リスク・疑義銘柄コード", 
+    key="gigi_input", 
+    help="カンマまたは改行区切り。ここに入力された銘柄はスキャンから永久に抹殺されます。",
+    on_change=save_settings
+)
+
+st.sidebar.caption(f"最終同期キー: {cache_key}")
+
+# ==========================================
+# 🚨 ここでタブを定義
+# ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🌐 待伏", "⚡ 強襲", "🎯 照準", "⚙️ 演習", "⛺ 戦線", "📁 戦歴"])
 
 # --- 12. タブコンテンツ (TAB1: 待伏レーダー) ---
