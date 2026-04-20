@@ -1029,13 +1029,17 @@ with tab1:
         # 🚨 プロファイリング用タイマー
         t_global_start = time.time()
         
-        with st.spinner("マクロ気象を計算に織り込み中..."):
+        # 🚨 物理配線：st.statusによる進捗ステータス装甲
+        with st.status("🚀 索敵スキャンを実行中... 兵站ルートを開拓しています", expanded=True) as status:
+            st.write("📡 第1段階：260日分のローソク足データを取得中...")
             # 🚨 物理配線：cache_keyを装填しTypeErrorを根絶
             raw = get_hist_data_cached(cache_key)
             t_fetch = time.time()
+            st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
             
             # 🚨 パッチ適用：DataFrameのAmbiguousエラーを回避する完全判定
             if raw is not None and len(raw) > 0:
+                st.write("🧽 第2段階：データ洗浄・規格統一を実行中...")
                 full_df = clean_df(pd.DataFrame(raw))
                 # 🚨 英字銘柄対応の規格統一
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
@@ -1064,6 +1068,8 @@ with tab1:
 
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 t_clean = time.time()
+                st.write(f"✔️ 第2段階完了：データ洗浄 [{t_clean - t_fetch:.2f}秒]")
+                st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
                     c_vals = group['AdjC'].values
@@ -1134,6 +1140,8 @@ with tab1:
                 
                 st.session_state.tab1_scan_results = filtered_results
                 t_calc = time.time()
+                
+                status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
                 
                 # 🚨 プロファイル出力（原本通り）
                 st.markdown(f"""
@@ -1218,16 +1226,19 @@ with tab2:
         # 🚨 プロファイリング用タイマー
         t_global_start = time.time()
 
-        with st.spinner("地合いによる過熱感を検知中..."):
+        with st.status("🚀 索敵スキャンを実行中... 強襲ルートを計算しています", expanded=True) as status:
             try:
+                st.write("📡 第1段階：260日分のローソク足データを取得中...")
                 # 🚨 物理配線：cache_keyを引数に渡しTypeErrorを根絶
                 raw = get_hist_data_cached(cache_key)
                 t_fetch = time.time()
+                st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
                 
                 # 🚨 パッチ適用：DataFrameのAmbiguousエラーを回避する完全判定
                 if raw is None or len(raw) == 0:
                     st.error("J-Quants APIからの応答が途絶。")
                 else:
+                    st.write("🧽 第2段階：データ洗浄・地合い適用中...")
                     full_df = clean_df(pd.DataFrame(raw))
                     # 🚨 英字銘柄対応の規格統一
                     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
@@ -1261,6 +1272,8 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     del full_df; gc.collect()
                     t_clean = time.time()
+                    st.write(f"✔️ 第2段階完了：データ洗浄 [{t_clean - t_fetch:.2f}秒]")
+                    st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
                         c_vals = group['AdjC'].values
@@ -1311,6 +1324,8 @@ with tab2:
                     st.session_state.tab2_scan_results = filtered_results
                     t_calc = time.time()
                     
+                    status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
+                    
                     # 🚨 プロファイル出力（原本通り）
                     st.markdown(f"""
                     <div style='background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; border-left:3px solid #888; margin-bottom:10px; font-size:12px; color:#ddd;'>
@@ -1324,6 +1339,7 @@ with tab2:
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。処理を安全に中断しました。\n詳細: {str(e)}")
+                status.update(label="🚨 エラー発生により中断", state="error")
 
     if st.session_state.tab2_scan_results:
         res_list = st.session_state.tab2_scan_results
@@ -1474,7 +1490,10 @@ with tab3:
             else:
                 t_global_start = time.time()
                 
-                with st.spinner(f"全 {len(t_codes)} 銘柄を精密計算中..."):
+                # 🚨 物理配線：st.statusによる進捗ステータス装甲
+                with st.status(f"🚀 全 {len(t_codes)} 銘柄を精密スキャン中...", expanded=True) as status:
+                    st.write("📡 第1段階：並列データ収集（J-Quants / yfinance）を実行中...")
+                    
                     raw_data_dict = {}
                     
                     # --- 📡 4. 並列データ収集ユニット（ボスの原本ロジック完全復旧 ＋ 523A物理パッチ） ---
@@ -1554,8 +1573,10 @@ with tab3:
                                 continue
 
                     t_fetch = time.time()
+                    st.write(f"✔️ 第1段階完了：データ収集 [{t_fetch - t_global_start:.2f}秒]")
+                    st.write("⚙️ 第2段階：解析・スコアリング処理を実行中...")
 
-				# --- 🛡️ 4. 正常計算（クラッシュ地点を通過） ---
+                    # --- 🛡️ 4. 正常計算（クラッシュ地点を通過） ---
                     scope_results = []
                     for c in t_codes:
                         try:
@@ -1616,9 +1637,9 @@ with tab3:
                                                     # 【IPO除外】1年（365日）未満の個体のみ戦域から排除
                                                     if days_since_listed < 365:
                                                         continue
-                                                else:
-                                                    # 上場日が不明な個体は除外
-                                                    continue
+                                            else:
+                                                # 上場日が不明な個体は除外
+                                                continue
                                 except Exception:
                                     pass
 
@@ -1629,7 +1650,7 @@ with tab3:
                                     'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                     'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                     'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                    'alerts': ["⚠️ 兵站データ不足"], 'error': True
+                                    'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False
                                 })
                                 continue
 
@@ -1671,13 +1692,26 @@ with tab3:
                             score = 0
                             alerts = []
                             gc_days = 0
+                            is_deep = False
                             
                             # 🚨 物理復旧：地雷イベント検知回路
                             alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
 
                             if is_ambush:
                                 score = 4
-                                bt_val = int(h14 - (ur_v * (st.session_state.push_r / 100.0)))
+                                # 🚨 新兵装：深海（61.8%）パニック自動判定ロジック
+                                base_push_r = st.session_state.push_r / 100.0
+                                bt_val_standard = h14 - (ur_v * base_push_r)
+                                bt_val_deep = h14 - (ur_v * 0.618)
+                                panic_line = bt_val_standard * 0.90 # 標準目標からさらに10%下落したライン
+
+                                if lc < panic_line:
+                                    bt_val = int(bt_val_deep)
+                                    is_deep = True
+                                    alerts.append(f"💎 【深海待伏】パニック売り(標準目標から10%下落)を検知。買値を61.8%押しへ下方修正。")
+                                else:
+                                    bt_val = int(bt_val_standard)
+
                                 m1 = float(t_latest.get('MACD_Hist', 0))
                                 m2 = float(t_prev.get('MACD_Hist', 0))
                                 _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
@@ -1733,7 +1767,7 @@ with tab3:
                                 'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_mini, 
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
-                                'alerts': alerts, 'error': False
+                                'alerts': alerts, 'error': False, 'is_deep': is_deep
                             })
                         except Exception:
                             continue
@@ -1745,6 +1779,8 @@ with tab3:
                     scope_results = sorted(scope_results, key=lambda x: (x['r_val'], x['score'], x['reach_val']), reverse=True)
                     
                     t_calc = time.time()
+                    st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
+                    status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
 
                     # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元） ---
                     st.markdown(f"""
@@ -1834,7 +1870,9 @@ with tab3:
                             per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v else "-", "#ef5350")
                             pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
                             mcap_s = r.get('mcap', "-")
-                            box_title = ("🎯 買値目標" if is_ambush else "🎯 トリガー")
+                            
+                            # 🚨 新兵装：UIの買値目標タイトルを「深海」モードに合わせて動的に変更
+                            box_title = ("💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標") if is_ambush else "🎯 トリガー"
                             
                             st.markdown(f"""
                                 <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center;'>
