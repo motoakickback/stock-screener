@@ -582,6 +582,9 @@ def get_hist_data_cached(key):
                 r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
                 if r.status_code == 200:
                     return r.json().get("data", [])
+                elif r.status_code in [401, 403]:
+                    # 🚨 認証エラー（トークン失効）。リトライしても無意味なため波状攻撃を即時中止
+                    return []
                 elif r.status_code == 429:  # API側のアクセス制限（Rate Limit）
                     time.sleep(1.5 * (attempt + 1))  # 冷却して再突撃
                     continue
