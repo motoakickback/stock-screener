@@ -2464,3 +2464,4 @@ with tab6:
             st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
             st.success("✅ 整数化完了。色彩規律を再適用しました。")
             st.rerun()
+			
