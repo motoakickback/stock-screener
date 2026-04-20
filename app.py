@@ -32,7 +32,8 @@ def check_password():
         st.session_state["password_correct"] = False
         st.session_state["current_user"] = "" 
     if not st.session_state["password_correct"]:
-        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄 of 掟』</h1>', unsafe_allow_html=True)
+        # 🚨 ボスの指示通り「鉄の掟」へ修正
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             components.html(
@@ -768,6 +769,34 @@ def render_technical_radar(df, buy_price, tp_pct):
     
     return f'<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}"><div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>'
 
+def render_tab3_scope_logic(df, code, company_name):
+    """【照準】50%/61.8%自動追尾・目標算出エンジン"""
+    if df.empty: return None
+    p_high, p_low = df['AdjH'].max(), df['AdjL'].min()
+    current_p = df.iloc[-1]['AdjC']
+    
+    # 座標算出
+    p_50 = p_low + (p_high - p_low) * 0.50
+    p_618 = p_low + (p_high - p_low) * 0.382
+    
+    # 🚨 判定：50%ラインを7%以上（パニック水準）割り込んだら61.8%へ下方修正
+    is_panic = current_p < (p_50 * 0.93)
+    targ_p = p_618 if is_panic else p_50
+    label = "💎 61.8% 押し (深海モード)" if is_panic else "⚖️ 50.0% 押し (標準モード)"
+    color = "#26a69a" if is_panic else "#FFD700"
+    
+    # UI出力
+    st.markdown(f"""
+        <div style="background: rgba(30, 30, 30, 0.7); padding: 1rem; border-radius: 8px; border-left: 5px solid {color}; margin-bottom: 1rem;">
+            <h3 style="margin: 0;">{code} {company_name}</h3>
+            <p style="color: #aaa; margin: 0.2rem 0;">戦闘モード: <strong style="color: {color};">{label}</strong></p>
+            <div style="display: flex; gap: 2rem; margin-top: 0.5rem;">
+                <div><small>現在値</small><br><span style="font-size: 1.5rem;">¥{current_p:,.0f}</span></div>
+                <div><small>目標買値</small><br><span style="font-size: 1.5rem; color: {color};">¥{targ_p:,.0f}</span></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    return targ_p
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
     """右余白ゼロ、初期2ヶ月ズーム、全ホバー情報を備えた原本チャート"""
