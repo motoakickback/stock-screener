@@ -97,7 +97,14 @@ def get_cache_key():
     except:
         return datetime.now().strftime('%Y%m%d_H')
 
-cache_key = get_cache_key()
+import pytz
+from datetime import datetime, timedelta
+
+# 🚨 兵站同期クロック：19時を境にキャッシュキーを強制更新する物理ロジック
+_now = datetime.now(pytz.timezone('Asia/Tokyo'))
+# 19時未満なら「前日」、19時以降なら「当日」の年月日をキーにする
+_logical_date = _now if _now.hour >= 19 else _now - timedelta(days=1)
+cache_key = f"jquants_data_{_logical_date.strftime('%Y%m%d')}"
 
 # --- 🚁 司令部へ帰還ボタン ---
 components.html(
