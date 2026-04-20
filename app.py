@@ -962,20 +962,20 @@ with tab1:
             
             # 🚨 パッチ適用：DataFrameのAmbiguousエラーを回避する完全判定
 			if raw is not None and len(raw) > 0:
-                full_df = clean_df(pd.DataFrame(raw))
-                # 🚨 英字銘柄対応の規格統一
-                full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-                
-                push_penalty = st.session_state.get('push_penalty', 0.0)
-                
-                config_t1 = {
-                    "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
-                    "f2_m30": float(st.session_state.f2_m30), "f3_drop": float(st.session_state.f3_drop),
-                    "push_r": float(st.session_state.push_r), "push_penalty": push_penalty,
-                    "f9_min14": float(st.session_state.f9_min14), "f9_max14": float(st.session_state.f9_max14),
-                    "limit_d": int(st.session_state.limit_d), "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                    "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"), "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
-                }
+			full_df = clean_df(pd.DataFrame(raw))
+			# 🚨 英字銘柄対応の規格統一
+			full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+			
+			push_penalty = st.session_state.get('push_penalty', 0.0)
+			
+			config_t1 = {
+				"f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
+				"f2_m30": float(st.session_state.f2_m30), "f3_drop": float(st.session_state.f3_drop),
+				"push_r": float(st.session_state.push_r), "push_penalty": push_penalty,
+				"f9_min14": float(st.session_state.f9_min14), "f9_max14": float(st.session_state.f9_max14),
+				"limit_d": int(st.session_state.limit_d), "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
+				"tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"), "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+			}
 
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
