@@ -554,9 +554,9 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
-@st.cache_data(ttl=86400, max_entries=2, show_spinner=False)
+@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期(key)付 260日兵站確保（完全防弾仕様）"""
+    """19時リセット同期(key)付 260日兵站確保（OOM完全回避・DF圧縮仕様）"""
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -572,7 +572,8 @@ def get_hist_data_cached(key):
             return r.json().get("data", []) if r.status_code == 200 else []
         except: return []
         
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
+    # 🚨 メモリスパイク抑制：同時接続数を10から5へ半減
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
@@ -580,9 +581,13 @@ def get_hist_data_cached(key):
                 rows.extend(res)
                 del res
                 
-    # 🚨 戻り値（数百万の辞書）をキャッシュへ渡す直前に、システム内のゴミを完全焼却
+    # 🚨 OOMの主原因（PyArrow膨張）を物理的に破壊
+    # リスト＋辞書のままst.cache_dataに渡さず、関数内でDataFrameへ圧縮する
+    df = pd.DataFrame(rows)
+    del rows
     gc.collect()
-    return rows
+    
+    return df
 
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
