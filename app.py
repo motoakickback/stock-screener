@@ -1149,7 +1149,8 @@ with tab2:
                 raw = get_hist_data_cached(cache_key)
                 t_fetch = time.time()
                 
-                if not raw:
+                # 🚨 パッチ適用：DataFrameのAmbiguousエラーを回避する完全判定
+                if raw is None or len(raw) == 0:
                     st.error("J-Quants APIからの応答が途絶。")
                 else:
                     full_df = clean_df(pd.DataFrame(raw))
