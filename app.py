@@ -849,7 +849,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     y_min, y_max = df_plot['AdjL'].min(), df_plot['AdjH'].max()
 
     fig.update_layout(
-        height=500, # 🚨 ボスの指示により600pxから450pxへ圧縮
+        height=550, # 🚨 ボスの指示により600pxから450pxへ圧縮
         margin=dict(l=0, r=0, t=30, b=40), 
         hovermode="x unified",
         dragmode="zoom",
