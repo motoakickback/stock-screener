@@ -960,7 +960,8 @@ with tab1:
             raw = get_hist_data_cached(cache_key)
             t_fetch = time.time()
             
-            if raw:
+            # 🚨 パッチ適用：DataFrameのAmbiguousエラーを回避する完全判定
+			if raw is not None and len(raw) > 0:
                 full_df = clean_df(pd.DataFrame(raw))
                 # 🚨 英字銘柄対応の規格統一
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
