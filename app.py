@@ -561,9 +561,11 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
+import time # 🚨 リトライ用の待機モジュール（未インポートなら関数内で使用）
+
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期(key)付 260日兵站確保（OOM完全回避・DF圧縮仕様）"""
+    """19時リセット同期(key)付 260日兵站確保（OOM完全回避・自動修復仕様）"""
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -574,12 +576,21 @@ def get_hist_data_cached(key):
         
     rows = []
     def fetch(dt):
-        try:
-            r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
-            return r.json().get("data", []) if r.status_code == 200 else []
-        except: return []
+        # 🚨 執念の兵站確保：サーバー拒絶（429エラー等）に対する自動リトライ機構
+        for attempt in range(4):
+            try:
+                r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
+                if r.status_code == 200:
+                    return r.json().get("data", [])
+                elif r.status_code == 429:  # API側のアクセス制限（Rate Limit）
+                    time.sleep(1.5 * (attempt + 1))  # 冷却して再突撃
+                    continue
+                else:
+                    time.sleep(1.0)
+            except:
+                time.sleep(1.0)
+        return [] # 4回の波状攻撃でもダメなら空を返す
         
-    # 🚨 メモリスパイク抑制：同時接続数を10から5へ半減
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
@@ -588,8 +599,6 @@ def get_hist_data_cached(key):
                 rows.extend(res)
                 del res
                 
-    # 🚨 OOMの主原因（PyArrow膨張）を物理的に破壊
-    # リスト＋辞書のままst.cache_dataに渡さず、関数内でDataFrameへ圧縮する
     df = pd.DataFrame(rows)
     del rows
     gc.collect()
