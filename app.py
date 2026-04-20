@@ -1120,10 +1120,12 @@ with tab2:
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
     if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
     
-    rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final")
-    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_v2026_final")
+    # 🚨 物理キー溶接：セッション衝突を回避する完全防弾キー
+    rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final_physical_lock")
+    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_v2026_final_physical_lock")
 
-    if st.button("🚀 強襲開始", key="btn_scan_t2_macro"):
+    # 🚨 物理キー溶接：実行ボタンの多重レンダリング衝突を防止
+    if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
         st.session_state.tab2_scan_results = None
         gc.collect()
 
