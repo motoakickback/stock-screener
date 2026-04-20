@@ -554,9 +554,9 @@ def get_single_data(code, yrs=1):
     except: pass
     return result
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, max_entries=2, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期(key)付 260日兵站確保"""
+    """19時リセット同期(key)付 260日兵站確保（完全防弾仕様）"""
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -564,17 +564,23 @@ def get_hist_data_cached(key):
         if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
         days += 1
         if days > 400: break
+        
     rows = []
     def fetch(dt):
         try:
             r = requests.get(f"{BASE_URL}/equities/bars/daily?date={dt}", headers=headers, timeout=10)
             return r.json().get("data", []) if r.status_code == 200 else []
         except: return []
+        
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
         futs = [exe.submit(fetch, dt) for dt in dates]
         for f in concurrent.futures.as_completed(futs):
             res = f.result()
-            if res: rows.extend(res)
+            if res: 
+                rows.extend(res)
+                del res
+                
+    # 🚨 戻り値（数百万の辞書）をキャッシュへ渡す直前に、システム内のゴミを完全焼却
     gc.collect()
     return rows
 
