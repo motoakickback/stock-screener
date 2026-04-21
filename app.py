@@ -619,10 +619,14 @@ def get_nikkei_macro_status():
 # 🚨 既存部隊：データ取得（マクロ関数の「下」に配置することでスコープ破壊を防ぐ）
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """1GB制限を突破する逐次圧縮型・兵站確保ロジック（同期完全保証版）"""
+    """1GB制限を突破する逐次圧縮型・兵站確保ロジック（型安全・防弾仕様）"""
     import time
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    status_text.text("📡 兵站ルートを計算中...")
 
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
@@ -637,32 +641,36 @@ def get_hist_data_cached(key):
     retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     session.mount('https://', HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retries))
 
+    status_text.text(f"📡 初動偵察を実行中（対象: {dates[0]}）...")
+    progress_bar.progress(0.01) 
+    
+    try:
+        recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
+        recon_res = session.get(recon_url, timeout=10.0)
+        if recon_res.status_code in [401, 403]:
+            raise ValueError("🚨 兵站断絶: API認証エラー。トークンを更新してください。")
+    except Exception as e:
+        raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
+
     dfs = []
     failed_dates = []
 
-    # 🚨 内部部品：fetch_and_compress（この関数の外からは参照されない）
     def fetch_and_compress(dt):
-        """1日分を取得し、その場でメモリを圧縮してDataFrame化する"""
         for attempt in range(4):
             try:
                 r = session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=10.0)
                 if r.status_code == 200:
                     data = r.json().get("data", [])
                     if not data: return None
-                    
                     temp_df = pd.DataFrame(data)
-                    # 兵站列の物理同期
                     rename_map = {
                         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
                         'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
                         'AdjustmentVolume': 'AdjustmentVolume'
                     }
                     temp_df = temp_df.rename(columns=rename_map)
-                    
                     keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                     temp_df = temp_df[[c for c in keep if c in temp_df.columns]].copy()
-                    
-                    # 物理圧縮（メモリ消費量を50%削減）
                     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
                         if col in temp_df.columns:
                             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
@@ -673,33 +681,30 @@ def get_hist_data_cached(key):
                 elif r.status_code in [401, 403]:
                     return "AUTH_ERROR"
                 else:
-                    time.sleep(1.0)
-                    continue
+                    time.sleep(1.0); continue
             except Exception:
-                time.sleep(1.0)
-                continue
+                time.sleep(1.0); continue
         return "SKIP"
 
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
-        # 🚨 ここで fetch_and_compress を正しく呼び出しているため、名前の不一致は起きません
         futs = {exe.submit(fetch_and_compress, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             dt_val = futs[f]
             res = f.result()
             
-            if res == "AUTH_ERROR":
-                raise ValueError(f"🚨 兵站断絶: 認証失効({dt_val})")
-            elif res == "SKIP":
-                failed_dates.append(dt_val)
+            # 🚨 修正：isinstanceを使用して「型」を先に判定することで Ambiguous エラーを完全回避
+            if isinstance(res, str):
+                if res == "AUTH_ERROR":
+                    raise ValueError(f"🚨 兵站断絶: 認証失効({dt_val})")
+                elif res == "SKIP":
+                    failed_dates.append(dt_val)
             elif isinstance(res, pd.DataFrame):
+                # DataFrameが正常に返ってきた場合のみリストに格納
                 dfs.append(res)
             
-            progress_bar.progress((i + 1) / len(dates))
-            if i % 10 == 0:
-                status_text.text(f"📡 逐次圧縮中: {i+1}/260日 (失敗: {len(failed_dates)})")
+            p_val = (i + 1) / len(dates)
+            progress_bar.progress(min(p_val, 1.0))
+            status_text.text(f"📡 逐次圧縮中: {i+1}/260日 完了 (失敗: {len(failed_dates)})")
             time.sleep(0.15)
 
     progress_bar.empty()
@@ -708,7 +713,6 @@ def get_hist_data_cached(key):
     if not dfs:
         raise ValueError("🚨 兵站断絶: データが取得できませんでした。")
 
-    # 全データを一斉結合
     full_df = pd.concat(dfs, ignore_index=True)
     del dfs
     gc.collect()
