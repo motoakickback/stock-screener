@@ -600,7 +600,7 @@ def get_hist_data_cached(key):
     rows = []
     abort_flag = False
 
-	def get_nikkei_macro_status():
+def get_nikkei_macro_status():
     """日経平均の25日乖離率を取得し、戦術アラートを生成する"""
     try:
         import yfinance as yf
