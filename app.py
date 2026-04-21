@@ -332,37 +332,32 @@ def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
     
-    # 🚨 致命傷の修復：列名の翻訳（リネーム）を「メモリ解放の破棄」より前に必ず実行する
-    if 'AdjustmentClose' in df.columns:
-        df = df.rename(columns={
-            'AdjustmentOpen': 'AdjO',
-            'AdjustmentHigh': 'AdjH',
-            'AdjustmentLow': 'AdjL',
-            'AdjustmentClose': 'AdjC',
-            'AdjustmentVolume': 'Volume',
-            'Volume': 'RawVolume' # 念のための衝突回避
-        })
-    elif 'Close' in df.columns and 'AdjC' not in df.columns:
-        df = df.rename(columns={
-            'Open': 'AdjO',
-            'High': 'AdjH',
-            'Low': 'AdjL',
-            'Close': 'AdjC'
-        })
+    # 🚨 翻訳レイヤー：J-Quantsの生データをシステム標準名に即座に変換
+    # メインプログラムが AdjustmentVolume 等を期待している場合に対応
+    rename_map = {
+        'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
+        'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
+        'AdjustmentVolume': 'AdjustmentVolume' # ここは名前を維持（KeyError回避）
+    }
+    # もし生データがすでにリネーム済み、あるいは別形式の場合のフォールバック
+    if 'Close' in df.columns:
+        rename_map.update({'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'Volume': 'AdjustmentVolume'})
+    
+    df = df.rename(columns=rename_map)
 
-    # 1. 不要な列を早期に破棄してメモリ解放
-    keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']
+    # 1. 必要な列だけを残す（Volume の名前をメインプログラムに合わせる）
+    # メインプログラムが v_col = 'AdjustmentVolume' を使っているため、ここも合わせる
+    keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
     df = df[[c for c in keep_cols if c in df.columns]].copy()
     
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         
-    # 2. 巨大な float64（64ビット）を float32（32ビット）に半減圧縮
-    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
+    # 2. 圧縮（float32化）
+    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
             
-    # 3. 文字列（object）のCodeを「カテゴリ型」に変換して極限圧縮
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype('category')
         
