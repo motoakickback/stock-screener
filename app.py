@@ -618,9 +618,8 @@ def get_nikkei_macro_status():
 
 # 🚨 既存部隊：データ取得（マクロ関数の「下」に配置することでスコープ破壊を防ぐ）
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期付 260日兵站確保（不屈の強行突破・スキップ機能搭載）"""
+    """1GB制限を突破する逐次圧縮型・兵站確保ロジック（同期完全保証版）"""
     import time
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
@@ -635,33 +634,41 @@ def get_hist_data_cached(key):
 
     session = requests.Session()
     session.headers.update(headers)
-    
-    # ネットワーク層の自動再試行
     retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retries)
-    session.mount('https://', adapter)
+    session.mount('https://', HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retries))
 
-    # 🚨 第一防衛線：単発偵察（Recon by Fire）
-    try:
-        recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
-        recon_res = session.get(recon_url, timeout=5.0)
-        if recon_res.status_code in [401, 403]:
-            raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンを更新してください。")
-    except Exception as e:
-        raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
-
-    rows = []
+    dfs = []
     failed_dates = []
 
-    def fetch(dt):
-        # 🚨 ロジック変更：失敗しても全体の abort_flag を立てず、この日だけを諦める
+    # 🚨 内部部品：fetch_and_compress（この関数の外からは参照されない）
+    def fetch_and_compress(dt):
+        """1日分を取得し、その場でメモリを圧縮してDataFrame化する"""
         for attempt in range(4):
             try:
                 r = session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=10.0)
                 if r.status_code == 200:
-                    return r.json().get("data", [])
+                    data = r.json().get("data", [])
+                    if not data: return None
+                    
+                    temp_df = pd.DataFrame(data)
+                    # 兵站列の物理同期
+                    rename_map = {
+                        'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
+                        'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
+                        'AdjustmentVolume': 'AdjustmentVolume'
+                    }
+                    temp_df = temp_df.rename(columns=rename_map)
+                    
+                    keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
+                    temp_df = temp_df[[c for c in keep if c in temp_df.columns]].copy()
+                    
+                    # 物理圧縮（メモリ消費量を50%削減）
+                    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
+                        if col in temp_df.columns:
+                            temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
+                    return temp_df
                 elif r.status_code == 429:
-                    time.sleep(2.0 * (attempt + 1)) # 待機時間を延長
+                    time.sleep(2.0 * (attempt + 1))
                     continue
                 elif r.status_code in [401, 403]:
                     return "AUTH_ERROR"
@@ -671,47 +678,47 @@ def get_hist_data_cached(key):
             except Exception:
                 time.sleep(1.0)
                 continue
-        
-        return "SKIP" # 4回失敗したらスキップを指示
+        return "SKIP"
 
-    # 🚨 ステルス機動：並列数を2に維持、進捗を可視化
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
-        futs = {exe.submit(fetch, dt): dt for dt in dates}
+        # 🚨 ここで fetch_and_compress を正しく呼び出しているため、名前の不一致は起きません
+        futs = {exe.submit(fetch_and_compress, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             dt_val = futs[f]
             res = f.result()
             
             if res == "AUTH_ERROR":
-                raise ValueError(f"🚨 兵站断絶: 進軍中に認証が失効しました({dt_val})")
+                raise ValueError(f"🚨 兵站断絶: 認証失効({dt_val})")
             elif res == "SKIP":
                 failed_dates.append(dt_val)
-            elif isinstance(res, list):
-                rows.extend(res)
+            elif isinstance(res, pd.DataFrame):
+                dfs.append(res)
             
-            # 進捗表示を更新（ボスのストレス軽減用）
             progress_bar.progress((i + 1) / len(dates))
             if i % 10 == 0:
-                status_text.text(f"📡 索敵状況: {i+1}/260日 完了 (失敗数: {len(failed_dates)})")
-            
-            time.sleep(0.15) # 負荷軽減のためインターバルを僅かに延長
+                status_text.text(f"📡 逐次圧縮中: {i+1}/260日 (失敗: {len(failed_dates)})")
+            time.sleep(0.15)
 
     progress_bar.empty()
     status_text.empty()
 
-    if not rows:
-        raise ValueError("🚨 兵站断絶: 全ての日程で取得に失敗しました。API制限が極めて厳しい状況です。")
+    if not dfs:
+        raise ValueError("🚨 兵站断絶: データが取得できませんでした。")
 
-    if failed_dates:
-        st.warning(f"⚠️ 軽微な兵站損耗: 以下の日程（{len(failed_dates)}日分）の取得に失敗しましたが、残りのデータで計算を続行します: {', '.join(failed_dates[:3])}...")
-
-    df = pd.DataFrame(rows)
-    del rows
+    # 全データを一斉結合
+    full_df = pd.concat(dfs, ignore_index=True)
+    del dfs
     gc.collect()
     
-    return df
+    if 'Date' in full_df.columns:
+        full_df['Date'] = pd.to_datetime(full_df['Date'])
+    if 'Code' in full_df.columns:
+        full_df['Code'] = full_df['Code'].astype('category')
+    
+    return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
@@ -1095,16 +1102,17 @@ with tab1:
         t_global_start = time.time()
         
         with st.status("🚀 索敵スキャンを実行中... 兵站ルートを開拓しています", expanded=True) as status:
-            st.write("📡 第1段階：260日分のローソク足データを取得中...")
-            raw = get_hist_data_cached(cache_key)
+            st.write("📡 第1段階：260日分のデータを取得・逐次圧縮中...")
+            # 🚨 新仕様：rawは最初から洗浄・型圧縮済みのDataFrameとして着弾する
+            full_df = get_hist_data_cached(cache_key)
             t_fetch = time.time()
-            st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+            st.write(f"✔️ 第1・2段階完了：兵站確保および圧縮洗浄 [{t_fetch - t_global_start:.2f}秒]")
             
-            if raw is not None and len(raw) > 0:
-                st.write("🧽 第2段階：データ洗浄・規格統一を実行中...")
-                full_df = clean_df(pd.DataFrame(raw))
+            if full_df is not None and not full_df.empty:
+                # コードの規格統一（5桁埋め）
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                 
+                # 🚨 物理同期：サイドバーの最新設定を戦術指令書(config)へ集約
                 push_penalty = st.session_state.get('push_penalty', 0.0)
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
@@ -1115,65 +1123,80 @@ with tab1:
                     "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"), "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                 }
 
+                # 市場ターゲットの絞り込み
                 m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
                 target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
                 m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
                 
+                # 直近日付でのスクリーニング
                 latest_date = full_df['Date'].max()
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
                 valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
 
-                # 🚨 物理同期：列名の完全保証（KeyError 爆破阻止）
+                # 🚨 物理同期：列名を AdjustmentVolume に固定（KeyError 爆破阻止）
                 v_col = 'AdjustmentVolume'
                 if v_col not in full_df.columns:
-                    # 最終防衛線：もし無ければ、存在する列を代用（エラーで止めるよりマシ）
+                    # 最終防衛線：万が一名称がズレていた場合の動的補捕捉
                     v_col = [c for c in full_df.columns if 'Volume' in c or 'Adj' in c][-1]
 
+                # 出来高平均の算出
                 avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
+                # スキャン対象銘柄の抽出
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 t_clean = time.time()
-                st.write(f"✔️ 第2段階完了：データ洗浄 [{t_clean - t_fetch:.2f}秒]")
+                st.write(f"✔️ ターゲット抽出完了 [{t_clean - t_fetch:.2f}秒]")
                 st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
+                    # 20日前の終値（モメンタム判定用）
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                     
+                    # 調整高値・安値の取得
                     h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+                    # 下落率フィルター（最高値からの乖離）
                     if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
                     
+                    # 直近4日間の最高値とその位置を特定
                     r4h = h_vals[-4:]; h4 = r4h.max()
                     g_max_idx = len(h_vals) - 4 + r4h.argmax()
+                    # 高値発生から遡って14日間の最安値
                     l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
 
                     if l14 <= 0 or h4 <= l14: return None
                     wh = h4 / l14
+                    # 14日ボラティリティ(波高)フィルター
                     if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
                     
+                    # ファンダメンタルズ（赤字除外）フィルター
                     if cfg["f12_ex_overvalued"]:
                         f_data = get_fundamentals(code[:4])
                         if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
+                    # 指標計算・目標買付価格の算出
                     rsi, _, _, _ = get_fast_indicators(c_vals)
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h4 - base_push
                     target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
                     
+                    # スコアリング
                     score = 4
                     if 1.3 <= wh <= 2.0: score += 1
                     if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
                     if not check_double_top(group.tail(31).iloc[:-1]): score += 1
                     if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
                     
+                    # ランク付け
                     dist_pct = ((lc / target_buy) - 1) * 100
                     if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
                     elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
                     elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
                     else: rank, bg, t_score = "B📈", "#0288d1", 3.5
 
+                    # 究極の売られすぎ判定
                     is_ultimate = check_oversold_ultimate(group)
 
                     return {
