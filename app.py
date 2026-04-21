@@ -1478,7 +1478,6 @@ with tab3:
 
                             bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                            # 🚨 IPO検閲ゲートの完全修復：全銘柄を平等に審査し、空欄は絶対に除外しない
                             if st.session_state.get('f5_ipo', False):
                                 try:
                                     m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
@@ -1487,7 +1486,7 @@ with tab3:
                                         if ld_col and pd.notna(m_row.iloc[0][ld_col[0]]):
                                             target_dt = pd.to_datetime(m_row.iloc[0][ld_col[0]]).replace(tzinfo=None)
                                             if (datetime.now().replace(tzinfo=None) - target_dt).days < 365:
-                                                continue # 1年未満のIPOのみ確実にスキップ
+                                                continue 
                                 except Exception:
                                     pass
 
@@ -1536,12 +1535,13 @@ with tab3:
                                 base_push_r = st.session_state.push_r / 100.0
                                 bt_val_standard = h14 - (ur_v * base_push_r)
                                 bt_val_deep = h14 - (ur_v * 0.618)
-                                panic_line = bt_val_standard * 0.90 
+                                # 🚨 戦術補正：オーバーシュート判定を 10%下落(0.90) から 5%下落(0.95) へタイト化
+                                panic_line = bt_val_standard * 0.95 
 
                                 if lc < panic_line:
                                     bt_val = int(bt_val_deep)
                                     is_deep = True
-                                    alerts.append(f"💎 【深海待伏】パニック売り(標準目標から10%下落)を検知。買値を61.8%押しへ下方修正。")
+                                    alerts.append(f"💎 【深海待伏】オーバーシュート(標準目標から5%以上下落)を検知。買値を61.8%押しへ下方修正。")
                                 else: bt_val = int(bt_val_standard)
 
                                 m1, m2 = float(t_latest.get('MACD_Hist', 0)), float(t_prev.get('MACD_Hist', 0))
@@ -1601,7 +1601,7 @@ with tab3:
                     st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
                     status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
 
-            # --- 🎨 6. 神聖UI描画 ---
+            # --- 🎨 6. 神聖UI描画（絶対防弾化） ---
             for index, r in enumerate(scope_results):
                 st.divider()
                 
