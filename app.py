@@ -1125,9 +1125,10 @@ with tab1:
                 latest_date = full_df['Date'].max()
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
                 valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
-                
-                v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
-                avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
+
+				# 🚨 物理同期：列名を AdjustmentVolume に固定し、余計な上書きを排除
+				v_col = 'AdjustmentVolume'
+				avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 t_clean = time.time()
