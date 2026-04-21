@@ -617,7 +617,7 @@ def get_hist_data_cached(key):
 
     # 🚨 高速化兵装：TCPコネクションの使い回し（Keep-Alive）
     session = requests.Session()
-    # session.headers.update(headers) # ← 環境変数 headers が定義されていればアンコメント
+    session.headers.update(headers)   # 🚨 修正：先頭の「#」を削除し、認証ヘッダーを完全に物理結線
     adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
     session.mount('https://', adapter)
 
