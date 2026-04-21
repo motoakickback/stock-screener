@@ -604,20 +604,16 @@ def get_nikkei_macro_status():
     """日経平均の25日乖離率を取得し、戦術アラートを生成する"""
     try:
         import yfinance as yf
-        # 日経225指数を取得
         n225 = yf.Ticker("^N225")
         df_n = n225.history(period="60d")
         if df_n.empty: return None
         
-        # 25日移動平均と現在値を算出
         df_n['MA25'] = df_n['Close'].rolling(window=25).mean()
         latest_close = df_n['Close'].iloc[-1]
         latest_ma25 = df_n['MA25'].iloc[-1]
         
-        # 乖離率算出
         div_rate = ((latest_close - latest_ma25) / latest_ma25) * 100
         
-        # 戦術判定
         if div_rate >= 8.0:
             status, color, icon = "⚠️ 異常過熱（強襲停止）", "#ef5350", "🔥"
         elif div_rate >= 5.0:
