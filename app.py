@@ -618,10 +618,13 @@ def get_nikkei_macro_status():
 
 # 🚨 既存部隊：データ取得（マクロ関数の「下」に配置することでスコープ破壊を防ぐ）
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
+@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期付 260日兵站確保（対レート制限・不屈のリトライ仕様）"""
-    abort_flag = False
-    last_error = ""
+    """19時リセット同期付 260日兵站確保（不屈の強行突破・スキップ機能搭載）"""
+    import time
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -630,16 +633,11 @@ def get_hist_data_cached(key):
         days += 1
         if days > 400: break
 
-    # 🚨 高速化兵装：TCPコネクションの使い回し ＋ 自動再試行アダプタ
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
-    import time
-    
     session = requests.Session()
     session.headers.update(headers)
     
-    # 物理的な通信切断（500系エラー）に対する自動再試行を根底に組み込む
-    retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+    # ネットワーク層の自動再試行
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retries)
     session.mount('https://', adapter)
 
@@ -648,68 +646,66 @@ def get_hist_data_cached(key):
         recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
         recon_res = session.get(recon_url, timeout=5.0)
         if recon_res.status_code in [401, 403]:
-            raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンが失効しています。")
-    except requests.exceptions.Timeout:
-        raise ValueError("🚨 兵站断絶: APIサーバーが沈黙しています（タイムアウト）。")
+            raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンを更新してください。")
     except Exception as e:
-        if "🚨" not in str(e):
-            raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
-        else:
-            raise e
+        raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
 
     rows = []
+    failed_dates = []
 
     def fetch(dt):
-        nonlocal abort_flag, last_error
-        if abort_flag: return []
-        
-        # 🚨 不屈の再試行ロジック：429（制限）などで弾かれても最大4回再突撃する
+        # 🚨 ロジック変更：失敗しても全体の abort_flag を立てず、この日だけを諦める
         for attempt in range(4):
-            if abort_flag: return []
             try:
                 r = session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=10.0)
                 if r.status_code == 200:
                     return r.json().get("data", [])
                 elif r.status_code == 429:
-                    time.sleep(1.0 * (attempt + 1)) # 制限を食らったら1秒→2秒と待機を延ばして再突撃
+                    time.sleep(2.0 * (attempt + 1)) # 待機時間を延長
                     continue
                 elif r.status_code in [401, 403]:
-                    abort_flag = True
-                    last_error = f"認証エラー({r.status_code})"
-                    return []
-                elif r.status_code >= 500:
+                    return "AUTH_ERROR"
+                else:
                     time.sleep(1.0)
                     continue
-                else:
-                    abort_flag = True
-                    last_error = f"未知のAPI応答({r.status_code})"
-                    return []
-            except Exception as e:
-                time.sleep(1.0) # タイムアウト等の物理エラーでも1秒待って再突撃
+            except Exception:
+                time.sleep(1.0)
                 continue
         
-        # 4回の再突撃すべてに失敗した場合のみ、全軍撤退を決定
-        abort_flag = True
-        last_error = f"通信リトライ限界突破 (Date: {dt})"
-        return []
+        return "SKIP" # 4回失敗したらスキップを指示
 
-    # 🚨 ステルス機動：並列数を2に絞り、0.1秒のインターバルを強制
+    # 🚨 ステルス機動：並列数を2に維持、進捗を可視化
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
         futs = {exe.submit(fetch, dt): dt for dt in dates}
-        for f in concurrent.futures.as_completed(futs):
-            if abort_flag: 
-                break 
+        for i, f in enumerate(concurrent.futures.as_completed(futs)):
+            dt_val = futs[f]
             res = f.result()
-            if res: rows.extend(res)
-            time.sleep(0.1)
+            
+            if res == "AUTH_ERROR":
+                raise ValueError(f"🚨 兵站断絶: 進軍中に認証が失効しました({dt_val})")
+            elif res == "SKIP":
+                failed_dates.append(dt_val)
+            elif isinstance(res, list):
+                rows.extend(res)
+            
+            # 進捗表示を更新（ボスのストレス軽減用）
+            progress_bar.progress((i + 1) / len(dates))
+            if i % 10 == 0:
+                status_text.text(f"📡 索敵状況: {i+1}/260日 完了 (失敗数: {len(failed_dates)})")
+            
+            time.sleep(0.15) # 負荷軽減のためインターバルを僅かに延長
 
-    if abort_flag:
-        # Streamlit Cloudの黒塗りを突破し、画面上にエラー詳細を直接刻み込む
-        st.error(f"🚨 兵站断絶: 本隊の突撃中に通信が遮断されました。詳細: {last_error}")
-        raise ValueError(f"🚨 兵站断絶: 本隊の突撃中に通信が遮断されました。詳細: {last_error}")
-        
+    progress_bar.empty()
+    status_text.empty()
+
     if not rows:
-        raise ValueError("🚨 兵站断絶: データが取得できませんでした。")
+        raise ValueError("🚨 兵站断絶: 全ての日程で取得に失敗しました。API制限が極めて厳しい状況です。")
+
+    if failed_dates:
+        st.warning(f"⚠️ 軽微な兵站損耗: 以下の日程（{len(failed_dates)}日分）の取得に失敗しましたが、残りのデータで計算を続行します: {', '.join(failed_dates[:3])}...")
 
     df = pd.DataFrame(rows)
     del rows
