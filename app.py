@@ -600,6 +600,46 @@ def get_hist_data_cached(key):
     rows = []
     abort_flag = False
 
+	def get_nikkei_macro_status():
+    """日経平均の25日乖離率を取得し、戦術アラートを生成する"""
+    try:
+        import yfinance as yf
+        # 日経225指数を取得
+        n225 = yf.Ticker("^N225")
+        df_n = n225.history(period="60d")
+        if df_n.empty: return None
+        
+        # 25日移動平均と現在値を算出
+        df_n['MA25'] = df_n['Close'].rolling(window=25).mean()
+        latest_close = df_n['Close'].iloc[-1]
+        latest_ma25 = df_n['MA25'].iloc[-1]
+        
+        # 乖離率算出
+        div_rate = ((latest_close - latest_ma25) / latest_ma25) * 100
+        
+        # 戦術判定
+        if div_rate >= 8.0:
+            status, color, icon = "⚠️ 異常過熱（強襲停止）", "#ef5350", "🔥"
+        elif div_rate >= 5.0:
+            status, color, icon = "🟡 警戒：高値圏", "#ffca28", "⚡"
+        elif div_rate <= -8.0:
+            status, color, icon = "⚠️ 異常パニック（待伏好機）", "#42a5f5", "💎"
+        elif div_rate <= -5.0:
+            status, color, icon = "🔵 警戒：安値圏", "#26a69a", "⚓"
+        else:
+            status, color, icon = "🟢 巡航速度", "#66bb6a", "🚢"
+            
+        return {
+            "close": latest_close,
+            "ma25": latest_ma25,
+            "div_rate": div_rate,
+            "status": status,
+            "color": color,
+            "icon": icon
+        }
+    except:
+        return None
+
     def fetch(dt):
         nonlocal abort_flag
         if abort_flag: return []
@@ -957,6 +997,31 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
     st.toast("全設定を永久保存した。")
 
 st.sidebar.caption(f"KEY: {cache_key}")
+
+# ==========================================
+# (2) メイン画面の描画スタート（サイドバー定義の直後など）
+# ==========================================
+st.title("ボスのアプリタイトル...")
+
+# ⬇️⬇️⬇️ ここにマクロ気象局を挿入 ⬇️⬇️⬇️
+# --- 📍 マクロ気象局アラートの表示 ---
+n225_macro = get_nikkei_macro_status()
+if n225_macro:
+    div_v = n225_macro['div_rate']
+    st.markdown(f"""
+        <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 10px; border-left: 5px solid {n225_macro['color']}; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 14px; color: #aaa;">📡 マクロ気象観測：日経平均25日乖離率</span>
+                <span style="font-size: 18px; font-weight: bold; color: {n225_macro['color']};">{n225_macro['icon']} {n225_macro['status']}</span>
+            </div>
+            <div style="display: flex; gap: 20px; margin-top: 5px;">
+                <div><span style="font-size: 12px; color: #888;">日経現在値:</span> <b style="font-size: 16px;">{n225_macro['close']:,.0f}円</b></div>
+                <div><span style="font-size: 12px; color: #888;">25日移動平均:</span> <b style="font-size: 16px;">{n225_macro['ma25']:,.0f}円</b></div>
+                <div><span style="font-size: 12px; color: #888;">乖離率:</span> <b style="font-size: 20px; color: {n225_macro['color']};">{div_v:+.2f}%</b></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    st.session_state.macro_alert = n225_macro['status']
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
 # 🚨 修正：load_masterの実行行。すべての定義が終わったここで行う。
