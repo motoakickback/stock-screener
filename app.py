@@ -1529,10 +1529,10 @@ with tab3:
                         for f in concurrent.futures.as_completed(futs):
                             try:
                                 res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
-                                if res_data:
-                                    raw_data_dict[str(res_c)] = {
-                                        "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe
-                                    }
+                                # 🚨 無言消滅の根絶：データがNone（全損）であっても、必ず辞書に登録してUIにエラーとして出力させる
+                                raw_data_dict[str(res_c)] = {
+                                    "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe
+                                }
                             except:
                                 continue
 
@@ -1542,10 +1542,11 @@ with tab3:
 
                     scope_results = []
                     for c in t_codes:
+                        target_key = str(c).upper().strip()
                         try:
-                            target_key = str(c).upper().strip()
                             raw_s = raw_data_dict.get(target_key)
-                            if not raw_s: continue 
+                            if not raw_s: 
+                                raw_s = {} # 念のためのセーフティネット
 
                             api_code = target_key if len(target_key) >= 5 else target_key + "0"
                             c_name, c_sector, c_market = f"銘柄 {target_key}", "不明", "不明"
@@ -1569,8 +1570,7 @@ with tab3:
                                 if raw_mcap >= 1e12: res_mcap_str = f"{raw_mcap / 1e12:.2f}兆円"
                                 elif raw_mcap >= 1e8: res_mcap_str = f"{raw_mcap / 1e8:.0f}億円"
                                 else: res_mcap_str = f"{int(raw_mcap):,}"
-                            else:
-                                res_mcap_str = "-"
+                            else: res_mcap_str = "-"
 
                             bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
@@ -1602,6 +1602,18 @@ with tab3:
                             df_raw = pd.DataFrame(bars)
                             if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
                             df_s = clean_df(df_raw)
+                            
+                            # 🚨 演算クラッシュ防止：洗浄により有効なローソク足が消滅した個体をエラーとして出力
+                            if df_s.empty or len(df_s) < 20:
+                                scope_results.append({
+                                    'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                    'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                                    'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
+                                    'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
+                                    'alerts': ["⚠️ 兵站データ破損（有効なローソク足が不足）"], 'error': True, 'is_deep': False
+                                })
+                                continue
+
                             try: df_chart_full = calc_technicals(df_s.copy())
                             except: df_chart_full = df_s.copy()
                             
@@ -1678,7 +1690,15 @@ with tab3:
                                 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
                                 'alerts': alerts, 'error': False, 'is_deep': is_deep
                             })
-                        except Exception:
+                        except Exception as e:
+                            # 🚨 未知の例外クラッシュ時も、無言消滅させずに強制的にエラー銘柄としてUIに出力する
+                            scope_results.append({
+                                'code': target_key, 'name': c_name if 'c_name' in locals() else f"銘柄 {target_key}", 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                                'per': None, 'pbr': None, 'roe': None, 'mcap': "-",
+                                'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': "不明", 'market': "不明", 
+                                'alerts': [f"⚠️ 演算中に致命傷が発生: {str(e)}"], 'error': True, 'is_deep': False
+                            })
                             continue
 
                     rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
@@ -1691,7 +1711,6 @@ with tab3:
                     st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
                     status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
 
-            # 🚨 UI描画を st.status の装甲の外へ完全に脱出（インデント修正）
             # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元） ---
             for index, r in enumerate(scope_results):
                 st.divider()
