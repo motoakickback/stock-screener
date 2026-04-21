@@ -839,7 +839,7 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
         y_min, y_max = 0, 100
 
     fig.update_layout(
-        height=450, 
+        height=550, 
         margin=dict(l=0, r=0, t=30, b=40), 
         hovermode="x unified", dragmode="zoom",
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
