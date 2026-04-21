@@ -1463,7 +1463,6 @@ with tab3:
 
                             res_per, res_pbr, res_roe, raw_mcap = raw_s.get('per'), raw_s.get('pbr'), raw_s.get('roe'), raw_s.get('mcap')
                             
-                            # 🚨 防弾：ROE等の異常文字列(Infinity等)による例外を排除
                             try: res_roe = float(res_roe) if res_roe is not None else None
                             except: res_roe = None
                             if res_roe is not None and 0 < abs(res_roe) < 1.0: res_roe = res_roe * 100
@@ -1479,17 +1478,23 @@ with tab3:
 
                             bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
+                            # 🚨 ここが真犯人でした。原本（Turn 18）のロジックに完全復元し、空欄NaNを通過させます。
                             if st.session_state.f5_ipo:
                                 try:
                                     if target_key.isdigit():
                                         m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
                                         if not m_row.empty:
                                             ld_col = [col for col in m_row.columns if 'Listing' in col]
-                                            if ld_col and pd.notna(m_row.iloc[0][ld_col[0]]):
-                                                target_dt = pd.to_datetime(m_row.iloc[0][ld_col[0]]).replace(tzinfo=None)
-                                                if (datetime.now().replace(tzinfo=None) - target_dt).days < 365: continue
-                                            else: continue
-                                except: pass
+                                            if ld_col:
+                                                ld_val = m_row.iloc[0][ld_col[0]]
+                                                if pd.notna(ld_val) and str(ld_val).strip() != "":
+                                                    target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
+                                                    if (datetime.now().replace(tzinfo=None) - target_dt).days < 365:
+                                                        continue
+                                            else:
+                                                continue
+                                except Exception:
+                                    pass
 
                             if not bars or len(bars) < 20:
                                 scope_results.append({
@@ -1585,7 +1590,7 @@ with tab3:
                             })
                         except Exception as e:
                             scope_results.append({
-                                'code': target_key, 'name': f"銘柄 {target_key}", 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                'code': target_key, 'name': c_name if 'c_name' in locals() else f"銘柄 {target_key}", 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': None, 'pbr': None, 'roe': None, 'mcap': "-", 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
                                 'sector': "不明", 'market': "不明", 'alerts': [f"⚠️ 演算中に致命傷が発生: {str(e)}"], 'error': True, 'is_deep': False
@@ -1605,7 +1610,6 @@ with tab3:
             for index, r in enumerate(scope_results):
                 st.divider()
                 
-                # 🚨 防弾：UIループ中のNaNや文字列によるクラッシュを完全に根絶する解毒関数
                 def safe_int(x):
                     try: return int(float(x)) if not pd.isna(x) else 0
                     except: return 0
