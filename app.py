@@ -1143,7 +1143,7 @@ with tab1:
                     }
 
                 results = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as exe:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
                     futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0)): c for c, g in df.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         try:
@@ -1313,7 +1313,7 @@ with tab2:
                         return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
 
                     results = []
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
                             try:
@@ -1500,7 +1500,7 @@ with tab3:
                             return str(c), None, None, None, None, None
 
                     raw_data_dict = {}
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
                         futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                         for f in concurrent.futures.as_completed(futs):
                             try:
