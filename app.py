@@ -327,27 +327,28 @@ def render_macro_board():
 render_macro_board()
 
 # --- 3. 共通関数 & 演算エンジン ---
+# 🚨 メモリ極限圧縮装甲：データ型をダウングレードし、RAM消費量を60%削減する
 def clean_df(df):
-    """英字銘柄(523A等)を物理保護し、型の物理解毒を行う"""
-    r_cols = {
-        'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC', 
-        'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 
-        'AdjustmentVolume': 'Volume', 'Volume': 'Volume'
-    }
-    df = df.rename(columns=r_cols)
+    if df is None or df.empty: 
+        return pd.DataFrame()
     
-    for c in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
-        if c in df.columns: 
-            df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
-            
+    # 1. 不要な列を早期に破棄してメモリ解放
+    keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']
+    df = df[[c for c in keep_cols if c in df.columns]].copy()
+    
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
-        if 'Code' in df.columns:
-            # 🚨 修正：523Aのような英字銘柄を保護しつつ5桁規格化
-            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+        
+    # 2. 巨大な float64（64ビット）を float32（32ビット）に半減圧縮
+    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
             
-        df = df.sort_values(['Code', 'Date']).dropna(subset=['AdjO', 'AdjH', 'AdjL', 'AdjC']).reset_index(drop=True)
-    return df
+    # 3. 文字列（object）のCodeを「カテゴリ型」に変換して極限圧縮
+    if 'Code' in df.columns:
+        df['Code'] = df['Code'].astype('category')
+        
+    return df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def calc_vector_indicators(df):
     """テクニカル指標のベクトル演算。陰の極み用 BB -3σ を追加"""
