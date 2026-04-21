@@ -605,8 +605,9 @@ def get_nikkei_macro_status():
 # 🚨 既存部隊：データ取得（マクロ関数の「下」に配置することでスコープ破壊を防ぐ）
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """19時リセット同期付 260日兵站確保（TCPセッション維持・高速突撃仕様）"""
+    """19時リセット同期付 260日兵站確保（対レート制限ステルス仕様）"""
     abort_flag = False
+    last_error = ""
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -617,20 +618,20 @@ def get_hist_data_cached(key):
 
     # 🚨 高速化兵装：TCPコネクションの使い回し（Keep-Alive）
     session = requests.Session()
-    session.headers.update(headers)   # 🚨 修正：先頭の「#」を削除し、認証ヘッダーを完全に物理結線
+    session.headers.update(headers)
     adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
     session.mount('https://', adapter)
 
     # 🚨 第一防衛線：単発偵察（Recon by Fire）
     try:
         recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
-        recon_res = session.get(recon_url, timeout=3.0)
+        recon_res = session.get(recon_url, timeout=5.0)
         if recon_res.status_code in [401, 403]:
             raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンが失効しています。")
         elif recon_res.status_code == 503:
-            raise ValueError("🚨 兵站断絶: J-Quantsサーバーがメンテナンス中、またはダウンしています(503)。")
+            raise ValueError("🚨 兵站断絶: サーバーがメンテナンス中、またはダウンしています(503)。")
     except requests.exceptions.Timeout:
-        raise ValueError("🚨 兵站断絶: APIサーバーが完全に沈黙しています（3秒で強制切断）。")
+        raise ValueError("🚨 兵站断絶: APIサーバーが完全に沈黙しています（タイムアウト）。")
     except Exception as e:
         if "🚨" not in str(e):
             raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
@@ -638,36 +639,46 @@ def get_hist_data_cached(key):
             raise e
 
     rows = []
-    abort_flag = False
 
     def fetch(dt):
-        nonlocal abort_flag
+        nonlocal abort_flag, last_error
         if abort_flag: return []
         try:
-            # 🚨 セッションを使い回し、毎回切断・接続するタイムロスをゼロにする
             r = session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=5.0)
             if r.status_code == 200:
                 return r.json().get("data", [])
+            elif r.status_code == 429:
+                abort_flag = True
+                last_error = "API制限（429 Too Many Requests）に抵触しました。リクエストが速すぎます。"
+                return []
             elif r.status_code in [401, 403]:
                 abort_flag = True
+                last_error = f"認証エラー({r.status_code})"
                 return []
-        except Exception:
+            else:
+                abort_flag = True
+                last_error = f"API通信異常({r.status_code})"
+                return []
+        except Exception as e:
             abort_flag = True
+            last_error = f"物理エラー: {str(e)}"
         return []
 
-    # 🚨 突撃部隊の増強：安全が確認されたため、5並列へ復帰
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
-        futs = [exe.submit(fetch, dt) for dt in dates]
+    # 🚨 ステルス機動：並列数を2に落とし、サーバーの検知網をすり抜ける
+    import time
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
+        futs = {exe.submit(fetch, dt): dt for dt in dates}
         for f in concurrent.futures.as_completed(futs):
             if abort_flag: 
                 break 
             res = f.result()
             if res: rows.extend(res)
+            time.sleep(0.05) # 🚨 レート制限回避のための微小インターバル（0.05秒）
 
     if abort_flag:
-        raise ValueError("🚨 兵站断絶: 本隊の突撃中に通信が遮断されました（タイムアウトまたはトークン失効）。")
+        raise ValueError(f"🚨 兵站断絶: 本隊の突撃中に通信が遮断されました。詳細: {last_error}")
     if not rows:
-        raise ValueError("🚨 兵站断絶: データが取得できませんでした。")
+        raise ValueError("🚨 兵站断絶: データが取得できませんでした（休場日のみ、またはデータ形式変更の可能性）。")
 
     df = pd.DataFrame(rows)
     del rows
