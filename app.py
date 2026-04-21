@@ -564,43 +564,7 @@ def get_single_data(code, yrs=1):
 
 import time # 🚨 リトライ用の待機モジュール（未インポートなら関数内で使用）
 
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
-def get_hist_data_cached(key):
-    """19時リセット同期付 260日兵站確保（TCPセッション維持・高速突撃仕様）"""
-	abort_flag = False
-    base = datetime.now(pytz.timezone('Asia/Tokyo'))
-    dates, days = [], 0
-    while len(dates) < 260:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
-        days += 1
-        if days > 400: break
-
-    # 🚨 高速化兵装：TCPコネクションの使い回し（Keep-Alive）
-    session = requests.Session()
-    session.headers.update(headers)
-    adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
-    session.mount('https://', adapter)
-
-    # 🚨 第一防衛線：単発偵察（Recon by Fire）
-    try:
-        recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
-        recon_res = session.get(recon_url, timeout=3.0)
-        if recon_res.status_code in [401, 403]:
-            raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンが失効しています。")
-        elif recon_res.status_code == 503:
-            raise ValueError("🚨 兵站断絶: J-Quantsサーバーがメンテナンス中、またはダウンしています(503)。")
-    except requests.exceptions.Timeout:
-        raise ValueError("🚨 兵站断絶: APIサーバーが完全に沈黙しています（3秒で強制切断）。")
-    except Exception as e:
-        if "🚨" not in str(e):
-            raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
-        else:
-            raise e
-
-    rows = []
-    abort_flag = False
-
+# 🚨 新規部隊：マクロ気象観測（独立した関数として最上段に配置）
 def get_nikkei_macro_status():
     """日経平均の25日乖離率を取得し、戦術アラートを生成する"""
     try:
@@ -636,6 +600,44 @@ def get_nikkei_macro_status():
         }
     except:
         return None
+
+# 🚨 既存部隊：データ取得（マクロ関数の「下」に配置することでスコープ破壊を防ぐ）
+@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
+def get_hist_data_cached(key):
+    """19時リセット同期付 260日兵站確保（TCPセッション維持・高速突撃仕様）"""
+    abort_flag = False
+    base = datetime.now(pytz.timezone('Asia/Tokyo'))
+    dates, days = [], 0
+    while len(dates) < 260:
+        d = base - timedelta(days=days)
+        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
+        days += 1
+        if days > 400: break
+
+    # 🚨 高速化兵装：TCPコネクションの使い回し（Keep-Alive）
+    session = requests.Session()
+    # session.headers.update(headers) # ← 環境変数 headers が定義されていればアンコメント
+    adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
+    session.mount('https://', adapter)
+
+    # 🚨 第一防衛線：単発偵察（Recon by Fire）
+    try:
+        recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
+        recon_res = session.get(recon_url, timeout=3.0)
+        if recon_res.status_code in [401, 403]:
+            raise ValueError(f"🚨 兵站断絶: API認証エラー({recon_res.status_code})。トークンが失効しています。")
+        elif recon_res.status_code == 503:
+            raise ValueError("🚨 兵站断絶: J-Quantsサーバーがメンテナンス中、またはダウンしています(503)。")
+    except requests.exceptions.Timeout:
+        raise ValueError("🚨 兵站断絶: APIサーバーが完全に沈黙しています（3秒で強制切断）。")
+    except Exception as e:
+        if "🚨" not in str(e):
+            raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
+        else:
+            raise e
+
+    rows = []
+    abort_flag = False
 
     def fetch(dt):
         nonlocal abort_flag
