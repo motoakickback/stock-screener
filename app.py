@@ -332,28 +332,29 @@ def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
     
-    # 🚨 翻訳レイヤー：J-Quantsの生データをシステム標準名に即座に変換
-    # メインプログラムが AdjustmentVolume 等を期待している場合に対応
-    rename_map = {
+    # 🚨 鉄壁のリネーム：存在するあらゆる「出来高」候補を AdjustmentVolume に統合
+    vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo', 'AdjustmentVolume']
+    for c in vol_candidates:
+        if c in df.columns and c != 'AdjustmentVolume':
+            df = df.rename(columns={c: 'AdjustmentVolume'})
+            break
+
+    # 価格列のリネーム
+    p_map = {
         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
         'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
-        'AdjustmentVolume': 'AdjustmentVolume' # ここは名前を維持（KeyError回避）
+        'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'
     }
-    # もし生データがすでにリネーム済み、あるいは別形式の場合のフォールバック
-    if 'Close' in df.columns:
-        rename_map.update({'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'Volume': 'AdjustmentVolume'})
-    
-    df = df.rename(columns=rename_map)
+    df = df.rename(columns=p_map)
 
-    # 1. 必要な列だけを残す（Volume の名前をメインプログラムに合わせる）
-    # メインプログラムが v_col = 'AdjustmentVolume' を使っているため、ここも合わせる
-    keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
-    df = df[[c for c in keep_cols if c in df.columns]].copy()
+    # 必要な列を厳選（AdjustmentVolume が無い場合でも落とさない）
+    keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
+    df = df[[c for c in keep if c in df.columns]].copy()
     
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         
-    # 2. 圧縮（float32化）
+    # 数値圧縮（float32）
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
