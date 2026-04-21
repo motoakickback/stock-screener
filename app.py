@@ -1478,21 +1478,16 @@ with tab3:
 
                             bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                            # 🚨 ここが真犯人でした。原本（Turn 18）のロジックに完全復元し、空欄NaNを通過させます。
-                            if st.session_state.f5_ipo:
+                            # 🚨 IPO検閲ゲートの完全修復：全銘柄を平等に審査し、空欄は絶対に除外しない
+                            if st.session_state.get('f5_ipo', False):
                                 try:
-                                    if target_key.isdigit():
-                                        m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
-                                        if not m_row.empty:
-                                            ld_col = [col for col in m_row.columns if 'Listing' in col]
-                                            if ld_col:
-                                                ld_val = m_row.iloc[0][ld_col[0]]
-                                                if pd.notna(ld_val) and str(ld_val).strip() != "":
-                                                    target_dt = pd.to_datetime(ld_val).replace(tzinfo=None)
-                                                    if (datetime.now().replace(tzinfo=None) - target_dt).days < 365:
-                                                        continue
-                                            else:
-                                                continue
+                                    m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
+                                    if not m_row.empty:
+                                        ld_col = [col for col in m_row.columns if 'Listing' in col]
+                                        if ld_col and pd.notna(m_row.iloc[0][ld_col[0]]):
+                                            target_dt = pd.to_datetime(m_row.iloc[0][ld_col[0]]).replace(tzinfo=None)
+                                            if (datetime.now().replace(tzinfo=None) - target_dt).days < 365:
+                                                continue # 1年未満のIPOのみ確実にスキップ
                                 except Exception:
                                     pass
 
@@ -1606,7 +1601,7 @@ with tab3:
                     st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
                     status.update(label=f"🎯 スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
 
-            # --- 🎨 6. 神聖UI描画（原本 100% 垂直復元 ＆ 絶対防弾化） ---
+            # --- 🎨 6. 神聖UI描画 ---
             for index, r in enumerate(scope_results):
                 st.divider()
                 
@@ -1616,6 +1611,8 @@ with tab3:
                 def safe_float(x):
                     try: return float(x) if not pd.isna(x) else None
                     except: return None
+                
+                has_chart = not (r.get('error') or r.get('df_chart') is None or r['df_chart'].empty)
 
                 source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                 m_lower = str(r['market']).lower()
@@ -1644,9 +1641,10 @@ with tab3:
                         elif any(mark in alert for mark in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
                         else: st.warning(alert)
 
-                if r.get('error'):
-                    st.warning("⚠️ データの取得または演算に失敗しました（異常値・欠損データ）。")
-                    if not (r.get('per') or r.get('pbr')): continue
+                if not has_chart:
+                    st.warning("⚠️ ローソク足データが不足または破損しているため、チャートの描画をスキップしました。")
+                    if not (r.get('per') or r.get('pbr')): 
+                        continue
                 
                 sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                 
@@ -1713,9 +1711,16 @@ with tab3:
                     
                     st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
-                st.markdown("---")
-                draw_chart(r['df_chart'], c_target, chart_key=f"t3_chart_final_{r['code']}_{index}_{cache_key}")
+                if has_chart:
+                    try:
+                        st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"⚠️ レーダー描画エラー: {str(e)}")
+                    st.markdown("---")
+                    try:
+                        draw_chart(r['df_chart'], c_target, chart_key=f"t3_chart_final_{r['code']}_{index}_{cache_key}")
+                    except Exception as e:
+                        st.error(f"⚠️ チャート描画エラー: {str(e)}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
