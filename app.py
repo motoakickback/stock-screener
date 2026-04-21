@@ -332,6 +332,24 @@ def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
     
+    # 🚨 致命傷の修復：列名の翻訳（リネーム）を「メモリ解放の破棄」より前に必ず実行する
+    if 'AdjustmentClose' in df.columns:
+        df = df.rename(columns={
+            'AdjustmentOpen': 'AdjO',
+            'AdjustmentHigh': 'AdjH',
+            'AdjustmentLow': 'AdjL',
+            'AdjustmentClose': 'AdjC',
+            'AdjustmentVolume': 'Volume',
+            'Volume': 'RawVolume' # 念のための衝突回避
+        })
+    elif 'Close' in df.columns and 'AdjC' not in df.columns:
+        df = df.rename(columns={
+            'Open': 'AdjO',
+            'High': 'AdjH',
+            'Low': 'AdjL',
+            'Close': 'AdjC'
+        })
+
     # 1. 不要な列を早期に破棄してメモリ解放
     keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']
     df = df[[c for c in keep_cols if c in df.columns]].copy()
@@ -1029,8 +1047,6 @@ st.sidebar.caption(f"KEY: {cache_key}")
 # ==========================================
 # (2) メイン画面の描画スタート（サイドバー定義の直後など）
 # ==========================================
-st.title("ボスのアプリタイトル...")
-
 # ⬇️⬇️⬇️ ここにマクロ気象局を挿入 ⬇️⬇️⬇️
 # --- 📍 マクロ気象局アラートの表示 ---
 n225_macro = get_nikkei_macro_status()
