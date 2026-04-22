@@ -1152,77 +1152,77 @@ with tab1:
                 st.write(f"✔️ ターゲット抽出完了 [{t_clean - t_fetch:.2f}秒]")
                 st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
-			def scan_unit_t1_parallel(code, group, cfg, v_avg):
-				# --- 前半：基本データの抽出 ---
-				c_vals = group['AdjC'].values
-				h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+				def scan_unit_t1_parallel(code, group, cfg, v_avg):
+					# --- 前半：基本データの抽出 ---
+					c_vals = group['AdjC'].values
+					h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+					
+					if len(c_vals) < 20: return None
+					lc = c_vals[-1]
 				
-				if len(c_vals) < 20: return None
-				lc = c_vals[-1]
-			
-				# 1. 20日前の終値（モメンタム判定用）
-				p20 = c_vals[max(0, len(c_vals)-20)]
-				if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+					# 1. 20日前の終値（モメンタム判定用）
+					p20 = c_vals[max(0, len(c_vals)-20)]
+					if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+					
+					# 2. 下落率フィルター（最高値からの乖離）
+					if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
+					
+					# 3. 波高(14d)の算出とフィルター
+					r4h = h_vals[-4:]; h4 = r4h.max()
+					g_max_idx = len(h_vals) - 4 + r4h.argmax()
+					l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
 				
-				# 2. 下落率フィルター（最高値からの乖離）
-				if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
+					if l14 <= 0 or h4 <= l14: return None
+					wh = h4 / l14
+					if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
 				
-				# 3. 波高(14d)の算出とフィルター
-				r4h = h_vals[-4:]; h4 = r4h.max()
-				g_max_idx = len(h_vals) - 4 + r4h.argmax()
-				l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
-			
-				if l14 <= 0 or h4 <= l14: return None
-				wh = h4 / l14
-				if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
-			
-				# --- 🚨 新設：ボラティリティ・パージ（粛清）セクション ---
-				import numpy as np
-				tr = np.maximum(h_vals[-1] - l_vals[-1], 
-								np.maximum(abs(h_vals[-1] - c_vals[-2]), 
-										   abs(l_vals[-1] - c_vals[-2])))
+					# --- 🚨 新設：ボラティリティ・パージ（粛清）セクション ---
+					import numpy as np
+					tr = np.maximum(h_vals[-1] - l_vals[-1], 
+									np.maximum(abs(h_vals[-1] - c_vals[-2]), 
+											   abs(l_vals[-1] - c_vals[-2])))
+					
+					# ボスの要望通り「30円」および「1.5%」の二重フィルター
+					atr_val = float(tr) 
+					atr_rate = (atr_val / lc) * 100 
+					
+					if atr_val <= 30 and atr_rate <= 1.5:
+						return None # 期待値の低い「死に株」を排除
 				
-				# ボスの要望通り「30円」および「1.5%」の二重フィルター
-				atr_val = float(tr) 
-				atr_rate = (atr_val / lc) * 100 
+					# --- 後半：ファンダメンタルズ ---
+					if cfg["f12_ex_overvalued"]:
+						f_data = get_fundamentals(code[:4])
+						if f_data and ((f_data.get("op", 0) or 0) < 0): return None
+									
+					# 指標計算・目標買付価格の算出
+					rsi, _, _, _ = get_fast_indicators(c_vals)
+					base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
+					target_buy = h4 - base_push
+					target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
+									
+					# スコアリング
+					score = 4
+					if 1.3 <= wh <= 2.0: score += 1
+					if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
+					if not check_double_top(group.tail(31).iloc[:-1]): score += 1
+					if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+									
+					# ランク付け
+					dist_pct = ((lc / target_buy) - 1) * 100
+					if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
+					elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
+					elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
+					else: rank, bg, t_score = "B📈", "#0288d1", 3.5
 				
-				if atr_val <= 30 and atr_rate <= 1.5:
-					return None # 期待値の低い「死に株」を排除
-			
-				# --- 後半：ファンダメンタルズ ---
-				if cfg["f12_ex_overvalued"]:
-					f_data = get_fundamentals(code[:4])
-					if f_data and ((f_data.get("op", 0) or 0) < 0): return None
-								
-				# 指標計算・目標買付価格の算出
-				rsi, _, _, _ = get_fast_indicators(c_vals)
-				base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
-				target_buy = h4 - base_push
-				target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
-								
-				# スコアリング
-				score = 4
-				if 1.3 <= wh <= 2.0: score += 1
-				if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
-				if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-				if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
-								
-				# ランク付け
-				dist_pct = ((lc / target_buy) - 1) * 100
-				if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
-				elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
-				elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
-				else: rank, bg, t_score = "B📈", "#0288d1", 3.5
-			
-				# 究極の売られすぎ判定
-				is_ultimate = check_oversold_ultimate(group)
-			
-				return {
-					'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-					'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
-					't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
-					'ultimate': is_ultimate
-				}
+					# 究極の売られすぎ判定
+					is_ultimate = check_oversold_ultimate(group)
+				
+					return {
+						'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
+						'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
+						't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
+						'ultimate': is_ultimate
+					}
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
@@ -1367,66 +1367,66 @@ with tab2:
                     st.write(f"✔️ 第2段階完了：データ洗浄 [{t_clean - t_fetch:.2f}秒]")
                     st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
-				def scan_unit_t2_parallel(code, group, cfg, v_avg):
-					# --- 1. 基本データの抽出 ---
-					c_vals = group['AdjC'].values
-					h_vals = group['AdjH'].values
-					l_vals = group['AdjL'].values
+					def scan_unit_t2_parallel(code, group, cfg, v_avg):
+						# --- 1. 基本データの抽出 ---
+						c_vals = group['AdjC'].values
+						h_vals = group['AdjH'].values
+						l_vals = group['AdjL'].values
+						
+						if len(c_vals) < 20: return None
+						lc = c_vals[-1]
 					
-					if len(c_vals) < 20: return None
-					lc = c_vals[-1]
-				
-					# --- 2. 🚨 ボラティリティ・パージ（粛清）セクション ---
-					# 直近のTrue Range（TR）を算出
-					tr = max(h_vals[-1] - l_vals[-1], 
-							 abs(h_vals[-1] - c_vals[-2]), 
-							 abs(l_vals[-1] - c_vals[-2]))
+						# --- 2. 🚨 ボラティリティ・パージ（粛清）セクション ---
+						# 直近のTrue Range（TR）を算出
+						tr = max(h_vals[-1] - l_vals[-1], 
+								 abs(h_vals[-1] - c_vals[-2]), 
+								 abs(l_vals[-1] - c_vals[-2]))
+						
+						atr_val = float(tr) 
+						atr_rate = (atr_val / lc) * 100 
+						
+						# 「30円以下」かつ「変動率1.5%以下」の死に株を即座に排除
+						if atr_val <= 30 and atr_rate <= 1.5:
+							return None
 					
-					atr_val = float(tr) 
-					atr_rate = (atr_val / lc) * 100 
+						# --- 3. テクニカル指標の取得とRSIフィルター ---
+						rsi, _, _, hist = get_fast_indicators(c_vals)
+						if rsi > cfg["rsi_lim"]: return None
+						
+						# --- 4. MACDゴールデンクロス(GC)判定 ---
+						gc_days = 0
+						if len(hist) >= 4:
+							if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
+							elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
+							elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+						if gc_days == 0: return None
 					
-					# 「30円以下」かつ「変動率1.5%以下」の死に株を即座に排除
-					if atr_val <= 30 and atr_rate <= 1.5:
-						return None
-				
-					# --- 3. テクニカル指標の取得とRSIフィルター ---
-					rsi, _, _, hist = get_fast_indicators(c_vals)
-					if rsi > cfg["rsi_lim"]: return None
-					
-					# --- 4. MACDゴールデンクロス(GC)判定 ---
-					gc_days = 0
-					if len(hist) >= 4:
-						if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-						elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-						elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-					if gc_days == 0: return None
-				
-					# --- 5. ファンダメンタルズ（赤字除外）フィルター ---
-					if cfg["f12_ex_overvalued"]:
-						f_data = get_fundamentals(code[:4])
-						if f_data and (f_data.get("op", 0) or 0) < 0: return None
-					
-					# --- 6. トリアージ情報の取得 ---
-					is_assault = "狙撃優先" in cfg["tactics"]
-					t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-					
-					# --- 7. 戻り値の生成 ---
-					h14 = h_vals[-14:].max()
-					# 表示用の固定3%ATR（既存のロジックを維持）
-					display_atr = h14 * 0.03
-					
-					return {
-						'Code': code, 
-						'lc': float(lc), 
-						'RSI': float(rsi), 
-						'T_Rank': t_rank, 
-						'T_Color': t_color, 
-						'T_Score': t_score, 
-						'GC_Days': gc_days, 
-						'h14': float(h14), 
-						'atr': float(display_atr), 
-						'avg_vol': int(v_avg)
-					}
+						# --- 5. ファンダメンタルズ（赤字除外）フィルター ---
+						if cfg["f12_ex_overvalued"]:
+							f_data = get_fundamentals(code[:4])
+							if f_data and (f_data.get("op", 0) or 0) < 0: return None
+						
+						# --- 6. トリアージ情報の取得 ---
+						is_assault = "狙撃優先" in cfg["tactics"]
+						t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+						
+						# --- 7. 戻り値の生成 ---
+						h14 = h_vals[-14:].max()
+						# 表示用の固定3%ATR（既存のロジックを維持）
+						display_atr = h14 * 0.03
+						
+						return {
+							'Code': code, 
+							'lc': float(lc), 
+							'RSI': float(rsi), 
+							'T_Rank': t_rank, 
+							'T_Color': t_color, 
+							'T_Score': t_score, 
+							'GC_Days': gc_days, 
+							'h14': float(h14), 
+							'atr': float(display_atr), 
+							'avg_vol': int(v_avg)
+						}
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
