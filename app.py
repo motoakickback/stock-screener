@@ -1371,31 +1371,64 @@ with tab2:
                     st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
-                        c_vals = group['AdjC'].values
-                        lc = c_vals[-1]
-                        rsi, _, _, hist = get_fast_indicators(c_vals)
-                        
-                        if rsi > cfg["rsi_lim"]: return None
-                        
-                        gc_days = 0
-                        if len(hist) >= 4:
-                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-                        if gc_days == 0: return None
-
-                        if cfg["f12_ex_overvalued"]:
-                            f_data = get_fundamentals(code[:4])
-                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
-                        
-                        is_assault = "狙撃優先" in cfg["tactics"]
-                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-                        
-                        h_vals = group['AdjH'].values
-                        h14 = h_vals[-14:].max()
-                        atr = h14 * 0.03
-                        
-                        return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
+				    # --- 1. 基本データの抽出 ---
+				    c_vals = group['AdjC'].values
+				    h_vals = group['AdjH'].values
+				    l_vals = group['AdjL'].values
+				    
+				    if len(c_vals) < 20: return None
+				    lc = c_vals[-1]
+				
+				    # --- 2. 🚨 ボラティリティ・パージ（粛清）セクション ---
+				    # 直近のTrue Range（TR）を算出
+				    tr = max(h_vals[-1] - l_vals[-1], 
+				             abs(h_vals[-1] - c_vals[-2]), 
+				             abs(l_vals[-1] - c_vals[-2]))
+				    
+				    atr_val = float(tr) 
+				    atr_rate = (atr_val / lc) * 100 
+				    
+				    # 「30円以下」かつ「変動率1.5%以下」の銘柄をここで即座に排除
+				    if atr_val <= 30 and atr_rate <= 1.5:
+				        return None
+				
+				    # --- 3. 既存のテクニカル判定 ---
+				    rsi, _, _, hist = get_fast_indicators(c_vals)
+				    if rsi > cfg["rsi_lim"]: return None
+				    
+				    gc_days = 0
+				    if len(hist) >= 4:
+				        if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
+				        elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
+				        elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+				    if gc_days == 0: return None
+				
+				    # --- 4. ファンダメンタルズ・フィルター ---
+				    if cfg["f12_ex_overvalued"]:
+				        f_data = get_fundamentals(code[:4])
+				        if f_data and (f_data.get("op", 0) or 0) < 0: return None
+				    
+				    # --- 5. トリアージ情報の取得 ---
+				    is_assault = "狙撃優先" in cfg["tactics"]
+				    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+				    
+				    # --- 6. 戻り値の生成 ---
+				    h14 = h_vals[-14:].max()
+				    # 表示用の固定3%ATR（ボスの既存ロジックを維持）
+				    display_atr = h14 * 0.03
+				    
+				    return {
+				        'Code': code, 
+				        'lc': float(lc), 
+				        'RSI': float(rsi), 
+				        'T_Rank': t_rank, 
+				        'T_Color': t_color, 
+				        'T_Score': t_score, 
+				        'GC_Days': gc_days, 
+				        'h14': float(h14), 
+				        'atr': float(display_atr), 
+				        'avg_vol': int(v_avg)
+				    }
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
