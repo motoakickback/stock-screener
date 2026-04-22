@@ -1153,32 +1153,49 @@ with tab1:
                 st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
-                    c_vals = group['AdjC'].values
-                    lc = c_vals[-1]
-                    # 20日前の終値（モメンタム判定用）
-                    p20 = c_vals[max(0, len(c_vals)-20)]
-                    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
-                    
-                    # 調整高値・安値の取得
-                    h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
-                    # 下落率フィルター（最高値からの乖離）
-                    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
-                    
-                    # 直近4日間の最高値とその位置を特定
-                    r4h = h_vals[-4:]; h4 = r4h.max()
-                    g_max_idx = len(h_vals) - 4 + r4h.argmax()
-                    # 高値発生から遡って14日間の最安値
-                    l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
-
-                    if l14 <= 0 or h4 <= l14: return None
-                    wh = h4 / l14
-                    # 14日ボラティリティ(波高)フィルター
-                    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
-                    
-                    # ファンダメンタルズ（赤字除外）フィルター
-                    if cfg["f12_ex_overvalued"]:
-                        f_data = get_fundamentals(code[:4])
-                        if f_data and ((f_data.get("op", 0) or 0) < 0): return None
+			    # --- 前半：基本データの抽出 ---
+			    c_vals = group['AdjC'].values
+			    h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
+			    
+			    if len(c_vals) < 20: return None
+			    lc = c_vals[-1]
+			
+			    # 1. 20日前の終値（モメンタム判定用）
+			    p20 = c_vals[max(0, len(c_vals)-20)]
+			    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+			    
+			    # 2. 下落率フィルター（最高値からの乖離）
+			    if lc < h_vals.max() * (1 + (cfg["f3_drop"] / 100.0)): return None
+			    
+			    # 3. 波高(14d)の算出とフィルター
+			    r4h = h_vals[-4:]; h4 = r4h.max()
+			    g_max_idx = len(h_vals) - 4 + r4h.argmax()
+			    l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
+			
+			    if l14 <= 0 or h4 <= l14: return None
+			    wh = h4 / l14
+			    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
+			
+			    # --- 🚨 新設：ボラティリティ・パージ（粛清）セクション ---
+			    # ATR(14)を計算（直近値のみ）
+			    # TA-Lib等のライブラリがない場合でも動くよう、簡易的な真のレンジ(TR)から算出
+			    # 厳密なATRが必要な場合は ta.ATR(group['AdjH'], group['AdjL'], group['AdjC'], timeperiod=14) を使用
+			    import numpy as np
+			    tr = np.maximum(h_vals[-1] - l_vals[-1], 
+			                    np.maximum(abs(h_vals[-1] - c_vals[-2]), 
+			                               abs(l_vals[-1] - c_vals[-2])))
+			    
+			    # ボスの要望通り「30円」および「1.5%」の二重フィルター
+			    atr_val = float(tr) 
+			    atr_rate = (atr_val / lc) * 100 
+			    
+			    if atr_val <= 30 and atr_rate <= 1.5:
+			        return None # 期待値の低い「死に株」を排除
+			
+			    # --- 後半：ファンダメンタルズ ---
+			    if cfg["f12_ex_overvalued"]:
+			        f_data = get_fundamentals(code[:4])
+			        if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     # 指標計算・目標買付価格の算出
                     rsi, _, _, _ = get_fast_indicators(c_vals)
