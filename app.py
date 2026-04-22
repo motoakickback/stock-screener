@@ -1177,9 +1177,6 @@ with tab1:
 			    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
 			
 			    # --- 🚨 新設：ボラティリティ・パージ（粛清）セクション ---
-			    # ATR(14)を計算（直近値のみ）
-			    # TA-Lib等のライブラリがない場合でも動くよう、簡易的な真のレンジ(TR)から算出
-			    # 厳密なATRが必要な場合は ta.ATR(group['AdjH'], group['AdjL'], group['AdjC'], timeperiod=14) を使用
 			    import numpy as np
 			    tr = np.maximum(h_vals[-1] - l_vals[-1], 
 			                    np.maximum(abs(h_vals[-1] - c_vals[-2]), 
@@ -1196,36 +1193,36 @@ with tab1:
 			    if cfg["f12_ex_overvalued"]:
 			        f_data = get_fundamentals(code[:4])
 			        if f_data and ((f_data.get("op", 0) or 0) < 0): return None
-                    
-                    # 指標計算・目標買付価格の算出
-                    rsi, _, _, _ = get_fast_indicators(c_vals)
-                    base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
-                    target_buy = h4 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
-                    
-                    # スコアリング
-                    score = 4
-                    if 1.3 <= wh <= 2.0: score += 1
-                    if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
-                    if not check_double_top(group.tail(31).iloc[:-1]): score += 1
-                    if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
-                    
-                    # ランク付け
-                    dist_pct = ((lc / target_buy) - 1) * 100
-                    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
-                    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
-                    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
-                    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
-
-                    # 究極の売られすぎ判定
-                    is_ultimate = check_oversold_ultimate(group)
-
-                    return {
-                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-                        'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
-                        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
-                        'ultimate': is_ultimate
-                    }
+			                    
+			    # 指標計算・目標買付価格の算出
+			    rsi, _, _, _ = get_fast_indicators(c_vals)
+			    base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
+			    target_buy = h4 - base_push
+			    target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
+			                    
+			    # スコアリング
+			    score = 4
+			    if 1.3 <= wh <= 2.0: score += 1
+			    if (len(h_vals) - 1 - g_max_idx) <= cfg["limit_d"]: score += 1
+			    if not check_double_top(group.tail(31).iloc[:-1]): score += 1
+			    if target_buy * 0.85 <= lc <= target_buy * 1.35: score += 1
+			                    
+			    # ランク付け
+			    dist_pct = ((lc / target_buy) - 1) * 100
+			    if dist_pct < -cfg["sl_c"]: rank, bg, t_score = "圏外💀", "#ef5350", 0
+			    elif dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
+			    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
+			    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
+			
+			    # 究極の売られすぎ判定
+			    is_ultimate = check_oversold_ultimate(group)
+			
+			    return {
+			        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
+			        'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
+			        't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
+			        'ultimate': is_ultimate
+			    }
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
@@ -1388,14 +1385,15 @@ with tab2:
 				    atr_val = float(tr) 
 				    atr_rate = (atr_val / lc) * 100 
 				    
-				    # 「30円以下」かつ「変動率1.5%以下」の銘柄をここで即座に排除
+				    # 「30円以下」かつ「変動率1.5%以下」の死に株を即座に排除
 				    if atr_val <= 30 and atr_rate <= 1.5:
 				        return None
 				
-				    # --- 3. 既存のテクニカル判定 ---
+				    # --- 3. テクニカル指標の取得とRSIフィルター ---
 				    rsi, _, _, hist = get_fast_indicators(c_vals)
 				    if rsi > cfg["rsi_lim"]: return None
 				    
+				    # --- 4. MACDゴールデンクロス(GC)判定 ---
 				    gc_days = 0
 				    if len(hist) >= 4:
 				        if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
@@ -1403,18 +1401,18 @@ with tab2:
 				        elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
 				    if gc_days == 0: return None
 				
-				    # --- 4. ファンダメンタルズ・フィルター ---
+				    # --- 5. ファンダメンタルズ（赤字除外）フィルター ---
 				    if cfg["f12_ex_overvalued"]:
 				        f_data = get_fundamentals(code[:4])
 				        if f_data and (f_data.get("op", 0) or 0) < 0: return None
 				    
-				    # --- 5. トリアージ情報の取得 ---
+				    # --- 6. トリアージ情報の取得 ---
 				    is_assault = "狙撃優先" in cfg["tactics"]
 				    t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
 				    
-				    # --- 6. 戻り値の生成 ---
+				    # --- 7. 戻り値の生成 ---
 				    h14 = h_vals[-14:].max()
-				    # 表示用の固定3%ATR（ボスの既存ロジックを維持）
+				    # 表示用の固定3%ATR（既存のロジックを維持）
 				    display_atr = h14 * 0.03
 				    
 				    return {
