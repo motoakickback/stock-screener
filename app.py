@@ -456,12 +456,13 @@ def check_event_mines(code, event_data=None):
     return alerts
 
 def detect_sakata_patterns(df):
-    """酒田五法：環境認識 ＆ メッセージ合体統合版"""
+    """酒田五法：三尊・三山・二重天井を含む全環境認識結線版"""
     if len(df) < 5: return []
     patterns = []
     c, o, h, l, d = df['AdjC'].values, df['AdjO'].values, df['AdjH'].values, df['AdjL'].values, df['Date'].values
     rsi = df['RSI'].values if 'RSI' in df.columns else [50]*len(df)
     
+    # 環境認識：直近14日の位置 (0=底, 1=天)
     h14_max = df['AdjH'].tail(15).iloc[:-1].max()
     l14_min = df['AdjL'].tail(15).iloc[:-1].min()
     rng = h14_max - l14_min
@@ -470,31 +471,50 @@ def detect_sakata_patterns(df):
     is_high_zone = pos > 0.7 or rsi[-1] > 65
     is_low_zone = pos < 0.3 or rsi[-1] < 35
 
-    # 1. 赤三兵 / 赤三先
+    # 1. 三尊 (San-zon) / 三山 (San-zan) 
+    # 物理条件：直近30日の高値の山を3つ特定（簡易版物理判定）
+    tail_30 = df.tail(30)
+    peaks = []
+    for i in range(1, len(tail_30)-1):
+        if tail_30['AdjH'].iloc[i] > tail_30['AdjH'].iloc[i-1] and tail_30['AdjH'].iloc[i] > tail_30['AdjH'].iloc[i+1]:
+            peaks.append(tail_30['AdjH'].iloc[i])
+    
+    if len(peaks) >= 3 and is_high_zone:
+        if peaks[-2] > peaks[-3] and peaks[-2] > peaks[-1]: # 真ん中が高い
+            patterns.append({"date": d[-1], "label": "【酒田・三尊】", "text": "🔴 【酒田・三尊】天井圏での最終警戒形態。三つの仏、崩落の予兆。即時撤退。", "color": "#ef5350", "type": "bear"})
+        else:
+            patterns.append({"date": d[-1], "label": "【酒田・三山】", "text": "🔴 【酒田・三山】高値圏での三連ピーク。買い勢力の限界露呈。利確の急所。", "color": "#ef5350", "type": "bear"})
+
+    # 2. 二重天井 (Double Top) - 粒度調整版
+    if check_double_top(df.tail(31)) and is_high_zone:
+        if not any(p['label'] == "【酒田・三尊】" for p in patterns):
+            patterns.append({"date": d[-1], "label": "【酒田・二重天井】", "text": "🔴 【酒田・二重天井】天井圏での双峰。上昇エネルギーの枯渇。崩落へのカウントダウン。", "color": "#ef5350", "type": "bear"})
+
+    # 3. 赤三兵 / 赤三先
     if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
         if is_low_zone:
             patterns.append({"date": d[-1], "label": "【酒田・赤三兵】", "text": "🟢 【酒田・赤三兵】安値圏からの狼煙。底打ち反転。追撃準備。", "color": "#26a69a", "type": "bull"})
         elif is_high_zone:
             patterns.append({"date": d[-1], "label": "【酒田・赤三先】", "text": "🔴 【酒田・赤三先】高値圏での三連陽。買い枯れの兆候。新規買いは罠。", "color": "#ef5350", "type": "bear"})
 
-    # 2. 黒三兵
+    # 4. 黒三兵
     if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
         if is_high_zone:
             patterns.append({"date": d[-1], "label": "【酒田・黒三兵】", "text": "🔴 【酒田・黒三兵】高値圏での崩壊合図。暴落の狼煙。即時撤退。", "color": "#ef5350", "type": "bear"})
 
-    # 3. 三空 (色彩同期)
+    # 5. 三空 (色彩同期版)
     gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
     if all(g > 0 for g in gaps):
-        if c[-1] > c[-4] and is_high_zone:
+        if c[-1] > c[-4] and is_high_zone: # 買い三空
             patterns.append({"date": d[-1], "label": "【酒田・買三空】", "text": "🔴 【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
-        elif c[-1] < c[-4] and is_low_zone:
+        elif c[-1] < c[-4] and is_low_zone: # 売り三空
             patterns.append({"date": d[-1], "label": "【酒田・売三空】", "text": "🟢 【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#26a69a", "type": "bull"})
 
-    # 4. 二重底 (メッセージを合体・一本化)
+    # 6. 二重底 (統合版)
     if check_double_bottom(df.tail(31)) and is_low_zone:
         patterns.append({"date": d[-1], "label": "【酒田・二重底】", "text": "🟢 【酒田・二重底】底堅い反転波形を確認。底打ちの最終局面。狙撃準備。", "color": "#26a69a", "type": "bull"})
     
-    # 5. たくり線
+    # 7. たくり線
     body, shadow = abs(c[-1]-o[-1]), min(c[-1], o[-1])-l[-1]
     if (h[-1]-l[-1]) > 0 and shadow > (body*2.5) and (shadow/(h[-1]-l[-1])) > 0.6 and is_low_zone:
         patterns.append({"date": d[-1], "label": "【酒田・たくり】", "text": "🟢 【酒田・たくり線】大底圏での強烈な反発。絶好の買場。", "color": "#26a69a", "type": "bull"})
@@ -970,25 +990,35 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return targ_p
 
 def draw_chart(df, targ_p, chart_key=None):
-    """チャート描画：凡例下部配置 ＆ 画面全幅拡張版"""
+    """チャート描画：凡例下配置 ＆ 全幅 ＆ 全酒田描画版"""
     if df is None or df.empty: return
     df_plot = df.copy()
     fig = go.Figure()
     sakata = detect_sakata_patterns(df_plot)
     fig.add_trace(go.Candlestick(x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name='株価'))
+    
+    # 酒田サインの描画（全パターン巡回）
     for i, p in enumerate(sakata):
         try:
-            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
-            offset_ay = 50 + (i * 45)
-            fig.add_annotation(x=p['date'], y=price_ref, text=p['label'], showarrow=True, arrowhead=2, arrowcolor=p['color'], ax=0, ay=offset_ay, bgcolor="rgba(10,10,10,0.9)", bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=11))
+            # 視認性向上のため、ベア(赤)は上、ブル(緑)は下に配置
+            is_bear = p['type'] == 'bear'
+            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH'].values[0] if is_bear else df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
+            offset_ay = -60 - (i * 40) if is_bear else 60 + (i * 40)
+            
+            fig.add_annotation(
+                x=p['date'], y=price_ref, text=p['label'],
+                showarrow=True, arrowhead=2, arrowcolor=p['color'],
+                ax=0, ay=offset_ay, bgcolor="rgba(10,10,10,0.9)",
+                bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=11)
+            )
         except: pass
+
     fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
     
-    # 🚨 UI修正：凡例を下に、マージンを0にして全幅化
     fig.update_layout(
-        height=500, margin=dict(l=0, r=0, t=30, b=40),
+        height=600, margin=dict(l=0, r=0, t=30, b=40),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         yaxis=dict(side="right", tickformat=",.0f"),
