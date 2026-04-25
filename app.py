@@ -456,68 +456,92 @@ def check_event_mines(code, event_data=None):
     return alerts
 
 def detect_sakata_patterns(df):
-    """酒田五法：三尊・三山・二重天井を含む全環境認識結線版"""
+    """酒田五法：安値圏（陰の極み） ＆ 高値圏（三尊・三山） 全座標同期・完全結線版"""
     if len(df) < 5: return []
     patterns = []
-    c, o, h, l, d = df['AdjC'].values, df['AdjO'].values, df['AdjH'].values, df['AdjL'].values, df['Date'].values
-    rsi = df['RSI'].values if 'RSI' in df.columns else [50]*len(df)
     
-    # 環境認識：直近14日の位置 (0=底, 1=天)
+    # --- ボスのDNA：物理データ抽出と型変換の防護壁 ---
+    c = df['AdjC'].values
+    o = df['AdjO'].values
+    h = df['AdjH'].values
+    l = df['AdjL'].values
+    d = df['Date'].values
+    
+    # RSIの安全取得（原本DNA）
+    if 'RSI' in df.columns:
+        rsi = df['RSI'].values
+    else:
+        rsi = [50] * len(df)
+    
+    # 環境認識：14日レンジ内の現在地特定（原本DNA準拠）
     h14_max = df['AdjH'].tail(15).iloc[:-1].max()
     l14_min = df['AdjL'].tail(15).iloc[:-1].min()
     rng = h14_max - l14_min
-    pos = (c[-1] - l14_min) / rng if rng > 0 else 0.5
     
+    if rng > 0:
+        pos = (c[-1] - l14_min) / rng
+    else:
+        pos = 0.5
+    
+    # ゾーン定義（色彩戦略の核）
     is_high_zone = pos > 0.7 or rsi[-1] > 65
     is_low_zone = pos < 0.3 or rsi[-1] < 35
 
-    # 1. 三尊 (San-zon) / 三山 (San-zan) 
-    # 物理条件：直近30日の高値の山を3つ特定（簡易版物理判定）
+    # --- 🔵 高値圏：ベアサイン（三尊・三山・二重天井・赤三先） ---
+    # 1. 三尊 (San-zon) / 三山 (San-zan) 物理判定
     tail_30 = df.tail(30)
     peaks = []
     for i in range(1, len(tail_30)-1):
         if tail_30['AdjH'].iloc[i] > tail_30['AdjH'].iloc[i-1] and tail_30['AdjH'].iloc[i] > tail_30['AdjH'].iloc[i+1]:
-            peaks.append(tail_30['AdjH'].iloc[i])
+            peaks.append({"val": tail_30['AdjH'].iloc[i], "idx": i})
     
     if len(peaks) >= 3 and is_high_zone:
-        if peaks[-2] > peaks[-3] and peaks[-2] > peaks[-1]: # 真ん中が高い
+        if peaks[-2]['val'] > peaks[-3]['val'] and peaks[-2]['val'] > peaks[-1]['val']:
             patterns.append({"date": d[-1], "label": "【酒田・三尊】", "text": "🔴 【酒田・三尊】天井圏での最終警戒形態。三つの仏、崩落の予兆。即時撤退。", "color": "#ef5350", "type": "bear"})
         else:
             patterns.append({"date": d[-1], "label": "【酒田・三山】", "text": "🔴 【酒田・三山】高値圏での三連ピーク。買い勢力の限界露呈。利確の急所。", "color": "#ef5350", "type": "bear"})
 
-    # 2. 二重天井 (Double Top) - 粒度調整版
+    # 2. 二重天井 (Double Top)
     if check_double_top(df.tail(31)) and is_high_zone:
         if not any(p['label'] == "【酒田・三尊】" for p in patterns):
             patterns.append({"date": d[-1], "label": "【酒田・二重天井】", "text": "🔴 【酒田・二重天井】天井圏での双峰。上昇エネルギーの枯渇。崩落へのカウントダウン。", "color": "#ef5350", "type": "bear"})
 
-    # 3. 赤三兵 / 赤三先
-    if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
-        if is_low_zone:
-            patterns.append({"date": d[-1], "label": "【酒田・赤三兵】", "text": "🟢 【酒田・赤三兵】安値圏からの狼煙。底打ち反転。追撃準備。", "color": "#26a69a", "type": "bull"})
-        elif is_high_zone:
-            patterns.append({"date": d[-1], "label": "【酒田・赤三先】", "text": "🔴 【酒田・赤三先】高値圏での三連陽。買い枯れの兆候。新規買いは罠。", "color": "#ef5350", "type": "bear"})
+    # 3. 赤三先（高値圏の三連陽線）
+    if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)) and is_high_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・赤三先】", "text": "🔴 【酒田・赤三先】高値圏での三連陽。買い枯れの兆候。新規買いは罠。", "color": "#ef5350", "type": "bear"})
 
-    # 4. 黒三兵
-    if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
-        if is_high_zone:
-            patterns.append({"date": d[-1], "label": "【酒田・黒三兵】", "text": "🔴 【酒田・黒三兵】高値圏での崩壊合図。暴落の狼煙。即時撤退。", "color": "#ef5350", "type": "bear"})
+    # 4. 黒三兵（高値圏の三連陰線）
+    if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)) and is_high_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・黒三兵】", "text": "🔴 【酒田・黒三兵】高値圏での崩壊合図。暴落の狼煙。即時撤退。", "color": "#ef5350", "type": "bear"})
 
-    # 5. 三空 (色彩同期版)
+    # 5. 買い三空
     gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
-    if all(g > 0 for g in gaps):
-        if c[-1] > c[-4] and is_high_zone: # 買い三空
-            patterns.append({"date": d[-1], "label": "【酒田・買三空】", "text": "🔴 【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
-        elif c[-1] < c[-4] and is_low_zone: # 売り三空
-            patterns.append({"date": d[-1], "label": "【酒田・売三空】", "text": "🟢 【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#26a69a", "type": "bull"})
+    if all(g > 0 for g in gaps) and c[-1] > c[-4] and is_high_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・買三空】", "text": "🔴 【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
 
-    # 6. 二重底 (統合版)
+    # --- 🔴 安値圏：ブルサイン（反転攻勢プロトコル） ---
+    # 1. 陰の極み (Oversold Ultimate)
+    if check_oversold_ultimate(df) and is_low_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・陰の極み】", "text": "🟢 【酒田・陰の極み】底打ち最終波形。売り枯れの果て。反転攻勢の急所。狙撃準備。", "color": "#26a69a", "type": "bull"})
+
+    # 2. 赤三兵 (安値圏限定)
+    if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)) and is_low_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・赤三兵】", "text": "🟢 【酒田・赤三兵】安値圏からの狼煙。底打ち反転。追撃準備。", "color": "#26a69a", "type": "bull"})
+
+    # 3. 売り三空
+    if all(g > 0 for g in gaps) and c[-1] < c[-4] and is_low_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・売三空】", "text": "🟢 【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#26a69a", "type": "bull"})
+
+    # 4. 二重底 (Double Bottom)
     if check_double_bottom(df.tail(31)) and is_low_zone:
         patterns.append({"date": d[-1], "label": "【酒田・二重底】", "text": "🟢 【酒田・二重底】底堅い反転波形を確認。底打ちの最終局面。狙撃準備。", "color": "#26a69a", "type": "bull"})
     
-    # 7. たくり線
-    body, shadow = abs(c[-1]-o[-1]), min(c[-1], o[-1])-l[-1]
-    if (h[-1]-l[-1]) > 0 and shadow > (body*2.5) and (shadow/(h[-1]-l[-1])) > 0.6 and is_low_zone:
-        patterns.append({"date": d[-1], "label": "【酒田・たくり】", "text": "🟢 【酒田・たくり線】大底圏での強烈な反発。絶好の買場。", "color": "#26a69a", "type": "bull"})
+    # 5. たくり線
+    body_v = abs(c[-1] - o[-1])
+    shadow_l = min(c[-1], o[-1]) - l[-1]
+    full_rng = h[-1] - l[-1]
+    if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and is_low_zone:
+        patterns.append({"date": d[-1], "label": "【酒田・たくり】", "text": "🟢 【酒田・たくり線】大底圏での強烈な反発。絶好の買場。攻勢の起点。", "color": "#26a69a", "type": "bull"})
 
     return patterns
 
@@ -990,42 +1014,87 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return targ_p
 
 def draw_chart(df, targ_p, chart_key=None):
-    """チャート描画：凡例下配置 ＆ 全幅 ＆ 全酒田描画版"""
+    """チャート描画：ボスの原本DNA復元 ＆ 全幅・凡例下・色彩完全同期版"""
     if df is None or df.empty: return
     df_plot = df.copy()
+    
+    # --- ボスのDNA：Plotlyフィギュアの物理構成 ---
     fig = go.Figure()
     sakata = detect_sakata_patterns(df_plot)
-    fig.add_trace(go.Candlestick(x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name='株価'))
     
-    # 酒田サインの描画（全パターン巡回）
+    # ローソク足描画
+    fig.add_trace(go.Candlestick(
+        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], 
+        low=df_plot['AdjL'], close=df_plot['AdjC'],
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name='株価'
+    ))
+    
+    # 酒田サインの物理描画（原本の座標ロジック ＆ 重複回避）
     for i, p in enumerate(sakata):
         try:
-            # 視認性向上のため、ベア(赤)は上、ブル(緑)は下に配置
             is_bear = p['type'] == 'bear'
-            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH'].values[0] if is_bear else df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
-            offset_ay = -60 - (i * 40) if is_bear else 60 + (i * 40)
+            # 座標決定物理行
+            if is_bear:
+                price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH'].values[0]
+                offset_ay = -80 - (i * 45)
+            else:
+                price_ref = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
+                offset_ay = 80 + (i * 45)
             
             fig.add_annotation(
                 x=p['date'], y=price_ref, text=p['label'],
                 showarrow=True, arrowhead=2, arrowcolor=p['color'],
-                ax=0, ay=offset_ay, bgcolor="rgba(10,10,10,0.9)",
-                bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=11)
+                ax=0, ay=offset_ay,
+                bgcolor="rgba(10,10,10,0.9)", bordercolor=p['color'],
+                borderwidth=1, font=dict(color=p['color'], size=12, family="Arial Black")
             )
-        except: pass
+        except:
+            continue
 
-    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
-        if m_c in df_plot.columns: fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
+    # 目標線（原本DNA）
+    fig.add_trace(go.Scatter(
+        x=df_plot['Date'], y=[targ_p]*len(df_plot), 
+        name='目標', line=dict(color='#FFD700', width=2, dash='dash')
+    ))
     
+    # --- ボスのDNA：移動平均線の多重ガード ＆ 物理描画 ---
+    ma_configs = [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]
+    for m_col_name, m_label, m_color in ma_configs:
+        if m_col_name in df_plot.columns:
+            fig.add_trace(go.Scatter(
+                x=df_plot['Date'], y=df_plot[m_col_name], 
+                name=m_label, line=dict(color=m_color, width=1.8),
+                connectgaps=True
+            ))
+    
+    # 🚨 UI修正完遂：画面右端全幅化 ＆ 凡例の下部中央移設
     fig.update_layout(
-        height=500, margin=dict(l=0, r=0, t=30, b=40),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=620,
+        margin=dict(l=0, r=0, t=30, b=60), # margin-rightを0に
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
-        yaxis=dict(side="right", tickformat=",.0f"),
-        xaxis=dict(type="date", range=[df_plot['Date'].max() - timedelta(days=60), df_plot['Date'].max() + timedelta(days=2)], rangeslider=dict(visible=False)),
-        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+        yaxis=dict(
+            side="right", tickformat=",.0f", gridcolor="#333", 
+            zeroline=False, showline=True, linecolor="#444"
+        ),
+        xaxis=dict(
+            type="date", 
+            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)],
+            rangeslider=dict(visible=False), gridcolor="#333", linecolor="#444"
+        ),
+        legend=dict(
+            orientation="h", yanchor="top", y=-0.18, 
+            xanchor="center", x=0.5, font=dict(color="#eee", size=11)
+        )
     )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"{chart_key}_{int(time.time()*1000)}")
+    
+    # 重複キー根絶 ＆ 全幅出力
+    st.plotly_chart(
+        fig, use_container_width=True, 
+        config={'displayModeBar': False, 'responsive': True}, 
+        key=f"{chart_key}_{int(time.time()*1000)}"
+    )
 
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
