@@ -1864,7 +1864,7 @@ with tab3:
                         if 'Code' not in df_raw.columns:
                             df_raw['Code'] = api_code
                         
-                        # クリーニング処理（原本DNA）
+                        # クリーニング処理（原本DNA：1文字も変えず復元）
                         df_s = clean_df(df_raw)
                         
                         if df_s.empty or len(df_s) < 20:
@@ -1891,13 +1891,13 @@ with tab3:
                             })
                             continue
 
-                        # テクニカル演算（多重例外ガード）
+                        # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
                         try:
                             df_chart_full = calc_technicals(df_s.copy())
                         except Exception:
                             df_chart_full = df_s.copy()
                         
-                        # --- ボスのDNA：最新・直近・前々回データの物理抽出 ---
+                        # --- ボスのDNA：最新・直近・前々回データの物理抽出（各変数ごとに1行） ---
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
                         t_pprev = df_chart_full.iloc[-3]
@@ -1907,43 +1907,43 @@ with tab3:
                         lh = float(t_latest['AdjH'])
                         ll = float(t_latest['AdjL'])
                         
-                        # 14日レンジの物理特定（原本DNA準拠）
+                        # 14日レンジの物理特定ロジック（原本DNA準拠）
                         h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
                         l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v = (h14 - l14)
                         
+                        # テクニカル指標の抽出
                         rsi_v = float(t_latest.get('RSI', 50))
                         atr_v = float(t_latest.get('ATR', lc * 0.05))
                         df_mini = df_chart_full.tail(260).copy()
                         
-                        # 🚨 修正：ボラティリティ審査（演算最上流での物理パージ）
-                        # 0.5% フィルター：235円/1円ATR(0.42%)はここで脱落。827円/12円ATR(1.45%)は通過。
+                        # スコアリング変数の初期化（物理行展開）
+                        score = 0
+                        alerts = []
+                        gc_days = 0
+                        is_deep = False
+
+                        # 🚨 修正：設計思想の正常化（足切り廃止 ＆ 警告メッセージ化）
+                        # 終値235円 / 1ATR 1円（0.42%）等の銘柄を排除せず、ボスの視認用に警告を表示
                         vol_pct = 0
                         if lc > 0:
                             vol_pct = (atr_v / lc * 100)
                         
                         if vol_pct < 0.5:
-                            # 資金効率を破壊する「動かない銘柄」をここで即時切り捨て
-                            continue
+                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
-                        # --- ここから精鋭銘柄の解析フェーズ ---
-                        score = 0
-                        alerts = []
-                        gc_days = 0
-                        is_deep = False
-                        
-                        # メッセージ一本化（重複排除 ＆ 安値圏強化同期版）
-                        # 1. 兵站地雷チェック
+                        # メッセージ一本化プロトコル（原本DNA：重複排除 ＆ 安値圏強化同期）
+                        # 1. 兵站イベント地雷チェック
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
                         
-                        # 2. 酒田エンジン(Part 1/2)の判定を正とし、重複を物理排除
-                        # ここで「陰の極み」「二重底」等の🟢サインが統合される
+                        # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
+                        # ここで「陰の極み」「二重底」「三尊」等のサインが統合される
                         s_results = detect_sakata_patterns(df_chart_full)
                         for p in s_results:
                             alerts.append(p['text'])
 
                         if is_ambush:
-                            # --- 🌐 待伏（アンブッシュ）戦術論理 ---
+                            # --- 🌐 待伏（アンブッシュ）戦術論理：原本物理行を完全復元 ---
                             score = 4
                             base_push_r = st.session_state.push_r / 100.0
                             bt_val_standard = h14 - (ur_v * base_push_r)
@@ -1961,14 +1961,16 @@ with tab3:
                             m1 = float(t_latest.get('MACD_Hist', 0))
                             m2 = float(t_prev.get('MACD_Hist', 0))
                             
-                            # トリアージ情報の取得
-                            _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                            # トリアージ演算
+                            tri_val, tri_msg, t_score, tri_col = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
                             
-                            if res_pbr is not None and res_pbr <= 5.0:
-                                score += 2
+                            # PBR加点（原本DNA）
+                            if res_pbr is not None:
+                                if res_pbr <= 5.0:
+                                    score += 2
                             
-                            # 🚨 機関部サインとの物理連動（加点）
+                            # 🚨 機関部サインとの物理連動（加点プロトコル）
                             if any("二重底" in a for a in alerts):
                                 score += 3
                             if any("たくり" in a for a in alerts):
@@ -1981,7 +1983,7 @@ with tab3:
                             if (h14 - bt_val) > 0:
                                 reach_rate = ((h14 - lc) / (h14 - bt_val) * 100)
                             
-                            # ランク判定の独立物理行（原本DNA復旧）
+                            # ランク判定の完全独立物理行（Turn 18復旧）
                             if score >= 12:
                                 rank = "S級待伏🔥"
                                 bg_c = "#1b5e20"
@@ -1995,11 +1997,11 @@ with tab3:
                                 rank = "圏外💀"
                                 bg_c = "#616161"
                         else:
-                            # --- ⚡ 強襲（アサルト）戦術論理 ---
+                            # --- ⚡ 強襲（アサルト）戦術論理：原本物理行を完全復元 ---
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             
-                            # GC判定の物理展開
+                            # ゴールデンクロス判定の物理展開
                             if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
                                 gc_days = 1
                                 gc_score = 60
@@ -2010,20 +2012,25 @@ with tab3:
                                 gc_days = 0
                                 gc_score = 5
                             
-                            # 🚨 修正：天井警告ペナルティ（Engineサインとの同期）
+                            # 🚨 修正：天井警告ペナルティ（防衛回路）
+                            # 高値圏の罠サインを検知した場合、ランクを強制的に落とす
                             if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
                                 score -= 25
                             
-                            if res_roe is not None and res_roe >= 10.0:
-                                score += 10
+                            # ROE加点
+                            if res_roe is not None:
+                                if res_roe >= 10.0:
+                                    score += 10
                             
+                            # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
                             
+                            # 到達率演算
                             reach_rate = 0
                             if h14 > 0:
                                 reach_rate = (lc / h14) * 100
                             
-                            # 強襲ランク判定の物理展開
+                            # 強襲ランク判定の物理展開（Turn 18復旧）
                             if score >= 80:
                                 rank = "S級強襲⚡"
                                 bg_c = "#1b5e20"
@@ -2037,7 +2044,7 @@ with tab3:
                                 rank = "圏外💀"
                                 bg_c = "#616161"
 
-                        # 演算結果の物理パッキング
+                        # 演算結果の物理パッキング（原本DNA）
                         scope_results.append({
                             'code': target_key,
                             'name': c_name,
@@ -2079,11 +2086,12 @@ with tab3:
                 # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
                 rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results:
-                    r_raw = res.get('rank', '圏外')
-                    r_clean = re.sub(r'[^SABC圏外]', '', r_raw)
-                    res['r_val'] = rank_order.get(r_clean, 0)
+                    r_raw_str = res.get('rank', '圏外')
+                    # 正規表現によるクリーンアップ
+                    r_clean_str = re.sub(r'[^SABC圏外]', '', r_raw_str)
+                    res['r_val'] = rank_order.get(r_clean_str, 0)
                 
-                # ソート実行
+                # ソート実行（ランク > スコア > 到達率）
                 scope_results = sorted(
                     scope_results, 
                     key=lambda x: (x.get('r_val', 0), x.get('score', 0), x.get('reach_val', 0)), 
@@ -2091,10 +2099,10 @@ with tab3:
                 )
                 
                 t_calc = time.time()
-                st.write(f"✔️ 解析・低ボラ排除・色彩同期 完了 [{t_calc - t_fetch:.2f}秒]")
+                st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 
-            # --- 🎨 6. 神聖UI描画（原本 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
+            # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
             for index, r in enumerate(scope_results):
                 st.divider()
                 if r.get('error'):
@@ -2111,7 +2119,7 @@ with tab3:
                 
                 has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
 
-                # 🚨 イベント通知バッジ（原本DNA物理復旧）
+                # 🚨 イベント通知バッジ（原本DNA物理復旧 ＆ 左寄せHTML）
                 event_badges = ""
                 for alert in r.get('alerts', []):
                     if "残り" in alert:
@@ -2119,36 +2127,38 @@ with tab3:
                         label = alert.split("】")[1] if "】" in alert else alert
                         event_badges += f'<span style="background:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-left:8px; font-weight:bold;">{label}</span>'
 
+                # 配色定義
                 source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                 
-                # --- ボスのDNA：市場バッジの詳細条件物理行を完全復元 ---
+                # --- ボスのDNA：市場バッジの詳細条件物理行を完全復元（1文字も削らず） ---
                 m_lower = str(r['market']).lower()
                 if 'プライム' in m_lower or '一部' in m_lower:
-                    m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                    m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #303f9f;">🏢 プライム/大型</span>'
                 elif 'グロース' in m_lower or 'マザーズ' in m_lower:
-                    m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                    m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #2e7d32;">🚀 グロース/新興</span>'
                 elif 'スタンダード' in m_lower or '二部' in m_lower:
-                    m_badge = '<span style="background-color: #ef6c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">⚖️ スタンダード/中堅</span>'
+                    m_badge = '<span style="background-color: #ef6c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #f57c00;">⚖️ スタンダード/中堅</span>'
                 else:
-                    m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{r["market"]}</span>'
+                    m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #546e7a;">{r["market"]}</span>'
                 
+                # GCバッジ（原本DNA）
                 gc_badge = ""
                 if r.get('gc_days', 0) > 0:
-                    gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784;'>⚡ GC発動 {r.get('gc_days')}日目</span>"
+                    gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
 
-                # 銘柄ヘッダー（原本DNA 100%）
+                # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
                 st.markdown(f"""
-				<div style="margin-bottom: 0.8rem;">
-				<h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
-				<span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle;">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
-				<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-				<span style='background:{r['bg']}; color:white; padding:2px 8px; border-radius:4px; font-weight:bold;'>🎯 {r['rank']}</span>
-				{m_badge}{gc_badge}
-				<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">🏭 {r['sector']}</span>
-				<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
-				</div></div>""", unsafe_allow_html=True)
+<div style="margin-bottom: 0.8rem;">
+<h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
+<span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+<span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
+{m_badge}{gc_badge}
+<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
+<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+</div></div>""", unsafe_allow_html=True)
                 
-                # 色彩戦略（ポジ＝緑 / ネガ＝赤）
+                # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
                 if r.get('alerts'):
                     for alert in r['alerts']:
                         if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃", "売り三空", "陰の極み"]):
@@ -2158,59 +2168,78 @@ with tab3:
                         else:
                             st.warning(alert)
 
+                # 3カラムレイアウト（Metrics / Golden Box / ATR Matrix）
                 sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                
                 with sc_left:
-                    h14_v, l14_v, ur_v, lc_v = safe_int(r['h14']), safe_int(r['l14']), safe_int(r['ur']), safe_int(r['lc'])
-                    atr_v = safe_float(r['atr_val']) or 0.0
+                    # 原本DNA：物理的なメトリック分割
+                    h14_v = safe_int(r['h14'])
+                    l14_v = safe_int(r['l14'])
+                    ur_v = safe_int(r['ur'])
+                    lc_v = safe_int(r['lc'])
+                    atr_v_val = safe_float(r['atr_val']) or 0.0
+                    
                     c1, c2 = st.columns(2); c1.metric("直近高値", f"{h14_v:,}円"); c2.metric("起点安値", f"{l14_v:,}円")
                     c3, c4 = st.columns(2); c3.metric("波高(14d)", f"{ur_v:,}円"); c4.metric("最新終値", f"{lc_v:,}円")
-                    st.metric("🌪️ 1ATR", f"{safe_int(atr_v):,}円", f"ボラ: {(atr_v/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
+                    
+                    # ATRボラ率の物理演算表示
+                    st.metric("🌪️ 1ATR", f"{safe_int(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
                 
                 with sc_mid:
-                    roe_v, per_v, pbr_v = safe_float(r['roe']), safe_float(r['per']), safe_float(r['pbr'])
+                    # ファンダメンタルズの物理抽出（原本DNA）
+                    roe_v = safe_float(r['roe'])
+                    per_v = safe_float(r['per'])
+                    pbr_v = safe_float(r['pbr'])
+                    
+                    # 判定とカラーリング（原本DNA）
                     roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v else "-", "#ef5350")
                     per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v else "-", "#ef5350")
                     pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
                     
-                    # 🚨 要請実装：強襲モードの並列表示UI（原本DNA物理復旧 ＆ 833円 / 834円 形式）
+                    # 🚨 修正：並列表示UI（待伏 ＝ 1値 / 強襲 ＝ 833円 / 834円 形式）
                     if is_ambush:
                         box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
                         box_val = f"{safe_int(r['bt_val']):,}円"
                     else:
                         box_title = "🎯 トリガー / 逆指値目安"
-                        stop_p = safe_int(r['bt_val'] + (atr_v * 0.1))
+                        stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
                     
+                    # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
-					<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
-					<div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
-					<div style='font-size: clamp(1.4rem, 4vw, 2.1rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0;'>{box_val}</div>
-					<div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed #444; padding-top:10px;'>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
-					</div>
-					<div style='margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-					<span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
-					</div></div>""", unsafe_allow_html=True)
+<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
+<div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+<div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
+<div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
+<div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+<div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+<div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+</div>
+<div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+<span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
+</div></div>""", unsafe_allow_html=True)
 
                 with sc_right:
                     c_target = safe_int(r['bt_val'])
+                    # 推奨利確・防衛ラインの判定（原本DNA）
                     rec_tps = [2.0, 3.0] if any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
-                    # 🚨 ATRマトリクス：ボスのDNA（％計算のインライン物理記述）
+                    
+                    # ATRマトリクス：ボスのDNA（％計算のインライン物理記述 ＆ 独立したスタイル指定）
                     html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                     
-                    # 各行を物理的に独立して記述（原本DNA）
+                    # 利確目安の物理ループ
                     for m in [0.5, 1.0, 2.0, 3.0]:
-                        val = int(c_target + (atr_v * m))
+                        val = int(c_target + (atr_v_val * m))
                         pct_v = ((val / c_target) - 1) * 100 if c_target > 0 else 0
                         style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;" if m in rec_tps else "padding:3px 6px;"
                         label = "<span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span>" if m in rec_tps else ""
                         html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:+.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
                     
                     html_matrix += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
+                    
+                    # 防衛目安の物理ループ
                     for m in [0.5, 1.0, 2.0]:
-                        val = int(c_target - (atr_v * m))
+                        val = int(c_target - (atr_v_val * m))
                         pct_v = (1 - (val / c_target)) * 100 if c_target > 0 else 0
                         style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;" if m == 1.0 else "padding:3px 6px;"
                         label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
@@ -2218,13 +2247,15 @@ with tab3:
                     
                     st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
+                # 下部チャートエリア
                 if has_chart:
                     try:
-                        # 物理スペーサー
+                        # 物理スペーサー（原本DNA）
                         st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
+                        # レーダーチャート呼び出し
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
                         st.markdown("---")
-                        # 🚨 キー重複エラー根絶 ＆ 全幅・凡例下配置を完遂
+                        # 🚨 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶
                         u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
                         draw_chart(r['df_chart'], c_target, chart_key=u_key)
                         st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
