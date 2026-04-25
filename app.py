@@ -407,77 +407,76 @@ def calc_technicals(df):
     return calc_vector_indicators(df)
 
 def check_event_mines(code, event_data=None):
-    """地雷警戒 ＆ カウントダウン・プロトコル"""
+    """地雷警戒 ＆ カウントダウン・通知プロトコル"""
     alerts = []
     c = str(code)[:4]
-    today = datetime.utcnow() + timedelta(hours=9)
-    today_date = today.date()
-    max_warning_date = today_date + timedelta(days=14)
+    tz_jst = pytz.timezone('Asia/Tokyo')
+    today = datetime.now(tz_jst).date()
+    max_warning_date = today + timedelta(days=14)
     
     # 🚨 物理地雷（固定イベント）
     critical_mines = {
-        "8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", 
-        "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"
+        "8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27"
     }
     
     if c in critical_mines:
         try:
             event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            diff = (event_date - today_date).days
+            diff = (event_date - today).days
             if 0 <= diff <= 14:
-                alerts.append({"text": f"💣 地雷警戒：危険イベントまで残り {diff} 日", "days": diff, "type": "critical"})
+                alerts.append(f"💣 【地雷警戒】危険イベントまで残り {diff} 日 ({critical_mines[c]})")
         except: pass
         
     if not event_data: return alerts
     
-    # 🚨 配当権利落ち
+    # 🚨 配当権利落ちカウントダウン
     for item in event_data.get("dividend", []):
         d_str = str(item.get("RecordDate", ""))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                diff = (target_date - today_date).days
+                diff = (target_date - today).days
                 if 0 <= diff <= 14:
-                    alerts.append({"text": f"💰 権利落ちまで残り {diff} 日", "days": diff, "type": "dividend", "date": d_str})
+                    alerts.append(f"💰 【配当】権利落ち日まで残り {diff} 日 ({d_str})")
                     break
             except: pass
             
-    # 🚨 決算発表
+    # 🚨 決算発表カウントダウン
     for item in event_data.get("earnings", []):
         if str(item.get("Code", ""))[:4] != c: continue
         d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                diff = (target_date - today_date).days
+                diff = (target_date - today).days
                 if 0 <= diff <= 14:
-                    alerts.append({"text": f"🔥 決算発表まで残り {diff} 日", "days": diff, "type": "earnings", "date": d_str})
+                    alerts.append(f"🔥 【決算】発表まで残り {diff} 日 ({d_str})")
                     break
             except: pass
-            
     return alerts
 
 def detect_sakata_patterns(df):
     """酒田五法・主要波形検知エンジン（座標特定版）"""
     if len(df) < 5: return []
     patterns = []
-    c = df['AdjC'].values
-    o = df['AdjO'].values
-    h = df['AdjH'].values
-    l = df['AdjL'].values
-    d = df['Date'].values
+    c, o, h, l, d = df['AdjC'].values, df['AdjO'].values, df['AdjH'].values, df['AdjL'].values, df['Date'].values
 
-    # 1. 赤三兵 (Three Red Soldiers)
+    # 1. 赤三兵 / 黒三兵
     if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【赤三兵】強気の起点", "color": "#26a69a"})
-    
-    # 2. 黒三兵 (Three Crows)
-    if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【黒三兵】警戒の下げ", "color": "#ef5350"})
+        patterns.append({"date": d[-1], "text": "【酒田】赤三兵（強気）", "color": "#26a69a", "type": "bull"})
+    elif all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
+        patterns.append({"date": d[-1], "text": "【酒田】黒三兵（警戒）", "color": "#ef5350", "type": "bear"})
 
-    # 3. 明けの明星 (Morning Star) - 簡易版
-    if c[-3] < o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3])/2:
-        patterns.append({"date": d[-2], "text": "【明けの明星】反転の予兆", "color": "#FFD700"})
+    # 2. 明けの明星 / 宵の明星
+    if c[-3] < o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] > o[-1]:
+        patterns.append({"date": d[-2], "text": "【酒田】明けの明星（大底）", "color": "#FFD700", "type": "bull"})
+    elif c[-3] > o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] < o[-1]:
+        patterns.append({"date": d[-2], "text": "【酒田】宵の明星（天井）", "color": "#ef5350", "type": "bear"})
+
+    # 3. 三空 (空売り/買いの極み)
+    gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
+    if all(g > 0 for g in gaps):
+        patterns.append({"date": d[-1], "text": "【酒田】三空（過熱・極み）", "color": "#FFD700", "type": "ext"})
 
     return patterns
 
@@ -880,69 +879,42 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """, unsafe_allow_html=True)
     return targ_p
 
-def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
+def draw_chart(df, targ_p, chart_key=None):
     """酒田五法アノテーション搭載型チャート"""
     if df is None or df.empty: return
     df_plot = df.copy()
-    
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
-        if col in df_plot.columns:
-            df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
+        if col in df_plot.columns: df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
 
     fig = go.Figure()
-    
-    # 酒田五法の検知
-    sakata_patterns = detect_sakata_patterns(df_plot)
+    sakata = detect_sakata_patterns(df_plot)
     
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-        hovertemplate="始値：%{open:,.0f}<br>終値：%{close:,.0f}<br>高値：%{high:,.0f}<br>安値：%{low:,.0f}<extra></extra>"
+        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 酒田五法の注釈を追加
-    for p in sakata_patterns:
-        # 該当日の安値付近に注釈を配置
-        pattern_price = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
-        fig.add_annotation(
-            x=p['date'], y=pattern_price, text=p['text'],
-            showarrow=True, arrowhead=2, arrowcolor=p['color'],
-            ax=0, ay=40, bgcolor="rgba(0,0,0,0.8)", bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=10)
-        )
+    # 酒田五法アノテーション
+    for p in sakata:
+        price_ref = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
+        fig.add_annotation(x=p['date'], y=price_ref, text=p['text'], showarrow=True, arrowhead=2, 
+                           arrowcolor=p['color'], ax=0, ay=40, bgcolor="rgba(0,0,0,0.8)", bordercolor=p['color'])
 
-    fig.add_trace(go.Scatter(
-        x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', 
-        line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate="目標：%{y:,.0f}<extra></extra>"
-    ))
+    fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
     
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: 
-            fig.add_trace(go.Scatter(
-                x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), 
-                connectgaps=True, hovertemplate=f"{m_n}：%{{y:,.0f}}<extra></extra>"
-            ))
+            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
             
     last_date = df_plot['Date'].max()
-    initial_start = last_date - timedelta(days=60) 
-    
-    try:
-        y_min, y_max = float(df_plot['AdjL'].min()), float(df_plot['AdjH'].max())
-        if pd.isna(y_min) or pd.isna(y_max):
-            y_min, y_max = float(df_plot['AdjC'].min()) * 0.9, float(df_plot['AdjC'].max()) * 1.1
-    except:
-        y_min, y_max = 0, 100
-
     fig.update_layout(
-        height=550, 
-        margin=dict(l=0, r=0, t=30, b=40), 
-        hovermode="x unified", dragmode="zoom",
+        height=550, margin=dict(l=0, r=0, t=30, b=40), hovermode="x unified",
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(type="date", range=[initial_start, last_date + timedelta(days=2)], fixedrange=False, rangeslider=dict(visible=True, thickness=0.05)),
-        yaxis=dict(tickformat=",.0f", side="right", fixedrange=False, autorange=True, range=[y_min * 0.95, y_max * 1.10]), 
+        xaxis=dict(type="date", range=[last_date - timedelta(days=60), last_date + timedelta(days=2)], rangeslider=dict(visible=True, thickness=0.05)),
+        yaxis=dict(tickformat=",.0f", side="right", autorange=True),
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True, 'displaylogo': False}, key=f"{chart_key or 'chart'}_{cache_key}")
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"{chart_key}_{cache_key}")
 
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
