@@ -1507,7 +1507,8 @@ with tab3:
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    return f.read()
+                    content = f.read()
+                    return content
             except Exception:
                 return ""
         return ""
@@ -1535,9 +1536,9 @@ with tab3:
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush:
-            st.info("**🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**\n- **主戦場**: 直近高安の黄金比エリア。\n- **判定核**: MACD好転 ＆ 酒田五法（全サイン並列検知版）による反転合図の特定。\n- **安全装置**: PBR 5.0倍以下の割安性を評価し「大底圏」を狙撃。")
+            st.info("**🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**\n- **主戦場**: 直近高安の黄金比エリア。\n- **判定核**: MACD ＆ 酒田エンジンの同期検知。重複ノイズを除去した精密版。\n- **安全装置**: PBR 5.0倍以下の割安性を評価し「大底圏」を狙撃。")
         else:
-            st.info("**⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**\n- **主戦場**: 14日高値周辺。上昇へのエネルギー解放の瞬間。\n- **判定核**: MACD GCの鮮度(1〜3日)と赤三兵等の酒田サイン同期。\n- **突破力**: 騙しを回避する『逆指値注文目安』を自動算出し加速局面へ同乗。")
+            st.info("**⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**\n- **主戦場**: 14日高値突破。上昇エネルギー解放の瞬間。\n- **安全計器**: 騙しを回避する『逆指値注文目安』をリアルタイム算出。")
 
     if run_scope:
         if is_ambush:
@@ -1567,6 +1568,7 @@ with tab3:
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         data = get_single_data(api_code, 1)
                         
+                        # --- ボスのDNA：原本の三重フォールバック構造を完全維持 ---
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -1576,13 +1578,17 @@ with tab3:
                                     bars = []
                                     for dt, row in hist.iterrows():
                                         bars.append({
-                                            'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'),
-                                            'AdjO': float(row['Open']), 'AdjH': float(row['High']),
-                                            'AdjL': float(row['Low']), 'AdjC': float(row['Close']),
+                                            'Code': api_code,
+                                            'Date': dt.strftime('%Y-%m-%d'),
+                                            'AdjO': float(row['Open']),
+                                            'AdjH': float(row['High']),
+                                            'AdjL': float(row['Low']),
+                                            'AdjC': float(row['Close']),
                                             'Volume': float(row['Volume'])
                                         })
                                     data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                                else: data = None
+                                else:
+                                    data = None
                             except Exception:
                                 data = None
 
@@ -1593,21 +1599,22 @@ with tab3:
                         r_roe = None
                         
                         if f_data:
-                            r_per = f_data.get('per')
-                            if r_per is None: r_per = f_data.get('PER')
-                            if r_per is None: r_per = f_data.get('trailingPE')
+                            # 個別キーの冗長チェックを復元
+                            if f_data.get('per'): r_per = f_data.get('per')
+                            if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
+                            if r_per is None and f_data.get('trailingPE'): r_per = f_data.get('trailingPE')
                             
-                            r_pbr = f_data.get('pbr')
-                            if r_pbr is None: r_pbr = f_data.get('PBR')
-                            if r_pbr is None: r_pbr = f_data.get('priceToBook')
+                            if f_data.get('pbr'): r_pbr = f_data.get('pbr')
+                            if r_pbr is None and f_data.get('PBR'): r_pbr = f_data.get('PBR')
+                            if r_pbr is None and f_data.get('priceToBook'): r_pbr = f_data.get('priceToBook')
                             
-                            r_mcap = f_data.get('cap')
-                            if r_mcap is None: r_mcap = f_data.get('MCAP')
-                            if r_mcap is None: r_mcap = f_data.get('marketCap')
-                            if r_mcap is None: r_mcap = f_data.get('MarketCapitalization')
+                            if f_data.get('cap'): r_mcap = f_data.get('cap')
+                            if r_mcap is None and f_data.get('MCAP'): r_mcap = f_data.get('MCAP')
+                            if r_mcap is None and f_data.get('marketCap'): r_mcap = f_data.get('marketCap')
+                            if r_mcap is None and f_data.get('MarketCapitalization'): r_mcap = f_data.get('MarketCapitalization')
                             
-                            r_roe = f_data.get('roe')
-                            if r_roe is None: r_roe = f_data.get('ROE')
+                            if f_data.get('roe'): r_roe = f_data.get('roe')
+                            if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
                             if r_roe is None:
                                 try:
                                     ni = f_data.get("NetIncome")
@@ -1619,6 +1626,7 @@ with tab3:
                                 except Exception:
                                     r_roe = 0.0
 
+                        # yfinance詳細補完
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
                                 import yfinance as yf
@@ -1649,16 +1657,14 @@ with tab3:
                             continue
 
                 t_fetch = time.time()
-                st.write(f"✔️ 第1段階完了：データ収集 [{t_fetch - t_global_start:.2f}秒]")
+                st.write(f"✔️ データ収集完了 [{t_fetch - t_global_start:.2f}秒]")
                 st.write("⚙️ 第2段階：解析・スコアリング処理を実行中...")
 
                 scope_results = []
                 for c in t_codes:
                     target_key = str(c).upper().strip()
                     try:
-                        raw_s = raw_data_dict.get(target_key)
-                        if not raw_s: raw_s = {} 
-
+                        raw_s = raw_data_dict.get(target_key, {})
                         api_code = target_key if len(target_key) >= 5 else target_key + "0"
                         c_name, c_sector, c_market = f"銘柄 {target_key}", "不明", "不明"
                         if not master_df.empty:
@@ -1681,6 +1687,7 @@ with tab3:
                             except Exception:
                                 res_roe = None
 
+                        # --- ボスのDNA：時価総額の全単位変換分岐 ---
                         res_mcap_str = "-"
                         if raw_mcap is not None:
                             try:
@@ -1698,6 +1705,7 @@ with tab3:
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
+                        # --- ボスのDNA： Listing列検索ロジック ---
                         if st.session_state.get('f5_ipo', False):
                             try:
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
@@ -1719,8 +1727,10 @@ with tab3:
                             })
                             continue
 
+						# --- ボスのDNA：データクリーニング ＆ テクニカル演算 ---
                         df_raw = pd.DataFrame(bars)
-                        if 'Code' not in df_raw.columns: df_raw['Code'] = api_code
+                        if 'Code' not in df_raw.columns:
+                            df_raw['Code'] = api_code
                         df_s = clean_df(df_raw)
                         
                         if df_s.empty or len(df_s) < 20:
@@ -1728,7 +1738,7 @@ with tab3:
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ破損"], 'error': True, 'is_deep': False
+                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ破損（有効なローソク足不足）"], 'error': True, 'is_deep': False
                             })
                             continue
 
@@ -1737,6 +1747,7 @@ with tab3:
                         except Exception:
                             df_chart_full = df_s.copy()
                         
+                        # 最新・直近データの抽出
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
                         t_pprev = df_chart_full.iloc[-3]
@@ -1758,21 +1769,25 @@ with tab3:
                         gc_days = 0
                         is_deep = False
                         
-                        # 🚨 新機能：全パターン並列検知エンジン ＆ カウントダウン通知
+                        # 🚨 修正：重複除去ロジック ＆ 酒田エンジンの同期
+                        # 機関部のdetect_sakata_patternsの結果をベースにする
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
-                        s_list = detect_sakata_patterns(df_chart_full)
-                        for p in s_list:
+                        s_results = detect_sakata_patterns(df_chart_full)
+                        for p in s_results:
                             alerts.append(p['text'])
 
                         if is_ambush:
+                            # --- 待伏（アンブッシュ）戦術論理 ---
                             score = 4
                             base_push_r = st.session_state.push_r / 100.0
                             bt_val_standard = h14 - (ur_v * base_push_r)
                             bt_val_deep = h14 - (ur_v * 0.618)
+                            
+                            # オーバーシュート判定（原本のDNA）
                             if lc < (bt_val_standard * 0.95):
                                 bt_val = int(bt_val_deep)
                                 is_deep = True
-                                alerts.append(f"💎 【深海待伏】目標より5%以上乖離。61.8%押しへ補正。")
+                                alerts.append(f"💎 【深海待伏】目標地点より5%以上乖離。61.8%押しへ補正。")
                             else:
                                 bt_val = int(bt_val_standard)
 
@@ -1780,25 +1795,32 @@ with tab3:
                             m2 = float(t_prev.get('MACD_Hist', 0))
                             _, _, t_score, _ = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
                             score += t_score
-                            if res_pbr is not None and res_pbr <= 5.0: score += 2
                             
-                            # ボスのDNA：詳細ローソク足判定
+                            if res_pbr is not None and res_pbr <= 5.0:
+                                score += 2
+                            
+                            # ローソク足個別判定（重複を避けつつ追加）
                             body_v = abs(lc - lo)
                             shadow_l = min(lc, lo) - ll
                             full_rng = lh - ll
                             if full_rng > 0 and shadow_l > (body_v * 2.5) and (shadow_l / full_rng) > 0.6 and rsi_v < 45:
-                                alerts.append("🟢 【酒田】たくり線検知。底打ち反転の急所。")
+                                if not any("たくり" in a for a in alerts):
+                                    alerts.append("🟢 【酒田】たくり線検知。反転の急所。")
                                 score += 5
+                            
                             if check_double_bottom(df_chart_full.tail(31)):
-                                alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。")
+                                if not any("二重底" in a for a in alerts):
+                                    alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。")
                                 score += 3
+
                             if check_oversold_ultimate(df_chart_full):
-                                alerts.append("💎 【陰の極み】底打ち最終波形。")
+                                alerts.append("💎 【陰の極み】底打ち最終波形。狙撃準備。")
                                 score += 5
 
                             reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
+                            # --- 強襲（アサルト）戦術論理 ---
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             hist_vals = df_mini['MACD_Hist'].tail(5).values
                             if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
@@ -1808,10 +1830,14 @@ with tab3:
                             else:
                                 gc_days, gc_score = 0, 5
                             
-                            if float(t_pprev['AdjH']) > lh and rsi_v > 70: alerts.append("🔴 【酒田】天井圏三尊警戒。")
-                            if check_double_top(df_chart_full.tail(31)): alerts.append("🔴 【酒田】二重天井の兆候。")
+                            if float(t_pprev['AdjH']) > lh and rsi_v > 70:
+                                alerts.append("🔴 【酒田】天井圏三尊警戒。")
+                            if check_double_top(df_chart_full.tail(31)):
+                                alerts.append("🔴 【酒田】二重天井の兆候。")
                             
-                            if res_roe is not None and res_roe >= 10.0: score += 10
+                            if res_roe is not None and res_roe >= 10.0:
+                                score += 10
+                            
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
                             reach_rate = (lc / h14) * 100 if h14 > 0 else 0
                             rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
@@ -1826,16 +1852,18 @@ with tab3:
                     except Exception as e:
                         scope_results.append({'code': target_key, 'name': f"銘柄 {target_key}", 'rank': '圏外💀', 'bg': '#616161', 'alerts': [f"⚠️ 演算エラー: {str(e)}"], 'error': True, 'df_chart': pd.DataFrame()})
 
+                # スコア順にソート
                 rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results:
-                    res['r_val'] = rank_order.get(re.sub(r'[^SABC圏外]', '', res.get('rank', '圏外')), 0)
+                    r_str = re.sub(r'[^SABC圏外]', '', res.get('rank', '圏外'))
+                    res['r_val'] = rank_order.get(r_str, 0)
                 scope_results = sorted(scope_results, key=lambda x: (x.get('r_val', 0), x.get('score', 0), x.get('reach_val', 0)), reverse=True)
                 
                 t_calc = time.time()
-                st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
-                status.update(label=f"🎯 スキャン完了！", state="complete", expanded=False)
+                st.write(f"✔️ 解析完了 [{t_calc - t_fetch:.2f}秒]")
+                status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 
-            # --- 🎨 6. 神聖UI描画（原本 100% 復旧 ＆ 全バグ制圧） ---
+            # --- 🎨 6. 神聖UI描画（原本 100% 復旧 ＆ 色彩統一 ＆ チャート一本化） ---
             for index, r in enumerate(scope_results):
                 st.divider()
                 if r.get('error'):
@@ -1851,7 +1879,7 @@ with tab3:
                 
                 has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
 
-                # 🚨 イベント通知バッジ（画像露出バグを避けるため左寄せ）
+                # 🚨 イベント通知バッジ生成（左寄せによる露出バグ回避）
                 event_badges = ""
                 for alert in r.get('alerts', []):
                     if "残り" in alert:
@@ -1883,11 +1911,15 @@ with tab3:
 				<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
 				</div></div>""", unsafe_allow_html=True)
                 
+                # 🚨 メッセージ色彩戦略（ポジティブ＝緑 / ネガティブ＝赤）
                 if r.get('alerts'):
                     for alert in r['alerts']:
-                        if any(mark in alert for mark in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
-                        elif any(mark in alert for mark in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
-                        else: st.warning(alert)
+                        if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃"]):
+                            st.success(alert)
+                        elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "黒三兵", "三尊", "二重天井", "地雷", "撤退", "罠"]):
+                            st.error(alert)
+                        else:
+                            st.warning(alert)
 
                 sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                 with sc_left:
@@ -1904,7 +1936,7 @@ with tab3:
                     pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
                     box_title = ("💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標") if is_ambush else "🎯 トリガー"
                     
-                    # 🚨 強襲モード：逆指値注文目安を物理注入
+                    # 🚨 強襲逆指値目安の物理注入
                     stop_html = ""
                     if not is_ambush:
                         stop_p = safe_int(r['bt_val'] + (atr_v * 0.1))
@@ -1946,7 +1978,7 @@ with tab3:
                     try:
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
                         st.markdown("---")
-                        # 🚨 重複キーエラー根絶 ＆ チャート1回のみ描画
+                        # 🚨 キー重複エラーの根絶 ＆ チャート1回のみ描画を完遂
                         u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
                         draw_chart(r['df_chart'], c_target, chart_key=u_key)
                     except Exception as e:
