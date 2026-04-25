@@ -456,30 +456,33 @@ def check_event_mines(code, event_data=None):
     return alerts
 
 def detect_sakata_patterns(df):
-    """酒田五法：すべてのパターンを独立評価し、漏らさず検知する並列エンジン"""
+    """チャート用：全パターンを独立評価し、短縮ラベルと詳細テキストを分離出力"""
     if len(df) < 5: return []
     patterns = []
     c, o, h, l, d = df['AdjC'].values, df['AdjO'].values, df['AdjH'].values, df['AdjL'].values, df['Date'].values
+    rsi = df['RSI'].values if 'RSI' in df.columns else [50]*len(df)
 
-    # 🚨 独立検知 1. 赤三兵 (Bullish Three Soldiers)
+    # 1. 赤三兵 / 黒三兵
     if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【酒田・赤三兵】三連陽。下降トレンド終了と上昇開始の狼煙。打診買いから追撃準備。", "color": "#26a69a", "type": "bull"})
-    
-    # 🚨 独立検知 2. 黒三兵 (Bearish Three Crows)
+        patterns.append({"date": d[-1], "label": "【酒田・赤三兵】", "text": "【酒田・赤三兵】三連陽。上昇開始の狼煙。追撃準備。", "color": "#26a69a", "type": "bull"})
     if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【酒田・黒三兵】弱気の三連陰。相場転換・天井圏の合図。即時撤退・利確を最優先。", "color": "#ef5350", "type": "bear"})
+        patterns.append({"date": d[-1], "label": "【酒田・黒三兵】", "text": "【酒田・黒三兵】三連陰。相場転換の合図。即時撤退を視野。", "color": "#ef5350", "type": "bear"})
 
-    # 🚨 独立検知 3. 三空 (窓開け3回)
+    # 2. 三空
     gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
     if all(g > 0 for g in gaps):
-        if c[-1] < c[-4]: # 売り三空
-            patterns.append({"date": d[-1], "text": "【酒田・売り三空】三度の窓。売りエネルギーが最終枯渇した『売り枯れの極み』。反転狙いの狙撃好機。", "color": "#FFD700", "type": "bull"})
-        else: # 買い三空
-            patterns.append({"date": d[-1], "text": "【酒田・買い三空】買いの最終噴出。天井圏の極致。過熱につき新規買いは罠、利確の急所。", "color": "#ef5350", "type": "bear"})
+        if c[-1] < c[-4]:
+            patterns.append({"date": d[-1], "label": "【酒田・売り三空】", "text": "【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#FFD700", "type": "bull"})
+        else:
+            patterns.append({"date": d[-1], "label": "【酒田・買い三空】", "text": "【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
 
-    # 🚨 独立検知 4. 明けの明星 (Morning Star)
-    if c[-3] < o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3])/2:
-        patterns.append({"date": d[-2], "text": "【酒田・明けの明星】絶望の底に浮かぶ一星。強力な反転合図。大底圏なら反発確度が高い。", "color": "#FFD700", "type": "bull"})
+    # 3. 二重底・たくり線（チャートへの統合）
+    if check_double_bottom(df.tail(31)):
+        patterns.append({"date": d[-1], "label": "【酒田・二重底】", "text": "【酒田・二重底】底堅い反転波形を確認。", "color": "#26a69a", "type": "bull"})
+    
+    body, shadow = abs(c[-1]-o[-1]), min(c[-1], o[-1])-l[-1]
+    if (h[-1]-l[-1]) > 0 and shadow > (body*2.5) and (shadow/(h[-1]-l[-1])) > 0.6 and rsi[-1] < 45:
+        patterns.append({"date": d[-1], "label": "【酒田・たくり】", "text": "【酒田・たくり線】大底圏での反発合図。", "color": "#26a69a", "type": "bull"})
 
     return patterns
 
@@ -952,64 +955,28 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return targ_p
 
 def draw_chart(df, targ_p, chart_key=None):
-    """チャート描画：キーの重複を物理的に回避し、全メッセージをオフセット表示"""
+    """修正版：ラベル短縮化 ＆ 物理座標オフセット"""
     if df is None or df.empty: return
     df_plot = df.copy()
-    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
-        if col in df_plot.columns: df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce').astype('float64')
-
     fig = go.Figure()
-    sakata_data = detect_sakata_patterns(df_plot)
+    sakata = detect_sakata_patterns(df_plot)
     
-    fig.add_trace(go.Candlestick(
-        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
-        name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-    ))
+    fig.add_trace(go.Candlestick(x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name='株価'))
     
-    # メッセージの重なり回避と全表示の担保
-    for i, p in enumerate(sakata_data):
+    for i, p in enumerate(sakata):
         try:
             price_ref = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
-            offset_ay = 50 + (i * 45) # 重なり回避
-            fig.add_annotation(
-                x=p['date'], y=price_ref, text=p['text'],
-                showarrow=True, arrowhead=2, arrowcolor=p['color'],
-                ax=0, ay=offset_ay, bgcolor="rgba(10, 10, 10, 0.9)", bordercolor=p['color'],
-                borderwidth=1, font=dict(color=p['color'], size=11), align="left"
-            )
+            offset_ay = 50 + (i * 40)
+            # 🚨 ローソク足側は label (短縮形) を使用
+            fig.add_annotation(x=p['date'], y=price_ref, text=p['label'], showarrow=True, arrowhead=2, arrowcolor=p['color'], ax=0, ay=offset_ay, bgcolor="rgba(10,10,10,0.9)", bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=11))
         except: pass
 
     fig.add_trace(go.Scatter(x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', line=dict(color='#FFD700', width=2, dash='dash')))
-    
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
-        if m_c in df_plot.columns: 
-            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
+        if m_c in df_plot.columns: fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
             
-    last_date = df_plot['Date'].max()
-    fig.update_layout(
-        height=600, margin=dict(l=0, r=0, t=30, b=40), hovermode="x unified",
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(type="date", range=[last_date - timedelta(days=60), last_date + timedelta(days=2)], rangeslider=dict(visible=True, thickness=0.05)),
-        yaxis=dict(tickformat=",.0f", side="right", autorange=True),
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
-    )
-    # 🚨 キーの重複を物理的に防止するユニークIDの生成
-    unique_key = str(chart_key) + "_" + str(time.time()).replace(".", "")
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=unique_key)
-    
-    for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
-        if m_c in df_plot.columns: 
-            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
-            
-    last_date = df_plot['Date'].max()
-    fig.update_layout(
-        height=550, margin=dict(l=0, r=0, t=30, b=40), hovermode="x unified",
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(type="date", range=[last_date - timedelta(days=60), last_date + timedelta(days=2)], rangeslider=dict(visible=True, thickness=0.05)),
-        yaxis=dict(tickformat=",.0f", side="right", autorange=True),
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
-    )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"{chart_key}_{cache_key}")
+    fig.update_layout(height=600, margin=dict(l=0,r=0,t=30,b=40), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", yaxis=dict(side="right", tickformat=",.0f"), xaxis=dict(type="date", range=[df_plot['Date'].max() - timedelta(days=60), df_plot['Date'].max() + timedelta(days=2)], rangeslider=dict(visible=False)))
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"{chart_key}_{int(time.time()*1000)}")
 
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
@@ -1541,7 +1508,7 @@ with tab3:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     return f.read()
-            except:
+            except Exception:
                 return ""
         return ""
 
@@ -1568,9 +1535,9 @@ with tab3:
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス")
         if is_ambush:
-            st.info("**🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**\n- **主戦場**: 直近高安の黄金比における底堅いエリア。\n- **判定核**: MACDの好転に加え、酒田五法（全パターン独立検知）を詳細監視。\n- **安全装置**: PBR 5.0倍以下の割安性を評価し「大底圏」を狙撃。")
+            st.info("**🛡️ 待伏（アンブッシュ）モード：底打ち反転の迎撃戦**\n- **主戦場**: 直近高安の黄金比エリア。\n- **判定核**: MACD好転 ＆ 酒田五法（全サイン並列検知版）による反転合図の特定。\n- **安全装置**: PBR 5.0倍以下の割安性を評価し「大底圏」を狙撃。")
         else:
-            st.info("**⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**\n- **主戦場**: 14日高値周辺。上昇へのエネルギー解放の瞬間。\n- **判定核**: MACD GCの鮮度(1〜3日)と酒田サイン（赤三兵等）の同期。\n- **新兵装**: 騙し回避用『逆指値注文目安』を自動算出しカード内に表示。")
+            st.info("**⚡ 強襲（アサルト）モード：トレンド初動の電撃戦**\n- **主戦場**: 14日高値周辺。上昇へのエネルギー解放の瞬間。\n- **判定核**: MACD GCの鮮度(1〜3日)と赤三兵等の酒田サイン同期。\n- **突破力**: 騙しを回避する『逆指値注文目安』を自動算出し加速局面へ同乗。")
 
     if run_scope:
         if is_ambush:
@@ -1591,7 +1558,6 @@ with tab3:
             st.warning("有効な銘柄コードが確認できません。")
         else:
             t_global_start = time.time()
-            
             with st.status(f"🚀 全 {len(t_codes)} 銘柄を精密スキャン中...", expanded=True) as status:
                 st.write("📡 第1段階：並列データ収集（J-Quants / yfinance）を実行中...")
                 
@@ -1610,18 +1576,14 @@ with tab3:
                                     bars = []
                                     for dt, row in hist.iterrows():
                                         bars.append({
-                                            'Code': api_code,
-                                            'Date': dt.strftime('%Y-%m-%d'),
-                                            'AdjO': float(row['Open']),
-                                            'AdjH': float(row['High']),
-                                            'AdjL': float(row['Low']),
-                                            'AdjC': float(row['Close']),
+                                            'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'),
+                                            'AdjO': float(row['Open']), 'AdjH': float(row['High']),
+                                            'AdjL': float(row['Low']), 'AdjC': float(row['Close']),
                                             'Volume': float(row['Volume'])
                                         })
                                     data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
-                                else:
-                                    data = None
-                            except:
+                                else: data = None
+                            except Exception:
                                 data = None
 
                         f_data = get_fundamentals(c_str)
@@ -1639,7 +1601,7 @@ with tab3:
                             if r_pbr is None: r_pbr = f_data.get('PBR')
                             if r_pbr is None: r_pbr = f_data.get('priceToBook')
                             
-                            r_mcap = f_data.get('mcap')
+                            r_mcap = f_data.get('cap')
                             if r_mcap is None: r_mcap = f_data.get('MCAP')
                             if r_mcap is None: r_mcap = f_data.get('marketCap')
                             if r_mcap is None: r_mcap = f_data.get('MarketCapitalization')
@@ -1647,13 +1609,15 @@ with tab3:
                             r_roe = f_data.get('roe')
                             if r_roe is None: r_roe = f_data.get('ROE')
                             if r_roe is None:
-                                ni = f_data.get("NetIncome")
-                                eq = f_data.get("Equity")
-                                if ni is not None and eq is not None and float(eq) != 0:
-                                    try:
+                                try:
+                                    ni = f_data.get("NetIncome")
+                                    eq = f_data.get("Equity")
+                                    if ni is not None and eq is not None and float(eq) != 0:
                                         r_roe = (float(ni) / float(eq)) * 100
-                                    except:
+                                    else:
                                         r_roe = 0.0
+                                except Exception:
+                                    r_roe = 0.0
 
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
@@ -1668,10 +1632,10 @@ with tab3:
                                     if r_roe is None:
                                         raw_roe = info.get('returnOnEquity')
                                         if raw_roe: r_roe = raw_roe * 100
-                            except:
+                            except Exception:
                                 pass
                         return c_str, data, r_per, r_pbr, r_mcap, r_roe
-                    except:
+                    except Exception:
                         return str(c), None, None, None, None, None
 
                 raw_data_dict = {}
@@ -1681,7 +1645,7 @@ with tab3:
                         try:
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
                             raw_data_dict[str(res_c)] = {"data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe}
-                        except:
+                        except Exception:
                             continue
 
                 t_fetch = time.time()
@@ -1714,7 +1678,7 @@ with tab3:
                                 res_roe = float(res_roe)
                                 if 0 < abs(res_roe) < 1.0:
                                     res_roe = res_roe * 100
-                            except:
+                            except Exception:
                                 res_roe = None
 
                         res_mcap_str = "-"
@@ -1728,8 +1692,8 @@ with tab3:
                                 elif rmc >= 1e4:
                                     res_mcap_str = f"{rmc / 1e4:.0f}万円"
                                 else:
-                                    res_mcap_str = f"{int(rmc):,}"
-                            except:
+                                    res_mcap_str = f"{int(rmc):,}円"
+                            except Exception:
                                 res_mcap_str = "-"
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
@@ -1743,7 +1707,7 @@ with tab3:
                                         target_dt = pd.to_datetime(m_row.iloc[0][ld_col[0]]).replace(tzinfo=None)
                                         if (datetime.now().replace(tzinfo=None) - target_dt).days < 365:
                                             continue 
-                            except:
+                            except Exception:
                                 pass
 
                         if not bars or len(bars) < 20:
@@ -1770,12 +1734,13 @@ with tab3:
 
                         try:
                             df_chart_full = calc_technicals(df_s.copy())
-                        except:
+                        except Exception:
                             df_chart_full = df_s.copy()
                         
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
                         t_pprev = df_chart_full.iloc[-3]
+                        
                         lc = float(t_latest['AdjC'])
                         lo = float(t_latest['AdjO'])
                         lh = float(t_latest['AdjH'])
@@ -1793,11 +1758,11 @@ with tab3:
                         gc_days = 0
                         is_deep = False
                         
-                        # 🚨 注入：イベント通知 & 酒田五法（全パターン独立検知版）
+                        # 🚨 新機能：全パターン並列検知エンジン ＆ カウントダウン通知
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
                         s_list = detect_sakata_patterns(df_chart_full)
                         for p in s_list:
-                            alerts.append(f"{'🟢' if p['type']=='bull' else '🔴'} {p['text']}")
+                            alerts.append(p['text'])
 
                         if is_ambush:
                             score = 4
@@ -1817,6 +1782,7 @@ with tab3:
                             score += t_score
                             if res_pbr is not None and res_pbr <= 5.0: score += 2
                             
+                            # ボスのDNA：詳細ローソク足判定
                             body_v = abs(lc - lo)
                             shadow_l = min(lc, lo) - ll
                             full_rng = lh - ll
@@ -1826,6 +1792,11 @@ with tab3:
                             if check_double_bottom(df_chart_full.tail(31)):
                                 alerts.append("🟢 【酒田】二重底（ダブルボトム）形成。")
                                 score += 3
+                            if check_oversold_ultimate(df_chart_full):
+                                alerts.append("💎 【陰の極み】底打ち最終波形。")
+                                score += 5
+
+                            reach_rate = ((h14 - lc) / (h14 - bt_val) * 100) if (h14 - bt_val) > 0 else 0
                             rank, bg_c = ("S級待伏🔥", "#1b5e20") if score >= 12 else ("A級待伏💎", "#2e7d32") if score >= 8 else ("B級待伏🛡️", "#4caf50") if score >= 5 else ("圏外💀", "#616161")
                         else:
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
@@ -1836,14 +1807,18 @@ with tab3:
                                 gc_days, gc_score = 2, 40
                             else:
                                 gc_days, gc_score = 0, 5
+                            
                             if float(t_pprev['AdjH']) > lh and rsi_v > 70: alerts.append("🔴 【酒田】天井圏三尊警戒。")
+                            if check_double_top(df_chart_full.tail(31)): alerts.append("🔴 【酒田】二重天井の兆候。")
+                            
                             if res_roe is not None and res_roe >= 10.0: score += 10
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
+                            reach_rate = (lc / h14) * 100 if h14 > 0 else 0
                             rank, bg_c = ("S級強襲⚡", "#1b5e20") if score >= 80 else ("A級強襲🔥", "#2e7d32") if score >= 60 else ("B級強襲📈", "#4caf50") if score >= 40 else ("圏外💀", "#616161")
 
                         scope_results.append({
                             'code': target_key, 'name': c_name, 'lc': lc, 'h14': h14, 'l14': l14, 'ur': ur_v, 'bt_val': bt_val, 'atr_val': atr_v, 'rsi': rsi_v,
-                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': (lc/h14*100), 'gc_days': gc_days, 'df_chart': df_mini, 
+                            'rank': rank, 'bg': bg_c, 'score': score, 'reach_val': reach_rate, 'gc_days': gc_days, 'df_chart': df_mini, 
                             'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                             'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 'sector': c_sector, 'market': c_market, 
                             'alerts': alerts, 'error': False, 'is_deep': is_deep
@@ -1858,29 +1833,31 @@ with tab3:
                 
                 t_calc = time.time()
                 st.write(f"✔️ 第2段階完了：解析・スコアリング [{t_calc - t_fetch:.2f}秒]")
-                status.update(label=f"🎯 スキャン完了！ (所要: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
+                status.update(label=f"🎯 スキャン完了！", state="complete", expanded=False)
 
-            # --- 🎨 6. 神聖UI描画（原本 100% 復旧 ＆ 全バグ制圧版） ---
+            # --- 🎨 6. 神聖UI描画（原本 100% 復旧 ＆ 全バグ制圧） ---
             for index, r in enumerate(scope_results):
                 st.divider()
                 if r.get('error'):
                     st.error(f"銘柄 {r['code']}: {', '.join(r['alerts'])}")
                     continue
+
                 def safe_int(x):
                     try: return int(float(x)) if not pd.isna(x) else 0
-                    except: return 0
+                    except Exception: return 0
                 def safe_float(x):
                     try: return float(x) if not pd.isna(x) else None
-                    except: return None
+                    except Exception: return None
                 
                 has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
-                
-                # 🚨 イベント通知バッジ（露出バグ回避のため左寄せ）
+
+                # 🚨 イベント通知バッジ（画像露出バグを避けるため左寄せ）
                 event_badges = ""
                 for alert in r.get('alerts', []):
                     if "残り" in alert:
                         color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
-                        event_badges += f'<span style="background:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-left:8px; font-weight:bold;">{alert.split("】")[1]}</span>'
+                        label = alert.split("】")[1] if "】" in alert else alert
+                        event_badges += f'<span style="background:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-left:8px; font-weight:bold;">{label}</span>'
 
                 source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
                 m_lower = str(r['market']).lower()
@@ -1908,8 +1885,8 @@ with tab3:
                 
                 if r.get('alerts'):
                     for alert in r['alerts']:
-                        if any(m in alert for m in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
-                        elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
+                        if any(mark in alert for mark in ["🟢", "⚡", "🔥", "💎"]): st.success(alert)
+                        elif any(mark in alert for mark in ["🔴", "💀", "💣", "⚠️"]): st.error(alert)
                         else: st.warning(alert)
 
                 sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
@@ -1927,6 +1904,7 @@ with tab3:
                     pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
                     box_title = ("💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標") if is_ambush else "🎯 トリガー"
                     
+                    # 🚨 強襲モード：逆指値注文目安を物理注入
                     stop_html = ""
                     if not is_ambush:
                         stop_p = safe_int(r['bt_val'] + (atr_v * 0.1))
@@ -1949,7 +1927,7 @@ with tab3:
                 with sc_right:
                     c_target = safe_int(r['bt_val'])
                     rec_tps = [2.0, 3.0] if any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
-                    html_matrix = f"<div style='background:rgba(255,255,255,0.02); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動적ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
+                    html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                     for m in [0.5, 1.0, 2.0, 3.0]:
                         val = int(c_target + (atr_v * m))
                         style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;" if m in rec_tps else "padding:3px 6px;"
@@ -1968,11 +1946,11 @@ with tab3:
                     try:
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
                         st.markdown("---")
-                        # 🚨 キー重複エラーの根絶：コード＋インデックス＋動的キャッシュキーを連結
-                        unique_chart_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
-                        draw_chart(r['df_chart'], c_target, chart_key=unique_chart_key)
+                        # 🚨 重複キーエラー根絶 ＆ チャート1回のみ描画
+                        u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
+                        draw_chart(r['df_chart'], c_target, chart_key=u_key)
                     except Exception as e:
-                        st.error(f"⚠️ チャート描画エラー: {str(e)}")
+                        st.error(f"⚠️ チャート描画中に致命的エラー: {str(e)}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
