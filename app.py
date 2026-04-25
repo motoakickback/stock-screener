@@ -1069,7 +1069,7 @@ def draw_chart(df, targ_p, chart_key=None):
     
     # 🚨 UI修正完遂：画面右端全幅化 ＆ 凡例の下部中央移設
     fig.update_layout(
-        height=580,
+        height=600,
         margin=dict(l=0, r=0, t=30, b=60), # margin-rightを0に
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
