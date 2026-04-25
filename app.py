@@ -988,7 +988,7 @@ def draw_chart(df, targ_p, chart_key=None):
     
     # 🚨 UI修正：凡例を下に、マージンを0にして全幅化
     fig.update_layout(
-        height=600, margin=dict(l=0, r=0, t=30, b=40),
+        height=500, margin=dict(l=0, r=0, t=30, b=40),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         yaxis=dict(side="right", tickformat=",.0f"),
