@@ -456,29 +456,31 @@ def check_event_mines(code, event_data=None):
     return alerts
 
 def detect_sakata_patterns(df):
-    """酒田五法・戦略解説 ＆ アクション誘発型エンジン"""
+    """酒田五法：すべてのパターンを独立評価し、漏らさず検知する並列エンジン"""
     if len(df) < 5: return []
     patterns = []
     c, o, h, l, d = df['AdjC'].values, df['AdjO'].values, df['AdjH'].values, df['AdjL'].values, df['Date'].values
 
-    # 1. 赤三兵 / 黒三兵
+    # 🚨 独立検知 1. 赤三兵 (Bullish Three Soldiers)
     if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【酒田・赤三兵】三連陽。下降トレンド終了と上昇開始の狼煙。打診買いから追撃準備を整えよ。", "color": "#26a69a", "type": "bull"})
-    elif all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
-        patterns.append({"date": d[-1], "text": "【酒田・黒三兵】弱気の三連陰。相場転換の明確なサイン。天井圏なら即時撤退・利益確定を最優先。", "color": "#ef5350", "type": "bear"})
+        patterns.append({"date": d[-1], "text": "【酒田・赤三兵】三連陽。下降トレンド終了と上昇開始の狼煙。打診買いから追撃準備。", "color": "#26a69a", "type": "bull"})
+    
+    # 🚨 独立検知 2. 黒三兵 (Bearish Three Crows)
+    if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
+        patterns.append({"date": d[-1], "text": "【酒田・黒三兵】弱気の三連陰。相場転換・天井圏の合図。即時撤退・利確を最優先。", "color": "#ef5350", "type": "bear"})
 
-    # 2. 三空 (窓開け3回) - 売り枯れと天井の判別
+    # 🚨 独立検知 3. 三空 (窓開け3回)
     gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
     if all(g > 0 for g in gaps):
-        if c[-1] < c[-4]: # 売り三空（底）
-            patterns.append({"date": d[-1], "text": "【酒田・三空】三度の窓。売りエネルギーが最終枯渇した『売り枯れの極み』。反転狙いの狙撃好機。", "color": "#FFD700", "type": "bull"})
-        else: # 買い三空（天井）
-            patterns.append({"date": d[-1], "text": "【酒田・三空】買いエネルギーの最終噴出。天井圏の極致。過熱につき新規買いは罠、利益確定の急所。", "color": "#ef5350", "type": "bear"})
+        if c[-1] < c[-4]: # 売り三空
+            patterns.append({"date": d[-1], "text": "【酒田・売り三空】三度の窓。売りエネルギーが最終枯渇した『売り枯れの極み』。反転狙いの狙撃好機。", "color": "#FFD700", "type": "bull"})
+        else: # 買い三空
+            patterns.append({"date": d[-1], "text": "【酒田・買い三空】買いの最終噴出。天井圏の極致。過熱につき新規買いは罠、利確の急所。", "color": "#ef5350", "type": "bear"})
 
-    # 3. 明けの明星 / 宵の明星
+    # 🚨 独立検知 4. 明けの明星 (Morning Star)
     if c[-3] < o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3])/2:
-        patterns.append({"date": d[-2], "text": "【酒田・明けの明星】絶望の底に浮かぶ一星。強力な反転合図。大底圏なら反発の確度が極めて高い。", "color": "#FFD700", "type": "bull"})
-    
+        patterns.append({"date": d[-2], "text": "【酒田・明けの明星】絶望の底に浮かぶ一星。強力な反転合図。大底圏なら反発確度が高い。", "color": "#FFD700", "type": "bull"})
+
     return patterns
 
 def render_technical_radar(df, target_p, tp_target):
@@ -950,7 +952,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return targ_p
 
 def draw_chart(df, targ_p, chart_key=None):
-    """メッセージ物理オフセット ＆ 視認性強化型チャート"""
+    """チャート描画：キーの重複を物理的に回避し、全メッセージをオフセット表示"""
     if df is None or df.empty: return
     df_plot = df.copy()
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'MA5', 'MA25', 'MA75']:
@@ -964,11 +966,11 @@ def draw_chart(df, targ_p, chart_key=None):
         name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     ))
     
-    # 🚨 画像1の解決：ayを動的にずらしてメッセージの重なりを物理的に回避
+    # メッセージの重なり回避と全表示の担保
     for i, p in enumerate(sakata_data):
         try:
             price_ref = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
-            offset_ay = 50 + (i * 45) # 45pxずつ垂直方向にオフセット
+            offset_ay = 50 + (i * 45) # 重なり回避
             fig.add_annotation(
                 x=p['date'], y=price_ref, text=p['text'],
                 showarrow=True, arrowhead=2, arrowcolor=p['color'],
@@ -991,7 +993,9 @@ def draw_chart(df, targ_p, chart_key=None):
         yaxis=dict(tickformat=",.0f", side="right", autorange=True),
         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
     )
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"{chart_key or 'chart'}_{cache_key}")
+    # 🚨 キーの重複を物理的に防止するユニークIDの生成
+    unique_key = str(chart_key) + "_" + str(time.time()).replace(".", "")
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=unique_key)
     
     for m_c, m_n, m_col in [('MA5', 'MA5', '#ffca28'), ('MA25', 'MA25', '#42a5f5'), ('MA75', 'MA75', '#ab47bc')]:
         if m_c in df_plot.columns: 
