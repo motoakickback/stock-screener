@@ -1099,7 +1099,15 @@ def draw_chart(df, targ_p, chart_key=None):
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
-
+# --- 🌪️ ボラティリティ・フィルターの設定 ---
+st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+st.session_state.f_vol_min = st.sidebar.slider(
+	"最小ボラ率 (ATR/価格 %)", 
+	0.0, 2.0, 0.5, 0.1, 
+	help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
+	key="f_vol_min_slider"
+)
+st.sidebar.markdown("---")
 # --- 🌐 マクロ地合い連動システム ---
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
 use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
@@ -1280,7 +1288,9 @@ with tab1:
                     "push_r": float(st.session_state.push_r), "push_penalty": push_penalty,
                     "f9_min14": float(st.session_state.f9_min14), "f9_max14": float(st.session_state.f9_max14),
                     "limit_d": int(st.session_state.limit_d), "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                    "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"), "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+                    "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"), 
+                    "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
+                    "f_vol_min": float(st.session_state.get('f_vol_min', 0.5)) # 🚨 追加：ボラティリティ足切り基準
                 }
 
                 # 市場ターゲットの絞り込み
@@ -1311,6 +1321,16 @@ with tab1:
                 def scan_unit_t1_parallel(code, group, cfg, v_avg):
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
+                    
+                    # --- 🚨 新設：ボラティリティ・バリア ---
+                    # 高速指標エンジンから ATR を抽出
+                    rsi, atr_v, _, _ = get_fast_indicators(c_vals)
+                    vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                    
+                    # 設定値を下回る「死んだ銘柄」を演算の入り口で物理排除
+                    if vol_pct < cfg["f_vol_min"]:
+                        return None
+
                     # 20日前の終値（モメンタム判定用）
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
@@ -1337,7 +1357,6 @@ with tab1:
                         if f_data and ((f_data.get("op", 0) or 0) < 0): return None
                     
                     # 指標計算・目標買付価格の算出
-                    rsi, _, _, _ = get_fast_indicators(c_vals)
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h4 - base_push
                     target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
@@ -1363,7 +1382,7 @@ with tab1:
                         'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
                         'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
                         't_score': t_score, 'score': score, 'high_4d': float(h4), 'low_14d': float(l14), 'avg_vol': int(v_avg),
-                        'ultimate': is_ultimate
+                        'ultimate': is_ultimate, 'vol_pct': float(vol_pct) # UI表示用に保持
                     }
 
                 results = []
@@ -1401,7 +1420,7 @@ with tab1:
         
         for r in light_results:
             st.divider()
-            # 🚨 防弾：UIループ中のNaNクラッシュを根絶する解毒関数
+            # 🚨 防弾：UIループ中のNaNクラッシュを根絶する解読関数
             def safe_int(x):
                 try: return int(float(x)) if not pd.isna(x) else 0
                 except: return 0
@@ -1418,11 +1437,14 @@ with tab1:
             score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
             
+            # ボラティリティバッジ（🚨 新設）
+            vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
+            
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{u_badge}{t_badge}{score_badge}{sector_badge}
+                        {badge_html}{u_badge}{t_badge}{score_badge}{sector_badge}{vol_badge}
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r["RSI"]:.1f}%</span>
                         <span style="background-color: rgba(255, 215, 0, 0.1); border: 1px solid #FFD700; color: #FFD700; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">到達度: {r['reach_rate']:.1f}%</span>
                     </div>
@@ -1436,7 +1458,7 @@ with tab1:
             m_cols[2].metric("最新終値", f"{safe_int(r['lc']):,}円")
             m_cols[3].metric("平均出来高", f"{safe_int(r['avg_vol']):,}株")
             m_cols[4].markdown(f"""<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 買値目標(連動済)</div><div style="font-size: 1.8rem; font-weight: bold; color: #FFD700;">{safe_int(r['target_buy']):,}<span style="font-size: 14px; margin-left:2px;">円</span></div></div>""", unsafe_allow_html=True)
-
+			
 # --- 7. タブコンテンツ (TAB2: 強襲レーダー) ---
 with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
@@ -1487,7 +1509,8 @@ with tab2:
                         "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
                         "rsi_lim": effective_rsi_limit, "vol_lim": float(vol_lim),
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス")
+                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
+                        "f_vol_min": float(st.session_state.get('f_vol_min', 0.5)) # 🚨 追加：ボラティリティ基準
                     }
                     
                     v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
@@ -1512,8 +1535,14 @@ with tab2:
                     def scan_unit_t2_parallel(code, group, cfg, v_avg):
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
-                        rsi, _, _, hist = get_fast_indicators(c_vals)
+                        rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         
+                        # --- 🚨 新設：ボラティリティ・バリア ---
+                        vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        if vol_pct < cfg["f_vol_min"]:
+                            # 強襲する価値のない低ボラ銘柄を入り口で排除
+                            return None
+
                         if rsi > cfg["rsi_lim"]: return None
                         
                         gc_days = 0
@@ -1534,7 +1563,12 @@ with tab2:
                         h14 = h_vals[-14:].max()
                         atr = h14 * 0.03
                         
-                        return {'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 'avg_vol': int(v_avg)}
+                        return {
+                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                            'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
+                            'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
+                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct) # UI表示用に保持
+                        }
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
@@ -1589,11 +1623,14 @@ with tab2:
             t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
             
+            # ボラティリティバッジ（🚨 新設）
+            vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
+
             st.markdown(f"""
                 <div style="margin-bottom: 0.8rem;">
                     <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{t_badge}{sector_badge}
+                        {badge_html}{t_badge}{sector_badge}{vol_badge}
                         <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
                         <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                     </div>
@@ -1859,7 +1896,7 @@ with tab3:
                             })
                             continue
 
-# --- ボスのDNA：データクリーニング ＆ テクニカル演算（原本 100% 物理復旧） ---
+						# --- ボスのDNA：データクリーニング ＆ テクニカル演算（原本 100% 物理復旧） ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns:
                             df_raw['Code'] = api_code
@@ -2148,15 +2185,15 @@ with tab3:
 
                 # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
                 st.markdown(f"""
-<div style="margin-bottom: 0.8rem;">
-<h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
-<span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
-<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-<span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
-{m_badge}{gc_badge}
-<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
-<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
-</div></div>""", unsafe_allow_html=True)
+				<div style="margin-bottom: 0.8rem;">
+				<h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
+				<span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
+				<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+				<span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
+				{m_badge}{gc_badge}
+				<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
+				<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+				</div></div>""", unsafe_allow_html=True)
                 
                 # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
                 if r.get('alerts'):
@@ -2207,17 +2244,17 @@ with tab3:
                     
                     # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
-<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
-<div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
-<div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
-<div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
-<div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-<div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-<div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
-</div>
-<div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-<span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
-</div></div>""", unsafe_allow_html=True)
+					<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
+					<div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+					<div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
+					<div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
+					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+					<div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+					</div>
+					<div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+					<span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
+					</div></div>""", unsafe_allow_html=True)
 
                 with sc_right:
                     c_target = safe_int(r['bt_val'])
