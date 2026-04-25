@@ -407,13 +407,14 @@ def calc_technicals(df):
     return calc_vector_indicators(df)
 
 def check_event_mines(code, event_data=None):
-    """地雷警戒（原本復元）"""
+    """地雷警戒 ＆ カウントダウン・プロトコル"""
     alerts = []
     c = str(code)[:4]
     today = datetime.utcnow() + timedelta(hours=9)
     today_date = today.date()
     max_warning_date = today_date + timedelta(days=14)
     
+    # 🚨 物理地雷（固定イベント）
     critical_mines = {
         "8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27", 
         "4031": "2026-03-27", "2195": "2026-03-27", "4379": "2026-03-27"
@@ -422,34 +423,63 @@ def check_event_mines(code, event_data=None):
     if c in critical_mines:
         try:
             event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            if (event_date - timedelta(days=14)) <= today_date <= event_date:
-                alerts.append(f"💣 【地雷警戒】危険イベント接近中（{critical_mines[c]}）")
+            diff = (event_date - today_date).days
+            if 0 <= diff <= 14:
+                alerts.append({"text": f"💣 地雷警戒：危険イベントまで残り {diff} 日", "days": diff, "type": "critical"})
         except: pass
         
     if not event_data: return alerts
     
+    # 🚨 配当権利落ち
     for item in event_data.get("dividend", []):
         d_str = str(item.get("RecordDate", ""))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"💣 【地雷警戒】配当権利落ち日が接近中 ({d_str})")
+                diff = (target_date - today_date).days
+                if 0 <= diff <= 14:
+                    alerts.append({"text": f"💰 権利落ちまで残り {diff} 日", "days": diff, "type": "dividend", "date": d_str})
                     break
             except: pass
             
+    # 🚨 決算発表
     for item in event_data.get("earnings", []):
         if str(item.get("Code", ""))[:4] != c: continue
         d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
         if d_str:
             try:
                 target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                if today_date <= target_date <= max_warning_date:
-                    alerts.append(f"🔥 【地雷警戒】決算発表が接近中 ({d_str})")
+                diff = (target_date - today_date).days
+                if 0 <= diff <= 14:
+                    alerts.append({"text": f"🔥 決算発表まで残り {diff} 日", "days": diff, "type": "earnings", "date": d_str})
                     break
             except: pass
             
     return alerts
+
+def detect_sakata_patterns(df):
+    """酒田五法・主要波形検知エンジン（座標特定版）"""
+    if len(df) < 5: return []
+    patterns = []
+    c = df['AdjC'].values
+    o = df['AdjO'].values
+    h = df['AdjH'].values
+    l = df['AdjL'].values
+    d = df['Date'].values
+
+    # 1. 赤三兵 (Three Red Soldiers)
+    if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
+        patterns.append({"date": d[-1], "text": "【赤三兵】強気の起点", "color": "#26a69a"})
+    
+    # 2. 黒三兵 (Three Crows)
+    if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
+        patterns.append({"date": d[-1], "text": "【黒三兵】警戒の下げ", "color": "#ef5350"})
+
+    # 3. 明けの明星 (Morning Star) - 簡易版
+    if c[-3] < o[-3] and abs(c[-2]-o[-2]) < abs(c[-3]-o[-3])*0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3])/2:
+        patterns.append({"date": d[-2], "text": "【明けの明星】反転の予兆", "color": "#FFD700"})
+
+    return patterns
 
 def check_double_top(df_sub):
     try:
@@ -813,71 +843,34 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 
 
 # --- 📺 UI描画関数 ---
-def render_technical_radar(df, buy_price, tp_pct):
-    """ボスの計器盤を物理復元 ＆ 『陰の極み』検知配線"""
-    if df.empty or len(df) < 2: return ""
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-    rsi = latest.get('RSI', 50)
-    macd_hist = latest.get('MACD_Hist', 0)
-    macd_hist_prev = prev.get('MACD_Hist', 0)
-    atr = latest.get('ATR', 0)
-    
-    # 🚨 カラーコード厳格化：売られすぎ＝緑（ポジ）、買われすぎ＝赤（ネガ）
-    rsi_color = "#26a69a" if rsi <= 30 else "#4db6ac" if rsi <= 45 else "#888888" 
-    rsi_text = "🔥 超売られすぎ" if rsi <= 30 else "⚡ 売られすぎ" if rsi <= 45 else "⚖️ 中立"
-    if rsi >= 70: 
-        rsi_color = "#ef5350"
-        rsi_text = "⚠️ 買われすぎ"
-    
-    _, _, _, macd_t = get_triage_info(macd_hist, macd_hist_prev, rsi)
-    
-    # 🚨 陰の極み判定を統合
-    if check_oversold_ultimate(df):
-        macd_display = "💎 【陰の極み】底打ち最終波形 💎"
-        macd_color = "#26a69a"
-        bg_glow = "box-shadow: 0 0 20px rgba(38, 166, 154, 0.8); border: 2px solid #26a69a;"
-    elif macd_t == "GC直後": 
-        macd_display = "🔥🔥🔥 激熱 GC発動中 🔥🔥🔥"
-        macd_color = "#ff5722"
-        bg_glow = "box-shadow: 0 0 15px rgba(255, 87, 34, 0.6); border: 2px solid #ff5722;"
-    elif macd_t == "上昇拡大": 
-        macd_display = "📈 上昇拡大"
-        macd_color = "#ef5350"
-        bg_glow = "border-left: 4px solid #FFD700;"
-    elif macd_t == "下落継続": 
-        macd_display = "📉 下落継続"
-        macd_color = "#26a69a"
-        bg_glow = "border-left: 4px solid #FFD700;"
-    else: 
-        macd_display = "⚖️ 減衰"
-        macd_color = "#888888"
-        bg_glow = "border-left: 4px solid #FFD700;"
-        
-    days = int((buy_price * (tp_pct / 100.0)) / atr) if atr > 0 else 99
-    
-    return f'<div style="background: rgba(255, 255, 255, 0.05); padding: 0.8rem; border-radius: 4px; margin: 1rem 0; {bg_glow}"><div style="font-size: 14px; color: #aaa;">📡 計器フライト: RSI <strong style="color: {rsi_color};">{rsi:.0f}% ({rsi_text})</strong> | MACD <strong style="color: {macd_color}; font-size: 1.1em;">{macd_display}</strong> | ボラ <strong style="color: #bbb;">{atr:.0f}円</strong> (利確目安: {days}日)</div></div>'
-
-def render_tab3_scope_logic(df, code, company_name):
-    """【照準】50%/61.8%自動追尾・目標算出エンジン"""
+def render_tab3_scope_logic(df, code, company_name, event_data=None):
+    """【照準】目標算出 ＆ イベントカウントダウン通知"""
     if df.empty: return None
     p_high, p_low = df['AdjH'].max(), df['AdjL'].min()
     current_p = df.iloc[-1]['AdjC']
     
+    # イベントカウントダウンの取得
+    event_alerts = check_event_mines(code, event_data)
+    event_html = ""
+    for alert in event_alerts:
+        color = "#ef5350" if alert['type'] in ['critical', 'earnings'] else "#ffca28"
+        event_html += f'<span style="background: {color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; font-weight: bold;">{alert["text"]}</span>'
+
     # 座標算出
     p_50 = p_low + (p_high - p_low) * 0.50
     p_618 = p_low + (p_high - p_low) * 0.382
     
-    # 🚨 判定：50%ラインを7%以上（パニック水準）割り込んだら61.8%へ下方修正
     is_panic = current_p < (p_50 * 0.93)
     targ_p = p_618 if is_panic else p_50
     label = "💎 61.8% 押し (深海モード)" if is_panic else "⚖️ 50.0% 押し (標準モード)"
     color = "#26a69a" if is_panic else "#FFD700"
     
-    # UI出力
     st.markdown(f"""
         <div style="background: rgba(30, 30, 30, 0.7); padding: 1rem; border-radius: 8px; border-left: 5px solid {color}; margin-bottom: 1rem;">
-            <h3 style="margin: 0;">{code} {company_name}</h3>
+            <div style="display: flex; align-items: center;">
+                <h3 style="margin: 0;">{code} {company_name}</h3>
+                {event_html}
+            </div>
             <p style="color: #aaa; margin: 0.2rem 0;">戦闘モード: <strong style="color: {color};">{label}</strong></p>
             <div style="display: flex; gap: 2rem; margin-top: 0.5rem;">
                 <div><small>現在値</small><br><span style="font-size: 1.5rem;">¥{current_p:,.0f}</span></div>
@@ -888,7 +881,7 @@ def render_tab3_scope_logic(df, code, company_name):
     return targ_p
 
 def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=None):
-    """右余白ゼロ、初期2ヶ月ズーム、全ホバー情報、NaNクラッシュ防止を備えたチャート"""
+    """酒田五法アノテーション搭載型チャート"""
     if df is None or df.empty: return
     df_plot = df.copy()
     
@@ -898,12 +891,25 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
 
     fig = go.Figure()
     
+    # 酒田五法の検知
+    sakata_patterns = detect_sakata_patterns(df_plot)
+    
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], low=df_plot['AdjL'], close=df_plot['AdjC'], 
         name='株価', increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
         hovertemplate="始値：%{open:,.0f}<br>終値：%{close:,.0f}<br>高値：%{high:,.0f}<br>安値：%{low:,.0f}<extra></extra>"
     ))
     
+    # 酒田五法の注釈を追加
+    for p in sakata_patterns:
+        # 該当日の安値付近に注釈を配置
+        pattern_price = df_plot[df_plot['Date'] == p['date']]['AdjL'].values[0]
+        fig.add_annotation(
+            x=p['date'], y=pattern_price, text=p['text'],
+            showarrow=True, arrowhead=2, arrowcolor=p['color'],
+            ax=0, ay=40, bgcolor="rgba(0,0,0,0.8)", bordercolor=p['color'], borderwidth=1, font=dict(color=p['color'], size=10)
+        )
+
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], y=[targ_p]*len(df_plot), name='目標', 
         line=dict(color='#FFD700', width=2, dash='dash'), hovertemplate="目標：%{y:,.0f}<extra></extra>"
@@ -919,7 +925,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     last_date = df_plot['Date'].max()
     initial_start = last_date - timedelta(days=60) 
     
-    # 🚨 防弾：NaNによるValueErrorクラッシュを防止
     try:
         y_min, y_max = float(df_plot['AdjL'].min()), float(df_plot['AdjH'].max())
         if pd.isna(y_min) or pd.isna(y_max):
@@ -938,7 +943,6 @@ def draw_chart(df, targ_p, tp5=None, tp10=None, tp15=None, tp20=None, chart_key=
     )
     
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True, 'displaylogo': False}, key=f"{chart_key or 'chart'}_{cache_key}")
-
 
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
