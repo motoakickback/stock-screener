@@ -1018,7 +1018,7 @@ def draw_chart(df, targ_p, chart_key=None):
         if m_c in df_plot.columns: fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[m_c], name=m_n, line=dict(color=m_col, width=1.5), connectgaps=True))
     
     fig.update_layout(
-        height=600, margin=dict(l=0, r=0, t=30, b=40),
+        height=500, margin=dict(l=0, r=0, t=30, b=40),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         yaxis=dict(side="right", tickformat=",.0f"),
