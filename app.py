@@ -481,6 +481,75 @@ def detect_sakata_patterns(df):
     
     return patterns
 
+def render_technical_radar(df, target_p, tp_target):
+    """技術索敵レーダー：エディタのハイライト崩れを物理的に防ぐ連結構造版"""
+    try:
+        if df is None or len(df) < 5:
+            return '<div style="color:#ef5350; font-size:12px;">⚠️ レーダー解析不能：データ不足</div>'
+        
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+        rsi_val = float(latest.get('RSI', 50))
+        m1 = float(latest.get('MACD_Hist', 0))
+        m2 = float(prev.get('MACD_Hist', 0))
+        score_mom = 50 + (m1 * 10)
+        if m1 > m2: score_mom += 20
+        score_mom = max(0, min(100, score_mom))
+        c = float(latest['AdjC'])
+        ma25 = float(latest.get('MA25', c))
+        score_trend = max(0, min(100, 50 + (((c / ma25) - 1) * 500)))
+        atr = float(latest.get('ATR', c * 0.03))
+        score_vol = max(0, min(100, (atr / c) * 2000))
+        h14 = float(df.tail(14)['AdjH'].max())
+        l14 = float(df.tail(14)['AdjL'].min())
+        score_pos = max(0, min(100, ((c - l14) / (h14 - l14) * 100))) if (h14 - l14) > 0 else 50
+        total_score = (rsi_val + score_mom + score_trend + score_vol + score_pos) / 5.0
+
+        import math
+        angles = [math.radians(a) for a in [0, 72, 144, 216, 288]]
+        scores = [rsi_val, score_mom, score_trend, score_vol, score_pos]
+        pts = []
+        for angle, score in zip(angles, scores):
+            r = (score / 100.0) * 80
+            px = 100 + r * math.sin(angle)
+            py = 100 - r * math.cos(angle)
+            pts.append(str(px) + "," + str(py))
+        polygon_pts = " ".join(pts)
+
+        axis_lines = ""
+        for a in angles:
+            ax2 = 100 + 80 * math.sin(a)
+            ay2 = 100 - 80 * math.cos(a)
+            axis_lines += '<line x1="100" y1="100" x2="' + str(ax2) + '" y2="' + str(ay2) + '" stroke="#444" stroke-width="0.5"/>'
+
+        # 🚨 トリプルクォートを完全廃止。一行ずつ連結して構築
+        h = '<div style="background:rgba(255,255,255,0.02); border-radius:10px; padding:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:10px;">'
+        h += '<div style="display:flex; align-items:center; justify-content:space-between;">'
+        h += '<div style="flex:1; text-align:center;">'
+        h += '<svg width="160" height="160" viewBox="0 0 200 200">'
+        h += '<circle cx="100" cy="100" r="80" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
+        h += '<circle cx="100" cy="100" r="40" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
+        h += axis_lines
+        h += '<polygon points="' + polygon_pts + '" fill="rgba(38,166,154,0.4)" stroke="#26a69a" stroke-width="2" />'
+        h += '<text x="100" y="15" text-anchor="middle" fill="#888" font-size="12">勢力</text>'
+        h += '<text x="185" y="80" text-anchor="start" fill="#888" font-size="12">加速</text>'
+        h += '<text x="150" y="175" text-anchor="middle" fill="#888" font-size="12">傾向</text>'
+        h += '<text x="50" y="175" text-anchor="middle" fill="#888" font-size="12">波高</text>'
+        h += '<text x="15" y="80" text-anchor="end" fill="#888" font-size="12">位置</text></svg></div>'
+        h += '<div style="flex:1.2; padding-left:20px;">'
+        h += '<div style="font-size:14px; color:#aaa; margin-bottom:5px;">📊 索敵テクニカル総合スコア</div>'
+        h += '<div style="font-size:2.8rem; font-weight:bold; color:#26a69a;">' + "{:.1f}".format(total_score) + '<span style="font-size:1rem; margin-left:5px;">pts</span></div>'
+        h += '<div style="margin-top:10px; border-top:1px solid #333; padding-top:5px;">'
+        h += '<div style="display:flex; justify-content:space-between; font-size:11px;">'
+        h += '<span style="color:#888;">勢力(RSI): ' + "{:.1f}".format(rsi_val) + '</span>'
+        h += '<span style="color:#888;">位置: ' + "{:.1f}".format(score_pos) + '%</span>'
+        h += '</div></div></div></div></div>'
+        
+        return h
+    except Exception as e:
+        err_msg = "⚠️ レーダー演算エラー: " + str(e)
+        return '<div style="color:#ef5350; font-size:12px;">' + err_msg + '</div>'
+
 def check_double_top(df_sub):
     try:
         v = df_sub['AdjH'].values
