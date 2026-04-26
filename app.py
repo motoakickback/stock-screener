@@ -1015,12 +1015,13 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：原本色彩維持 ＆ 高さ550px ＆ Y軸オートフォーカス 🚨
+    🚨 ボスのDNA：原本色彩・高さ550px・Y軸オートフォーカス・側面出来高統合版 🚨
     【物理修正】
-    - Y軸オートフォーカス：autorange=True を装填し、価格追従を完全復旧。
-    - 物理高：グラフ描画エリアの高さを 550px に固定。
-    - 色彩維持：ボスの指定色彩（#26a69a / #ef5350）を1pxの狂いもなく維持。
-    - 不純物パージ：指示のない fillcolor 等の装飾を全て削除。
+    - 目標ホバー：目標ラインを Trace として定義し、ホバー（目標：XXXX円）を強制表示。
+    - 出来高：右側面からの水平表示（サイド・ボリューム）の不透明度とスケールを調整し、視認化。
+    - Y軸：autorange=True によるオートフォーカスを死守。
+    - 物理高：描画エリアの高さを指定通り 550px に固定。
+    - インデント：Space 4つに完全統一（TabError 根絶）。
     """
     import plotly.graph_objects as go
     import time
@@ -1030,16 +1031,17 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     df_plot = df.copy()
 
-    # --- 1. フィギュア構築 ---
+    # --- 1. フィギュア構築（単一構成） ---
     fig = go.Figure()
 
-    # --- 2. 側面出来高（原本DNA） ---
+    # --- 2. 側面出来高（右側面オーバーレイ：原本DNA） ---
+    # 横から棒グラフを出すための物理設定。不透明度を 0.15 に上げ、スケールを 4倍に調整。
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(128, 128, 128, 0.2)',
+        marker_color='rgba(128, 128, 128, 0.15)',
         hoverinfo='skip',
         xaxis='x2'
     ))
@@ -1050,7 +1052,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格：',
-        # 🚨 ボス指定の色彩を完全維持
         increasing_line_color='#26a69a', 
         decreasing_line_color='#ef5350',
         hovertemplate=(
@@ -1062,27 +1063,31 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         )
     ))
 
-    # --- 4. 移動平均線（原本DNA） ---
+    # --- 4. 目標ライン（🚨 ホバー対応：ShapeではなくScatterで描画） ---
+    fig.add_trace(go.Scatter(
+        x=df_plot['Date'], 
+        y=[targ_p] * len(df_plot),
+        name='目標：',
+        line=dict(color="#FFD700", width=2, dash="dash"),
+        mode='lines',
+        hovertemplate="%{y:,.0f}<extra></extra>"
+    ))
+
+    # --- 5. 移動平均線（原本DNA ＆ 垂直ホバー同期） ---
     ma_map = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_map:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
                 x=df_plot['Date'], y=df_plot[col], name=label,
                 line=dict(color=color, width=1.5),
-                hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
+                connectgaps=True,
+                hovertemplate="%{y:,.0f}<extra></extra>"
             ))
 
-    # 🎯 買付目標
-    fig.add_shape(
-        type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
-        y0=targ_p, y1=targ_p,
-        line=dict(color="#FFD700", width=2, dash="dash")
-    )
-
-    # --- 5. 神聖レイアウト（高さ550 ＆ Y軸オートフォーカス） ---
+    # --- 6. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550,                         # 🚨 高さ550px固定
+        height=550,                         # 物理高さを 550px に固定
         margin=dict(l=0, r=0, t=30, b=60),  # 全幅維持
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
@@ -1113,12 +1118,13 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             x=0.5, 
             font=dict(color="#eee", size=11)
         ),
+        # 側面出来高用の第2X軸：スケールを調整して視認性を確保
         xaxis2=dict(
             overlaying='x', 
             side='top', 
             showgrid=False, 
             showticklabels=False, 
-            range=[df_plot['AdjustmentVolume'].max() * 6, 0]
+            range=[df_plot['AdjustmentVolume'].max() * 4, 0]
         )
     )
 
