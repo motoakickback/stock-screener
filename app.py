@@ -1071,7 +1071,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     ))
 
     # --- 3. 移動平均線（ラベル埋め込み強制表示） ---
-    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
+    ma_configs = [('MA5','#ffd700','MA5：'), ('MA25','#42a5f5','MA25：'), ('MA75','#ab47bc','MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
