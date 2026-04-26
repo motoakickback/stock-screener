@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：出来高視認化 ＆ ホバー防衛 ＆ オートフォーカス 🚨
-    【物理修正：出来高のみ】
-    - 色彩：ボスの提案通り、出来高の色を「白 (rgba(255, 255, 255, 0.6))」に設定。
-    - 視認性：最前面配置（add_traceを最後にする）を維持し、ローソク足に埋もれるのを阻止。
-    - スケール：xaxis2の範囲を調整し、右端からチャート中央へ向かって「壁」を現出。
-    - 聖域：正常化したホバー、高さ550px、Y軸オートフォーカスは一切変えず維持。
+    🚨 ボスのDNA：出来高・完全実体化（透過度 0% 物理固定版） 🚨
+    【物理修正：出来高の存在証明】
+    - 色彩：透過度を完全に廃止し、ソリッドな「純白 (#FFFFFF)」に固定。
+    - スケール：xaxis2 の range を max * 1.2 まで絞り込み、棒の長さを最大化。
+    - レイヤリング：最前面（コードの最後）に配置し、価格・グリッド線の上から上書き。
+    - 防衛：正常化済みのホバー、Y軸オートフォーカス、高さ550pxは絶対維持。
     """
     import plotly.graph_objects as go
     import time
@@ -1091,14 +1091,16 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             )
         except: continue
 
-    # --- 6. 側面出来高（🚨 ボスの助言：白に設定 🚨） ---
-    # 最前面に配置。白くすることで、背景の黒とローソク足の色から浮き立たせる。
+    # --- 6. 側面出来高（🚨 最終修正：不透明度100%のソリッドホワイト 🚨） ---
+    # 最後に描画（最前面）。透過(rgba)を止め、絶対的な白で「壁」を現出。
+    max_vol = df_plot['AdjustmentVolume'].max()
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(255, 255, 255, 0.5)', # ボス指定：白で存在を証明
+        marker_color='#FFFFFF', # 🚨 ボス指定：透過なしの純白
+        marker_line_width=0,    # 境界線を消して密度を上げる
         hoverinfo='skip',
         xaxis='x2'
     ))
@@ -1121,10 +1123,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             showgrid=True, gridcolor='rgba(255,255,255,0.05)',
             range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
         ),
-        # 側面出来高用の第2X軸：max*2倍スケールで、チャートの半分程度まで突き出させる
+        # 🚨 側面出来高用の第2X軸：max * 1.2 に設定。これで棒がチャートの右側 80% を占有する。
         xaxis2=dict(
             overlaying='x', side='top', showgrid=False, showticklabels=False,
-            range=[df_plot['AdjustmentVolume'].max() * 2, 0] 
+            range=[max_vol * 1.2, 0] 
         ),
         legend=dict(
             orientation="h", yanchor="top", y=-0.18, 
