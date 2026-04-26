@@ -1060,7 +1060,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         name='価格',
         customdata=df_plot['arrow'],
         hovertemplate=(
-            "価格：<br>"
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
