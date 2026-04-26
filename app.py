@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：不純物排除・インデント統一・原本色彩 🚨
+    🚨 ボスのDNA：原本色彩維持 ＆ 高さ550px ＆ Y軸オートフォーカス 🚨
     【物理修正】
-    - TabError根絶：全てのインデントを半角スペース4つに完全統一。
-    - 視界正常化：描画エリアの高さを 550px に固定。
-    - オートフォーカス：Y軸の autorange=True を死守。
-    - 原本色彩：上昇(#26a69a)・下落(#ef5350)を再装填。
+    - Y軸オートフォーカス：autorange=True を装填し、価格追従を完全復旧。
+    - 物理高：グラフ描画エリアの高さを 550px に固定。
+    - 色彩維持：ボスの指定色彩（#26a69a / #ef5350）を1pxの狂いもなく維持。
+    - 不純物パージ：指示のない fillcolor 等の装飾を全て削除。
     """
     import plotly.graph_objects as go
     import time
@@ -1029,19 +1029,17 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         return
 
     df_plot = df.copy()
-    # 騰落矢印（▲/▼）算出
-    df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # --- 1. フィギュア構築（単一集約） ---
+    # --- 1. フィギュア構築 ---
     fig = go.Figure()
 
-    # --- 2. 側面出来高（右側面オーバーレイ） ---
+    # --- 2. 側面出来高（原本DNA） ---
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(100, 255, 218, 0.08)',
+        marker_color='rgba(128, 128, 128, 0.2)',
         hoverinfo='skip',
         xaxis='x2'
     ))
@@ -1052,28 +1050,25 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格：',
-        customdata=df_plot['arrow'],
-        # 指定：始値〜安値を垂直リストで物理配置
+        # 🚨 ボス指定の色彩を完全維持
+        increasing_line_color='#26a69a', 
+        decreasing_line_color='#ef5350',
         hovertemplate=(
-            "価格：<br>"
             "始値：%{open:,.0f}<br>"
-            "終値：%{close:,.0f}%{customdata}<br>"
+            "終値：%{close:,.0f}<br>"
             "高値：%{high:,.0f}<br>"
             "安値：%{low:,.0f}<br>"
             "<extra></extra>"
-        ),
-        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+        )
     ))
 
-    # --- 4. 移動平均線 ＆ 目標ライン ---
-    ma_map = [('MA5', '#ffca28', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
+    # --- 4. 移動平均線（原本DNA） ---
+    ma_map = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_map:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
                 x=df_plot['Date'], y=df_plot[col], name=label,
                 line=dict(color=color, width=1.5),
-                connectgaps=True,
                 hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
             ))
 
@@ -1083,64 +1078,55 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         y0=targ_p, y1=targ_p,
         line=dict(color="#FFD700", width=2, dash="dash")
     )
-    fig.add_trace(go.Scatter(
-        x=[df_plot['Date'].iloc[-1]], y=[targ_p], name='目標：',
-        mode='markers', marker=dict(size=0),
-        hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
-    ))
 
-    # --- 5. 酒田サイン（座標同期注釈） ---
-    for i, p in enumerate(sakata):
-        try:
-            is_bear = p.get('type') == 'bear'
-            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
-            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH' if is_bear else 'AdjL'].values[0]
-            
-            fig.add_annotation(
-                x=p['date'], y=price_ref, text=p['label'],
-                showarrow=True, arrowhead=2, arrowcolor=p['color'],
-                ax=0, ay=offset_ay,
-                bgcolor="rgba(10,10,10,0.85)", bordercolor=p['color'],
-                borderwidth=1, font=dict(color=p['color'], size=11)
-            )
-        except: continue
-
-    # --- 6. 神聖レイアウト（物理高さ550 ＆ Y軸オートフォーカス） ---
+    # --- 5. 神聖レイアウト（高さ550 ＆ Y軸オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550,                         # ボス指定：グラフ描画エリアの高さを550pxに固定
-        margin=dict(l=0, r=0, t=30, b=0),  # 画面右端全幅化
-        showlegend=True,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=-0.22, 
-            xanchor="center", x=0.5, font=dict(size=11)
-        ),
-        hovermode='x unified',
-        hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
-        xaxis_rangeslider_visible=False,
-        plot_bgcolor='rgba(0,0,0,0)',
+        height=550,                         # 🚨 高さ550px固定
+        margin=dict(l=0, r=0, t=30, b=60),  # 全幅維持
         paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        hovermode="x unified",
         # 🚨 Y軸：オートフォーカスを物理死守
         yaxis=dict(
-            side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)',
-            autorange=True, fixedrange=False 
+            side="right", 
+            tickformat=",.0f", 
+            gridcolor="#333", 
+            zeroline=False, 
+            showline=True, 
+            linecolor="#444",
+            autorange=True,                 # 自動縮尺有効
+            fixedrange=False                # ズーム許可
         ),
         xaxis=dict(
-            showgrid=True, gridcolor='rgba(255,255,255,0.05)',
-            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
+            type="date", 
+            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)],
+            rangeslider=dict(visible=False), 
+            gridcolor="#333", 
+            linecolor="#444"
         ),
-        # 側面出来高用の第2X軸
+        legend=dict(
+            orientation="h", 
+            yanchor="top", 
+            y=-0.18, 
+            xanchor="center", 
+            x=0.5, 
+            font=dict(color="#eee", size=11)
+        ),
         xaxis2=dict(
-            overlaying='x', side='top', showgrid=False, showticklabels=False,
+            overlaying='x', 
+            side='top', 
+            showgrid=False, 
+            showticklabels=False, 
             range=[df_plot['AdjustmentVolume'].max() * 6, 0]
         )
     )
 
-    # --- 7. 最終描画（唯一の射出） ---
+    # 7. 最終描画（唯一の射出）
     st.plotly_chart(
         fig, 
         use_container_width=True, 
-        config={'displayModeBar': False, 'responsive': True}, 
+        config={'displayModeBar': False}, 
         key=f"{chart_key}_{int(time.time()*1000)}"
     )
 
