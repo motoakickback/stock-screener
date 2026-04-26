@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：不純物完全排除・原本色彩・全幅・オートフォーカス統合版 🚨
+    🚨 ボスのDNA：視界正常化・不純物完全パージ 最終版 🚨
     【物理修正】
-    - 二重描画の根絶：関数内での st.plotly_chart 呼び出しを最後の一回に限定。
-    - 色彩の復元：Teal(#26a69a)とRed(#ef5350)の原本カラーを再適用。
-    - 垂直ホバー：指定の日本語ラベルのみで構成。重複入力をパージ。
-    - 視界制御：高さ(height)を550pxに固定、Y軸はオートフォーカス(autorange)を有効化。
+    - 単一描画：st.plotly_chart の二重実行を根絶。
+    - Y軸：オートフォーカス(autorange)を有効化し、グラフ高さのみを550pxに固定。
+    - 色彩：Teal(#26a69a) / Red(#ef5350) の原本カラーを完全復旧。
+    - ホバー：指定の日本語リスト（始値〜MA75）を垂直1列に統合。
     """
     import plotly.graph_objects as go
     import time
@@ -1029,10 +1029,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         return
 
     df_plot = df.copy()
-    # 騰落矢印（▲/▼）算出
+    # 騰落矢印（▲/▼）
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # --- 1. フィギュア構築（単一集約：サブプロットは使用しない） ---
+    # --- 1. ベースフィギュア構築 ---
     fig = go.Figure()
 
     # --- 2. 側面出来高（右側面オーバーレイ） ---
@@ -1041,8 +1041,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(100, 255, 218, 0.08)', 
-        hoverinfo='skip',
+        marker_color='rgba(100, 255, 218, 0.08)',
+        hoverinfo='skip', # 出来高自体のホバーはノイズなので排除
         xaxis='x2'
     ))
 
@@ -1053,9 +1053,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格：',
         customdata=df_plot['arrow'],
-        # 🚨 ホバー指定：余計な英語ラベルを排し、日本語垂直リストを構築
+        # 指定：始値〜安値を物理配置
         hovertemplate=(
-            "価格：<br>"
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
@@ -1066,7 +1065,18 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
     ))
 
-    # --- 4. 買付目標ライン（破線 ＆ ホバー項目） ---
+    # --- 4. 移動平均線 ＆ 目標ライン（垂直ホバー同期） ---
+    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
+    for col, color, label in ma_configs:
+        if col in df_plot.columns:
+            fig.add_trace(go.Scatter(
+                x=df_plot['Date'], y=df_plot[col], name=label,
+                line=dict(color=color, width=1.5),
+                connectgaps=True,
+                hovertemplate="%{y:,.0f}<extra></extra>"
+            ))
+
+    # 🎯 買付目標
     fig.add_shape(
         type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
         y0=targ_p, y1=targ_p,
@@ -1075,21 +1085,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     fig.add_trace(go.Scatter(
         x=[df_plot['Date'].iloc[-1]], y=[targ_p], name='目標：',
         mode='markers', marker=dict(size=0),
-        hovertemplate="目標：%{y:,.0f}<extra></extra>"
+        hovertemplate=f"{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 移動平均線（原本色彩 ＆ 各ホバー項目） ---
-    ma_map = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
-    for col, color, label in ma_map:
-        if col in df_plot.columns:
-            fig.add_trace(go.Scatter(
-                x=df_plot['Date'], y=df_plot[col], name=label,
-                line=dict(color=color, width=1.5),
-                connectgaps=True,
-                hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
-            ))
-
-    # --- 6. 酒田サイン（座標同期注釈） ---
+    # --- 5. 酒田サイン（TAB3側から渡された計算結果を注釈描画） ---
     for i, p in enumerate(sakata):
         try:
             is_bear = p.get('type') == 'bear'
@@ -1105,22 +1104,19 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             )
         except: continue
 
-    # --- 7. 神聖レイアウト（高さ550px固定 ＆ オートフォーカス死守） ---
+    # --- 6. 神聖レイアウト（高さ550px ＆ オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550, # 物理的な描画エリアの高さ
-        margin=dict(l=0, r=0, t=30, b=0), # 画面右端全幅化
+        height=550, # 物理的な高さを固定
+        margin=dict(l=0, r=0, t=30, b=0),
         showlegend=True,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=-0.22, 
-            xanchor="center", x=0.5, font=dict(size=11)
-        ),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
         hovermode='x unified',
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False,
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
-        # 🚨 Y軸：オートフォーカスを物理死守。範囲固定は死罪。
+        # 🚨 Y軸：autorangeによりオートフォーカスを死守
         yaxis=dict(
             side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)',
             autorange=True, fixedrange=False 
@@ -1136,8 +1132,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         )
     )
 
-    # --- 8. 最終描画（全工程完了後、一度だけ射出） ---
-    # 🚨 ボスへの誓い：ここ以外での st.plotly_chart 実行を物理的に廃止しました
+    # 7. 描画射出（唯一の st.plotly_chart）
     st.plotly_chart(
         fig, use_container_width=True, 
         config={'displayModeBar': False, 'responsive': True}, 
@@ -2404,12 +2399,23 @@ with tab3:
                     try:
                         # 物理スペーサー（原本DNA）
                         st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
-                        # レーダーチャート呼び出し
+                        
+                        # 1. 索敵テクニカル総合スコア（レーダー）描画
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
+                        
+                        # 🚨 修正：重複描画の物理排除 ＆ 機関部への全権委譲
+                        # ここに移動平均線や目標線の add_trace を書いてはならない（draw_chart内で実行されるため）
+                        
                         st.markdown("---")
-                        # 🚨 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶
-                        u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
-                        draw_chart(r['df_chart'], c_target, chart_key=u_key)
+                        
+                        # 2. 最終完遂チャート射出
+                        # 引数として、TAB3側で計算済みの sakata（detect_sakata_patternsの結果）を渡す
+                        u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}"
+                        
+                        # TAB3側でも算出している酒田パターンの結果を渡す（物理同期）
+                        # ※TAB3 1/2 で s_results = detect_sakata_patterns(df_chart_full) としている前提
+                        draw_chart(r['df_chart'], c_target, sakata=s_results, chart_key=u_key)
+                        
                         st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
                     except Exception as e:
                         st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
