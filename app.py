@@ -1014,21 +1014,94 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return targ_p
 
 def draw_chart(df, targ_p, chart_key=None):
-    """チャート描画：ボスの原本DNA復元 ＆ 全幅・凡例下・色彩完全同期版"""
-    if df is None or df.empty: return
+    """
+    🚨 ボスのDNA：酒田・ボラ・ホバー統合 最終物理版 🚨
+    【物理変更】
+    - ホバー：株価ラベルの直後に <br> を装填し視認性を確保
+    - 騰落：前日比の ▲/▼ を動的に反映
+    - 統合：酒田パターンのチャート上アノテーションを完全復旧
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    if df is None or df.empty:
+        return
+
     df_plot = df.copy()
-    
-    # --- ボスのDNA：Plotlyフィギュアの物理構成 ---
-    fig = go.Figure()
-    sakata = detect_sakata_patterns(df_plot)
-    
-    # ローソク足描画
+    # 前日比と矢印の物理計算
+    df_plot['diff'] = df_plot['AdjC'].diff()
+    df_plot['arrow'] = df_plot['diff'].apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
+
+    # --- 1. サブプロット構成（上部:株価 80% / 下部:出来高 20%） ---
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.8, 0.2]
+    )
+
+    # --- 2. ローソク足（🚨 要請：改行 ＆ 矢印実装） ---
     fig.add_trace(go.Candlestick(
-        x=df_plot['Date'], open=df_plot['AdjO'], high=df_plot['AdjH'], 
+        x=df_plot['Date'],
+        open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
-        increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name='株価'
-    ))
-    
+        customdata=df_plot['arrow'],
+        name='株価',
+        # ボス要請：株価ラベル直後の改行物理装填
+        hovertemplate=(
+            "<b>株価 :</b><br>"
+            "価格: %{open:,.0f}<br>"
+            "終値: %{close:,.0f}<br>"
+			"高値: %{high:,.0f}<br>"
+            "安値: %{low:,.0f}%{customdata}<extra></extra>"
+        ),
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+    ), row=1, col=1)
+
+    # --- 3. 酒田パターンの注釈（原本DNA復旧） ---
+    sakata = detect_sakata_patterns(df_plot)
+    for p in sakata:
+        fig.add_annotation(
+            x=p['date'], y=p['y_val'], text=p['icon'],
+            showarrow=True, arrowhead=1, ax=0, ay=-30,
+            font=dict(size=14), bordercolor="#64ffda", borderwidth=1,
+            row=1, col=1
+        )
+
+    # --- 4. 買付目標ライン（原本DNA） ---
+    fig.add_shape(
+        type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
+        y0=targ_p, y1=targ_p,
+        line=dict(color="#FFD700", width=2, dash="dash"),
+        row=1, col=1
+    )
+
+    # --- 5. 出来高（原本DNA） ---
+    colors = ['#26a69a' if c >= o else '#ef5350' for o, c in zip(df_plot['AdjO'], df_plot['AdjC'])]
+    fig.add_trace(go.Bar(
+        x=df_plot['Date'], y=df_plot['AdjustmentVolume'],
+        name='出来高', marker_color=colors, opacity=0.5,
+        hovertemplate="出来高 : %{y:,.0f}<extra></extra>"
+    ), row=2, col=1)
+
+    # --- 6. 神聖レイアウト（原本DNA：Dark ＆ 凡例下 ＆ 右端全幅） ---
+    fig.update_layout(
+        template='plotly_dark',
+        height=600,
+        margin=dict(l=0, r=0, t=30, b=0),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+        hovermode='x unified',
+        xaxis_rangeslider_visible=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', side='right')
+    )
+
+    # 描画射出
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=chart_key)
+	
     # 酒田サインの物理描画（原本の座標ロジック ＆ 重複回避）
     for i, p in enumerate(sakata):
         try:
