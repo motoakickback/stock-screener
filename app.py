@@ -546,7 +546,7 @@ def detect_sakata_patterns(df):
     return patterns
 
 def render_technical_radar(df, target_p, tp_target):
-    """技術索敵レーダー：エディタのハイライト崩れを物理的に防ぐ連結構造版"""
+    """技術索敵レーダー：エディタのハイライト崩れを物理的に防ぐ連結構造 ＆ 見切れ修正版"""
     try:
         if df is None or len(df) < 5:
             return '<div style="color:#ef5350; font-size:12px;">⚠️ レーダー解析不能：データ不足</div>'
@@ -556,57 +556,74 @@ def render_technical_radar(df, target_p, tp_target):
         rsi_val = float(latest.get('RSI', 50))
         m1 = float(latest.get('MACD_Hist', 0))
         m2 = float(prev.get('MACD_Hist', 0))
+        
+        # 加速度（加速）スコアリング
         score_mom = 50 + (m1 * 10)
         if m1 > m2: score_mom += 20
         score_mom = max(0, min(100, score_mom))
+        
+        # 傾向スコアリング
         c = float(latest['AdjC'])
         ma25 = float(latest.get('MA25', c))
         score_trend = max(0, min(100, 50 + (((c / ma25) - 1) * 500)))
+        
+        # 波高スコアリング
         atr = float(latest.get('ATR', c * 0.03))
         score_vol = max(0, min(100, (atr / c) * 2000))
+        
+        # 位置スコアリング
         h14 = float(df.tail(14)['AdjH'].max())
         l14 = float(df.tail(14)['AdjL'].min())
         score_pos = max(0, min(100, ((c - l14) / (h14 - l14) * 100))) if (h14 - l14) > 0 else 50
+        
+        # 総合スコア（pts）
         total_score = (rsi_val + score_mom + score_trend + score_vol + score_pos) / 5.0
 
         import math
+        # 0:勢力, 72:加速, 144:傾向, 216:波高, 288:位置
         angles = [math.radians(a) for a in [0, 72, 144, 216, 288]]
         scores = [rsi_val, score_mom, score_trend, score_vol, score_pos]
+        
+        # 🚨 修正：半径 r を 65 に縮小し、見切れを防止
         pts = []
         for angle, score in zip(angles, scores):
-            r = (score / 100.0) * 80
-            px = 100 + r * math.sin(angle)
-            py = 100 - r * math.cos(angle)
-            pts.append(str(px) + "," + str(py))
+            r_val = (score / 100.0) * 65 
+            px = 100 + r_val * math.sin(angle)
+            py = 100 - r_val * math.cos(angle)
+            pts.append(str(round(px, 1)) + "," + str(round(py, 1)))
         polygon_pts = " ".join(pts)
 
+        # 軸線の構築
         axis_lines = ""
         for a in angles:
-            ax2 = 100 + 80 * math.sin(a)
-            ay2 = 100 - 80 * math.cos(a)
+            ax2 = 100 + 65 * math.sin(a)
+            ay2 = 100 - 65 * math.cos(a)
             axis_lines += '<line x1="100" y1="100" x2="' + str(ax2) + '" y2="' + str(ay2) + '" stroke="#444" stroke-width="0.5"/>'
 
-        # 🚨 トリプルクォートを完全廃止。一行ずつ連結して構築
+        # 🚨 HTML/SVG 構築：1行ずつ連結してエディタの崩れを防止
         h = '<div style="background:rgba(255,255,255,0.02); border-radius:10px; padding:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:10px;">'
         h += '<div style="display:flex; align-items:center; justify-content:space-between;">'
         h += '<div style="flex:1; text-align:center;">'
-        h += '<svg width="160" height="160" viewBox="0 0 200 200">'
-        h += '<circle cx="100" cy="100" r="80" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
-        h += '<circle cx="100" cy="100" r="40" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
+        h += '<svg width="180" height="180" viewBox="0 0 200 200">'
+        h += '<circle cx="100" cy="100" r="65" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
+        h += '<circle cx="100" cy="100" r="32.5" fill="none" stroke="#444" stroke-width="0.5" stroke-dasharray="2,2" />'
         h += axis_lines
         h += '<polygon points="' + polygon_pts + '" fill="rgba(38,166,154,0.4)" stroke="#26a69a" stroke-width="2" />'
-        h += '<text x="100" y="15" text-anchor="middle" fill="#888" font-size="12">勢力</text>'
-        h += '<text x="185" y="80" text-anchor="start" fill="#888" font-size="12">加速</text>'
-        h += '<text x="150" y="175" text-anchor="middle" fill="#888" font-size="12">傾向</text>'
-        h += '<text x="50" y="175" text-anchor="middle" fill="#888" font-size="12">波高</text>'
-        h += '<text x="15" y="80" text-anchor="end" fill="#888" font-size="12">位置</text></svg></div>'
+        
+        # 🚨 テキスト座標の再調整（見切れ防止）
+        h += '<text x="100" y="22" text-anchor="middle" fill="#aaa" font-size="11" font-weight="bold">勢力</text>'
+        h += '<text x="175" y="85" text-anchor="start" fill="#aaa" font-size="11" font-weight="bold">加速</text>'
+        h += '<text x="145" y="182" text-anchor="middle" fill="#aaa" font-size="11" font-weight="bold">傾向</text>'
+        h += '<text x="55" y="182" text-anchor="middle" fill="#aaa" font-size="11" font-weight="bold">波高</text>'
+        h += '<text x="25" y="85" text-anchor="end" fill="#aaa" font-size="11" font-weight="bold">位置</text></svg></div>'
+        
         h += '<div style="flex:1.2; padding-left:20px;">'
-        h += '<div style="font-size:14px; color:#aaa; margin-bottom:5px;">📊 索敵テクニカル総合スコア</div>'
+        h += '<div style="font-size:13px; color:#888; margin-bottom:5px;">📊 索敵テクニカル総合スコア</div>'
         h += '<div style="font-size:2.8rem; font-weight:bold; color:#26a69a;">' + "{:.1f}".format(total_score) + '<span style="font-size:1rem; margin-left:5px;">pts</span></div>'
         h += '<div style="margin-top:10px; border-top:1px solid #333; padding-top:5px;">'
         h += '<div style="display:flex; justify-content:space-between; font-size:11px;">'
-        h += '<span style="color:#888;">勢力(RSI): ' + "{:.1f}".format(rsi_val) + '</span>'
-        h += '<span style="color:#888;">位置: ' + "{:.1f}".format(score_pos) + '%</span>'
+        h += '<span style="color:#666;">勢力(RSI): ' + "{:.1f}".format(rsi_val) + '</span>'
+        h += '<span style="color:#666;">位置: ' + "{:.1f}".format(score_pos) + '%</span>'
         h += '</div></div></div></div></div>'
         
         return h
@@ -1727,11 +1744,25 @@ with tab3:
         run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_vfinal_{cache_key}")
         
     with col_s2:
-        st.markdown("#### 🔍 索敵ステータス")
+        st.markdown("#### 🔍 索敵ステータス ＆ 行動指針")
         if is_ambush:
-            st.info("**🛡️ 待伏モード：底打ち反転の迎撃戦**\n- **環境認識**: 安値圏での「陰の極み」「二重底」を緑色で座標同期。ボラティリティ審査（0.5%未満排除）を物理適用済み。")
+            st.info("""**🌐 【待伏】モード（押し目・逆張り）**
+底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。
+            
+**【PTS評価軸】**
+- **12点以上 (S級🔥)**: 全力買い（期待値最大）
+- **8〜11点 (A級💎)**: 買い（トリアージ良好）
+- **5〜7点 (B級🛡️)**: 様子見（引き金待ち）
+- **5点未満 (圏外💀)**: 見送り（下落継続）""")
         else:
-            st.info("**⚡ 強襲モード：トレンド初動の電撃戦**\n- **突破力**: 14日高値と『逆指値目安』を並列表示。天井圏の罠（三尊・赤三先等）を検知した場合、防衛回路がスコアを自動減衰。")
+            st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
+トレンド初動の電撃戦。14日高値突破とGCを監視。
+            
+**【PTS評価軸】**
+- **80点以上 (S級⚡)**: 即・強襲（GC直後の初動）
+- **60〜79点 (A級🔥)**: 追撃買い（勢い維持）
+- **40〜59点 (B級📈)**: 様子見（調整待ち）
+- **40点未満 (圏外💀)**: 撤退/見送り（天井圏の罠）""")
 
     if run_scope:
         if is_ambush:
