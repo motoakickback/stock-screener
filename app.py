@@ -1015,88 +1015,102 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, chart_key=None):
     """
-    🚨 ボスのDNA：酒田・ボラ・ホバー統合 最終物理版 🚨
+    🚨 ボスのDNA：単一集約 ＆ 側面出来高 ＆ 指定ホバー 最終物理版 🚨
     【物理変更】
-    - ホバー：株価ラベルの直後に <br> を装填し視認性を確保
-    - 騰落：前日比の ▲/▼ を動的に反映
-    - 統合：酒田パターンのチャート上アノテーションを完全復旧
+    - グラフ集約：上下2段を廃止し、1つのグラフエリアに統合
+    - 側面出来高：下部の棒グラフを廃止し、右側から水平に出す（サイド・ボリューム）
+    - 指定ホバー：ラベルを「始値：」「終値：」等の日本語に完全置換。酒田メッセージは排除。
     """
     import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
 
     if df is None or df.empty:
         return
 
     df_plot = df.copy()
-    # 前日比と矢印の物理計算
-    df_plot['diff'] = df_plot['AdjC'].diff()
-    df_plot['arrow'] = df_plot['diff'].apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # --- 1. サブプロット構成（上部:株価 80% / 下部:出来高 20%） ---
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.8, 0.2]
-    )
+    # --- 1. ベースフィギュア（単一構成） ---
+    fig = go.Figure()
 
-    # --- 2. ローソク足（🚨 要請：改行 ＆ 矢印実装） ---
+    # --- 2. 側面出来高（水平棒グラフ） ---
+    # 下からではなく「横から」出すため、X軸を2系統使用（オーバーレイ）
+    fig.add_trace(go.Bar(
+        x=df_plot['AdjustmentVolume'],
+        y=df_plot['AdjC'],
+        name='出来高',
+        orientation='h',
+        marker_color='rgba(128, 128, 128, 0.2)', # 視認性を妨げない半透明グレー
+        hoverinfo='skip', # 出来高自体のホバーは不要（ノイズ排除）
+        xaxis='x2'
+    ))
+
+    # --- 3. ローソク足（🚨 要請：指定ラベルホバー） ---
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
-        customdata=df_plot['arrow'],
-        name='株価',
-        # ボス要請：株価ラベル直後の改行物理装填
+        name='価格',
+        # ボス指定の日本語ラベル
         hovertemplate=(
-            "<b>株価 :</b><br>"
-            "価格: %{open:,.0f}<br>"
-            "終値: %{close:,.0f}<br>"
-			"高値: %{high:,.0f}<br>"
-            "安値: %{low:,.0f}%{customdata}<extra></extra>"
+            "<b>価格：</b><br>"
+            "始値：%{open:,.0f}<br>"
+            "終値：%{close:,.0f}<br>"
+            "高値：%{high:,.0f}<br>"
+            "安値：%{low:,.0f}<br>"
+            "<extra></extra>"
         ),
         increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
         increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
-    ), row=1, col=1)
+    ))
 
-    # --- 3. 酒田パターンの注釈（原本DNA復旧） ---
-    sakata = detect_sakata_patterns(df_plot)
-    for p in sakata:
-        fig.add_annotation(
-            x=p['date'], y=p['y_val'], text=p['icon'],
-            showarrow=True, arrowhead=1, ax=0, ay=-30,
-            font=dict(size=14), bordercolor="#64ffda", borderwidth=1,
-            row=1, col=1
-        )
+    # --- 4. 移動平均線 ＆ 目標ライン（🚨 各ホバー指定） ---
+    ma_configs = [
+        ('MA5', '#ffd700', 'MA5：'),
+        ('MA25', '#29b6f6', 'MA25：'),
+        ('MA75', '#ab47bc', 'MA75：')
+    ]
+    for col, color, label in ma_configs:
+        if col in df_plot.columns:
+            fig.add_trace(go.Scatter(
+                x=df_plot['Date'], y=df_plot[col], name=label,
+                line=dict(color=color, width=1.5),
+                hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
+            ))
 
-    # --- 4. 買付目標ライン（原本DNA） ---
+    # 🎯 目標ライン
     fig.add_shape(
         type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
         y0=targ_p, y1=targ_p,
-        line=dict(color="#FFD700", width=2, dash="dash"),
-        row=1, col=1
+        line=dict(color="#FFD700", width=2, dash="dash")
     )
+    # 目標値のホバー用
+    fig.add_trace(go.Scatter(
+        x=[df_plot['Date'].iloc[-1]], y=[targ_p], name='目標：',
+        mode='markers', marker=dict(size=0),
+        hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
+    ))
 
-    # --- 5. 出来高（原本DNA） ---
-    colors = ['#26a69a' if c >= o else '#ef5350' for o, c in zip(df_plot['AdjO'], df_plot['AdjC'])]
-    fig.add_trace(go.Bar(
-        x=df_plot['Date'], y=df_plot['AdjustmentVolume'],
-        name='出来高', marker_color=colors, opacity=0.5,
-        hovertemplate="出来高 : %{y:,.0f}<extra></extra>"
-    ), row=2, col=1)
-
-    # --- 6. 神聖レイアウト（原本DNA：Dark ＆ 凡例下 ＆ 右端全幅） ---
+    # --- 5. 神聖レイアウト（Dark ＆ 凡例下 ＆ 2軸設定） ---
     fig.update_layout(
         template='plotly_dark',
-        height=600,
-        margin=dict(l=0, r=0, t=30, b=0),
+        height=700, # 1画面に集約するため高さを確保
+        margin=dict(l=10, r=10, t=30, b=0),
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5),
+        # 🚨 画像通りの垂直リスト形式ホバー
         hovermode='x unified',
+        hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False,
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', side='right')
+        # 通常のX軸（時間軸）
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangebreaks=[dict(bounds=["sat", "mon"])]),
+        # 価格のY軸（右側）
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', side='right'),
+        # 出来高用の第2X軸（透明・反転させて右から出す）
+        xaxis2=dict(
+            overlaying='x', side='top', showgrid=False, showticklabels=False,
+            range=[df_plot['AdjustmentVolume'].max() * 5, 0] # 最大値の5倍でスケールして控えめに表示
+        )
     )
 
     # 描画射出
