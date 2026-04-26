@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：最前面出来高 ＆ 垂直ラベル完全同期版 🚨
+    🚨 ボスのDNA：視界完全復旧・原本色彩・最前面出来高 🚨
     【物理修正】
-    - レイヤリング：出来高を最後に add_trace することで、ローソク足の下に隠れる問題を物理排除。
-    - 出来高視認化：色を rgba(255, 255, 255, 0.25) に変更。背景の黒に沈まない輝度を確保。
-    - ホバー：unifiedモードで消えていた「目標：」「MA5：」等のラベルをテンプレートに直接埋め込み。
-    - 視界：高さ550px固定 ＆ Y軸オートフォーカスを死守。
+    - ホバーラベル：unifiedモードで消える「MA5：」等の文字を、テンプレート内に物理的に埋め込み。
+    - 出来高の具現化：色を Teal透過(#64ffda4d) に変更。スケールを max*2 に絞り、右側から明確に突き出す壁を現出。
+    - レイヤリング：出来高を最後に add_trace し、最前面に配置。
+    - 絶対死守：高さ550px、Y軸オートフォーカス、原本色彩。
     """
     import plotly.graph_objects as go
     import time
@@ -1040,19 +1040,21 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
-        name='価格：',
+        name='価格',
         customdata=df_plot['arrow'],
         hovertemplate=(
+            "価格：<br>"
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
             "安値：%{low:,.0f}<br>"
             "<extra></extra>"
         ),
-        increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
+        increasing_line_color='#26a69a', 
+        decreasing_line_color='#ef5350'
     ))
 
-    # --- 3. 移動平均線（🚨 修正：ホバーラベルを強制表示） ---
+    # --- 3. 移動平均線（🚨 修正：テンプレートにラベルを直埋め込み） ---
     ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
@@ -1061,10 +1063,11 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 name=label,
                 line=dict(color=color, width=1.5),
                 connectgaps=True,
+                # 🚨 ラベル（MA5：等）をテンプレートに直接書き込むことで消失を阻止
                 hovertemplate=f"{label} %{{y:,.0f}}<extra></extra>"
             ))
 
-    # --- 4. 買付目標（🚨 修正：ホバーラベルを強制表示） ---
+    # --- 4. 買付目標（🚨 修正：テンプレートにラベルを直埋め込み） ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
@@ -1074,34 +1077,19 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 酒田サイン（座標同期注釈） ---
-    for i, p in enumerate(sakata):
-        try:
-            is_bear = p.get('type') == 'bear'
-            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
-            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH' if is_bear else 'AdjL'].values[0]
-            fig.add_annotation(
-                x=p['date'], y=price_ref, text=p['label'],
-                showarrow=True, arrowhead=2, arrowcolor=p['color'],
-                ax=0, ay=offset_ay,
-                bgcolor="rgba(10,10,10,0.85)", bordercolor=p['color'],
-                borderwidth=1, font=dict(color=p['color'], size=11)
-            )
-        except: continue
-
-    # --- 6. 側面出来高（🚨 最終工程：最前面へ配置 ＆ 高輝度設定） ---
-    # 最後に add_trace することで、ローソク足より手前に描画し「隠れる」のを防止
+    # --- 5. 側面出来高（🚨 最終修正：最前面 ＆ 高輝度色彩 ＆ スケール2倍） ---
+    # 最後に描画して最前面へ。色を明るいTeal透過に設定。
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(255, 255, 255, 0.25)', # 背景に負けない透過白銀色
+        marker_color='rgba(100, 255, 218, 0.3)', # 視認性を確保したTeal透過
         hoverinfo='skip',
         xaxis='x2'
     ))
 
-    # --- 7. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
+    # --- 6. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
         height=550,                         # 物理的な高さを 550px に固定
@@ -1120,10 +1108,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             showgrid=True, gridcolor='rgba(255,255,255,0.05)',
             range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
         ),
-        # 側面出来高用の第2X軸：スケールを調整して視認性を確保
+        # 側面出来高用の第2X軸：スケールを max*2 に絞り、棒を長く表示
         xaxis2=dict(
             overlaying='x', side='top', showgrid=False, showticklabels=False,
-            range=[df_plot['AdjustmentVolume'].max() * 4, 0]
+            range=[df_plot['AdjustmentVolume'].max() * 2, 0] 
         ),
         legend=dict(
             orientation="h", yanchor="top", y=-0.18, 
@@ -1131,7 +1119,22 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         )
     )
 
-    # 最終描画（唯一の射出）
+    # 酒田サイン注釈
+    for i, p in enumerate(sakata):
+        try:
+            is_bear = p.get('type') == 'bear'
+            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
+            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH' if is_bear else 'AdjL'].values[0]
+            fig.add_annotation(
+                x=p['date'], y=price_ref, text=p['label'],
+                showarrow=True, arrowhead=2, arrowcolor=p['color'],
+                ax=0, ay=offset_ay,
+                bgcolor="rgba(10,10,10,0.85)", bordercolor=p['color'],
+                borderwidth=1, font=dict(color=p['color'], size=11)
+            )
+        except: continue
+
+    # 最終描画
     st.plotly_chart(
         fig, use_container_width=True, 
         config={'displayModeBar': False, 'responsive': True}, 
