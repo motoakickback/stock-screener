@@ -1032,12 +1032,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：標準視界・絶対要件完遂版 🚨
-    【物理構成】
-    - Y軸：autorange=True によるオートフォーカスを完全復旧。
-    - 物理高：描画エリアの高さを指定通り 550px に固定。
-    - ホバー：unifiedモードで消えないよう、テンプレートに「目標：」「MA5：」等を物理埋め込み。
-    - 不純物排除：視認性の悪かった側面出来高を完全パージ。
+    🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ スペース除去 🚨
+    【物理修正】
+    - MA5〜75：ラベルと数値の間のスペースを削除。
+    - 目標：ラベルと数値の間のスペースを削除。
+    - 聖域：高さ550px、Y軸オートフォーカス、不純物（出来高）なしのクリーン視界を維持。
     """
     import plotly.graph_objects as go
     import time
@@ -1059,6 +1058,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格',
         customdata=df_plot['arrow'],
+        # 基準：スペースなしの垂直リスト
         hovertemplate=(
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
@@ -1070,8 +1070,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         decreasing_line_color='#ef5350'
     ))
 
-    # --- 3. 移動平均線（ラベル埋め込み強制表示） ---
-    ma_configs = [('MA5','#ffd700','MA5：'), ('MA25','#42a5f5','MA25：'), ('MA75','#ab47bc','MA75：')]
+    # --- 3. 移動平均線（🚨 修正：{label}%... と密着させてスペースを削除） ---
+    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
@@ -1079,17 +1079,18 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 name=label,
                 line=dict(color=color, width=1.5),
                 connectgaps=True,
-                # 🚨 unifiedモードでの消失を防止
-                hovertemplate=f"{label} %{{y:,.0f}}<extra></extra>"
+                # スペースを物理的に排除
+                hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
             ))
 
-    # --- 4. 買付目標（ラベル埋め込み強制表示） ---
+    # --- 4. 買付目標（🚨 修正：こちらもスペースを削除してMAと統一） ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
         name='目標：',
         line=dict(color="#FFD700", width=2, dash="dash"),
         mode='lines',
+        # 目標：の直後に数値を密着
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
@@ -1111,20 +1112,19 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     # --- 6. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550,                         # 物理的な高さを 550px に固定
-        margin=dict(l=0, r=0, t=30, b=60),  # 全幅維持
+        height=550,
+        margin=dict(l=0, r=0, t=30, b=60),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False,
-        # 🚨 Y軸：オートフォーカスを物理死守
         yaxis=dict(
             side="right", 
             tickformat=",.0f", 
             gridcolor='rgba(255,255,255,0.05)',
-            autorange=True,                 # 自動縮尺
-            fixedrange=False                # ズーム許可
+            autorange=True,
+            fixedrange=False 
         ),
         xaxis=dict(
             showgrid=True, 
