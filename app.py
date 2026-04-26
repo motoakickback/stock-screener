@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：ホバーロジック完全維持 ＆ 出来高最前面化 🚨
+    🚨 ボスのDNA：出来高視認化 ＆ ホバー防衛 ＆ オートフォーカス 🚨
     【物理修正：出来高のみ】
-    - レイヤリング：出来高（Bar）を関数の最後に add_trace することで、ローソク足より手前（最前面）に配置。
-    - 視認化：色を Teal高輝度透過(#26a69a) に設定。スケールを max*1.8 に絞り、右側から長く突き出すよう調整。
-    - ホバー：正常化済みの「ラベル直埋め込み式」を1文字も変えず維持。
-    - 視界：高さ 550px 固定 ＆ Y軸オートフォーカスを死守。
+    - 色彩：ボスの提案通り、出来高の色を「白 (rgba(255, 255, 255, 0.6))」に設定。
+    - 視認性：最前面配置（add_traceを最後にする）を維持し、ローソク足に埋もれるのを阻止。
+    - スケール：xaxis2の範囲を調整し、右端からチャート中央へ向かって「壁」を現出。
+    - 聖域：正常化したホバー、高さ550px、Y軸オートフォーカスは一切変えず維持。
     """
     import plotly.graph_objects as go
     import time
@@ -1054,7 +1054,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         decreasing_line_color='#ef5350'
     ))
 
-    # --- 3. 移動平均線（正常化済み：ラベル埋め込みを維持） ---
+    # --- 3. 移動平均線（正常化済みラベル） ---
     ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
@@ -1066,7 +1066,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 hovertemplate=f"{label} %{{y:,.0f}}<extra></extra>"
             ))
 
-    # --- 4. 買付目標（正常化済み：ラベル埋め込みを維持） ---
+    # --- 4. 買付目標（正常化済みラベル） ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
@@ -1091,14 +1091,14 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             )
         except: continue
 
-    # --- 6. 側面出来高（🚨 最終工程：最前面配置 ＆ スケール強調 🚨） ---
-    # 最後に add_trace することで、価格やグリッド線の「手前」に描画
+    # --- 6. 側面出来高（🚨 ボスの助言：白に設定 🚨） ---
+    # 最前面に配置。白くすることで、背景の黒とローソク足の色から浮き立たせる。
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(38, 166, 154, 0.6)', # 高輝度Teal透過（背景に沈ませない）
+        marker_color='rgba(255, 255, 255, 0.5)', # ボス指定：白で存在を証明
         hoverinfo='skip',
         xaxis='x2'
     ))
@@ -1106,14 +1106,13 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     # --- 7. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550,                         # 物理高さを 550px に固定
-        margin=dict(l=0, r=0, t=30, b=60),  # 全幅維持
+        height=550,
+        margin=dict(l=0, r=0, t=30, b=60),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False,
-        # 🚨 Y軸：オートフォーカスを物理死守
         yaxis=dict(
             side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)',
             autorange=True, fixedrange=False 
@@ -1122,10 +1121,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             showgrid=True, gridcolor='rgba(255,255,255,0.05)',
             range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
         ),
-        # 側面出来高用の第2X軸：スケールを max*1.8 に絞り、棒を長く突き出させる
+        # 側面出来高用の第2X軸：max*2倍スケールで、チャートの半分程度まで突き出させる
         xaxis2=dict(
             overlaying='x', side='top', showgrid=False, showticklabels=False,
-            range=[df_plot['AdjustmentVolume'].max() * 1.8, 0] 
+            range=[df_plot['AdjustmentVolume'].max() * 2, 0] 
         ),
         legend=dict(
             orientation="h", yanchor="top", y=-0.18, 
