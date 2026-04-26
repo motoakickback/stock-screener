@@ -1067,27 +1067,43 @@ def draw_chart(df, targ_p, chart_key=None):
                 connectgaps=True
             ))
     
-    # 🚨 UI修正完遂：画面右端全幅化 ＆ 凡例の下部中央移設
-    fig.update_layout(
-        height=600,
-        margin=dict(l=0, r=0, t=30, b=60), # margin-rightを0に
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        hovermode="x unified",
-        yaxis=dict(
-            side="right", tickformat=",.0f", gridcolor="#333", 
-            zeroline=False, showline=True, linecolor="#444"
-        ),
-        xaxis=dict(
-            type="date", 
-            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)],
-            rangeslider=dict(visible=False), gridcolor="#333", linecolor="#444"
-        ),
-        legend=dict(
-            orientation="h", yanchor="top", y=-0.18, 
-            xanchor="center", x=0.5, font=dict(color="#eee", size=11)
-        )
+    # 🚨 UI修正完遂：物理高さ550 ＆ Y軸オートフォーカス ＆ 画面右端全幅化
+fig.update_layout(
+    height=550,                         # 物理的なグラフの高さを550pxに固定
+    margin=dict(l=0, r=0, t=30, b=60),  # 画面左右全幅化（r=0）を維持
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    hovermode="x unified",
+    
+    # 🚨 Y軸：オートフォーカス（自動縮尺）を物理死守
+    yaxis=dict(
+        side="right",                   # 目盛り右配置
+        tickformat=",.0f",              # カンマ区切り
+        gridcolor="#333", 
+        zeroline=False, 
+        showline=True, 
+        linecolor="#444",
+        autorange=True,                 # 物理的要件：オートフォーカス有効
+        fixedrange=False                # 手動操作による拡大・縮小を許可
+    ),
+    
+    xaxis=dict(
+        type="date", 
+        range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)],
+        rangeslider=dict(visible=False), 
+        gridcolor="#333", 
+        linecolor="#444"
+    ),
+    
+    legend=dict(
+        orientation="h", 
+        yanchor="top", 
+        y=-0.18, 
+        xanchor="center", 
+        x=0.5, 
+        font=dict(color="#eee", size=11)
     )
+)
     
     # 重複キー根絶 ＆ 全幅出力
     st.plotly_chart(
