@@ -1013,47 +1013,51 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """, unsafe_allow_html=True)
     return targ_p
 
-def draw_chart(df, targ_p, chart_key=None):
+def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：単一集約 ＆ 側面出来高 ＆ 指定ホバー 最終物理版 🚨
+    🚨 ボスのDNA：視界正常化・単一集約チャート 最終物理版 🚨
     【物理変更】
-    - グラフ集約：上下2段を廃止し、1つのグラフエリアに統合
-    - 側面出来高：下部の棒グラフを廃止し、右側から水平に出す（サイド・ボリューム）
-    - 指定ホバー：ラベルを「始値：」「終値：」等の日本語に完全置換。酒田メッセージは排除。
+    - 重複パージ：st.plotly_chart の二重実行を一本化し、メモリ負荷を半減。
+    - 垂直ホバー：指定の日本語ラベル（始値〜MA75）を1つのボックスに統合。
+    - 側面出来高：右側面から突き出す水平オーバーレイ（x2軸）を採用。
+    - Y軸（高さ）：ボスの指定通り、グラフの高さを 550px に物理固定。
     """
     import plotly.graph_objects as go
+    import time
 
     if df is None or df.empty:
         return
 
     df_plot = df.copy()
+    # 騰落矢印（▲/▼）を終値表示用に算出
+    df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # --- 1. ベースフィギュア（単一構成） ---
+    # --- 1. フィギュア構築（単一構成） ---
     fig = go.Figure()
 
-    # --- 2. 側面出来高（水平棒グラフ） ---
-    # 下からではなく「横から」出すため、X軸を2系統使用（オーバーレイ）
+    # --- 2. 側面出来高（右側から突き出すオーバーレイ） ---
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(128, 128, 128, 0.2)', # 視認性を妨げない半透明グレー
-        hoverinfo='skip', # 出来高自体のホバーは不要（ノイズ排除）
+        marker_color='rgba(100, 255, 218, 0.1)',
+        hoverinfo='skip', # 出来高自体のホバーは不要
         xaxis='x2'
     ))
 
-    # --- 3. ローソク足（🚨 要請：指定ラベルホバー） ---
+    # --- 3. ローソク足（🚨 指揮官指定：日本語垂直ホバー） ---
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
-        name='価格',
-        # ボス指定の日本語ラベル
+        name='価格：',
+        customdata=df_plot['arrow'],
+        # 日本語ラベル ＆ 改行による垂直リスト化
         hovertemplate=(
-            "<b>価格：</b><br>"
+            "価格：<br>"
             "始値：%{open:,.0f}<br>"
-            "終値：%{close:,.0f}<br>"
+            "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
             "安値：%{low:,.0f}<br>"
             "<extra></extra>"
@@ -1062,55 +1066,84 @@ def draw_chart(df, targ_p, chart_key=None):
         increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
     ))
 
-    # --- 4. 移動平均線 ＆ 目標ライン（🚨 各ホバー指定） ---
-    ma_configs = [
-        ('MA5', '#ffd700', 'MA5：'),
-        ('MA25', '#29b6f6', 'MA25：'),
-        ('MA75', '#ab47bc', 'MA75：')
-    ]
+    # --- 4. 移動平均線 ＆ 目標ライン（🚨 ホバー同期） ---
+    # MA5, MA25, MA75 をリストで定義しループ処理
+    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
                 x=df_plot['Date'], y=df_plot[col], name=label,
                 line=dict(color=color, width=1.5),
+                connectgaps=True,
                 hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
             ))
 
-    # 🎯 目標ライン
+    # 🎯 買付目標ライン
     fig.add_shape(
         type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
         y0=targ_p, y1=targ_p,
         line=dict(color="#FFD700", width=2, dash="dash")
     )
-    # 目標値のホバー用
+    # 目標価格のホバー表示用
     fig.add_trace(go.Scatter(
         x=[df_plot['Date'].iloc[-1]], y=[targ_p], name='目標：',
         mode='markers', marker=dict(size=0),
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 神聖レイアウト（Dark ＆ 凡例下 ＆ 2軸設定） ---
+    # --- 5. 酒田サイン（座標同期注釈） ---
+    # 重複演算を避けるため、引数として受け取った sakata リストを展開
+    for i, p in enumerate(sakata):
+        try:
+            is_bear = p.get('type') == 'bear'
+            # 座標決定：高値圏は上、安値圏は下へ配置
+            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
+            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH' if is_bear else 'AdjL'].values[0]
+            
+            fig.add_annotation(
+                x=p['date'], y=price_ref, text=p['label'],
+                showarrow=True, arrowhead=2, arrowcolor=p['color'],
+                ax=0, ay=offset_ay,
+                bgcolor="rgba(10,10,10,0.85)", bordercolor=p['color'],
+                borderwidth=1, font=dict(color=p['color'], size=11)
+            )
+        except: continue
+
+    # --- 6. 神聖レイアウト（ボスの美学 ＆ 2軸設定） ---
     fig.update_layout(
         template='plotly_dark',
-        height=700, # 1画面に集約するため高さを確保
-        margin=dict(l=10, r=10, t=30, b=0),
+        height=550, # 🚨 視認性向上のため、高さを 550px に物理固定
+        margin=dict(l=0, r=0, t=30, b=0), # 右端全幅化
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5),
-        # 🚨 画像通りの垂直リスト形式ホバー
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.2, 
+            xanchor="center", x=0.5, font=dict(size=11)
+        ),
         hovermode='x unified',
-        hoverlabel=dict(bgcolor="rgba(32, 32, 32, 0.9)", font_size=13, font_family="Consolas"),
+        hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False,
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
-        # 通常のX軸（時間軸）
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangebreaks=[dict(bounds=["sat", "mon"])]),
-        # 価格のY軸（右側）
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', side='right'),
-        # 出来高用の第2X軸（透明・反転させて右から出す）
+        yaxis=dict(
+            side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)',
+            fixedrange=False
+        ),
+        xaxis=dict(
+            showgrid=True, gridcolor='rgba(255,255,255,0.05)',
+            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
+        ),
+        # 側面出来高用の第2X軸（透明・反転設定）
         xaxis2=dict(
             overlaying='x', side='top', showgrid=False, showticklabels=False,
-            range=[df_plot['AdjustmentVolume'].max() * 5, 0] # 最大値の5倍でスケールして控えめに表示
+            range=[df_plot['AdjustmentVolume'].max() * 6, 0] # 出来高が目立ちすぎないよう調整
         )
+    )
+
+    # 7. 最終描画（冗長な二重呼び出しをパージ）
+    st.plotly_chart(
+        fig, use_container_width=True, 
+        config={'displayModeBar': False, 'responsive': True}, 
+        key=f"{chart_key}_{int(time.time()*1000)}"
     )
 
     # 描画射出
