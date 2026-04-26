@@ -1015,12 +1015,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：高さ550px固定 ＆ オートフォーカス完全復旧版 🚨
-    【物理変更】
-    - 描画高：グラフコンテナの物理的な高さをボスの指定通り 550px に固定。
-    - オートフォーカス：Y軸（価格スケール）の固定を解除し、自動縮尺を完全復旧。
-    - 指令ホバー：始値〜MA75の日本語垂直リストを死守。
-    - 側面出来高：右側面からの水平表示を維持し、視認性を確保。
+    🚨 ボスのDNA：不純物完全排除・原本色彩・視界550px 統合版 🚨
+    【物理修正】
+    - 二重描画の根絶：st.plotly_chart の二重呼び出しをパージ。
+    - 色彩の復元：上昇(#26a69a)・下落(#ef5350)のオリジナルカラーを再装填。
+    - Y軸オートフォーカス：価格スケールを自動縮尺（autorange）に設定。
+    - ホバー：重複をパージし、指定の日本語ラベルで垂直構成。
     """
     import plotly.graph_objects as go
     import time
@@ -1029,20 +1029,20 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         return
 
     df_plot = df.copy()
-    # 騰落矢印（▲/▼）算出
+    # 騰落矢印（▲/▼）の算出
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # --- 1. フィギュア構築（単一集約構成） ---
+    # --- 1. ベースフィギュア（単一構成） ---
     fig = go.Figure()
 
-    # --- 2. 側面出来高（右側面オーバーレイ） ---
+    # --- 2. 側面出来高（右側面オーバーレイ：x2軸使用） ---
     fig.add_trace(go.Bar(
         x=df_plot['AdjustmentVolume'],
         y=df_plot['AdjC'],
         name='出来高',
         orientation='h',
-        marker_color='rgba(100, 255, 218, 0.08)', 
-        hoverinfo='skip',
+        marker_color='rgba(100, 255, 218, 0.1)',
+        hoverinfo='skip', # 出来高自体のホバーは不要
         xaxis='x2'
     ))
 
@@ -1053,8 +1053,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格：',
         customdata=df_plot['arrow'],
+        # 日本語ラベル垂直リスト（始値・終値・高値・安値）
         hovertemplate=(
-            "価格：<br>"
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
@@ -1066,17 +1066,18 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     ))
 
     # --- 4. 移動平均線 ＆ 目標ライン（垂直ホバー同期） ---
-    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
-    for col, color, label in ma_configs:
+    # MA5(Yellow), MA25(Blue), MA75(Purple)
+    ma_map = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
+    for col, color, label in ma_map:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
                 x=df_plot['Date'], y=df_plot[col], name=label,
-                line=dict(color=color, width=1.5),
+                line=dict(color=color, width=1.8),
                 connectgaps=True,
                 hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
             ))
 
-    # 🎯 買付目標ライン
+    # 🎯 買付目標（ライン描画 ＆ ホバー用ダミートレース）
     fig.add_shape(
         type="line", x0=df_plot['Date'].iloc[0], x1=df_plot['Date'].iloc[-1],
         y0=targ_p, y1=targ_p,
@@ -1088,7 +1089,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 酒田サイン（注釈：座標同期） ---
+    # --- 5. 酒田サイン（座標同期注釈） ---
     for i, p in enumerate(sakata):
         try:
             is_bear = p.get('type') == 'bear'
@@ -1104,10 +1105,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             )
         except: continue
 
-    # --- 6. 神聖レイアウト（高さを550pxに固定 ＆ Y軸オートフォーカス） ---
+    # --- 6. 神聖レイアウト（高さ550px固定 ＆ オートフォーカス） ---
     fig.update_layout(
         template='plotly_dark',
-        height=550, # 🚨 ボス指定：グラフ描画エリアの物理高さを 550px に固定
+        height=550, # 物理的なコンテナの高さ
         margin=dict(l=0, r=0, t=30, b=0),
         showlegend=True,
         legend=dict(
@@ -1128,14 +1129,15 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             showgrid=True, gridcolor='rgba(255,255,255,0.05)',
             range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
         ),
-        # 側面出来高用の第2X軸
+        # 出来高用の第2X軸（右から突き出す水平軸）
         xaxis2=dict(
             overlaying='x', side='top', showgrid=False, showticklabels=False,
             range=[df_plot['AdjustmentVolume'].max() * 6, 0]
         )
     )
 
-    # 7. 最終描画（唯一の射出）
+    # --- 7. 最終描画（唯一の射出） ---
+    # 🚨 二重描画を防ぐため、ここ以外で st.plotly_chart を実行してはならない
     st.plotly_chart(
         fig, use_container_width=True, 
         config={'displayModeBar': False, 'responsive': True}, 
