@@ -744,17 +744,38 @@ def load_master():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
+    """
+    株価（Bars）と共に、決算（Earnings）と配当（Dividend）の実弾を装填する完全版
+    """
     base = datetime.utcnow() + timedelta(hours=9)
     f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
     t_d = base.strftime('%Y%m%d')
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
     try:
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = requests.get(url, headers=headers, timeout=10)
+        
+        # --- 1. 株価（Bars）の取得 ---
+        url_bars = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        r_bars = requests.get(url_bars, headers=headers, timeout=10.0)
         if r_bars.status_code == 200: 
             result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-    except: pass
+            
+        # --- 2. 決算発表予定日（Earnings）の実弾装填 ---
+        url_earn = f"{BASE_URL}/fins/announcement?code={api_code}"
+        r_earn = requests.get(url_earn, headers=headers, timeout=5.0)
+        if r_earn.status_code == 200:
+            result["events"]["earnings"] = r_earn.json().get("announcement", [])
+            
+        # --- 3. 配当情報（Dividend）の実弾装填 ---
+        url_div = f"{BASE_URL}/fins/dividend?code={api_code}"
+        r_div = requests.get(url_div, headers=headers, timeout=5.0)
+        if r_div.status_code == 200:
+            result["events"]["dividend"] = r_div.json().get("dividend", [])
+            
+    except Exception as e: 
+        # エラー発生時もクラッシュさせず、空の辞書を返してアプリを保護
+        pass
+        
     return result
 
 import time # 🚨 リトライ用の待機モジュール（未インポートなら関数内で使用）
