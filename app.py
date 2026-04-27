@@ -2067,7 +2067,6 @@ with tab3:
                         alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
                         
                         # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
-                        # ここで「陰の極み」「二重底」「三尊」等のサインが統合される
                         s_results = detect_sakata_patterns(df_chart_full)
                         for p in s_results:
                             alerts.append(p['text'])
@@ -2143,7 +2142,6 @@ with tab3:
                                 gc_score = 5
                             
                             # 🚨 修正：天井警告ペナルティ（防衛回路）
-                            # 高値圏の罠サインを検知した場合、ランクを強制的に落とす
                             if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
                                 score -= 25
                             
@@ -2199,6 +2197,7 @@ with tab3:
                             'sector': c_sector,
                             'market': c_market, 
                             'alerts': alerts,
+                            'sakata_patterns': s_results, # 🚨 物理結線1：酒田データを格納
                             'error': False,
                             'is_deep': is_deep
                         })
@@ -2278,15 +2277,15 @@ with tab3:
 
                 # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
                 st.markdown(f"""
-				<div style="margin-bottom: 0.8rem;">
-				<h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
-				<span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
-				<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-				<span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
-				{m_badge}{gc_badge}
-				<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
-				<span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
-				</div></div>""", unsafe_allow_html=True)
+                <div style="margin-bottom: 0.8rem;">
+                <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
+                <span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                <span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
+                {m_badge}{gc_badge}
+                <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
+                <span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+                </div></div>""", unsafe_allow_html=True)
                 
                 # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
                 if r.get('alerts'):
@@ -2314,17 +2313,17 @@ with tab3:
                     
                     # ATRボラ率の物理演算表示
                     st.metric("🌪️ 1ATR", f"{safe_int(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
-                
+
                 with sc_mid:
                     # ファンダメンタルズの物理抽出（原本DNA）
                     roe_v = safe_float(r['roe'])
                     per_v = safe_float(r['per'])
                     pbr_v = safe_float(r['pbr'])
                     
-                    # 判定とカラーリング（原本DNA）
-                    roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v else "-", "#ef5350")
-                    per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v else "-", "#ef5350")
-                    pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v else "-", "#ef5350")
+                    # 判定とカラーリング（🚨 物理修正2：0.0等のfalsy判定による消失を is not None で完全封鎖）
+                    roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v is not None and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v is not None else "-", "#ef5350")
+                    per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v is not None and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v is not None else "-", "#ef5350")
+                    pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v is not None and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v is not None else "-", "#ef5350")
                     
                     # 🚨 修正：並列表示UI（待伏 ＝ 1値 / 強襲 ＝ 833円 / 834円 形式）
                     if is_ambush:
@@ -2337,17 +2336,17 @@ with tab3:
                     
                     # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
-					<div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
-					<div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
-					<div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
-					<div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-					<div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
-					</div>
-					<div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-					<span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
-					</div></div>""", unsafe_allow_html=True)
+                    <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
+                    <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}</div>
+                    <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
+                    <div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
+                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+                    </div>
+                    <div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+                    <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
+                    </div></div>""", unsafe_allow_html=True)
 
                 with sc_right:
                     c_target = safe_int(r['bt_val'])
@@ -2385,9 +2384,9 @@ with tab3:
                         # レーダーチャート呼び出し
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
                         st.markdown("---")
-                        # 🚨 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶
+                        # 🚨 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶 ＆ 酒田サインの物理結線
                         u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
-                        draw_chart(r['df_chart'], c_target, chart_key=u_key)
+                        draw_chart(r['df_chart'], c_target, sakata=r.get('sakata_patterns', []), chart_key=u_key)
                         st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
                     except Exception as e:
                         st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
