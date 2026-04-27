@@ -1032,13 +1032,15 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
-    🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ スペース除去 🚨
+    🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ 酒田サインの絶対表示 🚨
     【物理修正】
-    - MA5〜75：ラベルと数値の間のスペースを削除。
-    - 目標：ラベルと数値の間のスペースを削除。
-    - 聖域：高さ550px、Y軸オートフォーカス、不純物（出来高）なしのクリーン視界を維持。
+    - MA5〜75 / 目標：ラベルと数値の間のスペースを削除（維持）。
+    - 酒田サイン：日付照合の型エラーを防止し、消失（サイレントエラー）を完全封鎖。
+    - 聖域：高さ550px、Y軸オートフォーカス、不純物なしのクリーン視界を維持。
     """
     import plotly.graph_objects as go
+    from datetime import timedelta
+    import pandas as pd
     import time
 
     if df is None or df.empty:
@@ -1058,8 +1060,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格',
         customdata=df_plot['arrow'],
-        # 基準：スペースなしの垂直リスト
         hovertemplate=(
+            "価格：<br>"
             "始値：%{open:,.0f}<br>"
             "終値：%{close:,.0f}%{customdata}<br>"
             "高値：%{high:,.0f}<br>"
@@ -1070,7 +1072,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         decreasing_line_color='#ef5350'
     ))
 
-    # --- 3. 移動平均線（🚨 修正：{label}%... と密着させてスペースを削除） ---
+    # --- 3. 移動平均線（スペース排除維持） ---
     ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
@@ -1079,37 +1081,61 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 name=label,
                 line=dict(color=color, width=1.5),
                 connectgaps=True,
-                # スペースを物理的に排除
                 hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
             ))
 
-    # --- 4. 買付目標（🚨 修正：こちらもスペースを削除してMAと統一） ---
+    # --- 4. 買付目標（スペース排除維持） ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
         name='目標：',
         line=dict(color="#FFD700", width=2, dash="dash"),
         mode='lines',
-        # 目標：の直後に数値を密着
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 酒田サイン（座標同期注釈） ---
+    # --- 5. 酒田サイン（🚨 修正：照合の堅牢化とフェイルセーフ実装） ---
+    # DataFrame側の日付を文字列（YYYY-MM-DD）に変換して比較用シリーズを作成
+    date_str_series = df_plot['Date'].astype(str).str[:10]
+    
     for i, p in enumerate(sakata):
         try:
-            is_bear = p.get('type') == 'bear'
-            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
-            price_ref = df_plot[df_plot['Date'] == p['date']]['AdjH' if is_bear else 'AdjL'].values[0]
-            fig.add_annotation(
-                x=p['date'], y=price_ref, text=p['label'],
-                showarrow=True, arrowhead=2, arrowcolor=p['color'],
-                ax=0, ay=offset_ay,
-                bgcolor="rgba(10,10,10,0.85)", bordercolor=p['color'],
-                borderwidth=1, font=dict(color=p['color'], size=11)
-            )
-        except: continue
+            # キーエラーを回避する安全な取得
+            s_date = p.get('date')
+            s_type = p.get('type', 'bull')
+            s_label = p.get('label', 'Sign')
+            s_color = p.get('color', '#FFFFFF')
+            
+            if not s_date:
+                continue
 
-    # --- 6. 神聖レイアウト（高さ550px固定 ＆ Y軸オートフォーカス） ---
+            is_bear = (s_type == 'bear')
+            offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
+            
+            # 日付の型依存を排除し、文字列同士で物理照合
+            target_date_str = str(s_date)[:10]
+            match_row = df_plot[date_str_series == target_date_str]
+            
+            if not match_row.empty:
+                # 該当日が存在する場合は、その日の高値/安値に矢印を置く
+                price_ref = match_row['AdjH' if is_bear else 'AdjL'].values[0]
+            else:
+                # 万が一休日等で一致しない場合でも、グラフから消滅させず最新の終値付近に表示
+                price_ref = df_plot['AdjC'].iloc[-1]
+
+            fig.add_annotation(
+                x=s_date, y=price_ref, text=s_label,
+                showarrow=True, arrowhead=2, arrowcolor=s_color,
+                ax=0, ay=offset_ay,
+                bgcolor="rgba(10,10,10,0.85)", bordercolor=s_color,
+                borderwidth=1, font=dict(color=s_color, size=11)
+            )
+        except Exception as e:
+            # 致命的なエラーでもアプリ全体を落とさずコンソール出力に留める
+            print(f"Sakata Draw Error: {e}")
+            continue
+
+    # --- 6. 神聖レイアウト（絶対死守） ---
     fig.update_layout(
         template='plotly_dark',
         height=550,
