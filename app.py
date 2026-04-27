@@ -1888,6 +1888,9 @@ with tab3:
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
                                 import yfinance as yf
+                                import time
+                                # 物理的な衝突回避：並列処理時のレートリミット弾きを防ぐ
+                                time.sleep(0.5)
                                 tk_f = yf.Ticker(c_str + ".T")
                                 info = tk_f.info
                                 if info:
