@@ -407,12 +407,17 @@ def calc_technicals(df):
     return calc_vector_indicators(df)
 
 def check_event_mines(code, event_data=None):
-    """地雷警戒 ＆ カウントダウン・通知プロトコル"""
+    """
+    地雷警戒 ＆ カウントダウン・通知プロトコル
+    【物理修正】
+    - 日付形式（YYYY-MM-DD / YYYYMMDD）の揺れを吸収。
+    - 辞書/文字列の不一致を解消。
+    - 4588等の「データなし」を判別するための内部ログ（デバッグ）を強化。
+    """
     alerts = []
     c = str(code)[:4]
     tz_jst = pytz.timezone('Asia/Tokyo')
     today = datetime.now(tz_jst).date()
-    max_warning_date = today + timedelta(days=14)
     
     # 🚨 物理地雷（固定イベント）
     critical_mines = {
@@ -427,32 +432,48 @@ def check_event_mines(code, event_data=None):
                 alerts.append(f"💣 【地雷警戒】危険イベントまで残り {diff} 日 ({critical_mines[c]})")
         except: pass
         
-    if not event_data: return alerts
+    if not event_data or not isinstance(event_data, dict):
+        return alerts
     
-    # 🚨 配当権利落ちカウントダウン
+    # 🚨 配当権利落ちカウントダウン（型安全化）
     for item in event_data.get("dividend", []):
-        d_str = str(item.get("RecordDate", ""))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                diff = (target_date - today).days
-                if 0 <= diff <= 14:
-                    alerts.append(f"💰 【配当】権利落ち日まで残り {diff} 日 ({d_str})")
-                    break
-            except: pass
+        # RecordDateが空ならスキップ
+        d_str_raw = item.get("RecordDate")
+        if not d_str_raw: continue
+        
+        d_str = str(d_str_raw).replace("-", "")[:8] # YYYYMMDD形式へ統一
+        try:
+            target_date = datetime.strptime(d_str, "%Y%m%d").date()
+            diff = (target_date - today).days
+            if 0 <= diff <= 14:
+                alerts.append(f"💰 【配当】権利落ち日まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
+                break
+        except: pass
             
-    # 🚨 決算発表カウントダウン
-    for item in event_data.get("earnings", []):
+    # 🚨 決算発表カウントダウン（型安全化）
+    earnings_list = event_data.get("earnings", [])
+    
+    # --- 4588等の調査用：データが空の場合のみコンソールに記録 ---
+    if not earnings_list and c == "4588":
+         print(f"DEBUG: 銘柄 {c} の決算予定データがAPIから返却されていません（未確定の可能性）。")
+
+    for item in earnings_list:
+        # コードが一致するか確認（45880 vs 4588）
         if str(item.get("Code", ""))[:4] != c: continue
-        d_str = str(item.get("Date", item.get("DisclosedDate", "")))[:10]
-        if d_str:
-            try:
-                target_date = datetime.strptime(d_str, "%Y-%m-%d").date()
-                diff = (target_date - today).days
-                if 0 <= diff <= 14:
-                    alerts.append(f"🔥 【決算】発表まで残り {diff} 日 ({d_str})")
-                    break
-            except: pass
+        
+        # 複数のキー候補から日付を抽出
+        d_str_raw = item.get("Date") or item.get("DisclosedDate")
+        if not d_str_raw: continue
+        
+        d_str = str(d_str_raw).replace("-", "")[:8]
+        try:
+            target_date = datetime.strptime(d_str, "%Y%m%d").date()
+            diff = (target_date - today).days
+            if 0 <= diff <= 14:
+                alerts.append(f"🔥 【決算】発表まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
+                break
+        except: pass
+        
     return alerts
 
 def detect_sakata_patterns(df):
