@@ -1036,7 +1036,12 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 
 # --- 📺 UI描画関数 ---
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
-    """【照準】目標算出 ＆ イベントカウントダウン通知"""
+    """
+    【照準】目標算出 ＆ イベントカウントダウン通知
+    【物理修正】
+    - alert['type'] への不正アクセスを排除。
+    - バッジ描画ロジックを文字列判定へ統一。
+    """
     if df.empty: return None
     p_high, p_low = df['AdjH'].max(), df['AdjL'].min()
     current_p = df.iloc[-1]['AdjC']
@@ -1045,15 +1050,17 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     event_alerts = check_event_mines(code, event_data)
     event_html = ""
     for alert in event_alerts:
-        color = "#ef5350" if alert['type'] in ['critical', 'earnings'] else "#ffca28"
-        event_html += f'<span style="background: {color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; font-weight: bold;">{alert["text"]}</span>'
+        # 🚨 修正：辞書形式ではなく文字列の内容で色を判定
+        color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
+        label = alert.split("】")[1] if "】" in alert else alert
+        event_html += f'<span style="background: {color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; font-weight: bold;">{label}</span>'
 
     # 座標算出
     p_50 = p_low + (p_high - p_low) * 0.50
     p_618 = p_low + (p_high - p_low) * 0.382
     
     is_panic = current_p < (p_50 * 0.93)
-    targ_p = p_618 if is_panic else p_50
+    t_p = p_618 if is_panic else p_50
     label = "💎 61.8% 押し (深海モード)" if is_panic else "⚖️ 50.0% 押し (標準モード)"
     color = "#26a69a" if is_panic else "#FFD700"
     
@@ -1066,11 +1073,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
             <p style="color: #aaa; margin: 0.2rem 0;">戦闘モード: <strong style="color: {color};">{label}</strong></p>
             <div style="display: flex; gap: 2rem; margin-top: 0.5rem;">
                 <div><small>現在値</small><br><span style="font-size: 1.5rem;">¥{current_p:,.0f}</span></div>
-                <div><small>目標買値</small><br><span style="font-size: 1.5rem; color: {color};">¥{targ_p:,.0f}</span></div>
+                <div><small>目標買値</small><br><span style="font-size: 1.5rem; color: {color};">¥{t_p:,.0f}</span></div>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    return targ_p
+    return t_p
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
