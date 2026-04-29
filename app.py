@@ -1823,6 +1823,9 @@ with tab3:
             st.info("""**🌐 【待伏】モード（押し目・逆張り）**
 底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。
             
+**【🚨 市場連動バフ稼働中】**
+日経平均25日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、**スコアをボーナス加点(+3〜+5pts)** します。
+
 **【PTS評価軸】**
 - **12点以上 (S級🔥)** 全力買い：複数の酒田サイン（陰の極み・二重底等）が重複、勝率・値幅共に期待値最大
 - **8〜11点 (A級💎)** 買い：トリアージ（MACD/RSI）が反転を示唆、PBR等の割安背景も良好
@@ -1831,6 +1834,9 @@ with tab3:
         else:
             st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
 トレンド初動の電撃戦。14日高値突破とGCを監視。
+
+**【🚨 市場連動デバフ稼働中】**
+日経平均25日乖離率が過熱（+5%〜+8%超）している場合、天井掴みを防ぐため**スコアを強制的にデグレード(-20〜-35pts)** します。
             
 **【PTS評価軸】**
 - **80点以上 (S級⚡)** 即・強襲：GC直後かつ、ROE10%以上の優良ファンダが裏打ち
@@ -1848,11 +1854,13 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
-        # 🚨 物理結線：市場地合い（乖離率）の事前取得
+        # 🚨 物理結線：市場地合い（乖離率）の事前取得（NameError防止 ＆ 演算同期）
         n225_m_data = get_nikkei_macro_status()
         n225_div_rate = n225_m_data['div_rate'] if n225_m_data else 0.0
 
         import unicodedata
+        import re
+        import time
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
         t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z][0-9]?(?![A-Z0-9])', all_text)]))
@@ -1962,6 +1970,7 @@ with tab3:
                         return str(c), None, None, None, None, None
 
                 raw_data_dict = {}
+                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
@@ -2024,7 +2033,6 @@ with tab3:
                             try:
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
                                 if not m_row.empty:
-                                    # カラム名に 'Listing' を含むものを安全に検索
                                     ld_col = [col for col in m_row.columns if 'Listing' in col]
                                     if ld_col:
                                         target_val = m_row.iloc[0][ld_col[0]]
@@ -2049,7 +2057,6 @@ with tab3:
                         if 'Code' not in df_raw.columns:
                             df_raw['Code'] = api_code
                         
-                        # クリーニング処理（原本DNA：1文字も変えず復元）
                         df_s = clean_df(df_raw)
                         
                         if df_s.empty or len(df_s) < 20:
@@ -2109,7 +2116,6 @@ with tab3:
                         is_deep = False
 
                         # 🚨 修正：設計思想の正常化（足切り廃止 ＆ 警告メッセージ化）
-                        # 終値235円 / 1ATR 1円（0.42%）等の銘柄を排除せず、ボスの視認用に警告を表示
                         vol_pct = 0
                         if lc > 0:
                             vol_pct = (atr_v / lc * 100)
@@ -2129,6 +2135,21 @@ with tab3:
                         if is_ambush:
                             # --- 🌐 待伏（アンブッシュ）戦術論理：原本物理行を完全復元 ---
                             score = 4
+
+                            # 🚨 物理結線：市場地合い（乖離率）によるバフ・デバフ（待伏モード）
+                            if n225_div_rate <= -8.0:
+                                score += 5
+                                alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
+                            elif n225_div_rate <= -5.0:
+                                score += 3
+                                alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                            elif n225_div_rate >= 8.0:
+                                score -= 5
+                                alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                            elif n225_div_rate >= 5.0:
+                                score -= 3
+                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+
                             base_push_r = st.session_state.push_r / 100.0
                             bt_val_standard = h14 - (ur_v * base_push_r)
                             bt_val_deep = h14 - (ur_v * 0.618)
@@ -2196,19 +2217,10 @@ with tab3:
                                 gc_days = 0
                                 gc_score = 5
                             
-                            # 🚨 修正：天井警告ペナルティ（防衛回路）
-                            if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
-                                score -= 25
-                            
-                            # ROE加点
-                            if res_roe is not None:
-                                if res_roe >= 10.0:
-                                    score += 10
-                            
                             # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
 
-                            # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード限定）
+                            # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード）
                             if n225_div_rate >= 8.0:
                                 score -= 35
                                 alerts.append(f"⚠️ 【地合い異常過熱】日経乖離率 {n225_div_rate:+.2f}%。強襲を強制停止。")
@@ -2219,6 +2231,10 @@ with tab3:
                                 score -= 15
                                 alerts.append(f"🔵 【地合い急冷】日経乖離率 {n225_div_rate:+.2f}%。トレンド崩壊注意。")
 
+                            # 🚨 修正：天井警告ペナルティ（防衛回路）
+                            if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
+                                score -= 25
+                            
                             # 到達率演算
                             reach_rate = 0
                             if h14 > 0:
@@ -2304,7 +2320,7 @@ with tab3:
                     st.error(f"銘柄 {r['code']}: {', '.join(r['alerts'])}")
                     continue
 
-                # ユーティリティ（原本DNA）
+                # ユーティリティ（原本DNA：重複定義を完全に物理復旧）
                 def safe_int(x):
                     try: return int(float(x)) if not pd.isna(x) else 0
                     except Exception: return 0
@@ -2356,9 +2372,9 @@ with tab3:
                 # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
                 if r.get('alerts'):
                     for alert in r['alerts']:
-                        if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃", "売り三空", "陰の極み"]):
+                        if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃", "売り三空", "陰の極み", "好機", "支援"]):
                             st.success(alert)
-                        elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "黒三兵", "三尊", "三山", "二重天井", "赤三先", "買い三空", "撤退", "罠"]):
+                        elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "黒三兵", "三尊", "三山", "二重天井", "赤三先", "買い三空", "撤退", "罠", "停止", "逆風"]):
                             st.error(alert)
                         else:
                             st.warning(alert)
@@ -2367,18 +2383,22 @@ with tab3:
                 sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                 
                 with sc_left:
-                    # 原本DNA：物理的なメトリック分割
-                    h14_v = safe_int(r['h14'])
-                    l14_v = safe_int(r['l14'])
-                    ur_v = safe_int(r['ur'])
-                    lc_v = safe_int(r['lc'])
+                    # 原本DNA：物理的なメトリック分割（safe_int_local再定義によるスコープ保護）
+                    def safe_int_local(x):
+                        try: return int(float(x)) if not pd.isna(x) else 0
+                        except Exception: return 0
+                    
+                    h14_v = safe_int_local(r['h14'])
+                    l14_v = safe_int_local(r['l14'])
+                    ur_v = safe_int_local(r['ur'])
+                    lc_v = safe_int_local(r['lc'])
                     atr_v_val = safe_float(r['atr_val']) or 0.0
                     
                     c1, c2 = st.columns(2); c1.metric("直近高値", f"{h14_v:,}円"); c2.metric("起点安値", f"{l14_v:,}円")
                     c3, c4 = st.columns(2); c3.metric("波高(14d)", f"{ur_v:,}円"); c4.metric("最新終値", f"{lc_v:,}円")
                     
                     # ATRボラ率の物理演算表示
-                    st.metric("🌪️ 1ATR", f"{safe_int(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
+                    st.metric("🌪️ 1ATR", f"{safe_int_local(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
 
                 with sc_mid:
                     # ファンダメンタルズの物理抽出（原本DNA）
