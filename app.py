@@ -1848,6 +1848,10 @@ with tab3:
             for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
+        # 🚨 物理結線：市場地合い（乖離率）の事前取得
+        n225_m_data = get_nikkei_macro_status()
+        n225_div_rate = n225_m_data['div_rate'] if n225_m_data else 0.0
+
         import unicodedata
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
@@ -2041,7 +2045,6 @@ with tab3:
                             })
                             continue
 
-						# --- ボスのDNA：データクリーニング ＆ テクニカル演算（原本 100% 物理復旧） ---
                         df_raw = pd.DataFrame(bars)
                         if 'Code' not in df_raw.columns:
                             df_raw['Code'] = api_code
@@ -2204,7 +2207,18 @@ with tab3:
                             
                             # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
-                            
+
+                            # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード限定）
+                            if n225_div_rate >= 8.0:
+                                score -= 35
+                                alerts.append(f"⚠️ 【地合い異常過熱】日経乖離率 {n225_div_rate:+.2f}%。強襲を強制停止。")
+                            elif n225_div_rate >= 5.0:
+                                score -= 20
+                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。")
+                            elif n225_div_rate <= -5.0:
+                                score -= 15
+                                alerts.append(f"🔵 【地合い急冷】日経乖離率 {n225_div_rate:+.2f}%。トレンド崩壊注意。")
+
                             # 到達率演算
                             reach_rate = 0
                             if h14 > 0:
@@ -2249,7 +2263,7 @@ with tab3:
                             'sector': c_sector,
                             'market': c_market, 
                             'alerts': alerts,
-                            'sakata_patterns': s_results, # 🚨 物理結線1：酒田データを格納
+                            'sakata_patterns': s_results,
                             'error': False,
                             'is_deep': is_deep
                         })
@@ -2372,7 +2386,7 @@ with tab3:
                     per_v = safe_float(r['per'])
                     pbr_v = safe_float(r['pbr'])
                     
-                    # 判定とカラーリング（🚨 物理修正2：0.0等のfalsy判定による消失を is not None で完全封鎖）
+                    # 判定とカラーリング（原本DNA）
                     roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v is not None and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v is not None else "-", "#ef5350")
                     per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v is not None and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v is not None else "-", "#ef5350")
                     pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v is not None and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v is not None else "-", "#ef5350")
@@ -2436,7 +2450,7 @@ with tab3:
                         # レーダーチャート呼び出し
                         st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
                         st.markdown("---")
-                        # 🚨 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶 ＆ 酒田サインの物理結線
+                        # 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶 ＆ 酒田サインの物理結線
                         u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
                         draw_chart(r['df_chart'], c_target, sakata=r.get('sakata_patterns', []), chart_key=u_key)
                         st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
