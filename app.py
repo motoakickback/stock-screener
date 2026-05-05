@@ -1082,10 +1082,10 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
     """
     🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ 酒田サインの絶対表示 🚨
-    【物理修正】
-    - MA5〜75 / 目標：ラベルと数値の間のスペースを削除（維持）。
-    - 酒田サイン：日付照合の型エラーを防止し、消失（サイレントエラー）を完全封鎖。
-    - 聖域：高さ550px、Y軸オートフォーカス、不純物なしのクリーン視界を維持。
+    【物理修正：2026/05/06】
+    - レンジスライダー：実装。過去1年間の全兵站（データ）を俯瞰可能に。
+    - 初期表示：直近65日間を維持。即応性と広域索敵を両立。
+    - 凡例位置：スライダーとの干渉を避けるため y=-0.32 にオフセット。
     """
     import plotly.graph_objects as go
     from datetime import timedelta
@@ -1184,16 +1184,20 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             print(f"Sakata Draw Error: {e}")
             continue
 
-    # --- 6. 神聖レイアウト（絶対死守） ---
+    # --- 6. 神聖レイアウト（物理拡張版：スライダー追加） ---
     fig.update_layout(
         template='plotly_dark',
         height=550,
-        margin=dict(l=0, r=0, t=30, b=60),
+        margin=dict(l=0, r=0, t=30, b=80),  # スライダー用に下部マージンを微増
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
-        xaxis_rangeslider_visible=False,
+        
+        # 🚀 物理修正：レンジスライダーを可視化（厚さも最適化）
+        xaxis_rangeslider_visible=True,
+        xaxis_rangeslider_thickness=0.04,
+        
         yaxis=dict(
             side="right", 
             tickformat=",.0f", 
@@ -1204,12 +1208,13 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         xaxis=dict(
             showgrid=True, 
             gridcolor='rgba(255,255,255,0.05)',
+            # 初期表示範囲を「直近65日間」に固定することで、スライダー出現後も初期視界を維持
             range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
         ),
         legend=dict(
             orientation="h", 
             yanchor="top", 
-            y=-0.18, 
+            y=-0.32,  # スライダーと干渉しないよう位置を下方にオフセット
             xanchor="center", 
             x=0.5, 
             font=dict(color="#eee", size=11)
