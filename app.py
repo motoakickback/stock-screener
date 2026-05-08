@@ -2146,7 +2146,7 @@ with tab3:
 
                         # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
                         t_events = (raw_s.get("data") or {}).get("events")
-                        alerts.extend(check_event_mines(target_key, t_events))
+                        alerts.extend(check_event_mines(target_key, raw_s.get("events", {})))
                         
                         # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
                         s_results = detect_sakata_patterns(df_chart_full)
@@ -2303,8 +2303,8 @@ with tab3:
                             'sakata_patterns': s_results,
                             'error': False,
                             'is_deep': is_deep,
-                            'events': (raw_s.get("data") or {}).get("events") # 💥 物理修正：UIへ決算データをリレー
-                        })
+                            'events': raw_s.get('events') # 💥 物理結線：UIへ決算データを供給
+						})
                     except Exception as e:
                         scope_results.append({
                             'code': target_key,
