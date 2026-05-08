@@ -419,19 +419,6 @@ def check_event_mines(code, event_data=None):
     tz_jst = pytz.timezone('Asia/Tokyo')
     today = datetime.now(tz_jst).date()
     
-    # 🚨 物理地雷（固定イベント）
-    critical_mines = {
-        "8835": "2026-03-30", "3137": "2026-03-27", "4167": "2026-03-27"
-    }
-    
-    if c in critical_mines:
-        try:
-            event_date = datetime.strptime(critical_mines[c], "%Y-%m-%d").date()
-            diff = (event_date - today).days
-            if 0 <= diff <= 14:
-                alerts.append(f"💣 【地雷警戒】危険イベントまで残り {diff} 日 ({critical_mines[c]})")
-        except: pass
-        
     # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
     print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
 
