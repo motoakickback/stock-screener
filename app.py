@@ -2447,13 +2447,15 @@ with tab3:
                     e_data = r.get('events', {})
                     # event_dataが空でも地雷（8835等）を判定
                     e_alerts = check_event_mines(r['code'], e_data)
-                    # 💥 最終結線：データをHTMLバッジに変換
+                    # 💥 最終結線：保管した 'events' を引き出し、バッジHTMLを生成
                     e_html = ""
+                    # 修正1で保存したデータを関数に流し込む
                     for a in check_event_mines(r['code'], r.get('events', {})):
-                        b_color = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
-                        e_html += f'<span style="background:{b_color}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
+                        # 決算・地雷は「赤」、それ以外は「金」
+                        b_col = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
+                        e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
-                    # ゴールデンボックスHTML（原本DNA復元）
+                    # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
                     <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
                     <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
