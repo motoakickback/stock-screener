@@ -2443,22 +2443,22 @@ with tab3:
                         stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
-					# 💥 物理修正：イベント情報を取得し、HTMLバッジへ変換
+					# 💥 物理修正：イベント情報（決算・地雷）を抽出しHTMLバッジ化
                     e_data = r.get('events', {})
-                    event_alerts = check_event_mines(r['code'], e_data)
-                    event_html = ""
-                    for alert in event_alerts:
-                        # 判定に応じた色分け（決算・地雷は赤、その他は黄色）
-                        color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
-                        label = alert.split("】")[1] if "】" in alert else alert
-                        event_html += f'<span style="background: {color}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; font-weight: bold; vertical-align: middle; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">{label}</span>'
-                    
+                    # event_dataが空でも地雷（8835等）を判定するため関数を通す
+                    e_alerts = check_event_mines(r['code'], e_data)
+                    e_html = ""
+                    for a in e_alerts:
+                        # 決算・地雷・警戒は「赤」、その他は「金」で色分け
+                        b_color = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
+                        label = a.split("】")[1] if "】" in a else a
+                        e_html += f'<span style="background:{b_color}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{label}</span>'
+
                     # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
                     <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
-                    <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{event_html}</div>
+                    <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
                     <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
-                    ... (以下、変更なし)
                     <div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
                     <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
                     <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
