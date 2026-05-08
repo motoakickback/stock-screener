@@ -435,7 +435,7 @@ def check_event_mines(code, event_data=None):
     # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
     print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
 
-    # 💥 物理修正：データが空でも、空の辞書として扱い、後続の地雷判定を継続
+    # 💥 物理修正：APIデータが空でも、直上の地雷判定を殺さず継続
     if not event_data or not isinstance(event_data, dict):
         event_data = {}
     
@@ -2144,9 +2144,9 @@ with tab3:
                         if vol_pct < 0.5:
                             alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
-                        # 💥 物理修正：Noneエラーを回避し、安全にイベントデータを抽出
-                        s_events = raw_s.get("data") or {}
-                        alerts.extend(check_event_mines(target_key, s_events.get("events")))
+                        # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
+                        t_events = (raw_s.get("data") or {}).get("events")
+                        alerts.extend(check_event_mines(target_key, t_events))
                         
                         # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
                         s_results = detect_sakata_patterns(df_chart_full)
@@ -2302,7 +2302,8 @@ with tab3:
                             'alerts': alerts,
                             'sakata_patterns': s_results,
                             'error': False,
-                            'is_deep': is_deep
+                            'is_deep': is_deep,
+                            'events': (raw_s.get("data") or {}).get("events") # 💥 物理修正：UIへ決算データをリレー
                         })
                     except Exception as e:
                         scope_results.append({
