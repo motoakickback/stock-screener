@@ -2303,7 +2303,7 @@ with tab3:
                             'alerts': alerts,
                             'sakata_patterns': s_results,
                             'error': False,
-                            'is_deep': is_deep,
+                            'is_deep': False,
                             'events': raw_s.get('events') # 💥 物理結線：UIへ決算データを供給
 						})
                     except Exception as e:
