@@ -2100,7 +2100,7 @@ with tab3:
                                 'market': c_market,
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
                                 'error': True,
-                                'is_deep': False
+                                'is_deep': False,
 								'events': raw_s.get('events', {})  # 💥 ここで決算情報をリストに保存
                             })
                             continue
@@ -2110,7 +2110,7 @@ with tab3:
                             df_chart_full = calc_technicals(df_s.copy())
                         except Exception:
                             df_chart_full = df_s.copy()
-                        
+							
                         # --- ボスのDNA：最新・直近・前々回データの物理抽出（各変数ごとに1行） ---
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
