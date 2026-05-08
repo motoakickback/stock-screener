@@ -2303,9 +2303,9 @@ with tab3:
                             'alerts': alerts,
                             'sakata_patterns': s_results,
                             'error': False,
-                            'is_deep': False,
-                            'events': raw_s.get('events') # 💥 物理結線：UIへ決算データを供給
-						})
+                            'is_deep': is_deep,
+                            'events': (raw_s.get('data') or {}).get('events', {}) # 💥 修正：階層を一段深く潜って取得
+                        })
                     except Exception as e:
                         scope_results.append({
                             'code': target_key,
@@ -2443,16 +2443,16 @@ with tab3:
                         stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
-					# 💥 物理修正：イベント情報（決算・地雷）を抽出しHTMLバッジ化
+					# 💥 物理修正：データの取り出し ＆ バッジHTML生成
                     e_data = r.get('events', {})
-                    # event_dataが空でも地雷（8835等）を判定するため関数を通す
+                    # event_dataが空でも地雷（8835等）を判定
                     e_alerts = check_event_mines(r['code'], e_data)
                     e_html = ""
                     for a in e_alerts:
-                        # 決算・地雷・警戒は「赤」、その他は「金」で色分け
+                        # 決算・地雷・警戒は「赤」、その他は「金」
                         b_color = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
-                        label = a.split("】")[1] if "】" in a else a
-                        e_html += f'<span style="background:{b_color}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{label}</span>'
+                        # 文字が消えないよう、そのまま表示
+                        e_html += f'<span style="background:{b_color}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
                     # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
                     st.markdown(f"""
