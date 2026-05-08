@@ -435,7 +435,7 @@ def check_event_mines(code, event_data=None):
     # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
     print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
 
-    # 💥 物理修正：APIデータが空でも、直上の地雷判定を殺さず継続
+    # 💥 物理修正：Noneや空でも、空の辞書として処理を継続
     if not event_data or not isinstance(event_data, dict):
         event_data = {}
     
@@ -2101,7 +2101,7 @@ with tab3:
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
                                 'error': True,
                                 'is_deep': False,
-								'events': raw_s.get('events', {})  # 💥 ここで決算情報をリストに保存
+								'events': (raw_s.get('data') or {}).get('events', {})
                             })
                             continue
 
@@ -2447,14 +2447,13 @@ with tab3:
                     e_data = r.get('events', {})
                     # event_dataが空でも地雷（8835等）を判定
                     e_alerts = check_event_mines(r['code'], e_data)
+                    # 💥 最終結線：データをHTMLバッジに変換
                     e_html = ""
-                    for a in e_alerts:
-                        # 決算・地雷・警戒は「赤」、その他は「金」
+                    for a in check_event_mines(r['code'], r.get('events', {})):
                         b_color = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
-                        # 文字が消えないよう、そのまま表示
                         e_html += f'<span style="background:{b_color}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
-                    # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
+                    # ゴールデンボックスHTML（原本DNA復元）
                     st.markdown(f"""
                     <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
                     <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
