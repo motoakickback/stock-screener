@@ -435,9 +435,9 @@ def check_event_mines(code, event_data=None):
     # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
     print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
 
+    # 💥 物理修正：APIデータが空でも、直上の「固定地雷判定」の結果を殺さず継続
     if not event_data or not isinstance(event_data, dict):
-        print(f"DEBUG: 銘柄 {c} - 致命的警告：event_data が空、または辞書型ではないため、決算・配当スキャンを強制脱出(return)します。")
-        return alerts
+        pass
     
     # 🚨 配当権利落ちカウントダウン（型安全化）
     for item in event_data.get("dividend", []):
@@ -2144,9 +2144,8 @@ with tab3:
                         if vol_pct < 0.5:
                             alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
-                        # メッセージ一本化プロトコル（原本DNA：重複排除 ＆ 安値圏強化同期）
-                        # 1. 兵站イベント地雷チェック
-                        alerts.extend(check_event_mines(target_key, raw_s.get("data", {}).get("events")))
+                        # 💥 物理修正：データのパスを 'raw_s["events"]' に直結
+                        alerts.extend(check_event_mines(target_key, raw_s.get("events")))
                         
                         # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
                         s_results = detect_sakata_patterns(df_chart_full)
