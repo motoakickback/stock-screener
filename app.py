@@ -2307,7 +2307,7 @@ with tab3:
                             # 💥 修正：raw_s直下ではなく、その中の 'data' 階層から events を正確に掴む
                             'events': (raw_s.get('data') or {}).get('events', {})
                         })
-                        })
+						
                     except Exception as e:
                         scope_results.append({
                             'code': target_key,
