@@ -457,25 +457,36 @@ def check_event_mines(code, event_data=None):
     if not earnings_list and c == "4588":
          print(f"DEBUG: 銘柄 {c} の決算予定データがAPIから返却されていません（未確定の可能性）。")
 
+    # 💥 追加センサー：データ自体が空かどうかを全対象銘柄で監視
+    if not earnings_list:
+         print(f"DEBUG: 銘柄 {c} - 警告：event_data内に 'earnings' のリストが物理的に存在しません。")
+
     for item in earnings_list:
         # コードが一致するか確認（45880 vs 4588）
         if str(item.get("Code", ""))[:4] != c: continue
         
         # 複数のキー候補から日付を抽出
         d_str_raw = item.get("Date") or item.get("DisclosedDate")
-        if not d_str_raw: continue
+        if not d_str_raw:
+            print(f"DEBUG: 銘柄 {c} - 日付キー(Date/DisclosedDate)が存在しません。item: {item}")
+            continue
         
         d_str = str(d_str_raw).replace("-", "")[:8]
         try:
             target_date = datetime.strptime(d_str, "%Y%m%d").date()
             diff = (target_date - today).days
+            
+            # 💥 追加センサー：計算された日付と差分を強制出力
+            print(f"DEBUG: 銘柄 {c} - 決算日: {target_date}, 本日: {today}, 差分: {diff}日")
+            
             if 0 <= diff <= 14:
                 alerts.append(f"🔥 【決算】発表まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
                 break
-        except: pass
+        except Exception as e:
+            # 💥 隠蔽されていたエラー（サイレンサー）を外し、白日の下に晒す
+            print(f"DEBUG: 銘柄 {c} - 致命的パースエラー。生データ: {d_str_raw}, 変換後: {d_str}, エラー内容: {e}")
         
     return alerts
-
 def detect_sakata_patterns(df):
     """酒田五法：安値圏（陰の極み） ＆ 高値圏（三尊・三山） 全座標同期・完全結線版"""
     if len(df) < 5: return []
