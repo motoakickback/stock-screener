@@ -2303,8 +2303,10 @@ with tab3:
                             'alerts': alerts,
                             'sakata_patterns': s_results,
                             'error': False,
-                            'is_deep': is_deep,
-                            'events': (raw_s.get('data') or {}).get('events', {}) # 💥 修正：階層を一段深く潜って取得
+							'is_deep': is_deep,
+                            # 💥 修正：raw_s直下ではなく、その中の 'data' 階層から events を正確に掴む
+                            'events': (raw_s.get('data') or {}).get('events', {})
+                        })
                         })
                     except Exception as e:
                         scope_results.append({
@@ -2443,19 +2445,16 @@ with tab3:
                         stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
-					# 💥 物理修正：データの取り出し ＆ バッジHTML生成
-                    e_data = r.get('events', {})
-                    # event_dataが空でも地雷（8835等）を判定
-                    e_alerts = check_event_mines(r['code'], e_data)
-                    # 💥 最終結線：保管した 'events' を引き出し、バッジHTMLを生成
+                    # 💥 物理修正：バッジHTML生成（論理の重複を排除し、処理を1回に集約）
                     e_html = ""
-                    # 修正1で保存したデータを関数に流し込む
-                    for a in check_event_mines(r['code'], r.get('events', {})):
-                        # 決算・地雷は「赤」、それ以外は「金」
+                    # 1回のスキャンで決算・地雷情報を確定
+                    e_alerts = check_event_mines(r['code'], r.get('events', {}))
+                    for a in e_alerts:
+                        # 決算・地雷は「赤(#ef5350)」、配当等は「金(#FFD700)」
                         b_col = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#FFD700"
                         e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
-                    # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元）
+                    # ゴールデンボックスHTML（原本DNA：1pxの装飾まで復元 ＋ バッジを着弾）
                     st.markdown(f"""
                     <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
                     <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
