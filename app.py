@@ -432,7 +432,11 @@ def check_event_mines(code, event_data=None):
                 alerts.append(f"💣 【地雷警戒】危険イベントまで残り {diff} 日 ({critical_mines[c]})")
         except: pass
         
+    # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
+    print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
+
     if not event_data or not isinstance(event_data, dict):
+        print(f"DEBUG: 銘柄 {c} - 致命的警告：event_data が空、または辞書型ではないため、決算・配当スキャンを強制脱出(return)します。")
         return alerts
     
     # 🚨 配当権利落ちカウントダウン（型安全化）
@@ -449,7 +453,7 @@ def check_event_mines(code, event_data=None):
                 alerts.append(f"💰 【配当】権利落ち日まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
                 break
         except: pass
-            
+        
     # 🚨 決算発表カウントダウン（型安全化）
     earnings_list = event_data.get("earnings", [])
     
@@ -487,6 +491,7 @@ def check_event_mines(code, event_data=None):
             print(f"DEBUG: 銘柄 {c} - 致命的パースエラー。生データ: {d_str_raw}, 変換後: {d_str}, エラー内容: {e}")
         
     return alerts
+	
 def detect_sakata_patterns(df):
     """酒田五法：安値圏（陰の極み） ＆ 高値圏（三尊・三山） 全座標同期・完全結線版"""
     if len(df) < 5: return []
