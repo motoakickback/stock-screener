@@ -1063,7 +1063,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     current_p = df.iloc[-1]['AdjC']
     
     # イベントカウントダウンの取得
-    event_alerts = check_event_mines(code, event_data)
+    event_alerts = check_event_mines(code, raw['events'])
     event_html = ""
     for alert in event_alerts:
         # 🚨 修正：辞書形式ではなく文字列の内容で色を判定
