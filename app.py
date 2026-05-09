@@ -1302,76 +1302,64 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     )
 
 # --- 4. サイドバー UI（原典 100% 復旧） ---
-# 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
+# ==========================================
+# 🛡️ 最終防衛：グローバル初期化 ＆ サイドバー統合プロトコル
+# ==========================================
+
+# 1. 設定の先行ロード（session_stateの空洞化を阻止）
+# これにより、以降のウィジェットが AttributeError を吐くことを物理的に封殺する
+load_settings()
+
+# 2. 兵站確保（マスタデータのロード）
+# master_df_global というユニーク名で定義し、メインロジックとの衝突を避ける
+master_df_global = load_master()
+
+# --- サイドバーUIの構築開始 ---
+# 🚨 注意：ここから下のブロックがファイル内に「1つだけ」存在するようにしてください。
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- 🌪️ ボラティリティ・フィルターの設定 ---
+# --- 🌪️ ボラティリティ審査セクション ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+# セーフティ・アクセサ：.get() を使用し、初期化前の参照によるクラッシュを回避
+current_vol_min = st.session_state.get('f_vol_min', 0.5)
 st.session_state.f_vol_min = st.sidebar.slider(
-	"最小ボラ率 (ATR/価格 %)", 
-	0.0, 2.0, 0.5, 0.1, 
-	help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-	key="f_vol_min_slider"
+    "最小ボラ率 (ATR/価格 %)", 
+    0.0, 2.0, float(current_vol_min), 0.1, 
+    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
+    key="f_vol_min_slider"
 )
 st.sidebar.markdown("---")
-# --- 🌐 マクロ地合い連動システム ---
-st.sidebar.markdown("### 🌐 マクロ地合い連動")
-use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
-st.session_state.push_penalty = 0.0
-st.session_state.rsi_penalty = 0
-st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
-
-if use_macro:
-    api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
-    manual_pct = st.sidebar.number_input(
-        "日経騰落率（API値自動入力 %）", 
-        value=float(api_nikkei_pct), 
-        step=0.1, 
-        format="%.2f",
-        help="暴落シミュレーションをする場合は数値を書き換えてください。"
-    )
-
-    if manual_pct <= -2.0:
-        st.session_state.push_penalty = 0.10  
-        st.session_state.rsi_penalty = 20     
-        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）"
-    elif manual_pct <= -1.0:
-        st.session_state.push_penalty = 0.05  
-        st.session_state.rsi_penalty = 10     
-        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）"
-    else:
-        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
-
-st.sidebar.divider()
-
-# --- 📂 1. 戦略的セクター制御 (スコープ解決版) ---
+# --- 📂 1. 戦略的セクター制御セクション ---
 st.sidebar.header("📂 戦略的セクター制御")
 
-# セクターあたりの表示上限設定
+# セクターあたりの表示上限設定（物理キー f_max_stocks_slider で固定）
+current_max_stocks = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
-    1, 10, int(st.session_state.get("f_max_stocks_per_sector", 3)),
-    key="f_max_stocks_slider", # ID重複を防ぐための固定キー
+    1, 10, int(current_max_stocks),
+    key="f_max_stocks_slider",
     help="特定セクターに集中したい場合はこの数値を上げてください。",
     on_change=save_settings
 )
 
-# 🚨 物理修正：キャッシュから直接マスタを呼び出し、スコープ問題を根絶
-# locals()やglobals()のチェックに頼らず、キャッシュ済みの関数を直接叩くのが最適解です
-m_df_for_sidebar = load_master()
-
-if m_df_for_sidebar is not None and not m_df_for_sidebar.empty:
-    # 既存のUI関数を呼び出し
-    render_sector_filter(m_df_for_sidebar)
+# 物理的スコープの解決：グローバルでロードした master_df_global を注入
+if master_df_global is not None and not master_df_global.empty:
+    try:
+        # セクター個別選択チェックボックス群の描画
+        render_sector_filter(master_df_global)
+    except Exception as e:
+        # UIの一部の失敗に留め、システムを継続させる（フェイルセーフ）
+        st.sidebar.error(f"⚠️ セクターフィルタ描画失敗: {e}")
 else:
-    st.sidebar.error("⚠️ マスタデータのロードに失敗しました。APIまたは通信環境を確認してください。")
+    st.sidebar.warning("⚠️ マスタデータのロードに失敗しました。")
 
 st.sidebar.divider()
 
-# --- 📍 2. ターゲット選別 (安全化パッチ適用済) ---
+# --- 📍 2. ターゲット選別セクション（安全化アクセサ ＆ 重複排除済） ---
 st.sidebar.header("📍 ターゲット選別")
 
+# 市場ターゲットの選択
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 current_market = st.session_state.get("preset_market", market_options[1])
 
@@ -1383,30 +1371,7 @@ st.sidebar.selectbox(
     on_change=save_settings
 )
 
-# 🚨 座標：ここで関数を呼び出す。内部にスライダーがないため、二重生成は発生しない。
-if 'master_df' in locals() or 'master_df' in globals():
-    if master_df is not None and not master_df.empty:
-        render_sector_filter(master_df)
-    else:
-        st.sidebar.warning("⚠️ セクターマスタが空です。")
-else:
-    st.sidebar.error("⚠️ マスタデータ(master_df)がロードされていません。")
-
-st.sidebar.divider()
-
-# --- 📍 2. ターゲット選別 (以下、既存コード) ---
-st.sidebar.header("📍 ターゲット選別")
-market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-current_market = st.session_state.get("preset_market", market_options[1])
-
-st.sidebar.selectbox(
-    "市場ターゲット", 
-    options=market_options, 
-    index=market_options.index(current_market) if current_market in market_options else 1, 
-    key="preset_market", 
-    on_change=save_settings
-)
-
+# 押し目プリセットの選択
 push_r_options = ["25.0%", "50.0%", "61.8%"]
 current_push_r = st.session_state.get("preset_push_r", push_r_options[1])
 
@@ -1418,6 +1383,7 @@ st.sidebar.selectbox(
     on_change=apply_presets
 )
 
+# 戦術アルゴリズムの選択
 tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
 current_tactics = st.session_state.get("sidebar_tactics", tactics_options[0])
 
@@ -1494,9 +1460,8 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
     st.toast("全設定を永久保存した。")
 
 st.sidebar.caption(f"KEY: {cache_key}")
-
 # ==========================================
-# (2) メイン画面の描画スタート（サイドバー定義の直後など）
+# サイドバー基本描画完了：統合終了
 # ==========================================
 # ⬇️⬇️⬇️ ここにマクロ気象局を挿入 ⬇️⬇️⬇️
 # --- 📍 マクロ気象局アラートの表示 ---
