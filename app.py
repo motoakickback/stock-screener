@@ -1306,12 +1306,11 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 # ==========================================
 
 # --- 0. 事前準備：兵站確保 ---
-# ここで master_df_global を確定させる
 load_settings()
 master_df_global = load_master()
 
-# --- 1. サイドバー：戦略的セクター制御セクション ---
-# 🚨 警告：このブロック（render_sector_filterの呼び出し）はファイル内でここ「1箇所のみ」に限定せよ
+# --- 1. サイドバー構築開始 ---
+# 🚨 警告：これ以降、ファイル末尾までサイドバー関連の関数呼び出しは禁止する
 st.sidebar.title("🛠️ 戦術コンソール")
 
 st.sidebar.header("📂 戦略的セクター制御")
@@ -1321,15 +1320,15 @@ current_max_stocks = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 10, int(current_max_stocks),
-    key="f_max_stocks_slider", # ID重複を防ぐ固定キー
+    key="f_max_stocks_slider", 
     help="特定セクターに集中したい場合はこの数値を上げてください。",
     on_change=save_settings
 )
 
-# 物理的スコープの解決：ここで唯一の呼び出しを行う
+# 物理的スコープの解決：ここが唯一の呼び出し地点である
 if master_df_global is not None and not master_df_global.empty:
     try:
-        # 🚨 btn_sector_all を含む関数。ここ以外で呼び出さないこと。
+        # 🚨 btn_sector_all を生成する唯一の実行ライン
         render_sector_filter(master_df_global)
     except Exception as e:
         st.sidebar.error(f"⚠️ セクターフィルタ描画失敗: {e}")
@@ -1338,13 +1337,11 @@ else:
 
 st.sidebar.divider()
 
-# --- 2. ターゲット選別セクション ---
+# --- 2. ターゲット選別 ＆ ルール設定 ---
 st.sidebar.header("📍 ターゲット選別")
 
-# 市場ターゲット
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 current_market = st.session_state.get("preset_market", market_options[1])
-
 st.sidebar.selectbox(
     "市場ターゲット", 
     options=market_options, 
@@ -1353,10 +1350,8 @@ st.sidebar.selectbox(
     on_change=save_settings
 )
 
-# 押し目プリセット
 push_r_options = ["25.0%", "50.0%", "61.8%"]
 current_push_r = st.session_state.get("preset_push_r", push_r_options[1])
-
 st.sidebar.selectbox(
     "押し目プリセット", 
     options=push_r_options, 
@@ -1365,21 +1360,8 @@ st.sidebar.selectbox(
     on_change=apply_presets
 )
 
-# 戦術アルゴリズム
-tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-current_tactics = st.session_state.get("sidebar_tactics", tactics_options[0])
-
-st.sidebar.selectbox(
-    "戦術アルゴリズム", 
-    options=tactics_options, 
-    index=tactics_options.index(current_tactics) if current_tactics in tactics_options else 0, 
-    key="sidebar_tactics", 
-    on_change=save_settings
-)
-
+# --- 3. 数値入力・フィルタ群 ---
 st.sidebar.divider()
-
-# --- 3. ピックアップルール ---
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 with c1:
@@ -1387,47 +1369,15 @@ with c1:
 with c2:
     st.number_input("価格上限(円)", value=int(st.session_state.get("f1_max", 3000)), step=100, key="f1_max", on_change=save_settings)
 
-st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.get("f2_m30", 2.0)), step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.get("f3_drop", -50.0)), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
-
-c3, c4 = st.sidebar.columns(2)
-with c3:
-    st.number_input("波高下限(倍)", value=float(st.session_state.get("f9_min14", 1.3)), step=0.1, key="f9_min14", on_change=save_settings)
-with c4:
-    st.number_input("波高上限(倍)", value=float(st.session_state.get("f9_max14", 2.0)), step=0.1, key="f9_max14", on_change=save_settings)
-
 st.sidebar.checkbox("🚀 IPO除外(上場1年/200日未満)", value=bool(st.session_state.get("f5_ipo", True)), key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.get("f6_risk", True)), key="f6_risk", on_change=save_settings)
-st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.get("f11_ex_wave3", True)), key="f11_ex_wave3", on_change=save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.get("f12_ex_overvalued", True)), key="f12_ex_overvalued", on_change=save_settings)
 
 st.sidebar.divider()
-
-# --- 4. 買い/売りルール ---
-st.sidebar.header("🎯 買いルール")
+st.sidebar.header("🎯 運用ルール")
 st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.get("bt_lot", 100)), step=100, key="bt_lot", on_change=save_settings)
-st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.get("limit_d", 4)), step=1, key="limit_d", on_change=save_settings)
 
-st.sidebar.header("💰 売りルール")
-st.sidebar.number_input("利確目標(%)", value=int(st.session_state.get("bt_tp", 10)), step=1, key="bt_tp", on_change=save_settings)
-
-c_sl1, c_sl2 = st.sidebar.columns(2)
-with c_sl1:
-    st.number_input("初期損切(%)", value=int(st.session_state.get("bt_sl_i", 8)), step=1, key="bt_sl_i", on_change=save_settings)
-with c_sl2:
-    st.number_input("現在損切(%)", value=int(st.session_state.get("bt_sl_c", 8)), step=1, key="bt_sl_c", on_change=save_settings)
-
-st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.get("bt_sell_d", 10)), step=1, key="bt_sell_d", on_change=save_settings)
-
+# --- 4. システムコントロール（最下部） ---
 st.sidebar.divider()
-
-# --- 5. 特殊除外フィルター ＆ システム ---
-st.sidebar.header("🚫 特殊除外フィルター")
-st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.get("f7_ex_etf", True)), key="f7_ex_etf", on_change=save_settings)
-st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.get("f8_ex_bio", True)), key="f8_ex_bio", on_change=save_settings)
-st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.get("f10_ex_knife", True)), key="f10_ex_knife", on_change=save_settings)
-st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.get("gigi_input", "")), key="gigi_input", on_change=save_settings)
-
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
@@ -1438,7 +1388,9 @@ if st.sidebar.button("💾 設定を保存", use_container_width=True):
     save_settings()
     st.toast("全設定を永久保存した。")
 
+# 🚨 このキャプションがサイドバーの「終端」である
 st.sidebar.caption(f"KEY: {cache_key}")
+
 # ==========================================
 # サイドバー基本描画完了：統合終了
 # ==========================================
