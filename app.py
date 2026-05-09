@@ -1618,34 +1618,58 @@ with tab1:
                         'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
                     }
 
+                # --- 🚀 TAB1: 並列実行エンジン ＆ セクターフィルタリング統合 ---
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+                    # 待伏専用ユニット (scan_unit_t1_parallel) を呼び出し
                     futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0), latest_date): c for c, g in df.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         try:
                             res = f.result()
                             if res: results.append(res)
-                        except: pass
+                        except Exception:
+                            pass
                 
-                # トリアージ順にソート
-                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
+                # --- 🎯 最終ソート ＆ セクター密度制限ロジック ---
+                if not results:
+                    st.warning("⚠️ 条件に合致する銘柄が0件です。")
+                    st.session_state.tab1_scan_results = None
+                else:
+                    # 🚨 物理修正：TAB1専用ソートキー (t_score, score) を使用
+                    # GC_Daysは強襲(TAB2)専用のため、ここでは排除
+                    sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                     
                     filtered_results = []
                     sector_counts = {}
-                    # 🚀 物理同期：定数 3 をスライダー値へ変更
+                    
+                    # サイドバーから動的パラメータを取得
+                    selected_sectors = st.session_state.get("f_selected_sectors", [])
                     max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
                     
                     for r in sorted_raw:
-                        sector = master_map_t2.get(str(r['Code']), {}).get('セクター', '不明')
-                        if sector not in selected_sectors: continue
+                        # 🚨 物理修正：TAB1用の master_map_t1 を参照
+                        # 業種区分を「セクター」として取得
+                        m_info = master_map_t1.get(str(r['Code']), {})
+                        sector = m_info.get('セクター', '不明')
+                        
+                        # 1. セクター選択フィルター（チェックしていない業種を物理排除）
+                        if sector not in selected_sectors:
+                            continue
                             
+                        # 2. セクター内密度制限（スライダー値に基づき制限）
                         if sector_counts.get(sector, 0) < max_per_sector:
                             filtered_results.append(r)
                             sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                        if len(filtered_results) >= 30: break
+                        
+                        # 全体表示上限30銘柄に達したら離脱
+                        if len(filtered_results) >= 30: 
+                            break
+                    
+                    # 兵装完了：結果をsession_stateへ格納
+                    st.session_state.tab1_scan_results = filtered_results
                 
-                st.session_state.tab1_scan_results = filtered_results
-                status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
+                # UI更新：索敵終了の通知
+                status.update(label=f"🎯 スキャン完了！ {len(st.session_state.tab1_scan_results) if st.session_state.tab1_scan_results else 0}銘柄着弾", state="complete", expanded=False)
                 st.rerun()
 
     if st.session_state.tab1_scan_results:
@@ -1808,35 +1832,61 @@ with tab2:
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
                         }
 
-                    # --- 🚀 並列実行エンジン ---
+                    # --- 🚀 TAB2: 並列実行エンジン ＆ 強襲トリアージ ---
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        # 強襲専用ユニット (scan_unit_t2_parallel) を並列実行
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
                             try:
                                 res = f.result()
                                 if res: results.append(res)
-                            except: pass
+                            except Exception:
+                                # 個別銘柄のエラーで全体を止めない防弾仕様
+                                pass
                     
-                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
-                    
-                    # 🚨 セクターフィルターの適用（強襲）
-                    filtered_results = []
-                    sector_counts = {}
-                    for r in sorted_raw:
-                        sector = master_map_t2.get(str(r['Code']), {}).get('セクター', '不明')
+                    # --- ⚡ 最終トリアージ ＆ セクター密度制限 ---
+                    if not results:
+                        st.session_state.tab2_scan_results = None
+                        st.warning("⚠️ 強襲条件（GC直後）に合致する銘柄が0件です。")
+                    else:
+                        # 🚨 物理同期：強襲専用ソートキー
+                        # T_Score（スコア）は降順、GC_Days（鮮度）は昇順（少ない方が直近）でソート
+                        sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                         
-                        if sector not in selected_sectors:
-                            continue
+                        filtered_results = []
+                        sector_counts = {}
+                        
+                        # サイドバーの動的パラメータをロード
+                        selected_sectors = st.session_state.get("f_selected_sectors", [])
+                        max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
+                        
+                        for r in sorted_raw:
+                            # 🚨 物理同期：TAB2用の master_map_t2 から「セクター」を取得
+                            m_info = master_map_t2.get(str(r['Code']), {})
+                            sector = m_info.get('セクター', '不明')
                             
-                        if sector_counts.get(sector, 0) < 3:
-                            filtered_results.append(r)
-                            sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                        if len(filtered_results) >= 30: break
+                            # 1. セクター選択フィルター：チェック無しの業種を物理排除
+                            if sector not in selected_sectors:
+                                continue
+                                
+                            # 2. セクター内密度制限：スライダー値（max_per_sector）を上限とする
+                            if sector_counts.get(sector, 0) < max_per_sector:
+                                filtered_results.append(r)
+                                sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                            
+                            # 全体表示上限を30銘柄とし、システムのレスポンスを維持
+                            if len(filtered_results) >= 30: 
+                                break
+                        
+                        # 最終戦果を格納
+                        st.session_state.tab2_scan_results = filtered_results
                     
-                    st.session_state.tab2_scan_results = filtered_results
                     t_calc = time.time()
-                    status.update(label=f"🎯 強襲スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
+                    st.write(f"✔️ 第3段階完了：並列演算・フィルタリング [{t_calc - t_clean:.2f}秒]")
+                    
+                    # ステータス更新：索敵終了の通知
+                    status.update(label=f"🎯 強襲スキャン完了！ {len(st.session_state.tab2_scan_results) if st.session_state.tab2_scan_results else 0}銘柄着弾", state="complete", expanded=False)
                     st.rerun()
 
             except Exception as e:
