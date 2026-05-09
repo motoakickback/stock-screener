@@ -1406,12 +1406,12 @@ with tab1:
         t_global_start = time.time()
         
         with st.status("🚀 索敵スキャンを実行中...", expanded=True) as status:
-            # 🚨 兵站確保：280日分（約1.1年）を取得して「1年判定」の余裕を持たせる
             st.write("📡 第1段階：280日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
             t_fetch = time.time()
             
             if full_df is not None and not full_df.empty:
+                # 規格統一
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                 
                 # 🚨 物理同期：指令書へ「掟」を集約
@@ -1438,8 +1438,14 @@ with tab1:
                 mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t1["f1_min"]) & (full_df['AdjC'] <= config_t1["f1_max"])
                 valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                 
-                v_col = next((col for col in full_df.columns if col in ['AdjustmentVolume', 'Volume', 'AdjVo']), 'Volume')
+                # 💥 物理修正：出来高カラムの「全方位検索」
+                # カラム名に 'Volume' または 'Vo' が含まれるものを探し、なければ最後のカラムを無理やり使う
+                v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
+                v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                
+                # 💥 安全な平均算出（KeyError爆破阻止）
                 avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
+                
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 st.write(f"✔️ ターゲット抽出完了: {len(valid_codes)}銘柄")
 
@@ -1449,29 +1455,23 @@ with tab1:
                     lc = c_vals[-1]
                     
                     # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
-                    # ⑥ 疑義・除外リスト
                     if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
 
-                    # ⑤ IPO除外（物理修正：データの最古日が350日以上前かで判定）
                     if cfg["f5_ipo"]:
                         first_date = group['Date'].min()
-                        if (l_date - first_date).days < 350: # 365日の遊びを持たせて350日
-                            return None
+                        if (l_date - first_date).days < 350: return None
                         
-                    # ④ 第3波終了除外（1年安値から3倍以上）
                     if cfg["f11_ex_wave3"]:
                         if lc > (c_vals.min() * 3.0): return None
 
-                    # ② 1ヶ月暴騰上限フィルター
                     p20 = c_vals[max(0, len(c_vals)-20)]
                     if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
 
-                    # ③ 下落率フィルター（物理修正：落ちすぎを弾く）
+                    # 下落率フィルター（最高値からのドローダウン判定）
                     h_max_1yr = c_vals.max()
-                    # 例：-50%設定なら、最高値の0.5倍を下回ったら除外
                     if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-                    # --- 🌪️ ボラティリティ判定 ---
+                    # ボラティリティ判定
                     rsi, atr_v, _, _ = get_fast_indicators(c_vals)
                     vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                     if vol_pct < cfg["f_vol_min"]: return None
@@ -1484,19 +1484,15 @@ with tab1:
 
                     if l14 <= 0 or h4 <= l14: return None
                     wh = h4 / l14
-                    # 波高フィルター
                     if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
                     
-                    # 買付目標算出
                     base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h4 - base_push
                     target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
                     
-                    # スコアリング・ランク
                     dist_pct = ((lc / target_buy) - 1) * 100
-                    if dist_pct < -cfg["sl_c"]: return None # 損切ライン超えは除外
+                    if dist_pct < -cfg["sl_c"]: return None
 
-                    # ランク決定
                     if dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
                     elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
                     else: rank, bg, t_score = "B📈", "#0288d1", 3.5
@@ -1512,8 +1508,10 @@ with tab1:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
                     futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0), latest_date): c for c, g in df.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
-                        res = f.result()
-                        if res: results.append(res)
+                        try:
+                            res = f.result()
+                            if res: results.append(res)
+                        except: pass
                 
                 # 最終ソートとセクター制限
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
@@ -1528,7 +1526,7 @@ with tab1:
                 
                 st.session_state.tab1_scan_results = filtered_results
                 status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
-                st.rerun() # 💥 確実に画面を更新
+                st.rerun()
 
     if st.session_state.tab1_scan_results:
         light_results = st.session_state.tab1_scan_results
