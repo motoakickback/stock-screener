@@ -1414,13 +1414,9 @@ if n225_macro:
     """, unsafe_allow_html=True)
     st.session_state.macro_alert = n225_macro['status']
 
-# --- 📍 2. マスタデータのロード ＆ セクターフィルターの結線 ---
+# --- 📍 2. マスタデータのロード ---
+# 変数 master_df は、下のタブ内のロジックで参照するため、ロードのみ残す
 master_df = load_master()
-
-# 【新規追記】サイドバーにセクターフィルターを表示
-# この一行を追加することで、サイドバーにチェックボックスが出現します
-if not master_df.empty:
-    render_sector_filter(master_df)
 
 # --- 📍 3. タブ構成 ---
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
