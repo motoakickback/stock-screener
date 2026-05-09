@@ -1643,7 +1643,7 @@ with tab2:
 
                     # 市場ターゲットの絞り込み
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
-                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
+                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                     m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
                     
                     # 直近終値での価格フィルタリング
@@ -1651,8 +1651,11 @@ with tab2:
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                     
-                    # 出来高カラムの特定と5日平均算出
-                    v_col = next((col for col in full_df.columns if col in ['AdjustmentVolume', 'Volume', 'AdjVo']), 'Volume')
+                    # 💥 物理修正：出来高カラムの「全方位検索」でKeyErrorを封殺
+                    v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
+                    v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                    
+                    # 安全な5日平均出来高の算出
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
@@ -1660,31 +1663,37 @@ with tab2:
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
                     st.write("⚙️ 第3段階：並列演算・鉄の掟フィルタリング中...")
 
-                    def scan_unit_t2_parallel(code, group, cfg, v_avg):
+                    def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
                         
-                        # --- 🛡️ 鉄の掟：物理検問所（入り口で即時排除） ---
-                        # ⑥ 物理除外リスト（手動入力 ＆ 疑義注記）
+                        # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
+                        # ⑥ 疑義・除外リスト
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
 
-                        # ⑤ IPO除外（1年/250日未満のデータは索敵圏外）
-                        if cfg["f5_ipo"] and len(group) < 250: return None
-                        
-                        # ④ 第3波終了除外（1年間の安値から3倍以上暴騰済み）
+                        # ⑤ IPO除外（物理修正：カレンダー日350日判定）
+                        if cfg["f5_ipo"]:
+                            first_date = group['Date'].min()
+                            if (l_date - first_date).days < 350: return None
+                            
+                        # ④ 第3波終了除外（1年安値から3倍以上）
                         if cfg["f11_ex_wave3"]:
-                            min_1yr = c_vals.min()
-                            if lc > (min_1yr * 3.0): return None
-                        
-                        # ② 1ヶ月暴騰上限 ＆ ③ 下落率フィルター
+                            if lc > (c_vals.min() * 3.0): return None
+
+                        # ② 1ヶ月暴騰上限フィルター
                         p20 = c_vals[max(0, len(c_vals)-20)]
                         if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
-                        if lc < group['AdjH'].max() * (1 + (cfg["f3_drop"] / 100.0)): return None
+                        
+                        # ③ 下落率フィルター（最高値からの乖離率判定）
+                        h_max_1yr = c_vals.max()
+                        if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-                        # --- 🌪️ ボラティリティ・バリア ---
+                        # --- 🌪️ 強襲ボラティリティ・バリア ---
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        
+                        # 低ボラ銘柄を排除
                         if vol_pct < cfg["f_vol_min"]: return None
                         if rsi > cfg["rsi_lim"]: return None
                         
@@ -1719,7 +1728,7 @@ with tab2:
                     # --- 🚀 並列実行エンジン ---
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
+                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
                             try:
                                 res = f.result()
@@ -1729,7 +1738,7 @@ with tab2:
                     # トリアージ順にソート
                     sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     
-                    # 🛡️ 最終セクター検問（1業種3銘柄制限 ＆ 総数30銘柄上限）
+                    # 🛡️ 最終セクター検問
                     filtered_results = []
                     sector_counts = {}
                     for r in sorted_raw:
@@ -1739,12 +1748,12 @@ with tab2:
                             sector_counts[sector] = sector_counts.get(sector, 0) + 1
                         if len(filtered_results) >= 30: break
                     
-                    # スキャン結果をセッションへ物理保管
                     st.session_state.tab2_scan_results = filtered_results
                     t_calc = time.time()
                     
                     st.write(f"✔️ 第3段階完了：並列演算・フィルタリング [{t_calc - t_clean:.2f}秒]")
-                    status.update(label=f"🎯 強襲スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
+                    status.update(label=f"🎯 強襲スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
+                    st.rerun()
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
