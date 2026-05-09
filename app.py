@@ -1301,65 +1301,47 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         key=f"{chart_key}_{int(time.time()*1000)}"
     )
 
-# --- 4. サイドバー UI（原典 100% 復旧） ---
 # ==========================================
-# 🛡️ 最終防衛：グローバル初期化 ＆ サイドバー統合プロトコル
+# 🛡️ 最終防衛：重複排除済・サイドバー統合プロトコル
 # ==========================================
 
-# 1. 設定の先行ロード（session_stateの空洞化を阻止）
-# これにより、以降のウィジェットが AttributeError を吐くことを物理的に封殺する
+# --- 0. 事前準備：兵站確保 ---
+# ここで master_df_global を確定させる
 load_settings()
-
-# 2. 兵站確保（マスタデータのロード）
-# master_df_global というユニーク名で定義し、メインロジックとの衝突を避ける
 master_df_global = load_master()
 
-# --- サイドバーUIの構築開始 ---
-# 🚨 注意：ここから下のブロックがファイル内に「1つだけ」存在するようにしてください。
+# --- 1. サイドバー：戦略的セクター制御セクション ---
+# 🚨 警告：このブロック（render_sector_filterの呼び出し）はファイル内でここ「1箇所のみ」に限定せよ
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- 🌪️ ボラティリティ審査セクション ---
-st.sidebar.markdown("### 🌪️ ボラティリティ審査")
-# セーフティ・アクセサ：.get() を使用し、初期化前の参照によるクラッシュを回避
-current_vol_min = st.session_state.get('f_vol_min', 0.5)
-st.session_state.f_vol_min = st.sidebar.slider(
-    "最小ボラ率 (ATR/価格 %)", 
-    0.0, 2.0, float(current_vol_min), 0.1, 
-    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-    key="f_vol_min_slider"
-)
-st.sidebar.markdown("---")
-
-# --- 📂 1. 戦略的セクター制御セクション ---
 st.sidebar.header("📂 戦略的セクター制御")
 
-# セクターあたりの表示上限設定（物理キー f_max_stocks_slider で固定）
+# セクターあたりの表示上限設定
 current_max_stocks = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 10, int(current_max_stocks),
-    key="f_max_stocks_slider",
+    key="f_max_stocks_slider", # ID重複を防ぐ固定キー
     help="特定セクターに集中したい場合はこの数値を上げてください。",
     on_change=save_settings
 )
 
-# 物理的スコープの解決：グローバルでロードした master_df_global を注入
+# 物理的スコープの解決：ここで唯一の呼び出しを行う
 if master_df_global is not None and not master_df_global.empty:
     try:
-        # セクター個別選択チェックボックス群の描画
+        # 🚨 btn_sector_all を含む関数。ここ以外で呼び出さないこと。
         render_sector_filter(master_df_global)
     except Exception as e:
-        # UIの一部の失敗に留め、システムを継続させる（フェイルセーフ）
         st.sidebar.error(f"⚠️ セクターフィルタ描画失敗: {e}")
 else:
     st.sidebar.warning("⚠️ マスタデータのロードに失敗しました。")
 
 st.sidebar.divider()
 
-# --- 📍 2. ターゲット選別セクション（安全化アクセサ ＆ 重複排除済） ---
+# --- 2. ターゲット選別セクション ---
 st.sidebar.header("📍 ターゲット選別")
 
-# 市場ターゲットの選択
+# 市場ターゲット
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 current_market = st.session_state.get("preset_market", market_options[1])
 
@@ -1371,7 +1353,7 @@ st.sidebar.selectbox(
     on_change=save_settings
 )
 
-# 押し目プリセットの選択
+# 押し目プリセット
 push_r_options = ["25.0%", "50.0%", "61.8%"]
 current_push_r = st.session_state.get("preset_push_r", push_r_options[1])
 
@@ -1383,7 +1365,7 @@ st.sidebar.selectbox(
     on_change=apply_presets
 )
 
-# 戦術アルゴリズムの選択
+# 戦術アルゴリズム
 tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
 current_tactics = st.session_state.get("sidebar_tactics", tactics_options[0])
 
@@ -1397,7 +1379,7 @@ st.sidebar.selectbox(
 
 st.sidebar.divider()
 
-# --- 🔍 3. ピックアップルール ---
+# --- 3. ピックアップルール ---
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 with c1:
@@ -1421,7 +1403,7 @@ st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.ses
 
 st.sidebar.divider()
 
-# --- 🎯 4. 買いルール ---
+# --- 4. 買い/売りルール ---
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.get("bt_lot", 100)), step=100, key="bt_lot", on_change=save_settings)
 st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.get("limit_d", 4)), step=1, key="limit_d", on_change=save_settings)
@@ -1439,16 +1421,13 @@ st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.ge
 
 st.sidebar.divider()
 
-# --- 🚫 5. 特殊除外フィルター ---
+# --- 5. 特殊除外フィルター ＆ システム ---
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.get("f7_ex_etf", True)), key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.get("f8_ex_bio", True)), key="f8_ex_bio", on_change=save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.get("f10_ex_knife", True)), key="f10_ex_knife", on_change=save_settings)
 st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.get("gigi_input", "")), key="gigi_input", on_change=save_settings)
 
-st.sidebar.divider()
-
-# --- 🔴 6. システムコントロール ---
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
