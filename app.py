@@ -150,50 +150,79 @@ if "login_time" not in st.session_state:
 
 st.write(f"⏱ 経過時間: {time.time() - st.session_state.login_time:.2f}秒")
 
-# --- ⚙️ 設定の永続化 ---
-SETTINGS_FILE = f"saved_settings_{user_id}.json"
+# --- ⚙️ 設定の永続化 ＆ 先行初期化プロトコル ---
 
-# --- ⚙️ 設定の永続化 (改修版) ---
-SETTINGS_FILE = f"saved_settings_{user_id}.json"
+# user_id は事前に確定しているものとする（未定義時のフォールバック実装済）
+u_id = st.session_state.get("current_user", "guest")
+SETTINGS_FILE = f"saved_settings_{u_id}.json"
 
-# --- ⚙️ 設定の永続化 (パラメータ追加版) ---
 def load_settings():
+    """
+    重要：すべてのウィジェットが描画される前に実行し、
+    AttributeErrorを物理的に発生させないための防壁。
+    """
+    # 鉄の掟：デフォルト値の完全定義
     defaults = {
-        # ... (既存の設定は維持) ...
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
+        "preset_push_r": "50.0%",
+        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
+        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
+        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
+        "f11_ex_wave3": True, "f12_ex_overvalued": True,
+        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
         "f_selected_sectors": [],
-        "f_max_stocks_per_sector": 3  # 🚀 追加：セクターあたりの最大表示数
+        "f_max_stocks_per_sector": 3
     }
-    # (中略なしの既存ロード処理)
+    
     saved_data = {}
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved_data = json.load(f)
-        except: pass
+        except Exception as e:
+            # ログ出力のみ行い、システムは継続させる
+            st.warning(f"⚠️ 設定ファイルの読み込みに失敗しました。デフォルト値を使用します。")
+
+    # すべての値をsession_stateに展開
     for k, v in defaults.items():
+        # JSONからの読み込み値を優先。存在しない場合はデフォルト値を採用。
         target_val = saved_data.get(k, v)
+        # すでにstateにある場合は上書きせず、初期化時のみ値をセット
         if k not in st.session_state:
             st.session_state[k] = target_val
 
 def save_settings():
+    """現在のsession_stateをJSONへ物理書き出し。"""
     keys_to_save = [
-        # ... (既存のキー) ...
-        "f_selected_sectors",
-        "f_max_stocks_per_sector" # 🚀 追加
+        "preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+        "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
+        "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
+        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
+        "f_selected_sectors", "f_max_stocks_per_sector"
     ]
+    # 現在のstateから保存対象のみを抽出
     current_settings = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
-    except: pass
+    except Exception as e:
+        st.error(f"🚨 設定の保存に失敗しました: {e}")
 
 def apply_presets():
+    """プリセットの選択値を物理演算用の数値に変換して同期する。"""
     p_rate = st.session_state.get("preset_push_r", "50.0%")
-    if p_rate == "25.0%": st.session_state.push_r = 25.0
-    elif p_rate == "50.0%": st.session_state.push_r = 50.0
-    elif p_rate == "61.8%": st.session_state.push_r = 61.8
-    save_settings()
+    rate_map = {"25.0%": 25.0, "50.0%": 50.0, "61.8%": 61.8}
+    
+    if p_rate in rate_map:
+        st.session_state.push_r = rate_map[p_rate]
+        # 変更と同時に即座に永続化
+        save_settings()
 
+# 🚀 実行部：二重呼び出しを回避し、単一実行で初期化を完遂。
 load_settings()
 
 # --- 🌪️ 1. マクロ気象レーダー ---
@@ -1309,66 +1338,117 @@ if use_macro:
 
 st.sidebar.divider()
 
-st.sidebar.header("📍 ターゲット選別")
-market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, key="preset_market", on_change=save_settings)
+# --- 📂 1. セクター選別 ＆ 密度制御 (新規統合) ---
+# ボスの戦略（集中投資か分散投資か）を物理的に制御するスイッチ
+st.sidebar.header("📂 戦略的セクター制御")
 
-push_r_options = ["25.0%", "50.0%", "61.8%"]
-st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
+# 1セクターあたりの表示上限設定（永続化対応）
+st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
+    "1セクターあたりの最大表示数",
+    1, 10, int(st.session_state.get("f_max_stocks_per_sector", 3)),
+    help="特定セクターに集中したい場合はこの数値を上げてください。",
+    on_change=save_settings
+)
 
-tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(st.session_state.sidebar_tactics) if st.session_state.sidebar_tactics in tactics_options else 0, key="sidebar_tactics", on_change=save_settings)
+# セクター選択UIの実行（master_df がロードされていることを前提とする）
+if 'master_df' in locals() or 'master_df' in globals():
+    render_sector_filter(master_df)
+else:
+    st.sidebar.error("⚠️ マスタデータが未ロードです。")
 
 st.sidebar.divider()
 
+# --- 📍 2. ターゲット選別 (安全化パッチ適用) ---
+st.sidebar.header("📍 ターゲット選別")
+
+# 🚨 物理修正：st.session_state.preset_market への直接アクセスを廃止し .get() で防護
+market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
+current_market = st.session_state.get("preset_market", market_options[1])
+
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    options=market_options, 
+    index=market_options.index(current_market) if current_market in market_options else 1, 
+    key="preset_market", 
+    on_change=save_settings
+)
+
+push_r_options = ["25.0%", "50.0%", "61.8%"]
+current_push_r = st.session_state.get("preset_push_r", push_r_options[1])
+
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    options=push_r_options, 
+    index=push_r_options.index(current_push_r) if current_push_r in push_r_options else 1, 
+    key="preset_push_r", 
+    on_change=apply_presets
+)
+
+tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
+current_tactics = st.session_state.get("sidebar_tactics", tactics_options[0])
+
+st.sidebar.selectbox(
+    "戦術アルゴリズム", 
+    options=tactics_options, 
+    index=tactics_options.index(current_tactics) if current_tactics in tactics_options else 0, 
+    key="sidebar_tactics", 
+    on_change=save_settings
+)
+
+st.sidebar.divider()
+
+# --- 🔍 3. ピックアップルール ---
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    st.number_input("価格下限(円)", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=save_settings)
+    st.number_input("価格下限(円)", value=int(st.session_state.get("f1_min", 200)), step=100, key="f1_min", on_change=save_settings)
 with c2:
-    st.number_input("価格上限(円)", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=save_settings)
+    st.number_input("価格上限(円)", value=int(st.session_state.get("f1_max", 3000)), step=100, key="f1_max", on_change=save_settings)
 
-st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.f2_m30), step=0.1, key="f2_m30", on_change=save_settings)
-st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.f3_drop), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.get("f2_m30", 2.0)), step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.get("f3_drop", -50.0)), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
 
 c3, c4 = st.sidebar.columns(2)
 with c3:
-    st.number_input("波高下限(倍)", value=float(st.session_state.f9_min14), step=0.1, key="f9_min14", on_change=save_settings)
+    st.number_input("波高下限(倍)", value=float(st.session_state.get("f9_min14", 1.3)), step=0.1, key="f9_min14", on_change=save_settings)
 with c4:
-    st.number_input("波高上限(倍)", value=float(st.session_state.f9_max14), step=0.1, key="f9_max14", on_change=save_settings)
+    st.number_input("波高上限(倍)", value=float(st.session_state.get("f9_max14", 2.0)), step=0.1, key="f9_max14", on_change=save_settings)
 
-st.sidebar.checkbox("🚀 IPO除外(上場1年/200日未満)", value=bool(st.session_state.f5_ipo), key="f5_ipo", on_change=save_settings)
-st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.f6_risk), key="f6_risk", on_change=save_settings)
-st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.f11_ex_wave3), key="f11_ex_wave3", on_change=save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.f12_ex_overvalued), key="f12_ex_overvalued", on_change=save_settings)
+st.sidebar.checkbox("🚀 IPO除外(上場1年/200日未満)", value=bool(st.session_state.get("f5_ipo", True)), key="f5_ipo", on_change=save_settings)
+st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.get("f6_risk", True)), key="f6_risk", on_change=save_settings)
+st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.get("f11_ex_wave3", True)), key="f11_ex_wave3", on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.get("f12_ex_overvalued", True)), key="f12_ex_overvalued", on_change=save_settings)
 
 st.sidebar.divider()
 
+# --- 🎯 4. 買いルール ---
 st.sidebar.header("🎯 買いルール")
-st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.bt_lot), step=100, key="bt_lot", on_change=save_settings)
-st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=save_settings)
+st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.get("bt_lot", 100)), step=100, key="bt_lot", on_change=save_settings)
+st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.get("limit_d", 4)), step=1, key="limit_d", on_change=save_settings)
 
 st.sidebar.header("💰 売りルール")
-st.sidebar.number_input("利確目標(%)", value=int(st.session_state.bt_tp), step=1, key="bt_tp", on_change=save_settings)
+st.sidebar.number_input("利確目標(%)", value=int(st.session_state.get("bt_tp", 10)), step=1, key="bt_tp", on_change=save_settings)
 
 c_sl1, c_sl2 = st.sidebar.columns(2)
 with c_sl1:
-    st.number_input("初期損切(%)", value=int(st.session_state.bt_sl_i), step=1, key="bt_sl_i", on_change=save_settings)
+    st.number_input("初期損切(%)", value=int(st.session_state.get("bt_sl_i", 8)), step=1, key="bt_sl_i", on_change=save_settings)
 with c_sl2:
-    st.number_input("現在損切(%)", value=int(st.session_state.bt_sl_c), step=1, key="bt_sl_c", on_change=save_settings)
+    st.number_input("現在損切(%)", value=int(st.session_state.get("bt_sl_c", 8)), step=1, key="bt_sl_c", on_change=save_settings)
 
-st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.bt_sell_d), step=1, key="bt_sell_d", on_change=save_settings)
+st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.get("bt_sell_d", 10)), step=1, key="bt_sell_d", on_change=save_settings)
 
 st.sidebar.divider()
 
+# --- 🚫 5. 特殊除外フィルター ---
 st.sidebar.header("🚫 特殊除外フィルター")
-st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_etf), key="f7_ex_etf", on_change=save_settings)
-st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=save_settings)
-st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.f10_ex_knife), key="f10_ex_knife", on_change=save_settings)
-st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.gigi_input), key="gigi_input", on_change=save_settings)
+st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.get("f7_ex_etf", True)), key="f7_ex_etf", on_change=save_settings)
+st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.get("f8_ex_bio", True)), key="f8_ex_bio", on_change=save_settings)
+st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.get("f10_ex_knife", True)), key="f10_ex_knife", on_change=save_settings)
+st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.get("gigi_input", "")), key="gigi_input", on_change=save_settings)
 
 st.sidebar.divider()
 
+# --- 🔴 6. システムコントロール ---
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
