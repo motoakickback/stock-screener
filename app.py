@@ -1652,148 +1652,131 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-			# 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
-			config_t2 = {
-				"f1_min": float(st.session_state.f1_min), 
-				"f1_max": float(st.session_state.f1_max),
-				"f2_m30": float(st.session_state.f2_m30), 
-				"f3_drop": float(st.session_state.f3_drop),
-				"rsi_lim": effective_rsi_limit, 
-				"vol_lim": float(vol_lim),
-				"f5_ipo": st.session_state.f5_ipo,
-				"f11_ex_wave3": st.session_state.f11_ex_wave3,
-				"f6_risk": st.session_state.f6_risk,
-				"gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
-				"f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-				"tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
-				"f_vol_min": float(st.session_state.get('f_vol_min', 0.5)),
-				"sl_c": float(st.session_state.get("bt_sl_c", 8.0))
-			}
-				
-				v_col = next((col for col in full_df.columns if col in ['Volume', 'AdjVo', 'Vo']), 'Volume')
-				if v_col not in full_df.columns: full_df[v_col] = 100000
-				
-				avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean().fillna(0).astype(int)
-				
-				m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
-				target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
-				m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
-				
-				latest_date = full_df['Date'].max()
-				mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
-				valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets)).intersection(set(avg_vols_series[avg_vols_series >= config_t2["vol_lim"]].index))
-				
-				df = full_df[full_df['Code'].isin(valid_codes)]
-				del full_df; gc.collect()
-				t_clean = time.time()
-				st.write(f"✔️ 第2段階完了：データ洗浄 [{t_clean - t_fetch:.2f}秒]")
-				st.write("⚙️ 第3段階：並列演算・フィルタリングを実行中...")
+					# 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
+                    config_t2 = {
+                        "f1_min": float(st.session_state.f1_min), 
+                        "f1_max": float(st.session_state.f1_max),
+                        "f2_m30": float(st.session_state.f2_m30), 
+                        "f3_drop": float(st.session_state.f3_drop),
+                        "rsi_lim": effective_rsi_limit, 
+                        "vol_lim": float(vol_lim),
+                        "f5_ipo": st.session_state.f5_ipo,
+                        "f11_ex_wave3": st.session_state.f11_ex_wave3,
+                        "f6_risk": st.session_state.f6_risk,
+                        "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
+                        "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
+                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
+                        "f_vol_min": float(st.session_state.get('f_vol_min', 0.5)),
+                        "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+                    }
 
-				def scan_unit_t2_parallel(code, group, cfg, v_avg):
-				c_str = str(code)[:4]
-				c_vals = group['AdjC'].values
-				lc = c_vals[-1]
-				
-				# --- 🛡️ 鉄の掟：最優先・物理検問所（入り口で排除） ---
-				
-				# ⑥ 物理除外リスト（手動入力 ＆ 疑義注記）
-				if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]):
-					return None
+                    # 市場ターゲットの絞り込み
+                    m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
+                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','マザーズ','JASDAQ','二部']
+                    m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
+                    
+                    # 直近終値での価格フィルタリング
+                    latest_date = full_df['Date'].max()
+                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
+                    valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
+                    
+                    # 出来高カラムの特定と5日平均算出
+                    v_col = next((col for col in full_df.columns if col in ['AdjustmentVolume', 'Volume', 'AdjVo']), 'Volume')
+                    avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
-				# ⑤ IPO除外（250日未満のデータ ＝ 1年未経過銘柄を即座にシュート）
-				if cfg["f5_ipo"] and len(group) < 250:
-					return None
-					
-				# ④ 第3波終了除外（1年間の安値から3倍以上暴騰済みは手出し厳禁）
-				if cfg["f11_ex_wave3"]:
-					min_1yr = c_vals.min()
-					if lc > (min_1yr * 3.0):
-						return None
+                    df = full_df[full_df['Code'].isin(valid_codes)]
+                    t_clean = time.time()
+                    st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
+                    st.write("⚙️ 第3段階：並列演算・鉄の掟フィルタリング中...")
 
-				# ② 1ヶ月暴騰上限フィルター
-				p20 = c_vals[max(0, len(c_vals)-20)]
-				if p20 > 0 and (lc / p20) > cfg["f2_m30"]:
-					return None
-				
-				# ③ 下落率フィルター（1年内最高値からの乖離率判定）
-				h_max_1yr = c_vals.max()
-				if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)):
-					return None
+                    def scan_unit_t2_parallel(code, group, cfg, v_avg):
+                        c_str = str(code)[:4]
+                        c_vals = group['AdjC'].values
+                        lc = c_vals[-1]
+                        
+                        # --- 🛡️ 鉄の掟：物理検問所（入り口で即時排除） ---
+                        # ⑥ 物理除外リスト（手動入力 ＆ 疑義注記）
+                        if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
 
-				# --- 🌪️ 強襲ボラティリティ・バリア ---
-				rsi, atr_v, _, hist = get_fast_indicators(c_vals)
-				vol_pct = (atr_v / lc * 100) if lc > 0 else 0
-				
-				# 設定値を下回る「死んだ銘柄」を物理排除
-				if vol_pct < cfg["f_vol_min"]:
-					return None
+                        # ⑤ IPO除外（1年/250日未満のデータは索敵圏外）
+                        if cfg["f5_ipo"] and len(group) < 250: return None
+                        
+                        # ④ 第3波終了除外（1年間の安値から3倍以上暴騰済み）
+                        if cfg["f11_ex_wave3"]:
+                            min_1yr = c_vals.min()
+                            if lc > (min_1yr * 3.0): return None
+                        
+                        # ② 1ヶ月暴騰上限 ＆ ③ 下落率フィルター
+                        p20 = c_vals[max(0, len(c_vals)-20)]
+                        if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+                        if lc < group['AdjH'].max() * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-				# RSI制限（強襲モードの過熱感抑制）
-				if rsi > cfg["rsi_lim"]: return None
-				
-				# --- 📡 強襲シグナル（MACDゴールデンクロス判定） ---
-				gc_days = 0
-				if len(hist) >= 4:
-					if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-					elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-					elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-				
-				if gc_days == 0: return None # クロスが発生していなければ排除
+                        # --- 🌪️ ボラティリティ・バリア ---
+                        rsi, atr_v, _, hist = get_fast_indicators(c_vals)
+                        vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        if vol_pct < cfg["f_vol_min"]: return None
+                        if rsi > cfg["rsi_lim"]: return None
+                        
+                        # --- 📡 強襲シグナル（MACD GC判定） ---
+                        gc_days = 0
+                        if len(hist) >= 4:
+                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
+                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
+                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+                        if gc_days == 0: return None
 
-				# ⑫ ファンダメンタルズ（赤字除外）
-				if cfg["f12_ex_overvalued"]:
-					f_data = get_fundamentals(c_str)
-					if f_data and (f_data.get("op", 0) or 0) < 0: return None
-				
-				# ⚡ トリアージ情報の取得（強襲専用アルゴリズム）
-				is_assault = "狙撃優先" in cfg["tactics"]
-				t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-				
-				# 指標算出
-				h_vals = group['AdjH'].values
-				h14 = h_vals[-14:].max()
-				atr = h14 * 0.03 # 簡易ATR（強襲用）
-				
-				return {
-					'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
-					'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-					'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
-					'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
-				}
+                        # ⑫ ファンダメンタルズ（赤字除外）
+                        if cfg["f12_ex_overvalued"]:
+                            f_data = get_fundamentals(c_str)
+                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        
+                        # ⚡ トリアージ情報の取得
+                        is_assault = "狙撃優先" in cfg["tactics"]
+                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+                        
+                        h_vals = group['AdjH'].values
+                        h14 = h_vals[-14:].max()
+                        atr = h14 * 0.03
+                        
+                        return {
+                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                            'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
+                            'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
+                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
+                        }
 
-			# --- 🚀 並列実行エンジン ＆ 最終フィルタリング ---
-			results = []
-			with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-				# 指令書 config_t2 を現場へ配布
-				futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
-				for f in concurrent.futures.as_completed(futures):
-					try:
-						res = f.result()
-						if res: results.append(res)
-					except: pass
-			
-			# スコア順にソート（トリアージスコア優先、GC日数が浅い順）
-			sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
-			
-			# 🛡️ 最終セクター検問（1業種3銘柄制限 ＆ 総数30銘柄上限）
-			filtered_results = []
-			sector_counts = {}
-			for r in sorted_raw:
-				sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
-				if sector_counts.get(sector, 0) < 3:
-					filtered_results.append(r)
-					sector_counts[sector] = sector_counts.get(sector, 0) + 1
-				if len(filtered_results) >= 30: break
-			
-			# スキャン結果をセッションに保管（TAB3で召集するため）
-			st.session_state.tab2_scan_results = filtered_results
-			t_calc = time.time()
-			
-			st.write(f"✔️ 第3段階完了：並列演算・フィルタリング [{t_calc - t_clean:.2f}秒]")
-			status.update(label=f"🎯 強襲スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
+                    # --- 🚀 並列実行エンジン ---
+                    results = []
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0)) for c, g in df.groupby('Code')]
+                        for f in concurrent.futures.as_completed(futures):
+                            try:
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
+                    
+                    # トリアージ順にソート
+                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
+                    
+                    # 🛡️ 最終セクター検問（1業種3銘柄制限 ＆ 総数30銘柄上限）
+                    filtered_results = []
+                    sector_counts = {}
+                    for r in sorted_raw:
+                        sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
+                        if sector_counts.get(sector, 0) < 3:
+                            filtered_results.append(r)
+                            sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                        if len(filtered_results) >= 30: break
+                    
+                    # スキャン結果をセッションへ物理保管
+                    st.session_state.tab2_scan_results = filtered_results
+                    t_calc = time.time()
+                    
+                    st.write(f"✔️ 第3段階完了：並列演算・フィルタリング [{t_calc - t_clean:.2f}秒]")
+                    status.update(label=f"🎯 強襲スキャン完了！ (総所要時間: {t_calc - t_global_start:.2f}秒)", state="complete", expanded=False)
 
             except Exception as e:
-                st.error(f"🚨 スキャン中に内部エラーが発生しました。処理を安全に中断しました。\n詳細: {str(e)}")
+                st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                 status.update(label="🚨 エラー発生により中断", state="error")
 
     if st.session_state.tab2_scan_results:
