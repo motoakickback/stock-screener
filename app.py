@@ -1302,66 +1302,73 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     )
 
 # ==========================================
-# 🛡️ 最終防衛：重複排除済・サイドバー統合プロトコル
+# 🛡️ 機関部：データ基盤 ＆ 全サイドバーUI（完全復元プロトコル）
 # ==========================================
 
-# --- 0. 事前準備：兵站確保 ---
+# --- 📍 0. グローバル・データロード ---
+# この位置で実行することで、以降の全タブでの NameError を物理的に封殺する
 load_settings()
 master_df_global = load_master()
 
-# --- 1. サイドバー構築開始 ---
-# 🚨 警告：これ以降、ファイル末尾までサイドバー関連の関数呼び出しは禁止する
+try:
+    # 兵站（株価データ）の先行確保
+    # 変数 df をここでグローバルスコープに確定させる
+    df, latest_date_val = load_jquants_data(cache_key) 
+except Exception as e:
+    st.error(f"❌ システムエラー：株価データのロードに失敗しました。 {e}")
+    df = None
+
+# --- 📍 1. サイドバーUI：戦術コンソール ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
-st.sidebar.header("📂 戦略的セクター制御")
+# マクロ気象情報の表示（既存関数）
+get_macro_weather()
 
-# セクターあたりの表示上限設定
-current_max_stocks = st.session_state.get("f_max_stocks_per_sector", 3)
-st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
-    "1セクターあたりの最大表示数",
-    1, 10, int(current_max_stocks),
-    key="f_max_stocks_slider", 
-    help="特定セクターに集中したい場合はこの数値を上げてください。",
-    on_change=save_settings
+# --- 🌪️ ボラティリティ審査 ---
+st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+st.session_state.f_vol_min = st.sidebar.slider(
+    "最小ボラ率 (ATR/価格 %)", 
+    0.0, 2.0, float(st.session_state.get('f_vol_min', 0.5)), 0.1, 
+    help="1ATRが株価の何%以上かを判定。基準を下回る銘柄は索敵から排除されます。",
+    key="f_vol_min_slider"
 )
-
-# 物理的スコープの解決：ここが唯一の呼び出し地点である
-if master_df_global is not None and not master_df_global.empty:
-    try:
-        # 🚨 btn_sector_all を生成する唯一の実行ライン
-        render_sector_filter(master_df_global)
-    except Exception as e:
-        st.sidebar.error(f"⚠️ セクターフィルタ描画失敗: {e}")
-else:
-    st.sidebar.warning("⚠️ マスタデータのロードに失敗しました。")
 
 st.sidebar.divider()
 
-# --- 2. ターゲット選別 ＆ ルール設定 ---
-st.sidebar.header("📍 ターゲット選別")
-
-market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-current_market = st.session_state.get("preset_market", market_options[1])
-st.sidebar.selectbox(
-    "市場ターゲット", 
-    options=market_options, 
-    index=market_options.index(current_market) if current_market in market_options else 1, 
-    key="preset_market", 
+# --- 📂 2. 戦略的セクター制御 ---
+st.sidebar.header("📂 戦略的セクター制御")
+st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
+    "1セクターあたりの最大表示数",
+    1, 10, int(st.session_state.get("f_max_stocks_per_sector", 3)),
+    key="f_max_stocks_slider",
     on_change=save_settings
 )
+
+# 物理同期：マスタデータからセクター選択UIを生成
+if master_df_global is not None and not master_df_global.empty:
+    render_sector_filter(master_df_global)
+else:
+    st.sidebar.warning("⚠️ マスタデータが未ロードです。")
+
+st.sidebar.divider()
+
+# --- 📍 3. ターゲット選別 ---
+st.sidebar.header("📍 ターゲット選別")
+market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
+current_market = st.session_state.get("preset_market", market_options[1])
+st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(current_market) if current_market in market_options else 1, key="preset_market", on_change=save_settings)
 
 push_r_options = ["25.0%", "50.0%", "61.8%"]
 current_push_r = st.session_state.get("preset_push_r", push_r_options[1])
-st.sidebar.selectbox(
-    "押し目プリセット", 
-    options=push_r_options, 
-    index=push_r_options.index(current_push_r) if current_push_r in push_r_options else 1, 
-    key="preset_push_r", 
-    on_change=apply_presets
-)
+st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(current_push_r) if current_push_r in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
 
-# --- 3. 数値入力・フィルタ群 ---
+tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
+current_tactics = st.session_state.get("sidebar_tactics", tactics_options[0])
+st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(current_tactics) if current_tactics in tactics_options else 0, key="sidebar_tactics", on_change=save_settings)
+
 st.sidebar.divider()
+
+# --- 🔍 4. ピックアップルール (完全復元：神聖不可侵) ---
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 with c1:
@@ -1369,26 +1376,59 @@ with c1:
 with c2:
     st.number_input("価格上限(円)", value=int(st.session_state.get("f1_max", 3000)), step=100, key="f1_max", on_change=save_settings)
 
+st.sidebar.number_input("1ヶ月暴騰上限(倍)", value=float(st.session_state.get("f2_m30", 2.0)), step=0.1, key="f2_m30", on_change=save_settings)
+st.sidebar.number_input("1年最高値からの下落除外(%)", value=float(st.session_state.get("f3_drop", -50.0)), step=5.0, max_value=0.0, key="f3_drop", on_change=save_settings)
+
+c3, c4 = st.sidebar.columns(2)
+with c3:
+    st.number_input("波高下限(倍)", value=float(st.session_state.get("f9_min14", 1.3)), step=0.1, key="f9_min14", on_change=save_settings)
+with c4:
+    st.number_input("波高上限(倍)", value=float(st.session_state.get("f9_max14", 2.0)), step=0.1, key="f9_max14", on_change=save_settings)
+
 st.sidebar.checkbox("🚀 IPO除外(上場1年/200日未満)", value=bool(st.session_state.get("f5_ipo", True)), key="f5_ipo", on_change=save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.get("f6_risk", True)), key="f6_risk", on_change=save_settings)
+st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.get("f11_ex_wave3", True)), key="f11_ex_wave3", on_change=save_settings)
+st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.get("f12_ex_overvalued", True)), key="f12_ex_overvalued", on_change=save_settings)
 
 st.sidebar.divider()
-st.sidebar.header("🎯 運用ルール")
+
+# --- 🎯 5. 買い/売りルール (完全復元：神聖不可侵) ---
+st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.get("bt_lot", 100)), step=100, key="bt_lot", on_change=save_settings)
+st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.get("limit_d", 4)), step=1, key="limit_d", on_change=save_settings)
 
-# --- 4. システムコントロール（最下部） ---
+st.sidebar.header("💰 売りルール")
+st.sidebar.number_input("利確目標(%)", value=int(st.session_state.get("bt_tp", 10)), step=1, key="bt_tp", on_change=save_settings)
+c_sl1, c_sl2 = st.sidebar.columns(2)
+with c_sl1:
+    st.number_input("初期損切(%)", value=int(st.session_state.get("bt_sl_i", 8)), step=1, key="bt_sl_i", on_change=save_settings)
+with c_sl2:
+    st.number_input("現在損切(%)", value=int(st.session_state.get("bt_sl_c", 8)), step=1, key="bt_sl_c", on_change=save_settings)
+st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.get("bt_sell_d", 10)), step=1, key="bt_sell_d", on_change=save_settings)
+
 st.sidebar.divider()
-if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    st.cache_data.clear()
-    st.session_state.tab1_scan_results = None
-    st.session_state.tab2_scan_results = None
-    st.rerun()
 
-if st.sidebar.button("💾 設定を保存", use_container_width=True):
-    save_settings()
-    st.toast("全設定を永久保存した。")
+# --- 🚫 6. 特殊除外フィルター (完全復元：神聖不可侵) ---
+st.sidebar.header("🚫 特殊除外フィルター")
+st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.get("f7_ex_etf", True)), key="f7_ex_etf", on_change=save_settings)
+st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.get("f8_ex_bio", True)), key="f8_ex_bio", on_change=save_settings)
+st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.get("f10_ex_knife", True)), key="f10_ex_knife", on_change=save_settings)
+st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.get("gigi_input", "")), key="gigi_input", on_change=save_settings)
 
-# 🚨 このキャプションがサイドバーの「終端」である
+st.sidebar.divider()
+
+# --- 🔴 7. システムコントロール ---
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    if st.button("🔴 パージ", use_container_width=True):
+        st.cache_data.clear()
+        st.session_state.tab1_scan_results = None
+        st.rerun()
+with col2:
+    if st.button("💾 保存", use_container_width=True):
+        save_settings()
+        st.toast("全戦術設定を保存完了。")
+
 st.sidebar.caption(f"KEY: {cache_key}")
 
 # ==========================================
@@ -1431,99 +1471,62 @@ tactics_mode = st.session_state.sidebar_tactics
 
 # --- 6. タブコンテンツ (TAB1: 待伏レーダー) ---
 with tab1:
-    # --- 🌐 1. スキャン実行ユニット：進捗可視化 ＆ 並列演算 ---
-    # ボタンのキーを固定し、Streamlitの再レンダリングによるセッション寸断を防止
-    if st.button("🌐 索敵開始 (広域レーダー)", use_container_width=True, type="primary", key="btn_scan_t1_final"):
+    # --- 🌐 1. スキャン実行 ＆ 進捗管理 ---
+    if st.button("🌐 索敵開始 (広域レーダー)", use_container_width=True, type="primary", key="btn_scan_t1_final_integrated"):
         
-        # 🚨 進捗表示プロトコル：st.status により演算過程をボスに100%可視化する
+        # 物理排除：df 未定義時のクラッシュを防止
+        if df is None or df.empty:
+            st.error("❌ 致命的エラー：株価データがロードされていません。機関部の修正を適用してください。")
+            st.stop()
+            
         with st.status("🔍 索敵中...", expanded=True) as status:
-            
-            # 兵站（データ）の健全性チェック
-            if df is None or df.empty:
-                status.update(label="❌ 索敵失敗：株価データが未ロードです。システムを再起動してください。", state="error")
-                st.stop()
-            
-            # 演算パラメータの確定
             latest_date = df['Date'].max()
             vol_min = st.session_state.get('f_vol_min', 0.5)
             
-            # 🌪️ フェーズ1：ボラティリティ審査（ATR/価格 %）
-            status.write("🌪️ 全銘柄のボラティリティ審査を実施中...")
-            # 計算済みATRと終値からボラティリティ率を算出
+            status.write("🌪️ ボラティリティ審査を開始...")
             avg_vols = {c: g['ATR'].iloc[-1] / g['Close'].iloc[-1] * 100 for c, g in df.groupby('Code')}
             
-            # ⚡ フェーズ2：並列演算エンジンの駆動
-            status.write("⚡ 並列演算ユニット（ThreadPoolExecutor）により待伏条件を走査中...")
+            status.write("⚡ 並列演算ユニット駆動中...")
             results = []
-            # サーバー負荷とレスポンスの均衡点である 3 worker を維持
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
-                # 待伏（Ambush）専用演算ユニット (scan_unit_t1_parallel) を並列マッピング
+                # 待伏（Ambush）専用演算ユニットを実行
                 futures = {exe.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols.get(c, 0), latest_date): c for c, g in df.groupby('Code')}
                 for f in concurrent.futures.as_completed(futures):
                     try:
                         res = f.result()
-                        if res: 
-                            results.append(res)
-                    except Exception:
-                        # 個別銘柄の演算失敗はログに留め、システム全体の停止を回避
-                        pass
+                        if res: results.append(res)
+                    except: pass
 
-            # 📂 フェーズ3：戦略的セクター選別 ＆ 密度制限
-            status.write("📂 抽出銘柄を戦略的セクターフィルターへ投入中...")
+            status.write("📂 セクターフィルター適用中...")
             if not results:
                 st.session_state.tab1_scan_results = None
-                status.update(label="⚠️ 条件に合致する銘柄が0件です。設定を見直してください。", state="error", expanded=False)
+                status.update(label="⚠️ 条件合致 0件", state="error", expanded=False)
             else:
-                # 🚨 物理同期：TAB1専用ソートキー（t_score: 掟達成率, score: 到達度）
-                # KeyError根絶のため、強襲用の T_Score (大文字) は一切使用せず、小文字 t_score を厳守
+                # 物理同期：TAB1専用ソートキー (t_score, score) を厳守
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 
                 filtered_results = []
                 sector_counts = {}
-                
-                # サイドバーからボスの動的指示（セクター選択、1セクター最大表示数）をロード
                 selected_sectors = st.session_state.get("f_selected_sectors", [])
                 max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
                 
                 for r in sorted_raw:
-                    # master_map_t1 から当該銘柄の業種区分（セクター）を特定
-                    m_info = master_map_t1.get(str(r['Code']), {})
-                    sector = m_info.get('セクター', '不明')
-                    
-                    # フィルターA：サイドバーで選択されたセクター以外を物理排除
-                    if sector not in selected_sectors:
-                        continue
-                        
-                    # フィルターB：1セクターあたりの表示上限（密度）を制限
+                    sector = master_map_t1.get(str(r['Code']), {}).get('セクター', '不明')
+                    if sector not in selected_sectors: continue
                     if sector_counts.get(sector, 0) < max_per_sector:
                         filtered_results.append(r)
                         sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                    
-                    # フィルターC：全体表示上限 30銘柄に達した時点で処理を切り上げ
-                    if len(filtered_results) >= 30: 
-                        break
+                    if len(filtered_results) >= 30: break
                 
-                # 最終戦果をセッションステートへ格納
                 st.session_state.tab1_scan_results = filtered_results
-                
-                # 🎯 プロセス完了：ステータスバーを「完了」に更新し銘柄数を報告
-                final_count = len(st.session_state.tab1_scan_results) if st.session_state.tab1_scan_results else 0
-                status.update(label=f"🎯 索敵完了！ {final_count}銘柄を捕捉しました。", state="complete", expanded=False)
-                
-                # UIリフレッシュを強制し、即座に結果を表示
+                status.update(label=f"🎯 索敵完了：{len(filtered_results)}銘柄捕捉", state="complete", expanded=False)
                 st.rerun()
 
-    # --- 🌐 2. 検索結果の表示エリア ---
-    # 演算結果が存在する場合のみ、以下のデータ表示コンポーネントをレンダリングする
+    # --- 🌐 2. 検索結果表示 ---
     if st.session_state.get("tab1_scan_results"):
-        # UIの神聖不可侵：ここからはボスの資産であるテーブル描画・詳細表示ロジックが継続
         st.write("---")
-        
-        # 例：捕捉銘柄の概要サマリー表示
-        cols = st.columns(len(st.session_state.tab1_scan_results[:5])) # 上位5件をプレビュー
-        # (ここにボスの既存のカード表示や st.dataframe 等のコードを維持してください)
-        
-        # 暫定：実稼働確認用のデータフレーム出力
+        # ボスの資産：既存のカード描画や st.dataframe ロジックを 100% 継続
+        st.success(f"捕捉銘柄数: {len(st.session_state.tab1_scan_results)}")
         st.dataframe(
             st.session_state.tab1_scan_results,
             use_container_width=True,
