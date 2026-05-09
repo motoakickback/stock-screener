@@ -794,15 +794,17 @@ def render_sector_filter(master_df):
     """
     サイドバーにセクター別チェックボックスを動的生成する。
     全選択/全解除ボタンによるウィジェット状態の強制同期を実装。
-    注意：ID重複防止のため、スライダーはこの関数内には記述しない。
     """
     st.sidebar.markdown("#### 🏢 セクター個別選択")
     
-    if master_df is not None and not master_df.empty and 'セクター' in master_df.columns:
-        # ユニークなセクターリストを抽出（NaN排除）
-        all_sectors = sorted([s for s in master_df['セクター'].unique() if pd.notna(s)])
+    # 物理同期：'セクター'列が存在することを確認（load_masterでのリネーム済を想定）
+    sector_col = 'セクター' if 'セクター' in master_df.columns else 'Sector'
+    
+    if sector_col in master_df.columns:
+        # ユニークなセクターリストを抽出
+        all_sectors = sorted([s for s in master_df[sector_col].unique() if pd.notna(s)])
         
-        # 物理同期プロトコル：全選択・全解除ボタン
+        # 物理同期プロトコル：全選択・全解除
         col1, col2 = st.sidebar.columns(2)
         
         if col1.button("全選択", key="btn_sector_all", use_container_width=True):
@@ -823,16 +825,16 @@ def render_sector_filter(master_df):
         selected = []
         with st.sidebar.expander("セクター選択 (33業種)", expanded=False):
             for s in all_sectors:
-                # keyを一意にするため check_s_ プレフィックスを維持
+                # session_state[key] を直接参照させることで同期
                 if st.checkbox(s, key=f"check_s_{s}"):
                     selected.append(s)
         
         # 状態変更をリストに反映
-        if set(selected) != set(st.session_state.f_selected_sectors):
+        if set(selected) != set(st.session_state.get("f_selected_sectors", [])):
             st.session_state.f_selected_sectors = selected
             save_settings()
     else:
-        st.sidebar.error("⚠️ セクター情報の取得に失敗しました。")
+        st.sidebar.error("⚠️ マスタデータにセクター情報が含まれていません。")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
@@ -1343,16 +1345,41 @@ if use_macro:
 
 st.sidebar.divider()
 
-# --- 📂 1. 戦略的セクター制御 (統合座標) ---
+# --- 📂 1. 戦略的セクター制御 (スコープ解決版) ---
 st.sidebar.header("📂 戦略的セクター制御")
 
-# セクターあたりの表示上限設定（ここで一元管理）
-# key="f_max_stocks_slider" を明示し、IDを固定
+# セクターあたりの表示上限設定
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 10, int(st.session_state.get("f_max_stocks_per_sector", 3)),
-    key="f_max_stocks_slider",
+    key="f_max_stocks_slider", # ID重複を防ぐための固定キー
     help="特定セクターに集中したい場合はこの数値を上げてください。",
+    on_change=save_settings
+)
+
+# 🚨 物理修正：キャッシュから直接マスタを呼び出し、スコープ問題を根絶
+# locals()やglobals()のチェックに頼らず、キャッシュ済みの関数を直接叩くのが最適解です
+m_df_for_sidebar = load_master()
+
+if m_df_for_sidebar is not None and not m_df_for_sidebar.empty:
+    # 既存のUI関数を呼び出し
+    render_sector_filter(m_df_for_sidebar)
+else:
+    st.sidebar.error("⚠️ マスタデータのロードに失敗しました。APIまたは通信環境を確認してください。")
+
+st.sidebar.divider()
+
+# --- 📍 2. ターゲット選別 (安全化パッチ適用済) ---
+st.sidebar.header("📍 ターゲット選別")
+
+market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
+current_market = st.session_state.get("preset_market", market_options[1])
+
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    options=market_options, 
+    index=market_options.index(current_market) if current_market in market_options else 1, 
+    key="preset_market", 
     on_change=save_settings
 )
 
