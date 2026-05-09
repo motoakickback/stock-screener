@@ -777,35 +777,49 @@ def load_master():
 
 def render_sector_filter(master_df):
     """
-    サイドバーにセクター別チェックボックスを動的生成する
+    サイドバーにセクター別チェックボックスを動的生成する。
+    全選択/全解除ボタンによるウィジェット状態の強制同期を実装。
     """
     st.sidebar.markdown("### 📂 セクター選別")
+    
     if master_df is not None and not master_df.empty and 'セクター' in master_df.columns:
-        # ユニークなセクターリストを抽出
+        # ユニークなセクターリストを抽出（NaN排除）
         all_sectors = sorted([s for s in master_df['セクター'].unique() if pd.notna(s)])
         
-        # 全選択/解除ボタン
+        # 🚨 物理同期プロトコル：全選択・全解除ボタン
         col1, col2 = st.sidebar.columns(2)
+        
         if col1.button("全選択", key="btn_sector_all", use_container_width=True):
+            # 1. 状態管理用のリストを全更新
             st.session_state.f_selected_sectors = all_sectors
-            save_settings()
-            st.rerun()
-        if col2.button("全解除", key="btn_sector_none", use_container_width=True):
-            st.session_state.f_selected_sectors = []
+            # 2. 個別ウィジェットの内部状態(key)を強制的にTrueへ書き換え
+            for s in all_sectors:
+                st.session_state[f"check_s_{s}"] = True
             save_settings()
             st.rerun()
 
-        # 個別チェックボックス
+        if col2.button("全解除", key="btn_sector_none", use_container_width=True):
+            # 1. 状態管理用のリストを空に更新
+            st.session_state.f_selected_sectors = []
+            # 2. 個別ウィジェットの内部状態(key)を強制的にFalseへ書き換え
+            for s in all_sectors:
+                st.session_state[f"check_s_{s}"] = False
+            save_settings()
+            st.rerun()
+
+        # --- 個別チェックボックスの描画 ---
         selected = []
         with st.sidebar.expander("セクター選択 (33業種)", expanded=False):
             for s in all_sectors:
-                is_checked = s in st.session_state.f_selected_sectors
-                if st.checkbox(s, value=is_checked, key=f"check_s_{s}"):
+                # 🚨 重要：valueには設定値を渡し、keyで内部状態を維持する
+                # ボタン側でst.session_state[key]を直接書き換えることで、UIに即時反映される
+                if st.checkbox(s, key=f"check_s_{s}"):
                     selected.append(s)
         
-        # 状態に変更があれば即時保存
+        # チェックボックスの手動操作による状態変更をリストに反映
         if set(selected) != set(st.session_state.f_selected_sectors):
             st.session_state.f_selected_sectors = selected
+            # ここではst.rerun()を呼ばず、次回のスクリプト実行に委ねる（無限ループ防止）
             save_settings()
     else:
         st.sidebar.error("⚠️ セクター情報の取得に失敗しました。")
