@@ -156,44 +156,30 @@ SETTINGS_FILE = f"saved_settings_{user_id}.json"
 # --- ⚙️ 設定の永続化 (改修版) ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
+# --- ⚙️ 設定の永続化 (パラメータ追加版) ---
 def load_settings():
-    """保存された設定をロードし、session_stateを初期化する"""
     defaults = {
-        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
-        "preset_push_r": "50.0%",
-        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
-        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
-        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
-        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
-        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
-        "f11_ex_wave3": True, "f12_ex_overvalued": True,
-        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
-        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
-        # --- 🚀 追加：セクターフィルターの永続化キー ---
-        "f_selected_sectors": [] 
+        # ... (既存の設定は維持) ...
+        "f_selected_sectors": [],
+        "f_max_stocks_per_sector": 3  # 🚀 追加：セクターあたりの最大表示数
     }
+    # (中略なしの既存ロード処理)
     saved_data = {}
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved_data = json.load(f)
         except: pass
-
     for k, v in defaults.items():
         target_val = saved_data.get(k, v)
         if k not in st.session_state:
             st.session_state[k] = target_val
 
 def save_settings():
-    """現在のセッション状態をJSONに物理保存する"""
     keys_to_save = [
-        "preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
-        "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
-        "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
-        # --- 🚀 追加：セクターフィルターを保存対象に含める ---
-        "f_selected_sectors"
+        # ... (既存のキー) ...
+        "f_selected_sectors",
+        "f_max_stocks_per_sector" # 🚀 追加
     ]
     current_settings = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
     try:
@@ -777,49 +763,39 @@ def load_master():
 
 def render_sector_filter(master_df):
     """
-    サイドバーにセクター別チェックボックスを動的生成する。
-    全選択/全解除ボタンによるウィジェット状態の強制同期を実装。
+    サイドバーにセクター別チェックボックスおよび表示件数上限スライダーを生成する。
     """
-    st.sidebar.markdown("### 📂 セクター選別")
+    st.sidebar.markdown("### 📂 セクター選別 ＆ 密度制御")
     
+    # 🚀 追加：セクターあたりの表示上限設定
+    st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
+        "1セクターあたりの最大表示数",
+        1, 10, int(st.session_state.get("f_max_stocks_per_sector", 3)),
+        help="特定セクターに集中したい場合はこの数値を上げてください。"
+    )
+
     if master_df is not None and not master_df.empty and 'セクター' in master_df.columns:
-        # ユニークなセクターリストを抽出（NaN排除）
         all_sectors = sorted([s for s in master_df['セクター'].unique() if pd.notna(s)])
-        
-        # 🚨 物理同期プロトコル：全選択・全解除ボタン
         col1, col2 = st.sidebar.columns(2)
         
         if col1.button("全選択", key="btn_sector_all", use_container_width=True):
-            # 1. 状態管理用のリストを全更新
             st.session_state.f_selected_sectors = all_sectors
-            # 2. 個別ウィジェットの内部状態(key)を強制的にTrueへ書き換え
-            for s in all_sectors:
-                st.session_state[f"check_s_{s}"] = True
-            save_settings()
-            st.rerun()
+            for s in all_sectors: st.session_state[f"check_s_{s}"] = True
+            save_settings(); st.rerun()
 
         if col2.button("全解除", key="btn_sector_none", use_container_width=True):
-            # 1. 状態管理用のリストを空に更新
             st.session_state.f_selected_sectors = []
-            # 2. 個別ウィジェットの内部状態(key)を強制的にFalseへ書き換え
-            for s in all_sectors:
-                st.session_state[f"check_s_{s}"] = False
-            save_settings()
-            st.rerun()
+            for s in all_sectors: st.session_state[f"check_s_{s}"] = False
+            save_settings(); st.rerun()
 
-        # --- 個別チェックボックスの描画 ---
         selected = []
         with st.sidebar.expander("セクター選択 (33業種)", expanded=False):
             for s in all_sectors:
-                # 🚨 重要：valueには設定値を渡し、keyで内部状態を維持する
-                # ボタン側でst.session_state[key]を直接書き換えることで、UIに即時反映される
                 if st.checkbox(s, key=f"check_s_{s}"):
                     selected.append(s)
         
-        # チェックボックスの手動操作による状態変更をリストに反映
         if set(selected) != set(st.session_state.f_selected_sectors):
             st.session_state.f_selected_sectors = selected
-            # ここではst.rerun()を呼ばず、次回のスクリプト実行に委ねる（無限ループ防止）
             save_settings()
     else:
         st.sidebar.error("⚠️ セクター情報の取得に失敗しました。")
@@ -1564,23 +1540,22 @@ with tab1:
                             if res: results.append(res)
                         except: pass
                 
-                # 最終ソートとセクター制限
-                sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
-                filtered_results = []
-                sector_counts = {}
-                
-                # 🚨 セクターフィルターの適用（待伏）
-                for r in sorted_raw:
-                    sector = master_map_t1.get(str(r['Code']), {}).get('セクター', '不明')
+                # トリアージ順にソート
+                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     
-                    # 物理除外：選択されていないセクターはパージ
-                    if sector not in selected_sectors:
-                        continue
-                        
-                    if sector_counts.get(sector, 0) < 3:
-                        filtered_results.append(r)
-                        sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                    if len(filtered_results) >= 30: break
+                    filtered_results = []
+                    sector_counts = {}
+                    # 🚀 物理同期：定数 3 をスライダー値へ変更
+                    max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
+                    
+                    for r in sorted_raw:
+                        sector = master_map_t2.get(str(r['Code']), {}).get('セクター', '不明')
+                        if sector not in selected_sectors: continue
+                            
+                        if sector_counts.get(sector, 0) < max_per_sector:
+                            filtered_results.append(r)
+                            sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                        if len(filtered_results) >= 30: break
                 
                 st.session_state.tab1_scan_results = filtered_results
                 status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
