@@ -1956,9 +1956,70 @@ with tab2:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                 status.update(label="🚨 エラー発生により中断", state="error")
 
-	# --- 🛡️ 座標B：リアルタイム・フィルタ ＆ 報告板 ---
-    # ここは if st.button の「外」なので、スキャンが終わった後に自動で動き出します
+	# --- 🛡️ 座標B：フィルタ ＆ 報告板 (ロジックのみ最新) ---
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
+    
+    if raw_hits_t2:
+        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
+        sel_sects = st.session_state.get("f_selected_sectors", [])
+        curr_market = st.session_state.get("preset_market", "")
+        
+        light_results_t2 = []
+        sector_counts_t2 = {}
+        stats_t2 = {"total": len(raw_hits_t2), "market": 0, "theme": 0, "sector": 0}
+        
+        for r in raw_hits_t2:
+            c_code = str(r['Code'])
+            m_info = master_map_t1.get(c_code, {})
+            m_actual = str(m_info.get('Market', ''))
+            sector = str(m_info.get('Sector', '不明')).strip()
+            
+            # 検問所（ロジック維持）
+            is_prime = any(k in m_actual for k in ['プライム', '一部', 'Prime'])
+            if "大型株" in curr_market and "中小型株" not in curr_market:
+                if not is_prime: stats_t2["market"] += 1; continue
+            if "中小型株" in curr_market and "大型株" not in curr_market:
+                if is_prime: stats_t2["market"] += 1; continue
+            if target_theme_codes and c_code[:4] not in target_theme_codes:
+                stats_t2["theme"] += 1; continue
+            if sector not in sel_sects:
+                stats_t2["sector"] += 1; continue
+            
+            if sector_counts_t2.get(sector, 0) < max_p_s:
+                light_results_t2.append(r)
+                sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
+            if len(light_results_t2) >= 30: break
+
+        # --- 📡 報告板 (これだけは状況把握のために残すことを推奨します) ---
+        if not light_results_t2:
+            st.warning("⚠️ 該当銘柄 0 件")
+            with st.expander("🔍 索敵報告"):
+                st.write(f"候補:{stats_t2['total']} / 市場外:{stats_t2['market']} / テーマ外:{stats_t2['theme']} / 業種外:{stats_t2['sector']}")
+        else:
+            # 💥 ここから UI を「元のデザイン」に戻しています
+            sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
+            st.code(sab_codes_t2, language="text")
+
+            # --- 📍 座標C：【元通りのUI】描画ループ ---
+            for r in light_results_t2:
+                # 🚨 ボスの「元の表示コード」をここにそのまま置いてください。
+                # 以下は、以前のボスのUIスタイル（推定）に差し戻した例です。
+                st.divider()
+                c_code = str(r['Code'])
+                m_info = master_map_t1.get(c_code, {})
+                
+                # トリアージランクと銘柄名（元々のシンプルな横並び形式へ）
+                st.markdown(f"### <span style='color:{r['T_Color']};'>{r['T_Rank']}</span> {c_code[:4]} {m_info.get('CompanyName', '')}", unsafe_allow_html=True)
+                
+                # 元のメトリクス表示
+                col1, col2, col3, col4 = st.columns(4)
+                col1.write(f"**現在値:** ¥{r['lc']:,.1f}")
+                col2.write(f"**RSI:** {r['RSI']:.1f}")
+                col3.write(f"**ボラ:** {r['vol_pct']:.2f}%")
+                col4.write(f"**GC:** {r['GC_Days']}日前")
+                
+                # 戦略メモ
+                st.write(f"🎯 目標: ¥{r['h14']:,.1f} (±{r['atr']:,.1f})")
     
     if raw_hits_t2:
         # サイドバー設定の同期
