@@ -1231,6 +1231,13 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         key=f"{chart_key}_{int(time.time()*1000)}"
     )
 
+# ==========================================
+# 🚨 修正：データの先行確定（NameError物理根絶）
+# ==========================================
+master_df = load_master()
+# tactics_modeも、サイドバーで参照する可能性があるためここで確定
+tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
+
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
@@ -1275,6 +1282,49 @@ if use_macro:
 
 st.sidebar.divider()
 
+# ==========================================
+# 📂 1.5. 戦略的セクター制御（新兵装追加）
+# ==========================================
+st.sidebar.header("📂 戦略的セクター制御")
+
+# 1. セクター密度調整
+current_f_max = st.session_state.get("f_max_stocks_per_sector", 3)
+st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
+    "1セクターあたりの最大表示数",
+    1, 10, int(current_f_max),
+    key="f_max_stocks_slider",
+    help="特定セクターへの集中度を調整します。",
+    on_change=save_settings
+)
+
+# 2. 業種別個別選択
+if master_df is not None and not master_df.empty:
+    all_sectors = sorted(master_df['Sector'].unique().tolist())
+    if "f_selected_sectors" not in st.session_state:
+        st.session_state.f_selected_sectors = all_sectors
+
+    with st.sidebar.expander("業種別フィルター設定", expanded=False):
+        col_all, col_none = st.columns(2)
+        if col_all.button("全選択", key="btn_sec_all", use_container_width=True):
+            st.session_state.f_selected_sectors = all_sectors
+            st.rerun()
+        if col_none.button("全解除", key="btn_sec_none", use_container_width=True):
+            st.session_state.f_selected_sectors = []
+            st.rerun()
+
+        selected_list = []
+        for s in all_sectors:
+            if st.checkbox(s, value=(s in st.session_state.f_selected_sectors), key=f"cb_sec_{s}"):
+                selected_list.append(s)
+        st.session_state.f_selected_sectors = selected_list
+else:
+    st.sidebar.warning("⚠️ 業種マスタの読み込みを待機中...")
+
+st.sidebar.divider()
+
+# ==========================================
+# 📍 2. ターゲット選別（原本 100% 維持）
+# ==========================================
 st.sidebar.header("📍 ターゲット選別")
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
 st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, key="preset_market", on_change=save_settings)
@@ -1287,6 +1337,9 @@ st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=
 
 st.sidebar.divider()
 
+# ==========================================
+# 🔍 3. ピックアップルール（原本 100% 維持）
+# ==========================================
 st.sidebar.header("🔍 ピックアップルール")
 c1, c2 = st.sidebar.columns(2)
 with c1:
@@ -1310,6 +1363,9 @@ st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.ses
 
 st.sidebar.divider()
 
+# ==========================================
+# 🎯 4. 買い/売りルール（原本 100% 維持）
+# ==========================================
 st.sidebar.header("🎯 買いルール")
 st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.bt_lot), step=100, key="bt_lot", on_change=save_settings)
 st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=save_settings)
@@ -1327,6 +1383,9 @@ st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.bt
 
 st.sidebar.divider()
 
+# ==========================================
+# 🚫 5. 特殊除外フィルター（原本 100% 維持）
+# ==========================================
 st.sidebar.header("🚫 特殊除外フィルター")
 st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_etf), key="f7_ex_etf", on_change=save_settings)
 st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=save_settings)
@@ -1335,6 +1394,7 @@ st.sidebar.text_area("除外銘柄コード", value=str(st.session_state.gigi_in
 
 st.sidebar.divider()
 
+# --- システムボタン ---
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     st.cache_data.clear()
     st.session_state.tab1_scan_results = None
@@ -1371,9 +1431,6 @@ if n225_macro:
     st.session_state.macro_alert = n225_macro['status']
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
-# 🚨 修正：load_masterの実行行。すべての定義が終わったここで行う。
-master_df = load_master()
-
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】GC初動レーダー", 
@@ -1382,7 +1439,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⛺ 【戦線】交戦モニター", 
     "📁 【戦歴】交戦データベース"
 ])
-tactics_mode = st.session_state.sidebar_tactics
 
 # --- 6. タブコンテンツ (TAB1: 待伏レーダー) ---
 with tab1:
