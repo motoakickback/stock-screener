@@ -2668,23 +2668,23 @@ with tab3:
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
                     # 💥 最終結線：バッジHTML生成
-                    # --- 💥 最終結線：バッジHTML生成 ---
-					e_html = ""
-					# 判定用に4桁コードを確実に抽出（5桁コード対策）
-					c_code_4 = str(r['code'])[:4] 
-					
-					# 最新の掟を適用したイベント判定実行
-					e_alerts = check_event_mines(c_code_4, r.get('events', {}))
-					
-					# 【物理証明】7031（WWB）の場合、判定結果が空なら強制的にテスト用バッジを装填
-					if c_code_4 == "7031" and not e_alerts:
-					    e_alerts.append("🛠️ 7031 結線完了")
-					
-					for a in e_alerts:
-					    # 未来の決算・配当警告は「赤」、結線テストは「緑」で識別
-					    b_col = "#ef5350" if any(x in a for x in ["決算", "配当", "残り"]) else "#26a69a"
-					    
-					    e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
+					# --- 💥 最終結線：バッジHTML生成 ---
+                    e_html = ""
+                    # 判定用に4桁コードを確実に抽出（5桁コード対策）
+                    c_code_4 = str(r['code'])[:4] 
+
+                    # 最新の掟を適用したイベント判定実行
+                    e_alerts = check_event_mines(c_code_4, r.get('events', {}))
+
+                    # 【物理証明】7031（WWB）の場合、判定結果が空なら強制的にテスト用バッジを装填
+                    if c_code_4 == "7031" and not e_alerts:
+                        e_alerts.append("🛠️ 7031 結線完了")
+
+                    for a in e_alerts:
+                        # 未来の決算・配当警告は「赤」、結線テストは「緑」で識別
+                        b_col = "#ef5350" if any(x in a for x in ["決算", "配当", "残り"]) else "#26a69a"
+                        
+                        e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
                     # ゴールデンボックスHTML（DNA復元 ＋ e_html着弾）
                     st.markdown(f"""
