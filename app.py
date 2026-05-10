@@ -408,54 +408,64 @@ def calc_technicals(df):
 
 def check_event_mines(code, event_data=None):
     """
-    地雷警戒 ＆ カウントダウン・プロトコル（2026年5月修正版）
-    - 未来のイベント（今日〜14日後）のみを検知。
-    - 4桁コード照合を徹底し、5桁データの衝突を回避。
+    【診断モード】地雷検知センサー
+    ターミナルに生データを強制出力し、沈黙の原因を特定します。
     """
     alerts = []
-    c = str(code)[:4] # 確実に4桁でスライス
+    c = str(code)[:4]
     tz_jst = pytz.timezone('Asia/Tokyo')
     today = datetime.now(tz_jst).date()
     
+    # 🕵️ 診断1: そもそもデータは届いているか？
+    print(f"\n--- [DEBUG START: {c}] ---")
+    if not event_data:
+        print(f"❌ ERROR: {c} - event_data が空、またはNoneです。")
+    else:
+        print(f"📡 INFO: {c} - 取得キー一覧: {list(event_data.keys())}")
+
     if not event_data or not isinstance(event_data, dict):
         event_data = {}
-    
-    # 1. 🚨 配当権利落ちカウントダウン（原本の機能を維持）
-    for item in event_data.get("dividend", []):
-        d_str_raw = item.get("RecordDate")
-        if not d_str_raw: continue
-        
-        d_str = str(d_str_raw).replace("-", "").replace("/", "")[:8]
-        try:
-            target_date = datetime.strptime(d_str, "%Y%m%d").date()
-            diff = (target_date - today).days
-            # 未来のみ
-            if 0 <= diff <= 14:
-                alerts.append(f"💰 【配当】権利落ちまで残り {diff} 日 ({target_date.strftime('%m/%d')})")
-                break
-        except: pass
-        
-    # 2. 🚨 決算発表カウントダウン（未来のみ）
+
+    # 1. 配当判定
+    div_list = event_data.get("dividend", [])
+    if div_list:
+        print(f"💰 DEBUG: {c} - 配当データあり({len(div_list)}件)")
+
+    # 2. 決算判定
     earnings_list = event_data.get("earnings", [])
+    if not earnings_list:
+        print(f"⚠️ WARN: {c} - 'earnings' リストが空です。API取得失敗の可能性大。")
+    else:
+        print(f"🔥 DEBUG: {c} - 決算候補 {len(earnings_list)} 件をスキャン中...")
+
     for item in earnings_list:
-        # コードの照合（重要：4桁一致を確認）
+        # 🕵️ 診断2: キー名と中身を1件だけ晒す
+        print(f"🔍 ITEM RAW DATA: {item}")
+        
         if str(item.get("Code", ""))[:4] != c: continue
         
+        # 日付候補をすべてチェック
         d_str_raw = item.get("Date") or item.get("DisclosedDate")
-        if not d_str_raw: continue
+        
+        if not d_str_raw:
+            print(f"❌ ERROR: {c} - 日付キーが見つかりません。")
+            continue
         
         d_str = str(d_str_raw).replace("-", "").replace("/", "")[:8]
         try:
             target_date = datetime.strptime(d_str, "%Y%m%d").date()
             diff = (target_date - today).days
+            print(f"📅 CHECK: {c} - 判定日: {target_date}, 本日: {today}, 差分: {diff}日")
             
-            # 未来のみ
             if 0 <= diff <= 14:
                 day_label = "本日！" if diff == 0 else f"残り {diff} 日"
                 alerts.append(f"🔥 【決算】{day_label} ({target_date.strftime('%m/%d')})")
+                print(f"✅ HIT!!: {c} - アラート装填完了")
                 break
-        except: pass
-        
+        except Exception as e:
+            print(f"❌ PARSE ERROR: {c} - {e}")
+            
+    print(f"--- [DEBUG END: {c}] ---\n")
     return alerts
 	
 def detect_sakata_patterns(df):
