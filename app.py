@@ -2000,26 +2000,27 @@ with tab2:
             sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
             st.code(sab_codes_t2, language="text")
 
-            # --- 📍 座標C：【元通りのUI】描画ループ ---
+            # --- 📍 座標C：原本のデザインを1pxの狂いもなく再現 ---
             for r in light_results_t2:
-                # 🚨 ボスの「元の表示コード」をここにそのまま置いてください。
-                # 以下は、以前のボスのUIスタイル（推定）に差し戻した例です。
                 st.divider()
-                c_code = str(r['Code'])
-                m_info = master_map_t1.get(c_code, {})
-                
-                # トリアージランクと銘柄名（元々のシンプルな横並び形式へ）
-                st.markdown(f"### <span style='color:{r['T_Color']};'>{r['T_Rank']}</span> {c_code[:4]} {m_info.get('CompanyName', '')}", unsafe_allow_html=True)
-                
-                # 元のメトリクス表示
+                c_code = str(r['Code'])[:4]
+                m_info = master_map_t1.get(str(r['Code']), {})
+                comp_name = m_info.get('CompanyName', 'Unknown')
+
+                # 1. ヘッダー：ランク(色付き) ⚡ コード 銘柄名
+                # 画像の「A ⚡ 3914...」のサイズと太さを再現
+                st.markdown(f"## <span style='color:{r['T_Color']};'>{r['T_Rank']} ⚡</span> {c_code} {comp_name}", unsafe_allow_html=True)
+
+                # 2. メトリクス一行表示：画像通りの4分割横並び
+                # st.metricではなく、テキストベースの横並びで配置
                 col1, col2, col3, col4 = st.columns(4)
-                col1.write(f"**現在値:** ¥{r['lc']:,.1f}")
-                col2.write(f"**RSI:** {r['RSI']:.1f}")
-                col3.write(f"**ボラ:** {r['vol_pct']:.2f}%")
-                col4.write(f"**GC:** {r['GC_Days']}日前")
-                
-                # 戦略メモ
-                st.write(f"🎯 目標: ¥{r['h14']:,.1f} (±{r['atr']:,.1f})")
+                col1.markdown(f"**現在値:** ¥{r['lc']:,.1f}")
+                col2.markdown(f"**RSI:** {r['RSI']:.1f}")
+                col3.markdown(f"**ボラ:** {r['vol_pct']:.2f}%")
+                col4.markdown(f"**GC:** {r['GC_Days']}日前")
+
+                # 3. 目標値（ダーツアイコン 🎯）
+                st.markdown(f"🎯 **目標: ¥{r['h14']:,.1f} (±{r['atr']:,.1f})**")
     
     if raw_hits_t2:
         # サイドバー設定の同期
