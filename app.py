@@ -1939,29 +1939,114 @@ with tab2:
                                 if res: results.append(res)
                             except: pass
                     
-                    # トリアージ順にソート
+                    # トリアージ順にソート（ここが原材料になります）
                     sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     
-                    # 🛡️ 最終セクター検問
-                    filtered_results = []
-                    sector_counts = {}
-                    for r in sorted_raw:
-                        sector = master_map_t2.get(str(r['Code']), {}).get('Sector', '不明')
-                        if sector_counts.get(sector, 0) < 3:
-                            filtered_results.append(r)
-                            sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                        if len(filtered_results) >= 30: break
+                    # 💥 ここを修正：その場で絞り込まず、300件を「原材料」として保存
+                    st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
-                    st.session_state.tab2_scan_results = filtered_results
                     t_calc = time.time()
+                    st.write(f"✔️ 第3段階完了：並列演算・原材料確保 [{t_calc - t_clean:.2f}秒]")
                     
-                    st.write(f"✔️ 第3段階完了：並列演算・フィルタリング [{t_calc - t_clean:.2f}秒]")
-                    status.update(label=f"🎯 強襲スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
+                    # ステータス更新とリラン
+                    status.update(label=f"🎯 強襲スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                     st.rerun()
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                 status.update(label="🚨 エラー発生により中断", state="error")
+
+	# --- 🛡️ 座標B：リアルタイム・フィルタ ＆ 報告板 ---
+    # ここは if st.button の「外」なので、スキャンが終わった後に自動で動き出します
+    raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
+    
+    if raw_hits_t2:
+        # サイドバー設定の同期
+        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
+        sel_sects = st.session_state.get("f_selected_sectors", [])
+        curr_market = st.session_state.get("preset_market", "")
+        
+        light_results_t2 = []
+        sector_counts_t2 = {}
+        
+        # なぜ消えたか可視化用カウンタ
+        stats_t2 = {"total": len(raw_hits_t2), "market": 0, "theme": 0, "sector": 0}
+        
+        for r in raw_hits_t2:
+            c_code = str(r['Code'])
+            m_info = master_map_t1.get(c_code, {}) # マスタ参照
+            m_actual = str(m_info.get('Market', ''))
+            sector = str(m_info.get('Sector', '不明')).strip()
+            
+            # --- 🛡️ 検問 1: 市場ターゲット ---
+            is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
+            if "大型株" in curr_market and "中小型株" not in curr_market:
+                if not is_prime:
+                    stats_t2["market"] += 1
+                    continue
+            if "中小型株" in curr_market and "大型株" not in curr_market:
+                if is_prime:
+                    stats_t2["market"] += 1
+                    continue
+
+            # --- 🛡️ 検問 2: 戦略テーマ連動 ---
+            if target_theme_codes: 
+                if c_code[:4] not in target_theme_codes:
+                    stats_t2["theme"] += 1
+                    continue
+
+            # --- 🛡️ 検問 3: 業種フィルター ---
+            if sector not in sel_sects:
+                stats_t2["sector"] += 1
+                continue
+
+            # --- 🛡️ 検問 4: 密度制限 ---
+            if sector_counts_t2.get(sector, 0) < max_p_s:
+                light_results_t2.append(r)
+                sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
+            
+            if len(light_results_t2) >= 30: break
+
+        # --- 📡 座標B：報告板の表示 ---
+        if not light_results_t2:
+            st.warning("⚠️ **強襲条件に合致する銘柄は、現在のフィルター条件では 0 件です。**")
+            with st.expander("🔍 強襲索敵報告（なぜ捕捉できないのか？）"):
+                st.write(f"・強襲候補（原材料）: {stats_t2['total']} 銘柄")
+                if target_theme_codes:
+                    st.write(f"・テーマ選外: {stats_t2['theme']} 銘柄")
+                st.write(f"・市場ターゲット外: {stats_t2['market']} 銘柄")
+                st.write(f"・業種フィルター除外: {stats_t2['sector']} 銘柄")
+        else:
+            st.success(f"💥 **強襲ロックオン: {len(light_results_t2)} 銘柄**")
+            
+            # --- 📋 コードコピーエリア ---
+            sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
+            st.code(sab_codes_t2, language="text")
+
+            # --- 📍 座標C：描画ループ ---
+            for r in light_results_t2:
+                st.divider()
+                c_code = str(r['Code'])
+                m_info = master_map_t1.get(c_code, {})
+                
+                # デザイン・レイアウトの構築
+                col_head1, col_head2 = st.columns([1, 4])
+                with col_head1:
+                    # T_Rank (S, A, B...) を表示
+                    st.markdown(f"<span style='color:{r['T_Color']}; font-size:28px; font-weight:bold;'>{r['T_Rank']}</span>", unsafe_allow_html=True)
+                with col_head2:
+                    st.markdown(f"**{c_code[:4]} {m_info.get('CompanyName', 'Unknown')}** ({m_info.get('Sector', '---')})")
+                    st.caption(f"市場: {m_info.get('Market', '---')} | スコア: {r['T_Score']} | GC発生: {r['GC_Days']}日前")
+
+                # 指標メトリクス
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("現在値", f"¥{r['lc']:,.1f}")
+                m2.metric("RSI", f"{r['RSI']:.1f}", delta="-過熱" if r['RSI'] > 70 else None, delta_color="inverse")
+                m3.metric("ボラ(%)", f"{r['vol_pct']:.2f}%")
+                m4.metric("5日平均V", f"{r['avg_vol']:,}")
+
+                # 戦略指示
+                st.markdown(f"🎯 **迎撃指示書:** 目標価格 ¥{r['h14']:,.1f} 近辺の突破を確認せよ。 (許容誤差: ±¥{r['atr']:,.1f})")
 
     if st.session_state.tab2_scan_results:
         res_list = st.session_state.tab2_scan_results
