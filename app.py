@@ -1642,7 +1642,7 @@ with tab1:
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 
                 # 絞り込まずに保存してリラン（これで原材料が確定する）
-                st.session_state.tab1_scan_results = sorted_raw[:100] 
+                st.session_state.tab1_scan_results = sorted_raw[:300] 
                 
                 status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab1_scan_results)} 銘柄確保）", state="complete", expanded=False)
                 st.rerun()
@@ -1687,37 +1687,38 @@ with tab1:
             c_code = str(r['Code'])
             m_info = master_map_t1.get(c_code, {})
             
-            # --- 🛡️ リアルタイム・マルチフィルター（検問開始） ---
+            # --- 🛡️ 物理検問 1: 業種フィルター（最優先） ---
+            # masterの業種名と、サイドバーの選択肢を完全一致させるための正規化
+            raw_sector = str(m_info.get('Sector', '不明')).strip()
             
-            # 1. テーマフィルター (テーマが選ばれている場合)
-            if target_theme_codes:
-                if c_code[:4] not in target_theme_codes:
-                    continue
+            # 🚨 ここで「他セクター」を完全に射殺する
+            if raw_sector not in sel_sects:
+                continue
 
-            # 2. 市場ターゲット連動 (大型/中小型の物理同期)
+            # --- 🛡️ 物理検問 2: 市場ターゲット（大型/中小型） ---
             m_actual = str(m_info.get('Market', ''))
             current_market_setting = st.session_state.get("preset_market", "")
             
-            if "大型株" in current_market_setting:
-                # 大型株設定なのに、プライム/一部 以外の銘柄なら弾く
+            if "大型株" in current_market_setting and "中小型株" not in current_market_setting:
                 if not any(k in m_actual for k in ['プライム', '一部']):
                     continue
-            elif "中小型株" in current_market_setting:
-                # 中小型株設定なのに、プライム/一部 の銘柄なら弾く
+            if "中小型株" in current_market_setting and "大型株" not in current_market_setting:
                 if any(k in m_actual for k in ['プライム', '一部']):
                     continue
 
-            # 3. 業種フィルター (既存：チェックボックス連動)
-            sector = m_info.get('Sector', '不明')
-            if sector not in sel_sects:
-                continue
+            # --- 🛡️ 物理検問 3: 戦略テーマ（絞り込み） ---
+            # テーマが一つでも選択されている場合のみ発動
+            if target_theme_codes:
+                # 🚨 「情報通信」であってもテーマリストにいなければここで消える
+                # これを「緩和」したい場合は、テーマを外せば全表示されます
+                if c_code[:4] not in target_theme_codes:
+                    continue
 
-            # 4. 密度制限 ＆ 格納
-            if sector_counts.get(sector, 0) < max_p_s:
+            # --- 🛡️ 格納と密度制限 ---
+            if sector_counts.get(raw_sector, 0) < max_p_s:
                 light_results.append(r)
-                sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                sector_counts[raw_sector] = sector_counts.get(raw_sector, 0) + 1
             
-            # 全体上限 30
             if len(light_results) >= 30:
                 break
         
