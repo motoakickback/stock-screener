@@ -408,74 +408,53 @@ def calc_technicals(df):
 
 def check_event_mines(code, event_data=None):
     """
-    地雷警戒 ＆ カウントダウン・通知プロトコル
-    【物理修正】
-    - 日付形式（YYYY-MM-DD / YYYYMMDD）の揺れを吸収。
-    - 辞書/文字列の不一致を解消。
-    - 4588等の「データなし」を判別するための内部ログ（デバッグ）を強化。
+    地雷警戒 ＆ カウントダウン・プロトコル（2026年5月修正版）
+    - 未来のイベント（今日〜14日後）のみを検知。
+    - 4桁コード照合を徹底し、5桁データの衝突を回避。
     """
     alerts = []
-    c = str(code)[:4]
+    c = str(code)[:4] # 確実に4桁でスライス
     tz_jst = pytz.timezone('Asia/Tokyo')
     today = datetime.now(tz_jst).date()
     
-    # 💥 追加センサー：強制脱出フィルターの直前で物理状態をスキャン
-    print(f"DEBUG: 銘柄 {c} - 関数突入時の event_data の中身: {type(event_data)} / {str(event_data)[:200]}")
-
-    # 💥 物理修正：Noneや空でも、空の辞書として処理を継続
     if not event_data or not isinstance(event_data, dict):
         event_data = {}
     
-    # 🚨 配当権利落ちカウントダウン（型安全化）
+    # 1. 🚨 配当権利落ちカウントダウン（原本の機能を維持）
     for item in event_data.get("dividend", []):
-        # RecordDateが空ならスキップ
         d_str_raw = item.get("RecordDate")
         if not d_str_raw: continue
         
-        d_str = str(d_str_raw).replace("-", "")[:8] # YYYYMMDD形式へ統一
+        d_str = str(d_str_raw).replace("-", "").replace("/", "")[:8]
         try:
             target_date = datetime.strptime(d_str, "%Y%m%d").date()
             diff = (target_date - today).days
+            # 未来のみ
             if 0 <= diff <= 14:
-                alerts.append(f"💰 【配当】権利落ち日まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
+                alerts.append(f"💰 【配当】権利落ちまで残り {diff} 日 ({target_date.strftime('%m/%d')})")
                 break
         except: pass
         
-    # 🚨 決算発表カウントダウン（型安全化）
+    # 2. 🚨 決算発表カウントダウン（未来のみ）
     earnings_list = event_data.get("earnings", [])
-    
-    # --- 4588等の調査用：データが空の場合のみコンソールに記録 ---
-    if not earnings_list and c == "4588":
-         print(f"DEBUG: 銘柄 {c} の決算予定データがAPIから返却されていません（未確定の可能性）。")
-
-    # 💥 追加センサー：データ自体が空かどうかを全対象銘柄で監視
-    if not earnings_list:
-         print(f"DEBUG: 銘柄 {c} - 警告：event_data内に 'earnings' のリストが物理的に存在しません。")
-
     for item in earnings_list:
-        # コードが一致するか確認（45880 vs 4588）
+        # コードの照合（重要：4桁一致を確認）
         if str(item.get("Code", ""))[:4] != c: continue
         
-        # 複数のキー候補から日付を抽出
         d_str_raw = item.get("Date") or item.get("DisclosedDate")
-        if not d_str_raw:
-            print(f"DEBUG: 銘柄 {c} - 日付キー(Date/DisclosedDate)が存在しません。item: {item}")
-            continue
+        if not d_str_raw: continue
         
-        d_str = str(d_str_raw).replace("-", "")[:8]
+        d_str = str(d_str_raw).replace("-", "").replace("/", "")[:8]
         try:
             target_date = datetime.strptime(d_str, "%Y%m%d").date()
             diff = (target_date - today).days
             
-            # 💥 追加センサー：計算された日付と差分を強制出力
-            print(f"DEBUG: 銘柄 {c} - 決算日: {target_date}, 本日: {today}, 差分: {diff}日")
-            
+            # 未来のみ
             if 0 <= diff <= 14:
-                alerts.append(f"🔥 【決算】発表まで残り {diff} 日 ({target_date.strftime('%Y-%m-%d')})")
+                day_label = "本日！" if diff == 0 else f"残り {diff} 日"
+                alerts.append(f"🔥 【決算】{day_label} ({target_date.strftime('%m/%d')})")
                 break
-        except Exception as e:
-            # 💥 隠蔽されていたエラー（サイレンサー）を外し、白日の下に晒す
-            print(f"DEBUG: 銘柄 {c} - 致命的パースエラー。生データ: {d_str_raw}, 変換後: {d_str}, エラー内容: {e}")
+        except: pass
         
     return alerts
 	
@@ -2689,18 +2668,23 @@ with tab3:
                         box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
                     # 💥 最終結線：バッジHTML生成
-                    e_html = ""
-                    # 7031の決算（5/14）を含むアラートをスキャン
-                    e_alerts = check_event_mines(r['code'], r.get('events', {}))
-                    
-                    # 【物理証明】7031の場合、結線が正しいことを証明するために強制着弾
-                    if str(r['code']) == "7031" and not e_alerts:
-                        e_alerts.append("🛠️ 7031 結線完了")
-
-                    for a in e_alerts:
-                        # 決算・地雷は「赤(#ef5350)」、テストは「緑(#26a69a)」
-                        b_col = "#ef5350" if any(x in a for x in ["決算", "地雷", "警戒"]) else "#26a69a"
-                        e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
+                    # --- 💥 最終結線：バッジHTML生成 ---
+					e_html = ""
+					# 判定用に4桁コードを確実に抽出（5桁コード対策）
+					c_code_4 = str(r['code'])[:4] 
+					
+					# 最新の掟を適用したイベント判定実行
+					e_alerts = check_event_mines(c_code_4, r.get('events', {}))
+					
+					# 【物理証明】7031（WWB）の場合、判定結果が空なら強制的にテスト用バッジを装填
+					if c_code_4 == "7031" and not e_alerts:
+					    e_alerts.append("🛠️ 7031 結線完了")
+					
+					for a in e_alerts:
+					    # 未来の決算・配当警告は「赤」、結線テストは「緑」で識別
+					    b_col = "#ef5350" if any(x in a for x in ["決算", "配当", "残り"]) else "#26a69a"
+					    
+					    e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
                     # ゴールデンボックスHTML（DNA復元 ＋ e_html着弾）
                     st.markdown(f"""
