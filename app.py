@@ -1305,16 +1305,25 @@ if master_df is not None and not master_df.empty:
 
     with st.sidebar.expander("業種別フィルター設定", expanded=False):
         col_all, col_none = st.columns(2)
+        
+        # --- 🚨 修正：Keyの状態を直接支配し、UIを強制更新する ---
         if col_all.button("全選択", key="btn_sec_all", use_container_width=True):
+            for s in all_sectors:
+                st.session_state[f"cb_sec_{s}"] = True  # チェックボックスの内部状態をTrueに
             st.session_state.f_selected_sectors = all_sectors
             st.rerun()
+
         if col_none.button("全解除", key="btn_sec_none", use_container_width=True):
+            for s in all_sectors:
+                st.session_state[f"cb_sec_{s}"] = False # チェックボックスの内部状態をFalseに
             st.session_state.f_selected_sectors = []
             st.rerun()
+        # --------------------------------------------------
 
         selected_list = []
         for s in all_sectors:
-            if st.checkbox(s, value=(s in st.session_state.f_selected_sectors), key=f"cb_sec_{s}"):
+            # 内部状態（st.session_state[key]）を優先して表示
+            if st.checkbox(s, value=st.session_state.get(f"cb_sec_{s}", True), key=f"cb_sec_{s}"):
                 selected_list.append(s)
         st.session_state.f_selected_sectors = selected_list
 else:
