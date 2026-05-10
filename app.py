@@ -2130,15 +2130,21 @@ with tab3:
                         c_str = str(c).upper().strip()
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         
-                        # 📦 イベントコンテナの初期化（兵站の器）
+                        # 📦 イベントコンテナの初期化（空振りを防ぐための器）
                         events = {"dividend": [], "earnings": []}
                         
+                        # 1. APIからのデータ取得試行
                         data = get_single_data(api_code, 1)
-                        # APIからデータが取れた場合、eventsを抽出して初期値にする
                         if data and isinstance(data.get("events"), dict):
-                            events = data["events"]
-                        
-                        # --- ボスのDNA：三重フォールバック（API -> yfinance）物理行 ---
+                            # APIにデータがあれば、一旦それを取り込む
+                            api_ev = data.get("events", {})
+                            if api_ev.get("earnings"): 
+                                events["earnings"].extend(api_ev["earnings"])
+                            if api_ev.get("dividend"): 
+                                events["dividend"].extend(api_ev["dividend"])
+
+                        # 2. 三重フォールバック（価格データ補完）
+                        # ※価格が不足している場合のみ yfinance で株価を補う（ボスの掟）
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -2148,34 +2154,33 @@ with tab3:
                                     bars = []
                                     for dt, row in hist.iterrows():
                                         bars.append({
-                                            'Code': api_code,
-                                            'Date': dt.strftime('%Y-%m-%d'),
-                                            'AdjO': float(row['Open']),
-                                            'AdjH': float(row['High']),
-                                            'AdjL': float(row['Low']),
-                                            'AdjC': float(row['Close']),
+                                            'Code': api_code, 'Date': dt.strftime('%Y-%m-%d'),
+                                            'AdjO': float(row['Open']), 'AdjH': float(row['High']),
+                                            'AdjL': float(row['Low']), 'AdjC': float(row['Close']),
                                             'Volume': float(row['Volume'])
                                         })
-                                    # 💥 物理修正：eventsを空辞書で上書きせず、保持したまま価格のみ更新
                                     data = {"bars": bars}
-                                    
-                                    # 🕵️ yfinanceのinfoから決算予定を救出（API不達時の予備兵站）
-                                    info = tk.info
-                                    e_date = info.get('earningsAnnouncement') or info.get('nextEarningsDate')
-                                    if e_date:
-                                        # リスト形式で届く場合があるため抽出
-                                        if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
-                                        events["earnings"].append({"Code": api_code, "Date": str(e_date)})
-                                else:
-                                    data = None
                             except Exception:
                                 data = None
 
+                        # --- 🚨 強襲探索フェーズ：決算データがまだ空なら、株価に関わらず yfinance を強襲 ---
+                        if not events["earnings"]:
+                            try:
+                                import yfinance as yf
+                                tk_ev = yf.Ticker(c_str + ".T")
+                                info_ev = tk_ev.info
+                                # 複数の日付候補（絨毯爆撃）
+                                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
+                                if e_date:
+                                    # リスト形式で届く場合があるため、先頭を抽出
+                                    if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
+                                    events["earnings"].append({"Code": api_code, "Date": str(e_date)})
+                            except Exception:
+                                pass
+
+                        # 3. ファンダメンタルズ取得 ＆ 決算日の二重チェック（中略なし完全版）
                         f_data = get_fundamentals(c_str)
-                        r_per = None
-                        r_pbr = None
-                        r_mcap = None
-                        r_roe = None
+                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
                         if f_data:
                             # --- ボスのDNA：詳細なキー存在チェック ＆ 多重フォールバック ---
@@ -2197,53 +2202,45 @@ with tab3:
                             if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
                             if r_roe is None and f_data.get('returnOnEquity'): r_roe = f_data.get('returnOnEquity')
                             
-                            # --- ボスのDNA：ROE算出時の ni / eq 物理バリデーション ---
+                            # --- ボスのDNA：ROE算出バリデーション ---
                             if r_roe is None:
                                 try:
                                     ni = f_data.get("NetIncome")
                                     eq = f_data.get("Equity")
                                     if ni is not None and eq is not None:
-                                        ni_f = float(ni)
-                                        eq_f = float(eq)
-                                        if eq_f != 0:
-                                            r_roe = (ni_f / eq_f) * 100
-                                        else:
-                                            r_roe = 0.0
+                                        ni_f, eq_f = float(ni), float(eq)
+                                        r_roe = (ni_f / eq_f) * 100 if eq_f != 0 else 0.0
                                     else:
                                         r_roe = 0.0
                                 except Exception:
                                     r_roe = 0.0
                             
-                            # 🕵️ ファンダメンタルズ内の決算予定日も拾って events に統合
-                            e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate")
+                            # 🕵️ get_fundamentals 内の日付情報も強制統合
+                            e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate") or f_data.get("AnnouncementDate")
                             if e_date_f:
                                 events["earnings"].append({"Code": api_code, "Date": str(e_date_f)})
 
-                        # --- ボスのDNA：yfinanceによる詳細補完トラップ ---
+                        # 4. yfinanceによる最終補完トラップ（ボスのDNA）
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
                                 import yfinance as yf
                                 import time
-                                # 物理的な衝突回避：並列処理時のレートリミット弾きを防ぐ
                                 time.sleep(0.5)
                                 tk_f = yf.Ticker(c_str + ".T")
                                 info = tk_f.info
                                 if info:
-                                    if r_per is None: r_per = info.get('trailingPE')
-                                    if r_per is None: r_per = info.get('forwardPE')
+                                    if r_per is None: r_per = info.get('trailingPE') or info.get('forwardPE')
                                     if r_pbr is None: r_pbr = info.get('priceToBook')
                                     if r_mcap is None: r_mcap = info.get('marketCap')
-                                    if r_roe is None:
-                                        raw_roe = info.get('returnOnEquity')
-                                        if raw_roe is not None:
-                                            r_roe = float(raw_roe) * 100
+                                    if r_roe is None and info.get('returnOnEquity') is not None:
+                                        r_roe = float(info.get('returnOnEquity')) * 100
                             except Exception:
                                 pass
                         
-                        # 🚀 物理修正：events を7番目の戻り値として追加
+                        # 🚀 物理修正：events を7番目の戻り値として確実に返す
                         return c_str, data, r_per, r_pbr, r_mcap, r_roe, events
                     except Exception:
-                        # 異常時も空の events 構造を返して呼び出し側のクラッシュを防ぐ
+                        # 異常時も空の構造を返し、unpackエラーを防止
                         return str(c), None, None, None, None, None, {"dividend": [], "earnings": []}
 
                 raw_data_dict = {}
