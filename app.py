@@ -408,64 +408,74 @@ def calc_technicals(df):
 
 def check_event_mines(code, event_data=None):
     """
-    【診断モード】地雷検知センサー
-    ターミナルに生データを強制出力し、沈黙の原因を特定します。
+    【完全版】地雷探知レーダー（ハイブリッド・パース仕様）
+    文字列の日付と、Unixタイムスタンプ（数値）の両方に対応し、
+    未来の決算・配当日のみをバッジ化します。
     """
     alerts = []
     c = str(code)[:4]
     tz_jst = pytz.timezone('Asia/Tokyo')
     today = datetime.now(tz_jst).date()
     
-    # 🕵️ 診断1: そもそもデータは届いているか？
-    print(f"\n--- [DEBUG START: {c}] ---")
-    if not event_data:
-        print(f"❌ ERROR: {c} - event_data が空、またはNoneです。")
-    else:
-        print(f"📡 INFO: {c} - 取得キー一覧: {list(event_data.keys())}")
-
     if not event_data or not isinstance(event_data, dict):
-        event_data = {}
+        return []
 
-    # 1. 配当判定
+    # 1. 配当判定（原本の掟を継承）
     div_list = event_data.get("dividend", [])
-    if div_list:
-        print(f"💰 DEBUG: {c} - 配当データあり({len(div_list)}件)")
-
-    # 2. 決算判定
-    earnings_list = event_data.get("earnings", [])
-    if not earnings_list:
-        print(f"⚠️ WARN: {c} - 'earnings' リストが空です。API取得失敗の可能性大。")
-    else:
-        print(f"🔥 DEBUG: {c} - 決算候補 {len(earnings_list)} 件をスキャン中...")
-
-    for item in earnings_list:
-        # 🕵️ 診断2: キー名と中身を1件だけ晒す
-        print(f"🔍 ITEM RAW DATA: {item}")
+    for d in div_list:
+        if str(d.get("Code", ""))[:4] != c: continue
+        d_str_raw = d.get("Date") or d.get("DisclosedDate")
+        if not d_str_raw: continue
         
-        if str(item.get("Code", ""))[:4] != c: continue
-        
-        # 日付候補をすべてチェック
-        d_str_raw = item.get("Date") or item.get("DisclosedDate")
-        
-        if not d_str_raw:
-            print(f"❌ ERROR: {c} - 日付キーが見つかりません。")
-            continue
-        
-        d_str = str(d_str_raw).replace("-", "").replace("/", "")[:8]
         try:
-            target_date = datetime.strptime(d_str, "%Y%m%d").date()
-            diff = (target_date - today).days
-            print(f"📅 CHECK: {c} - 判定日: {target_date}, 本日: {today}, 差分: {diff}日")
+            # 🕵️ ハイブリッド・パース実行
+            target_date = None
+            d_val = str(d_str_raw).strip()
             
-            if 0 <= diff <= 14:
-                day_label = "本日！" if diff == 0 else f"残り {diff} 日"
-                alerts.append(f"🔥 【決算】{day_label} ({target_date.strftime('%m/%d')})")
-                print(f"✅ HIT!!: {c} - アラート装填完了")
-                break
-        except Exception as e:
-            print(f"❌ PARSE ERROR: {c} - {e}")
+            if d_val.isdigit() and len(d_val) >= 10:
+                # Unixタイムスタンプ形式 (10桁以上)
+                target_date = datetime.fromtimestamp(int(d_val), tz_jst).date()
+            else:
+                # 通常の日付形式 (YYYYMMDD等)
+                clean_d = d_val.replace("-", "").replace("/", "")[:8]
+                target_date = datetime.strptime(clean_d, "%Y%m%d").date()
             
-    print(f"--- [DEBUG END: {c}] ---\n")
+            if target_date:
+                diff = (target_date - today).days
+                if 0 <= diff <= 14:
+                    day_label = "本日！" if diff == 0 else f"残り {diff} 日"
+                    alerts.append(f"💰 【配当】{day_label} ({target_date.strftime('%m/%d')})")
+                    break
+        except: continue
+
+    # 2. 決算判定（未来14日間限定）
+    earnings_list = event_data.get("earnings", [])
+    for item in earnings_list:
+        if str(item.get("Code", ""))[:4] != c: continue
+        d_str_raw = item.get("Date") or item.get("DisclosedDate")
+        if not d_str_raw: continue
+        
+        try:
+            # 🕵️ ハイブリッド・パース実行
+            target_date = None
+            d_val = str(d_str_raw).strip()
+            
+            if d_val.isdigit() and len(d_val) >= 10:
+                # Unixタイムスタンプ形式 (10桁以上)
+                target_date = datetime.fromtimestamp(int(d_val), tz_jst).date()
+            else:
+                # 通常の日付形式 (YYYYMMDD等)
+                clean_d = d_val.replace("-", "").replace("/", "")[:8]
+                target_date = datetime.strptime(clean_d, "%Y%m%d").date()
+            
+            if target_date:
+                diff = (target_date - today).days
+                if 0 <= diff <= 14:
+                    day_label = "本日！" if diff == 0 else f"残り {diff} 日"
+                    alerts.append(f"🔥 【決算】{day_label} ({target_date.strftime('%m/%d')})")
+                    break
+        except: continue
+            
     return alerts
 	
 def detect_sakata_patterns(df):
