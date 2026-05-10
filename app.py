@@ -1569,16 +1569,35 @@ with tab1:
                             if res: results.append(res)
                         except: pass
                 
-                # 最終ソートとセクター制限
+                # --- 🛡️ 統合ロジック：最終ソート ＆ 戦略的セクター制限 ---
+                # 原典通りのソート順を 1px も崩さず維持
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
+                
                 filtered_results = []
                 sector_counts = {}
+                
+                # サイドバーの新兵装（スライダーとチェックボックス）から値を取得
+                max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
+                selected_sectors = st.session_state.get("f_selected_sectors", [])
+                
                 for r in sorted_raw:
+                    # 原本通りのマッピング処理
                     sector = master_map_t1.get(str(r['Code']), {}).get('Sector', '不明')
-                    if sector_counts.get(sector, 0) < 3:
+                    
+                    # 1. 業種フィルター：サイドバーでチェックが外れているセクターは即座に排除
+                    if sector not in selected_sectors:
+                        continue
+                    
+                    # 2. 密度制限：1セクターあたりの上限（スライダーで設定した値）を適用
+                    if sector_counts.get(sector, 0) < max_per_sector:
                         filtered_results.append(r)
                         sector_counts[sector] = sector_counts.get(sector, 0) + 1
-                    if len(filtered_results) >= 30: break
+                    
+                    # 3. 全体上限：原本通りの 30 銘柄で物理カット
+                    if len(filtered_results) >= 30: 
+                        break
+                
+                # ------------------------------------------------------
                 
                 st.session_state.tab1_scan_results = filtered_results
                 status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
