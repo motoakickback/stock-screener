@@ -1675,59 +1675,71 @@ with tab1:
                 st.rerun()
 
     if st.session_state.tab1_scan_results:
-        # --- 🛡️ リアルタイム表示フィルタリング（ボタンの外側に設置） ---
         raw_hits = st.session_state.tab1_scan_results
-        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3) # スライダー(1-30)
-        sel_sects = st.session_state.get("f_selected_sectors", [])   # チェックボックス
+        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
+        sel_sects = st.session_state.get("f_selected_sectors", [])
+        curr_market = st.session_state.get("preset_market", "")
         
         light_results = []
         sector_counts = {}
         
+        # 📊 状況分析用カウンタ
+        stats = {"total_raw": len(raw_hits), "market_filtered": 0, "theme_filtered": 0, "sector_filtered": 0}
+        
         for r in raw_hits:
             c_code = str(r['Code'])
             m_info = master_map_t1.get(c_code, {})
+            m_actual = str(m_info.get('Market', ''))
+            sector = str(m_info.get('Sector', '不明')).strip()
             
-            # --- 🛡️ 物理検問 1: 業種フィルター（最優先） ---
-            # masterの業種名と、サイドバーの選択肢を完全一致させるための正規化
-            raw_sector = str(m_info.get('Sector', '不明')).strip()
-            
-            # 🚨 ここで「他セクター」を完全に射殺する
-            if raw_sector not in sel_sects:
+            # --- 🛡️ 掟1: 市場検問 ---
+            is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
+            if "大型株" in curr_market and "中小型株" not in curr_market:
+                if not is_prime:
+                    stats["market_filtered"] += 1
+                    continue
+            if "中小型株" in curr_market and "大型株" not in curr_market:
+                if is_prime:
+                    stats["market_filtered"] += 1
+                    continue
+
+            # --- 🛡️ 掟2: テーマ検問 ---
+            if target_theme_codes:
+                if c_code[:4] not in target_theme_codes:
+                    stats["theme_filtered"] += 1
+                    continue
+
+            # --- 🛡️ 掟3: 業種検問 ---
+            if sector not in sel_sects:
+                stats["sector_filtered"] += 1
                 continue
 
-            # --- 🛡️ 物理検問 2: 市場ターゲット（大型/中小型） ---
-            m_actual = str(m_info.get('Market', ''))
-            current_market_setting = st.session_state.get("preset_market", "")
-            
-            if "大型株" in current_market_setting and "中小型株" not in current_market_setting:
-                if not any(k in m_actual for k in ['プライム', '一部']):
-                    continue
-            if "中小型株" in current_market_setting and "大型株" not in current_market_setting:
-                if any(k in m_actual for k in ['プライム', '一部']):
-                    continue
-
-            # --- 🛡️ 物理検問 3: 戦略テーマ（絞り込み） ---
-            # テーマが一つでも選択されている場合のみ発動
-            if target_theme_codes:
-                # 🚨 「情報通信」であってもテーマリストにいなければここで消える
-                # これを「緩和」したい場合は、テーマを外せば全表示されます
-                if c_code[:4] not in target_theme_codes:
-                    continue
-
-            # --- 🛡️ 格納と密度制限 ---
-            if sector_counts.get(raw_sector, 0) < max_p_s:
+            # --- 🛡️ 掟4: 密度制限 ---
+            if sector_counts.get(sector, 0) < max_p_s:
                 light_results.append(r)
-                sector_counts[raw_sector] = sector_counts.get(raw_sector, 0) + 1
+                sector_counts[sector] = sector_counts.get(sector, 0) + 1
             
-            if len(light_results) >= 30:
-                break
-        
-        # --- 🌐 画面描画（原本 UI 100% 維持） ---
-        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（リアルタイム・セクター連動済）")
-        
+            if len(light_results) >= 30: break
+
+        # --- 📡 状況報告板 ---
+        if not light_results:
+            st.warning("⚠️ **本日の掟に合致する銘柄は、現在のフィルター条件では 0 件です。**")
+            with st.expander("🔍 索敵報告（なぜ表示されないのか？）"):
+                st.write(f"・索敵候補（原材料）: {stats['total_raw']} 銘柄")
+                if target_theme_codes:
+                    st.write(f"・**テーマ不一致**: {stats['theme_filtered']} 銘柄（テーマ銘柄は今日は『掟』をクリアしていません）")
+                st.write(f"・市場ターゲット外: {stats['market_filtered']} 銘柄")
+                st.write(f"・業種フィルター除外: {stats['sector_filtered']} 銘柄")
+        else:
+            st.success(f"🎯 **待伏ロックオン: {len(light_results)} 銘柄**")
+            if target_theme_codes:
+                st.caption(f"💡 補足: 厳選テーマ銘柄のうち、本日の『鉄の掟』を突破した精鋭のみを表示中。")
+
+        # --- 🌐 画面描画（以下、ボスのUIコードを継続...） ---
         sab_codes = " ".join([str(r['Code'])[:4] for r in light_results if str(r['triage_rank']).startswith(('S', 'A', 'B'))])
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        st.code(sab_codes, language="text")
+        if sab_codes:
+            st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
+            st.code(sab_codes, language="text")
         
         for r in light_results:
             st.divider()
