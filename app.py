@@ -2129,7 +2129,14 @@ with tab3:
                     try:
                         c_str = str(c).upper().strip()
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
+                        
+                        # 📦 イベントコンテナの初期化（兵站の器）
+                        events = {"dividend": [], "earnings": []}
+                        
                         data = get_single_data(api_code, 1)
+                        # APIからデータが取れた場合、eventsを抽出して初期値にする
+                        if data and isinstance(data.get("events"), dict):
+                            events = data["events"]
                         
                         # --- ボスのDNA：三重フォールバック（API -> yfinance）物理行 ---
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
@@ -2149,7 +2156,16 @@ with tab3:
                                             'AdjC': float(row['Close']),
                                             'Volume': float(row['Volume'])
                                         })
-                                    data = {"bars": bars, "events": {"dividend": [], "earnings": []}}
+                                    # 💥 物理修正：eventsを空辞書で上書きせず、保持したまま価格のみ更新
+                                    data = {"bars": bars}
+                                    
+                                    # 🕵️ yfinanceのinfoから決算予定を救出（API不達時の予備兵站）
+                                    info = tk.info
+                                    e_date = info.get('earningsAnnouncement') or info.get('nextEarningsDate')
+                                    if e_date:
+                                        # リスト形式で届く場合があるため抽出
+                                        if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
+                                        events["earnings"].append({"Code": api_code, "Date": str(e_date)})
                                 else:
                                     data = None
                             except Exception:
@@ -2197,6 +2213,11 @@ with tab3:
                                         r_roe = 0.0
                                 except Exception:
                                     r_roe = 0.0
+                            
+                            # 🕵️ ファンダメンタルズ内の決算予定日も拾って events に統合
+                            e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate")
+                            if e_date_f:
+                                events["earnings"].append({"Code": api_code, "Date": str(e_date_f)})
 
                         # --- ボスのDNA：yfinanceによる詳細補完トラップ ---
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
@@ -2218,9 +2239,12 @@ with tab3:
                                             r_roe = float(raw_roe) * 100
                             except Exception:
                                 pass
-                        return c_str, data, r_per, r_pbr, r_mcap, r_roe
+                        
+                        # 🚀 物理修正：events を7番目の戻り値として追加
+                        return c_str, data, r_per, r_pbr, r_mcap, r_roe, events
                     except Exception:
-                        return str(c), None, None, None, None, None
+                        # 異常時も空の events 構造を返して呼び出し側のクラッシュを防ぐ
+                        return str(c), None, None, None, None, None, {"dividend": [], "earnings": []}
 
                 raw_data_dict = {}
                 import concurrent.futures
@@ -2228,8 +2252,16 @@ with tab3:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe = f.result()
-                            raw_data_dict[str(res_c)] = {"data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe}
+                            # 🚀 物理修正：7つ目の戻り値 res_events を受取
+                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe, res_events = f.result()
+                            raw_data_dict[str(res_c)] = {
+                                "data": res_data, 
+                                "per": r_per, 
+                                "pbr": r_pbr, 
+                                "mcap": r_mcap, 
+                                "roe": r_roe,
+                                "events": res_events # 📦 eventsを辞書に物理保存
+                            }
                         except Exception:
                             continue
 
@@ -2297,12 +2329,16 @@ with tab3:
                             except Exception:
                                 pass
 
+                        # 🕵️ 兵站確認：events データの確定
+                        curr_events = raw_s.get("events", {"dividend": [], "earnings": []})
+
                         if not bars or len(bars) < 20:
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False
+                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
+                                'events': curr_events # 📦 兵站不足時も空の器を渡す
                             })
                             continue
 
@@ -2314,26 +2350,16 @@ with tab3:
                         
                         if df_s.empty or len(df_s) < 20:
                             scope_results.append({
-                                'code': target_key,
-                                'name': c_name,
+                                'code': target_key, 'name': c_name,
                                 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀',
-                                'bg': '#616161',
-                                'score': 0,
-                                'reach_val': 0,
-                                'gc_days': 0,
+                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
                                 'df_chart': pd.DataFrame(),
-                                'per': res_per,
-                                'pbr': res_pbr,
-                                'roe': res_roe,
-                                'mcap': res_mcap_str,
+                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                                 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector,
-                                'market': c_market,
+                                'sector': c_sector, 'market': c_market,
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
-                                'error': True,
-                                'is_deep': False,
-								'events': (raw_s.get('data') or {}).get('events', {})
+                                'error': True, 'is_deep': False,
+                                'events': curr_events # 📦 破損時も器を渡す
                             })
                             continue
 
