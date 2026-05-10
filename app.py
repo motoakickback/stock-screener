@@ -1957,6 +1957,8 @@ with tab2:
                 status.update(label="🚨 エラー発生により中断", state="error")
 
 	# --- 🛡️ 座標B：フィルタ ＆ 報告板 (ロジックのみ最新) ---
+    # === ここから上書き開始 ===
+    # --- 🛡️ 座標B：リアルタイム・フィルター ＆ 報告板 ---
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
     if raw_hits_t2:
@@ -1974,8 +1976,8 @@ with tab2:
             m_actual = str(m_info.get('Market', ''))
             sector = str(m_info.get('Sector', '不明')).strip()
             
-            # 検問所（ロジック維持）
-            is_prime = any(k in m_actual for k in ['プライム', '一部', 'Prime'])
+            # --- 検問ロジック ---
+            is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
             if "大型株" in curr_market and "中小型株" not in curr_market:
                 if not is_prime: stats_t2["market"] += 1; continue
             if "中小型株" in curr_market and "大型株" not in curr_market:
@@ -1984,181 +1986,60 @@ with tab2:
                 stats_t2["theme"] += 1; continue
             if sector not in sel_sects:
                 stats_t2["sector"] += 1; continue
-            
+
             if sector_counts_t2.get(sector, 0) < max_p_s:
                 light_results_t2.append(r)
                 sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
             if len(light_results_t2) >= 30: break
 
-        # --- 📡 報告板 (これだけは状況把握のために残すことを推奨します) ---
+        # --- 📡 状況報告板 ---
         if not light_results_t2:
-            st.warning("⚠️ 該当銘柄 0 件")
-            with st.expander("🔍 索敵報告"):
-                st.write(f"候補:{stats_t2['total']} / 市場外:{stats_t2['market']} / テーマ外:{stats_t2['theme']} / 業種外:{stats_t2['sector']}")
-        else:
-            # 💥 ここから UI を「元のデザイン」に戻しています
-            sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
-            st.code(sab_codes_t2, language="text")
-
-            # --- 📍 座標C：原本のデザインを1pxの狂いもなく再現 ---
-            for r in light_results_t2:
-                st.divider()
-                c_code = str(r['Code'])[:4]
-                m_info = master_map_t1.get(str(r['Code']), {})
-                comp_name = m_info.get('CompanyName', 'Unknown')
-
-                # 1. ヘッダー：ランク(色付き) ⚡ コード 銘柄名
-                # 画像の「A ⚡ 3914...」のサイズと太さを再現
-                st.markdown(f"## <span style='color:{r['T_Color']};'>{r['T_Rank']} ⚡</span> {c_code} {comp_name}", unsafe_allow_html=True)
-
-                # 2. メトリクス一行表示：画像通りの4分割横並び
-                # st.metricではなく、テキストベースの横並びで配置
-                col1, col2, col3, col4 = st.columns(4)
-                col1.markdown(f"**現在値:** ¥{r['lc']:,.1f}")
-                col2.markdown(f"**RSI:** {r['RSI']:.1f}")
-                col3.markdown(f"**ボラ:** {r['vol_pct']:.2f}%")
-                col4.markdown(f"**GC:** {r['GC_Days']}日前")
-
-                # 3. 目標値（ダーツアイコン 🎯）
-                st.markdown(f"🎯 **目標: ¥{r['h14']:,.1f} (±{r['atr']:,.1f})**")
-    
-    if raw_hits_t2:
-        # サイドバー設定の同期
-        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
-        sel_sects = st.session_state.get("f_selected_sectors", [])
-        curr_market = st.session_state.get("preset_market", "")
-        
-        light_results_t2 = []
-        sector_counts_t2 = {}
-        
-        # なぜ消えたか可視化用カウンタ
-        stats_t2 = {"total": len(raw_hits_t2), "market": 0, "theme": 0, "sector": 0}
-        
-        for r in raw_hits_t2:
-            c_code = str(r['Code'])
-            m_info = master_map_t1.get(c_code, {}) # マスタ参照
-            m_actual = str(m_info.get('Market', ''))
-            sector = str(m_info.get('Sector', '不明')).strip()
-            
-            # --- 🛡️ 検問 1: 市場ターゲット ---
-            is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
-            if "大型株" in curr_market and "中小型株" not in curr_market:
-                if not is_prime:
-                    stats_t2["market"] += 1
-                    continue
-            if "中小型株" in curr_market and "大型株" not in curr_market:
-                if is_prime:
-                    stats_t2["market"] += 1
-                    continue
-
-            # --- 🛡️ 検問 2: 戦略テーマ連動 ---
-            if target_theme_codes: 
-                if c_code[:4] not in target_theme_codes:
-                    stats_t2["theme"] += 1
-                    continue
-
-            # --- 🛡️ 検問 3: 業種フィルター ---
-            if sector not in sel_sects:
-                stats_t2["sector"] += 1
-                continue
-
-            # --- 🛡️ 検問 4: 密度制限 ---
-            if sector_counts_t2.get(sector, 0) < max_p_s:
-                light_results_t2.append(r)
-                sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
-            
-            if len(light_results_t2) >= 30: break
-
-        # --- 📡 座標B：報告板の表示 ---
-        if not light_results_t2:
-            st.warning("⚠️ **強襲条件に合致する銘柄は、現在のフィルター条件では 0 件です。**")
-            with st.expander("🔍 強襲索敵報告（なぜ捕捉できないのか？）"):
-                st.write(f"・強襲候補（原材料）: {stats_t2['total']} 銘柄")
-                if target_theme_codes:
-                    st.write(f"・テーマ選外: {stats_t2['theme']} 銘柄")
-                st.write(f"・市場ターゲット外: {stats_t2['market']} 銘柄")
-                st.write(f"・業種フィルター除外: {stats_t2['sector']} 銘柄")
+            st.warning("⚠️ **強襲条件に合致する銘柄は 0 件です。**")
+            with st.expander("🔍 強襲索敵報告"):
+                st.write(f"原材料:{stats_t2['total']} / テーマ外:{stats_t2['theme']} / 市場外:{stats_t2['market']} / 業種外:{stats_t2['sector']}")
         else:
             st.success(f"💥 **強襲ロックオン: {len(light_results_t2)} 銘柄**")
-            
-            # --- 📋 コードコピーエリア ---
             sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
             st.code(sab_codes_t2, language="text")
 
-            # --- 📍 座標C：描画ループ ---
+            # --- 📍 座標C：原本デザインの完全適用 ---
             for r in light_results_t2:
                 st.divider()
-                c_code = str(r['Code'])
-                m_info = master_map_t1.get(c_code, {})
+                def safe_int(x):
+                    try: return int(float(x)) if not pd.isna(x) else 0
+                    except: return 0
+
+                c_code = str(r['Code']); m_info = master_map_t2.get(c_code, {})
+                m_lower = str(m_info.get('Market', '')).lower()
+                if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
                 
-                # デザイン・レイアウトの構築
-                col_head1, col_head2 = st.columns([1, 4])
-                with col_head1:
-                    # T_Rank (S, A, B...) を表示
-                    st.markdown(f"<span style='color:{r['T_Color']}; font-size:28px; font-weight:bold;'>{r['T_Rank']}</span>", unsafe_allow_html=True)
-                with col_head2:
-                    st.markdown(f"**{c_code[:4]} {m_info.get('CompanyName', 'Unknown')}** ({m_info.get('Sector', '---')})")
-                    st.caption(f"市場: {m_info.get('Market', '---')} | スコア: {r['T_Score']} | GC発生: {r['GC_Days']}日前")
+                t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
+                sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
+                vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
 
-                # 指標メトリクス
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("現在値", f"¥{r['lc']:,.1f}")
-                m2.metric("RSI", f"{r['RSI']:.1f}", delta="-過熱" if r['RSI'] > 70 else None, delta_color="inverse")
-                m3.metric("ボラ(%)", f"{r['vol_pct']:.2f}%")
-                m4.metric("5日平均V", f"{r['avg_vol']:,}")
-
-                # 戦略指示
-                st.markdown(f"🎯 **迎撃指示書:** 目標価格 ¥{r['h14']:,.1f} 近辺の突破を確認せよ。 (許容誤差: ±¥{r['atr']:,.1f})")
-
-    if st.session_state.tab2_scan_results:
-        res_list = st.session_state.tab2_scan_results
-        st.success(f"⚡ 強襲ロックオン: GC発動(3日以内) 上位 {len(res_list)} 銘柄（セクター分散適用済）")
-        
-        sab_codes = " ".join([str(r['Code'])[:4] for r in res_list if str(r['T_Rank']).startswith(('S', 'A', 'B'))])
-        st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
-        st.code(sab_codes, language="text")
-
-        for r in res_list:
-            st.divider()
-            # 🚨 防弾：UIループ中のNaNクラッシュを根絶する解毒関数
-            def safe_int(x):
-                try: return int(float(x)) if not pd.isna(x) else 0
-                except: return 0
-
-            c_code = str(r['Code']); m_info = master_map_t2.get(c_code, {})
-            m_lower = str(m_info.get('Market', '')).lower()
-            if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-            elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-            else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
-            
-            t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
-            sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
-            
-            # ボラティリティバッジ（🚨 新設）
-            vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
-
-            st.markdown(f"""
-                <div style="margin-bottom: 0.8rem;">
-                    <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                        {badge_html}{t_badge}{sector_badge}{vol_badge}
-                        <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
-                        <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
+                st.markdown(f"""
+                    <div style="margin-bottom: 0.8rem;">
+                        <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                            {badge_html}{t_badge}{sector_badge}{vol_badge}
+                            <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
+                            <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
+                        </div>
                     </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # 🚨 防弾：全て safe_int で保護
-            lc_v, h14_v, atr_v = safe_int(r.get('lc', 0)), safe_int(r.get('h14', 0)), safe_int(r.get('atr', 0))
-            t_price = max(h14_v, lc_v + int(atr_v * 0.5))
-            d_price = t_price - atr_v
-            
-            m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            m_cols[0].metric("最新終値", f"{lc_v:,}円")
-            m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
-            m_cols[2].metric("ボラ(推定)", f"{atr_v:,}円")
-            m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
-            m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+                
+                lc_v, h14_v, atr_v = safe_int(r.get('lc', 0)), safe_int(r.get('h14', 0)), safe_int(r.get('atr', 0))
+                t_price = max(h14_v, lc_v + int(atr_v * 0.5))
+                d_price = t_price - atr_v
+                
+                m_cols = st.columns([1, 1, 1, 1.2, 1.5])
+                m_cols[0].metric("最新終値", f"{lc_v:,}円")
+                m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
+                m_cols[2].metric("ボラ(推定)", f"{atr_v:,}円")
+                m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
+                m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
             
 # --- 8. タブコンテンツ (TAB3: 精密スコープ) ---
 with tab3:
