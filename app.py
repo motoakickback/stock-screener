@@ -1238,6 +1238,36 @@ master_df = load_master()
 # tactics_modeも、サイドバーで参照する可能性があるためここで確定
 tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
 
+# ==========================================
+# 🎯 2026年式：戦略テーマ・ハイブリッド辞書
+# ==========================================
+PRESET_THEMES = {
+    "🤖 AI・DX統合": [
+        # プライム（主力）
+        "8035", "6857", "6723", "6758", "9432", "9984", 
+        # 中小型（爆発力）
+        "4393", "4488", "4475", "9553", "3993", "4011", "5574", "5595", "3655"
+    ],
+    "⚡ データセンター/電力/銅": [
+        # プライム（主力）
+        "3778", "9501", "9508", "6501", "5803", "5802", "9502", "9503",
+        # 中小型（爆発力）
+        "6255", "6617", "1407", "9519", "3853", "9338"
+    ],
+    "🏗️ 半導体/次世代装置": [
+        # プライム（主力）
+        "6146", "6920", "7735", "6315", "6871", "4063",
+        # 中小型（爆発力）
+        "6227", "6323", "3498", "6627", "6525"
+    ],
+    "🚀 防衛/宇宙/セキュリティ": [
+        # プライム（主力）
+        "7011", "7012", "7013", "6503",
+        # 中小型（爆発力）
+        "4274", "5597", "2326", "4493"
+    ]
+}
+
 # --- 4. サイドバー UI（原典 100% 復旧） ---
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
@@ -1296,6 +1326,35 @@ st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     help="特定セクターへの集中度を調整します。",
     on_change=save_settings
 )
+
+st.sidebar.divider()
+st.sidebar.header("🎯 戦略テーマ選別")
+
+# 1. プリセット選択
+selected_themes = st.sidebar.multiselect(
+    "注目テーマ（複数選択可）",
+    options=list(PRESET_THEMES.keys()),
+    default=[],
+    help="選択したテーマの銘柄のみを抽出します。"
+)
+
+# 2. 手動追加（緊急用）
+custom_theme_input = st.sidebar.text_input(
+    "手動コード追加 (例: 9501, 3778)",
+    value="",
+    help="リストにない期待銘柄を即座に追加できます。"
+)
+
+# ターゲットコードの統合（重複排除）
+target_theme_codes = set()
+for t in selected_themes:
+    target_theme_codes.update(PRESET_THEMES[t])
+
+if custom_theme_input:
+    custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
+    target_theme_codes.update(custom_list)
+
+st.sidebar.divider()
 
 # 2. 業種別個別選択
 if master_df is not None and not master_df.empty:
@@ -1625,19 +1684,40 @@ with tab1:
         sector_counts = {}
         
         for r in raw_hits:
-            # 業種を特定
-            sector = master_map_t1.get(str(r['Code']), {}).get('Sector', '不明')
+            c_code = str(r['Code'])
+            m_info = master_map_t1.get(c_code, {})
             
-            # 1. 業種チェック：外れているセクターは除外
+            # --- 🛡️ リアルタイム・マルチフィルター（検問開始） ---
+            
+            # 1. テーマフィルター (テーマが選ばれている場合)
+            if target_theme_codes:
+                if c_code[:4] not in target_theme_codes:
+                    continue
+
+            # 2. 市場ターゲット連動 (大型/中小型の物理同期)
+            m_actual = str(m_info.get('Market', ''))
+            current_market_setting = st.session_state.get("preset_market", "")
+            
+            if "大型株" in current_market_setting:
+                # 大型株設定なのに、プライム/一部 以外の銘柄なら弾く
+                if not any(k in m_actual for k in ['プライム', '一部']):
+                    continue
+            elif "中小型株" in current_market_setting:
+                # 中小型株設定なのに、プライム/一部 の銘柄なら弾く
+                if any(k in m_actual for k in ['プライム', '一部']):
+                    continue
+
+            # 3. 業種フィルター (既存：チェックボックス連動)
+            sector = m_info.get('Sector', '不明')
             if sector not in sel_sects:
                 continue
-            
-            # 2. 密度制限：1業種あたりの表示上限を適用（30件全集中もここで実現）
+
+            # 4. 密度制限 ＆ 格納
             if sector_counts.get(sector, 0) < max_p_s:
                 light_results.append(r)
                 sector_counts[sector] = sector_counts.get(sector, 0) + 1
             
-            # 3. 全体表示：原本通り 30 銘柄で物理カット
+            # 全体上限 30
             if len(light_results) >= 30:
                 break
         
