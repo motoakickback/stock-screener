@@ -1287,11 +1287,11 @@ st.sidebar.divider()
 # ==========================================
 st.sidebar.header("📂 戦略的セクター制御")
 
-# 1. セクター密度調整
+# 1. セクター密度調整（30銘柄対応版）
 current_f_max = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
-    1, 10, int(current_f_max),
+    1, 30, int(current_f_max), # 10から30へ拡張
     key="f_max_stocks_slider",
     help="特定セクターへの集中度を調整します。",
     on_change=save_settings
@@ -1570,11 +1570,14 @@ with tab1:
                         except: pass
                 
                 # --- 🛡️ 統合ロジック：最終ソート ＆ 戦略的セクター制限 ---
-                # 原典通りのソート順を 1px も崩さず維持
+                # --- 🛡️ 索敵段階：原材料（候補）を 100 件確保するだけにする ---
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 
-                filtered_results = []
-                sector_counts = {}
+                # 絞り込まずに保存してリラン（これで原材料が確定する）
+                st.session_state.tab1_scan_results = sorted_raw[:100] 
+                
+                status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab1_scan_results)} 銘柄確保）", state="complete", expanded=False)
+                st.rerun()
                 
                 # サイドバーの新兵装（スライダーとチェックボックス）から値を取得
                 max_per_sector = st.session_state.get("f_max_stocks_per_sector", 3)
@@ -1604,8 +1607,33 @@ with tab1:
                 st.rerun()
 
     if st.session_state.tab1_scan_results:
-        light_results = st.session_state.tab1_scan_results
-        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（マクロ連動・セクター分散適用済）")
+        # --- 🛡️ リアルタイム表示フィルタリング（ボタンの外側に設置） ---
+        raw_hits = st.session_state.tab1_scan_results
+        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3) # スライダー(1-30)
+        sel_sects = st.session_state.get("f_selected_sectors", [])   # チェックボックス
+        
+        light_results = []
+        sector_counts = {}
+        
+        for r in raw_hits:
+            # 業種を特定
+            sector = master_map_t1.get(str(r['Code']), {}).get('Sector', '不明')
+            
+            # 1. 業種チェック：外れているセクターは除外
+            if sector not in sel_sects:
+                continue
+            
+            # 2. 密度制限：1業種あたりの表示上限を適用（30件全集中もここで実現）
+            if sector_counts.get(sector, 0) < max_p_s:
+                light_results.append(r)
+                sector_counts[sector] = sector_counts.get(sector, 0) + 1
+            
+            # 3. 全体表示：原本通り 30 銘柄で物理カット
+            if len(light_results) >= 30:
+                break
+        
+        # --- 🌐 画面描画（原本 UI 100% 維持） ---
+        st.success(f"🎯 待伏ロックオン: {len(light_results)} 銘柄（リアルタイム・セクター連動済）")
         
         sab_codes = " ".join([str(r['Code'])[:4] for r in light_results if str(r['triage_rank']).startswith(('S', 'A', 'B'))])
         st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
@@ -1613,13 +1641,15 @@ with tab1:
         
         for r in light_results:
             st.divider()
-            # 🚨 防弾：UIループ中のNaNクラッシュを根絶する解読関数
+            # 🚨 防弾：UIループ中のNaNクラッシュを根絶する解読関数（原本維持）
             def safe_int(x):
                 try: return int(float(x)) if not pd.isna(x) else 0
                 except: return 0
 
             c_code = str(r['Code']); m_info = master_map_t1.get(c_code, {})
             m_lower = str(m_info.get('Market', '')).lower()
+            
+            # バッジ生成ロジック（原本 100% 維持）
             if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
             elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
             else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
@@ -1629,8 +1659,6 @@ with tab1:
             score_val = safe_int(r["score"]); score_color = "#26a69a" if score_val >= 8 else "#ff5722"; score_bg = "rgba(38, 166, 154, 0.15)" if score_val >= 8 else "rgba(255, 87, 34, 0.15)"
             score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
-            
-            # ボラティリティバッジ（🚨 新設）
             vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
             
             st.markdown(f"""
@@ -1645,7 +1673,6 @@ with tab1:
             """, unsafe_allow_html=True)
             
             m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-            # 🚨 防弾：全て safe_int で保護
             m_cols[0].metric("直近高値", f"{safe_int(r['high_4d']):,}円")
             m_cols[1].metric("起点安値", f"{safe_int(r['low_14d']):,}円")
             m_cols[2].metric("最新終値", f"{safe_int(r['lc']):,}円")
