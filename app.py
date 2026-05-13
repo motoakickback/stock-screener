@@ -150,134 +150,56 @@ if "login_time" not in st.session_state:
 
 st.write(f"⏱ 経過時間: {time.time() - st.session_state.login_time:.2f}秒")
 
-# ==========================================
-# 💾 1.1. 設定永続化エンジン（Iron Rule System 2026）
-# ==========================================
-SETTINGS_FILE = "settings.json"
+# --- ⚙️ 設定の永続化 ---
+SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
-    """起動時に settings.json から値を読み込み、session_state を初期化する"""
     defaults = {
-        "f1_min": 0.5,                  # 強襲：接近閾値(%)
-        "f_max_stocks_per_sector": 3,   # セクター表示制限
-        "f_vol_min": 0.5,               # ボラティリティ下限
-        "f1_min_price": 100,            # 価格下限
-        "f1_max_price": 10000,          # 価格上限
-        "f2_m30": 1.5,                  # 1ヶ月暴騰上限
-        "f3_drop": -15.0,               # 下落率フィルター
-        "f5_ipo": True,                 # IPO除外フラグ
-        "f11_ex_wave3": True,           # 第3波終了除外
-        "f6_risk": True,                # 疑義銘柄除外
-        "f12_ex_overvalued": True,      # 赤字除外フラグ
-        "bt_sl_c": 8.0,                 # 損切許容率
-        "sidebar_tactics": "⚖️ バランス"   # 戦術モード
+        "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
+        "preset_push_r": "50.0%",
+        "sidebar_tactics": "⚖️ バランス (掟達成率 ＞ 到達度)",
+        "push_r": 50.0, "limit_d": 4, "bt_lot": 100, "bt_tp": 10, "bt_sl_i": 8, "bt_sl_c": 8, "bt_sell_d": 10,
+        "f1_min": 200, "f1_max": 3000, "f2_m30": 2.0, "f3_drop": -50.0,
+        "f5_ipo": True, "f6_risk": True, "f7_ex_etf": True, "f8_ex_bio": True,
+        "f9_min14": 1.3, "f9_max14": 2.0, "f10_ex_knife": True,
+        "f11_ex_wave3": True, "f12_ex_overvalued": True,
+        "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
+        "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
     }
-    
+    saved_data = {}
     if os.path.exists(SETTINGS_FILE):
         try:
-            with open(SETTINGS_FILE, "r") as f:
-                saved = json.load(f)
-                defaults.update(saved)
-        except Exception:
-            pass 
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved_data = json.load(f)
+        except: pass
 
-    # session_state への展開
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
+    for k, v in defaults.items():
+        target_val = saved_data.get(k, v)
+        if k not in st.session_state:
+            st.session_state[k] = target_val
 
-def save_settings_to_disk():
-    """現在の session_state を JSON に保存する（ボタン押下時に実行）"""
+def save_settings():
     keys_to_save = [
-        "f1_min", "f_max_stocks_per_sector", "f_vol_min", "f1_min_price", 
-        "f1_max_price", "f2_m30", "f3_drop", "f5_ipo", "f11_ex_wave3", 
-        "f6_risk", "f12_ex_overvalued", "bt_sl_c", "sidebar_tactics"
+        "preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
+        "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
+        "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
+        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"
     ]
-    configs = {k: st.session_state.get(k) for k in keys_to_save}
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(configs, f)
+    current_settings = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
+    except: pass
 
-# 起動時に自動ロードを実行
+def apply_presets():
+    p_rate = st.session_state.get("preset_push_r", "50.0%")
+    if p_rate == "25.0%": st.session_state.push_r = 25.0
+    elif p_rate == "50.0%": st.session_state.push_r = 50.0
+    elif p_rate == "61.8%": st.session_state.push_r = 61.8
+    save_settings()
+
 load_settings()
-
-# ==========================================
-# ⚙️ 1.2. テクニカル計算機関 (Technical Engine) - ボス正典準拠
-# ==========================================
-
-def get_fast_indicators(close_vals):
-    """
-    高速演算用：RSI、ATR(簡易)、MACDヒストグラムを算出
-    close_vals: numpy array
-    """
-    if len(close_vals) < 30:
-        return 50.0, 0.0, 0.0, np.zeros_like(close_vals)
-
-    # --- RSI (14日) ---
-    delta = np.diff(close_vals)
-    gain = (delta > 0) * delta
-    loss = (delta < 0) * -delta
-    avg_gain = np.convolve(gain, np.ones(14)/14, mode='valid')
-    avg_loss = np.convolve(loss, np.ones(14)/14, mode='valid')
-    # ゼロ除算回避
-    rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss!=0)
-    rsi = 100 - (100 / (1 + rs))[-1]
-
-    # --- ATR (簡易：14日ボラティリティ) ---
-    atr = np.std(close_vals[-14:]) 
-
-    # --- MACD (12, 26, 9) ---
-    def ema(data, window):
-        alpha = 2 / (window + 1)
-        return pd.Series(data).ewm(alpha=alpha, adjust=False).mean().values
-
-    ema12 = ema(close_vals, 12)
-    ema26 = ema(close_vals, 26)
-    macd_line = ema12 - ema26
-    signal_line = ema(macd_line, 9)
-    hist = macd_line - signal_line
-
-    return rsi, atr, macd_line[-1], hist
-
-def get_assault_triage_info(gc_days, close, rsi, group, is_strict=False):
-    """
-    【強襲判定コア】ボスのロジックを完全復元。
-    """
-    c_vals = group['AdjC'].values
-    ma5 = np.mean(c_vals[-5:])
-    ma25 = np.mean(c_vals[-25:])
-    prev_ma5 = np.mean(c_vals[-6:-1])
-    prev_ma25 = np.mean(c_vals[-26:-1])
-    
-    # 接近率閾値の取得（サイドバーの f1_min と同期）
-    f1_min_rate = st.session_state.get('f1_min', 0.5)
-    
-    # 1. 収束判定 (Pre-GC)
-    # 条件：まだGC前(ma25 > ma5) かつ 収束中 かつ 距離が設定値以内
-    current_diff = ma25 - ma5
-    prev_diff = prev_ma25 - prev_ma5
-    threshold_val = close * (f1_min_rate / 100)
-    
-    # 物理条件の検証
-    is_pre_gc = (current_diff > 0) and (current_diff < prev_diff) and (current_diff < threshold_val)
-    
-    # トリアージ実行
-    if is_pre_gc:
-        # 獲物が罠にかかる寸前の最高評価 S+
-        return "S+🎯", "#ff5252", 6, f"GC前夜(接近:{f1_min_rate}%)"
-    
-    if gc_days >= 1:
-        if is_strict: # 狙撃優先モード
-            if gc_days == 1:
-                return "A+🔥", "#26a69a", 5, "GC直後(1日目)"
-            else:
-                return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
-        else:
-            if gc_days == 1:
-                return ("A+🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
-            else:
-                return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
-                
-    return "圏外🚫", "#ef5350", 0, "条件外"
 
 # --- 🌪️ 1. マクロ気象レーダー ---
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1051,33 +973,14 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
     
-    # --- 修正後の強襲ロジック（ここを丸ごと置換） ---
     if mode == "強襲":
-        # 1. フィルタリング：トレンドが死んでいる、または過熱している場合は即除外
-        if macd_t == "下落継続" or rsi >= 75: 
-            return "圏外🚫", "#ef5350", 0, macd_t
-
-        # 2. 【先行検知】Pre-GC 判定ロジック
-        # 条件：まだGC前(ma25 > ma5) かつ 収束中 かつ 距離が設定値(f1_min)以内
-        current_diff = ma25 - ma5
-        prev_diff = prev_ma25 - prev_ma5
-        threshold_val = close * (st.session_state.f1_min / 100)
-
-        is_pre_gc = (current_diff > 0) and (current_diff < prev_diff) and (current_diff < threshold_val)
-
-        if is_pre_gc:
-            # 獲物が罠にかかる寸前の状態。最高評価 S+
-            return "S+🎯", "#ff5252", 6, f"GC前夜(接近:{st.session_state.f1_min}%)"
-
-        # 3. 既存のGC発動後ロジック（後追い判定）
-        # ※画像(image_3b9b14.png)の状態。罠を張る段階を過ぎたため、評価を一段落とす
+        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#ef5350", 0, macd_t
         if is_assault_mode:
-            if gc_days == 1: 
-                return "A+🔥", "#26a69a", 5, "GC直後(1日目)"
+            if gc_days == 1: return "S🔥", "#26a69a", 5, "GC直後(1日目)"
             return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
         else:
             if gc_days == 1: 
-                return ("A+🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
+                return ("S🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
             return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
             
     if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
@@ -1364,53 +1267,37 @@ PRESET_THEMES = {
     ]
 }
 
-# ==========================================
-# --- 4. サイドバー UI（原典 100% 復元・完全版） ---
-# ==========================================
-# 🚨 規律：ボスの資産であるUIデザインを完全に保護し、機能の欠落を許さない。
+# --- 4. サイドバー UI（原典 100% 復旧） ---
+# 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- 🌪️ ボラティリティ審査 ---
+# --- 🌪️ ボラティリティ・フィルターの設定 ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
-st.sidebar.markdown('<p style="font-size: 12px; color: #888;">ボラティリティが低すぎる銘柄（死相場）を物理的に排除します。</p>', unsafe_allow_html=True)
-
 st.session_state.f_vol_min = st.sidebar.slider(
-    "最小ボラ率 (ATR/価格 %)", 
-    min_value=0.0, 
-    max_value=2.0, 
-    value=float(st.session_state.get('f_vol_min', 0.5)), 
-    step=0.1, 
-    help="14日ATRが株価の何%以上かを判定。0.5%未満は索敵結果から排除されます。",
-    key="f_vol_min_physical_lock"
+	"最小ボラ率 (ATR/価格 %)", 
+	0.0, 2.0, 0.5, 0.1, 
+	help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
+	key="f_vol_min_slider"
 )
-st.sidebar.markdown('<div style="margin-bottom: 20px;"></div>', unsafe_allow_html=True)
-st.sidebar.divider()
-
+st.sidebar.markdown("---")
 # --- 🌐 マクロ地合い連動システム ---
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
-use_macro = st.sidebar.toggle("地合い連動を有効化", value=True, help="日経平均の騰落率に応じて、システムが自動的にリスク許容度を補正します。")
+use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
-# 内部状態の初期化
 st.session_state.push_penalty = 0.0
 st.session_state.rsi_penalty = 0
 st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
 
 if use_macro:
-    try:
-        # weatherデータ（外部取得済み）からAPI値を参照
-        api_nikkei_pct = weather['nikkei']['pct'] if 'weather' in locals() and weather else 0.0
-    except (KeyError, TypeError):
-        api_nikkei_pct = 0.0
-        
+    api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
     manual_pct = st.sidebar.number_input(
-        "日経騰落率（API/手動調整 %）", 
+        "日経騰落率（API値自動入力 %）", 
         value=float(api_nikkei_pct), 
         step=0.1, 
         format="%.2f",
-        help="暴落シミュレーション時は、この数値を直接変更してください。"
+        help="暴落シミュレーションをする場合は数値を書き換えてください。"
     )
 
-    # 判定アルゴリズム：騰落率に基づくペナルティ付与
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  
         st.session_state.rsi_penalty = 20     
@@ -1422,90 +1309,79 @@ if use_macro:
     else:
         st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
 
-st.sidebar.markdown(f'<div style="font-size: 12px; font-weight: bold; color: #26a69a;">STATUS: {st.session_state.macro_alert}</div>', unsafe_allow_html=True)
 st.sidebar.divider()
 
-# --- 📂 戦略的セクター制御 ---
+# ==========================================
+# 📂 1.5. 戦略的セクター制御（新兵装追加）
+# ==========================================
 st.sidebar.header("📂 戦略的セクター制御")
+
+# 1. セクター密度調整（30銘柄対応版）
+current_f_max = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
-    min_value=1, max_value=30, 
-    value=int(st.session_state.get('f_max_stocks_per_sector', 3)),
-    key="f_max_stocks_slider_lock",
-    help="特定業種によるリスト占有を防ぎ、分散を強制します。"
+    1, 30, int(current_f_max), # 10から30へ拡張
+    key="f_max_stocks_slider",
+    help="特定セクターへの集中度を調整します。",
+    on_change=save_settings
 )
-st.sidebar.divider()
 
-# --- 🎯 戦略テーマ選別 ---
+st.sidebar.divider()
 st.sidebar.header("🎯 戦略テーマ選別")
+
+# 1. プリセット選択
 selected_themes = st.sidebar.multiselect(
-    "注目テーマ（複数選択）",
-    options=list(PRESET_THEMES.keys()) if 'PRESET_THEMES' in locals() else [],
+    "注目テーマ（複数選択可）",
+    options=list(PRESET_THEMES.keys()),
     default=[],
-    help="選択したテーマに合致する銘柄のみを抽出します。"
+    help="選択したテーマの銘柄のみを抽出します。"
 )
+
+# 2. 手動追加（緊急用）
 custom_theme_input = st.sidebar.text_input(
     "手動コード追加 (例: 9501, 3778)",
     value="",
-    help="リストにない期待銘柄をカンマ区切りで即座に追加できます。"
+    help="リストにない期待銘柄を即座に追加できます。"
 )
 
-# 標的コード集合の動的生成
+# ターゲットコードの統合（重複排除）
 target_theme_codes = set()
-if 'PRESET_THEMES' in locals():
-    for t in selected_themes:
-        target_theme_codes.update(PRESET_THEMES[t])
+for t in selected_themes:
+    target_theme_codes.update(PRESET_THEMES[t])
+
 if custom_theme_input:
     custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
     target_theme_codes.update(custom_list)
 
 st.sidebar.divider()
 
-# --- 🎯 強襲：先行検知（Pre-GC）設定 ---
-st.sidebar.header("🎯 強襲：先行検知設定")
-st.sidebar.markdown('<p style="font-size: 11px; color: #ef5350;">※Ambush（待ち伏せ）戦略の核心閾値</p>', unsafe_allow_html=True)
-
-st.session_state.f1_min = st.sidebar.slider(
-    "強襲：接近閾値 (%)",
-    min_value=0.1, max_value=2.0,
-    value=float(st.session_state.get('f1_min', 0.5)),
-    step=0.1,
-    help="短期MAが長期MAにこの距離(%)まで接近した際に『S+🎯』シグナルを発火させます。",
-    key="f1_min_slider_lock"
-)
-st.sidebar.divider()
-
-# --- 💾 設定保存ボタン ---
-# Block 1 で実装した save_settings_to_disk() をキック。
-if st.sidebar.button("💾 設定をデフォルトとして保存", use_container_width=True, type="primary"):
-    save_settings_to_disk()
-    st.sidebar.success("✅ settings.json に永続化しました。")
-    time.sleep(1)
-    st.rerun()
-
-st.sidebar.divider()
-
-# --- 🏭 業種別個別選択 ---
-if 'master_df' in locals() and not master_df.empty:
+# 2. 業種別個別選択
+if master_df is not None and not master_df.empty:
     all_sectors = sorted(master_df['Sector'].unique().tolist())
     if "f_selected_sectors" not in st.session_state:
         st.session_state.f_selected_sectors = all_sectors
 
     with st.sidebar.expander("業種別フィルター設定", expanded=False):
         col_all, col_none = st.columns(2)
-        if col_all.button("全選択", key="btn_sec_all_lock", use_container_width=True):
-            for s in all_sectors: st.session_state[f"cb_sec_{s}"] = True
+        
+        # --- 🚨 修正：Keyの状態を直接支配し、UIを強制更新する ---
+        if col_all.button("全選択", key="btn_sec_all", use_container_width=True):
+            for s in all_sectors:
+                st.session_state[f"cb_sec_{s}"] = True  # チェックボックスの内部状態をTrueに
             st.session_state.f_selected_sectors = all_sectors
             st.rerun()
-        if col_none.button("全解除", key="btn_sec_none_lock", use_container_width=True):
-            for s in all_sectors: st.session_state[f"cb_sec_{s}"] = False
+
+        if col_none.button("全解除", key="btn_sec_none", use_container_width=True):
+            for s in all_sectors:
+                st.session_state[f"cb_sec_{s}"] = False # チェックボックスの内部状態をFalseに
             st.session_state.f_selected_sectors = []
             st.rerun()
+        # --------------------------------------------------
 
-        # 業種チェックボックス群の動的生成
         selected_list = []
         for s in all_sectors:
-            if st.checkbox(s, value=(s in st.session_state.f_selected_sectors), key=f"cb_sec_{s}"):
+            # 内部状態（st.session_state[key]）を優先して表示
+            if st.checkbox(s, value=st.session_state.get(f"cb_sec_{s}", True), key=f"cb_sec_{s}"):
                 selected_list.append(s)
         st.session_state.f_selected_sectors = selected_list
 else:
@@ -1909,7 +1785,7 @@ with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    if 'tab2_scan_results_raw' not in st.session_state: st.session_state.tab2_scan_results_raw = None
+    if 'tab2_scan_results' not in st.session_state: st.session_state.tab2_scan_results = None
     
     master_map_t2 = {}
     if not master_df.empty:
@@ -1919,14 +1795,14 @@ with tab2:
         del m_df_tmp
 
     col_t2_1, col_t2_2 = st.columns(2)
-    if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 75 # ボス指示：75以上除外
+    if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
     if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
     
     rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final_physical_lock")
     vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_v2026_final_physical_lock")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
-        st.session_state.tab2_scan_results_raw = None
+        st.session_state.tab2_scan_results = None
         gc.collect()
         t_global_start = time.time()
 
@@ -1947,15 +1823,13 @@ with tab2:
                         if col in full_df.columns:
                             full_df[col] = full_df[col].astype('float32')
 
-                    # 地合いペナルティの適用
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-                    # 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
+					# 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
                     config_t2 = {
-                        "f1_min_val": float(st.session_state.get('f1_min', 0.5)), # 接近閾値(%)
-                        "price_min": float(st.session_state.get('f1_min_price', 100)), # 価格下限
-                        "price_max": float(st.session_state.get('f1_max_price', 10000)), # 価格上限
+                        "f1_min": float(st.session_state.f1_min), 
+                        "f1_max": float(st.session_state.f1_max),
                         "f2_m30": float(st.session_state.f2_m30), 
                         "f3_drop": float(st.session_state.f3_drop),
                         "rsi_lim": effective_rsi_limit, 
@@ -1967,7 +1841,7 @@ with tab2:
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
                         "f_vol_min": float(st.session_state.get('f_vol_min', 0.5)),
-                        "sl_limit_pct": 5.0 # 損切制限
+                        "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                     }
 
                     # 市場ターゲットの絞り込み
@@ -1977,12 +1851,14 @@ with tab2:
                     
                     # 直近終値での価格フィルタリング
                     latest_date = full_df['Date'].max()
-                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["price_min"]) & (full_df['AdjC'] <= config_t2["price_max"])
+                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                     
-                    # 出来高カラムの安全取得
+                    # 💥 物理修正：出来高カラムの「全方位検索」でKeyErrorを封殺
                     v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                    
+                    # 安全な5日平均出来高の算出
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
@@ -1993,89 +1869,68 @@ with tab2:
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
-                        if len(c_vals) < 30: return None # 十分なデータがない場合は排除
                         lc = c_vals[-1]
                         
                         # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
+                        # ⑥ 疑義・除外リスト
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
+
+                        # ⑤ IPO除外（物理修正：カレンダー日350日判定）
                         if cfg["f5_ipo"]:
                             first_date = group['Date'].min()
                             if (l_date - first_date).days < 350: return None
+                            
+                        # ④ 第3波終了除外（1年安値から3倍以上）
                         if cfg["f11_ex_wave3"]:
                             if lc > (c_vals.min() * 3.0): return None
+
+                        # ② 1ヶ月暴騰上限フィルター
                         p20 = c_vals[max(0, len(c_vals)-20)]
                         if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+                        
+                        # ③ 下落率フィルター（最高値からの乖離率判定）
                         h_max_1yr = c_vals.max()
                         if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-                        # インジケータ計算
+                        # --- 🌪️ 強襲ボラティリティ・バリア ---
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        
+                        # 低ボラ銘柄を排除
                         if vol_pct < cfg["f_vol_min"]: return None
-                        if v_avg < cfg["vol_lim"]: return None # 出来高足切り
-
-                        # 🚨 【修正後の強襲ロジック：最優先判定】
-                        # 1. 除外条件
-                        macd_t = "上昇継続" if hist[-1] > hist[-2] else "下落継続"
-                        if macd_t == "下落継続" or rsi >= 75: return None # スコア0(排除)
-
-                        # 移動平均線の計算（簡易版：直近5/25）
-                        ma5 = np.mean(c_vals[-5:])
-                        ma25 = np.mean(c_vals[-25:])
-                        prev_ma5 = np.mean(c_vals[-6:-1])
-                        prev_ma25 = np.mean(c_vals[-26:-1])
-
-                        # 2. 【先行検知】Pre-GC 判定ロジック
-                        current_diff = ma25 - ma5
-                        prev_diff = prev_ma25 - prev_ma5
-                        threshold_val = lc * (cfg["f1_min_val"] / 100)
-
-                        is_pre_gc = (current_diff > 0) and (current_diff < prev_diff) and (current_diff < threshold_val)
-
-                        t_rank, t_color, t_score, t_note = "圏外🚫", "#ef5350", 0, "圏外"
-
-                        if is_pre_gc:
-                            t_rank, t_color, t_score, t_note = "S+🎯", "#ff5252", 6, f"GC前夜(接近:{cfg['f1_min_val']}%)"
-                        else:
-                            # 3. 既存のGC判定
-                            gc_days = 0
+                        if rsi > cfg["rsi_lim"]: return None
+                        
+                        # --- 📡 強襲シグナル（MACD GC判定） ---
+                        gc_days = 0
+                        if len(hist) >= 4:
                             if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
                             elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
                             elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-                            
-                            if gc_days >= 1:
-                                is_assault_mode = "狙撃優先" in cfg["tactics"]
-                                if is_assault_mode:
-                                    if gc_days == 1: t_rank, t_color, t_score, t_note = "A+🔥", "#26a69a", 5, "GC直後(1日目)"
-                                    else: t_rank, t_color, t_score, t_note = "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
-                                else:
-                                    if gc_days == 1:
-                                        t_rank, t_color, t_score, t_note = ("A+🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
-                                    else:
-                                        t_rank, t_color, t_score, t_note = "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
+                        if gc_days == 0: return None
 
-                        # 赤字除外フィルター
+                        # ⑫ ファンダメンタルズ（赤字除外）
                         if cfg["f12_ex_overvalued"]:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
-
-                        # スコアが0なら排除（バー調整で銘柄数を変える核心）
-                        if t_score <= 0: return None
-
-                        h14 = c_vals[-14:].max()
+                        
+                        # ⚡ トリアージ情報の取得
+                        is_assault = "狙撃優先" in cfg["tactics"]
+                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+                        
+                        h_vals = group['AdjH'].values
+                        h14 = h_vals[-14:].max()
                         atr = h14 * 0.03
                         
                         return {
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                            'T_Note': t_note, 'GC_Days': gc_days if 'gc_days' in locals() else 0,
-                            'h14': float(h14), 'atr': float(atr), 
+                            'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
                         }
 
                     # --- 🚀 並列実行エンジン ---
                     results = []
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
                             try:
@@ -2083,17 +1938,25 @@ with tab2:
                                 if res: results.append(res)
                             except: pass
                     
-                    st.session_state.tab2_scan_results_raw = sorted(results, key=lambda x: (-x['T_Score'], x.get('GC_Days', 0)))[:300]
+                    # トリアージ順にソート（ここが原材料になります）
+                    sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
+                    
+                    # 💥 ここを修正：その場で絞り込まず、300件を「原材料」として保存
+                    st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
                     t_calc = time.time()
-                    st.write(f"✔️ 第3段階完了：並列演算・精鋭確保 [{t_calc - t_clean:.2f}秒]")
-                    status.update(label=f"🎯 強襲スキャン完了！精鋭 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
+                    st.write(f"✔️ 第3段階完了：並列演算・原材料確保 [{t_calc - t_clean:.2f}秒]")
+                    
+                    # ステータス更新とリラン
+                    status.update(label=f"🎯 強襲スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                     st.rerun()
 
             except Exception as e:
-                st.error(f"🚨 スキャン内部エラー: {str(e)}")
-                status.update(label="🚨 エラー中断", state="error")
+                st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
+                status.update(label="🚨 エラー発生により中断", state="error")
 
+	# --- 🛡️ 座標B：フィルタ ＆ 報告板 (ロジックのみ最新) ---
+    # === ここから上書き開始 ===
     # --- 🛡️ 座標B：リアルタイム・フィルター ＆ 報告板 ---
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
@@ -2107,15 +1970,12 @@ with tab2:
         stats_t2 = {"total": len(raw_hits_t2), "market": 0, "theme": 0, "sector": 0}
         
         for r in raw_hits_t2:
-            # 💥 物理修正：T_Scoreが0（圏外）のものはここで最終排除（銘柄数の連動）
-            if r.get('T_Score', 0) <= 0: continue
-
             c_code = str(r['Code'])
-            m_info = master_map_t2.get(c_code, {})
+            m_info = master_map_t1.get(c_code, {})
             m_actual = str(m_info.get('Market', ''))
             sector = str(m_info.get('Sector', '不明')).strip()
             
-            # 検問ロジック
+            # --- 検問ロジック ---
             is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
             if "大型株" in curr_market and "中小型株" not in curr_market:
                 if not is_prime: stats_t2["market"] += 1; continue
@@ -2126,51 +1986,57 @@ with tab2:
             if sector not in sel_sects:
                 stats_t2["sector"] += 1; continue
 
-            # セクター密度調整
             if sector_counts_t2.get(sector, 0) < max_p_s:
                 light_results_t2.append(r)
                 sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
+            if len(light_results_t2) >= 30: break
 
         # --- 📡 状況報告板 ---
         if not light_results_t2:
-            st.warning(f"⚠️ **強襲条件（接近率 {st.session_state.get('f1_min', 0.5)}%）に合致する銘柄は 0 件です。**")
+            st.warning("⚠️ **強襲条件に合致する銘柄は 0 件です。**")
+            with st.expander("🔍 強襲索敵報告"):
+                st.write(f"原材料:{stats_t2['total']} / テーマ外:{stats_t2['theme']} / 市場外:{stats_t2['market']} / 業種外:{stats_t2['sector']}")
         else:
-            st.success(f"💥 **強襲ロックオン: {len(light_results_t2)} 銘柄（接近率 {st.session_state.get('f1_min', 0.5)}% 基準）**")
+            st.success(f"💥 **強襲ロックオン: {len(light_results_t2)} 銘柄**")
             sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
             st.code(sab_codes_t2, language="text")
 
-            # --- 📍 座標C：レンダリング ---
+            # --- 📍 座標C：原本デザインの完全適用 ---
             for r in light_results_t2:
                 st.divider()
+                def safe_int(x):
+                    try: return int(float(x)) if not pd.isna(x) else 0
+                    except: return 0
+
                 c_code = str(r['Code']); m_info = master_map_t2.get(c_code, {})
                 m_lower = str(m_info.get('Market', '')).lower()
+                if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
+                elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
+                else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
                 
-                # バッジ生成
-                if 'プライム' in m_lower or '一部' in m_lower: b_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 大型</span>'
-                else: b_html = f'<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","中小型")}</span>'
-                
-                t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">{r["T_Rank"]}</span>'
+                t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
                 sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
+                vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
 
                 st.markdown(f"""
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                            {b_html}{t_badge}{sector_badge}
-                            <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r['T_Note']}</span>
+                            {badge_html}{t_badge}{sector_badge}{vol_badge}
+                            <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
                             <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                lc_v, h14_v, atr_v = int(r['lc']), int(r['h14']), int(r['atr'])
+                lc_v, h14_v, atr_v = safe_int(r.get('lc', 0)), safe_int(r.get('h14', 0)), safe_int(r.get('atr', 0))
                 t_price = max(h14_v, lc_v + int(atr_v * 0.5))
                 d_price = t_price - atr_v
                 
                 m_cols = st.columns([1, 1, 1, 1.2, 1.5])
                 m_cols[0].metric("最新終値", f"{lc_v:,}円")
                 m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
-                m_cols[2].metric("推定ボラ", f"{atr_v:,}円")
+                m_cols[2].metric("ボラ(推定)", f"{atr_v:,}円")
                 m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
             
