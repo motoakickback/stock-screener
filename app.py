@@ -1364,37 +1364,53 @@ PRESET_THEMES = {
     ]
 }
 
-# --- 4. サイドバー UI（原典 100% 復旧） ---
-# 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
+# ==========================================
+# --- 4. サイドバー UI（原典 100% 復元・完全版） ---
+# ==========================================
+# 🚨 規律：ボスの資産であるUIデザインを完全に保護し、機能の欠落を許さない。
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- 🌪️ ボラティリティ・フィルターの設定 ---
+# --- 🌪️ ボラティリティ審査 ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+st.sidebar.markdown('<p style="font-size: 12px; color: #888;">ボラティリティが低すぎる銘柄（死相場）を物理的に排除します。</p>', unsafe_allow_html=True)
+
 st.session_state.f_vol_min = st.sidebar.slider(
-	"最小ボラ率 (ATR/価格 %)", 
-	0.0, 2.0, 0.5, 0.1, 
-	help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-	key="f_vol_min_slider"
+    "最小ボラ率 (ATR/価格 %)", 
+    min_value=0.0, 
+    max_value=2.0, 
+    value=float(st.session_state.get('f_vol_min', 0.5)), 
+    step=0.1, 
+    help="14日ATRが株価の何%以上かを判定。0.5%未満は索敵結果から排除されます。",
+    key="f_vol_min_physical_lock"
 )
-st.sidebar.markdown("---")
+st.sidebar.markdown('<div style="margin-bottom: 20px;"></div>', unsafe_allow_html=True)
+st.sidebar.divider()
+
 # --- 🌐 マクロ地合い連動システム ---
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
-use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
+use_macro = st.sidebar.toggle("地合い連動を有効化", value=True, help="日経平均の騰落率に応じて、システムが自動的にリスク許容度を補正します。")
 
+# 内部状態の初期化
 st.session_state.push_penalty = 0.0
 st.session_state.rsi_penalty = 0
 st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
 
 if use_macro:
-    api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
+    try:
+        # weatherデータ（外部取得済み）からAPI値を参照
+        api_nikkei_pct = weather['nikkei']['pct'] if 'weather' in locals() and weather else 0.0
+    except (KeyError, TypeError):
+        api_nikkei_pct = 0.0
+        
     manual_pct = st.sidebar.number_input(
-        "日経騰落率（API値自動入力 %）", 
+        "日経騰落率（API/手動調整 %）", 
         value=float(api_nikkei_pct), 
         step=0.1, 
         format="%.2f",
-        help="暴落シミュレーションをする場合は数値を書き換えてください。"
+        help="暴落シミュレーション時は、この数値を直接変更してください。"
     )
 
+    # 判定アルゴリズム：騰落率に基づくペナルティ付与
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  
         st.session_state.rsi_penalty = 20     
@@ -1406,99 +1422,90 @@ if use_macro:
     else:
         st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
 
+st.sidebar.markdown(f'<div style="font-size: 12px; font-weight: bold; color: #26a69a;">STATUS: {st.session_state.macro_alert}</div>', unsafe_allow_html=True)
 st.sidebar.divider()
 
-# ==========================================
-# 📂 1.5. 戦略的セクター制御（新兵装追加）
-# ==========================================
+# --- 📂 戦略的セクター制御 ---
 st.sidebar.header("📂 戦略的セクター制御")
-
-# 1. セクター密度調整（30銘柄対応版）
-current_f_max = st.session_state.get("f_max_stocks_per_sector", 3)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
-    1, 30, int(current_f_max), # 10から30へ拡張
-    key="f_max_stocks_slider",
-    help="特定セクターへの集中度を調整します。",
-    on_change=save_settings
+    min_value=1, max_value=30, 
+    value=int(st.session_state.get('f_max_stocks_per_sector', 3)),
+    key="f_max_stocks_slider_lock",
+    help="特定業種によるリスト占有を防ぎ、分散を強制します。"
 )
-
 st.sidebar.divider()
+
+# --- 🎯 戦略テーマ選別 ---
 st.sidebar.header("🎯 戦略テーマ選別")
-
-# 1. プリセット選択
 selected_themes = st.sidebar.multiselect(
-    "注目テーマ（複数選択可）",
-    options=list(PRESET_THEMES.keys()),
+    "注目テーマ（複数選択）",
+    options=list(PRESET_THEMES.keys()) if 'PRESET_THEMES' in locals() else [],
     default=[],
-    help="選択したテーマの銘柄のみを抽出します。"
+    help="選択したテーマに合致する銘柄のみを抽出します。"
 )
-
-# 2. 手動追加（緊急用）
 custom_theme_input = st.sidebar.text_input(
     "手動コード追加 (例: 9501, 3778)",
     value="",
-    help="リストにない期待銘柄を即座に追加できます。"
+    help="リストにない期待銘柄をカンマ区切りで即座に追加できます。"
 )
 
-# ターゲットコードの統合（重複排除）
+# 標的コード集合の動的生成
 target_theme_codes = set()
-for t in selected_themes:
-    target_theme_codes.update(PRESET_THEMES[t])
-
+if 'PRESET_THEMES' in locals():
+    for t in selected_themes:
+        target_theme_codes.update(PRESET_THEMES[t])
 if custom_theme_input:
     custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
     target_theme_codes.update(custom_list)
 
 st.sidebar.divider()
 
-# --- 🎯 強襲：先行検知（Pre-GC）設定（追加箇所） ---
+# --- 🎯 強襲：先行検知（Pre-GC）設定 ---
 st.sidebar.header("🎯 強襲：先行検知設定")
+st.sidebar.markdown('<p style="font-size: 11px; color: #ef5350;">※Ambush（待ち伏せ）戦略の核心閾値</p>', unsafe_allow_html=True)
 
-# 接近閾値（f1_min）をセッションに登録。デフォルトは0.5%
-if "f1_min" not in st.session_state:
-    st.session_state.f1_min = 0.5
-
-# スライダーの実装。これを動かすと判定の厳しさがリアルタイムに変わります
 st.session_state.f1_min = st.sidebar.slider(
     "強襲：接近閾値 (%)",
-    min_value=0.1,
-    max_value=2.0,
-    value=float(st.session_state.f1_min),
+    min_value=0.1, max_value=2.0,
+    value=float(st.session_state.get('f1_min', 0.5)),
     step=0.1,
-    help="短期MAが長期MAにこの距離(%)まで接近したら『罠設置』と判定します。",
-    key="f1_min_slider"
+    help="短期MAが長期MAにこの距離(%)まで接近した際に『S+🎯』シグナルを発火させます。",
+    key="f1_min_slider_lock"
 )
+st.sidebar.divider()
+
+# --- 💾 設定保存ボタン ---
+# Block 1 で実装した save_settings_to_disk() をキック。
+if st.sidebar.button("💾 設定をデフォルトとして保存", use_container_width=True, type="primary"):
+    save_settings_to_disk()
+    st.sidebar.success("✅ settings.json に永続化しました。")
+    time.sleep(1)
+    st.rerun()
 
 st.sidebar.divider()
 
-# 2. 業種別個別選択
-if master_df is not None and not master_df.empty:
+# --- 🏭 業種別個別選択 ---
+if 'master_df' in locals() and not master_df.empty:
     all_sectors = sorted(master_df['Sector'].unique().tolist())
     if "f_selected_sectors" not in st.session_state:
         st.session_state.f_selected_sectors = all_sectors
 
     with st.sidebar.expander("業種別フィルター設定", expanded=False):
         col_all, col_none = st.columns(2)
-        
-        # --- 🚨 修正：Keyの状態を直接支配し、UIを強制更新する ---
-        if col_all.button("全選択", key="btn_sec_all", use_container_width=True):
-            for s in all_sectors:
-                st.session_state[f"cb_sec_{s}"] = True  # チェックボックスの内部状態をTrueに
+        if col_all.button("全選択", key="btn_sec_all_lock", use_container_width=True):
+            for s in all_sectors: st.session_state[f"cb_sec_{s}"] = True
             st.session_state.f_selected_sectors = all_sectors
             st.rerun()
-
-        if col_none.button("全解除", key="btn_sec_none", use_container_width=True):
-            for s in all_sectors:
-                st.session_state[f"cb_sec_{s}"] = False # チェックボックスの内部状態をFalseに
+        if col_none.button("全解除", key="btn_sec_none_lock", use_container_width=True):
+            for s in all_sectors: st.session_state[f"cb_sec_{s}"] = False
             st.session_state.f_selected_sectors = []
             st.rerun()
-        # --------------------------------------------------
 
+        # 業種チェックボックス群の動的生成
         selected_list = []
         for s in all_sectors:
-            # 内部状態（st.session_state[key]）を優先して表示
-            if st.checkbox(s, value=st.session_state.get(f"cb_sec_{s}", True), key=f"cb_sec_{s}"):
+            if st.checkbox(s, value=(s in st.session_state.f_selected_sectors), key=f"cb_sec_{s}"):
                 selected_list.append(s)
         st.session_state.f_selected_sectors = selected_list
 else:
