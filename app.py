@@ -973,14 +973,36 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
     
+    # --- 強襲タブ：先行検知（罠設置）アップデート版 ---
     if mode == "強襲":
-        if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#ef5350", 0, macd_t
+        # 1. 除外条件：下落トレンド継続中または過熱感（RSI）が高すぎる場合は即座に排除
+        if macd_t == "下落継続" or rsi >= 75: 
+            return "圏外🚫", "#ef5350", 0, macd_t
+
+        # 2. 【新規】先行検知（Pre-GC）ロジック
+        # 短期MA(ma5)が長期MA(ma25)をまだ抜いていないが、極限まで収束している状態を判定
+        # f1_min: サイドバーで設定された「接近閾値(%)」
+        diff = ma25 - ma5
+        prev_diff = prev_ma25 - prev_ma5
+        threshold = close * (f1_min / 100)
+
+        # 条件：まだGC前(diff > 0) かつ 収束中(diff < prev_diff) かつ 閾値以内(diff < threshold)
+        is_pre_gc = (diff > 0) and (diff < prev_diff) and (diff < threshold)
+
+        if is_pre_gc:
+            # GC発動前夜。ここで「罠」を張る
+            return "S+🎯", "#ff5252", 6, "GC前夜(罠設置)"
+
+        # 3. 既存のGC確定後ロジック（後追い判定のランクを下げて維持）
         if is_assault_mode:
-            if gc_days == 1: return "S🔥", "#26a69a", 5, "GC直後(1日目)"
+            if gc_days == 1: 
+                # 画像(image_3b9b14.png)の状態。ランクをSからA+へ調整
+                return "A+🔥", "#26a69a", 5, "GC直後(1日目)"
             return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
         else:
             if gc_days == 1: 
-                return ("S🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
+                # RSI 50以下なら強気、それ以外は通常
+                return ("A+🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
             return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
             
     if bt == 0 or lc == 0: return "C👁️", "#616161", 1, macd_t
