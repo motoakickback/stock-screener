@@ -973,35 +973,32 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     elif macd_hist < 0 and macd_hist < macd_hist_prev: macd_t = "下落継続"
     else: macd_t = "減衰"
     
-    # --- 強襲タブ：先行検知（罠設置）アップデート版 ---
+    # --- 修正後の強襲ロジック（ここを丸ごと置換） ---
     if mode == "強襲":
-        # 1. 除外条件：下落トレンド継続中または過熱感（RSI）が高すぎる場合は即座に排除
+        # 1. フィルタリング：トレンドが死んでいる、または過熱している場合は即除外
         if macd_t == "下落継続" or rsi >= 75: 
             return "圏外🚫", "#ef5350", 0, macd_t
 
-        # 2. 【新規】先行検知（Pre-GC）ロジック
-        # 短期MA(ma5)が長期MA(ma25)をまだ抜いていないが、極限まで収束している状態を判定
-        # f1_min: サイドバーで設定された「接近閾値(%)」
-        diff = ma25 - ma5
+        # 2. 【先行検知】Pre-GC 判定ロジック
+        # 条件：まだGC前(ma25 > ma5) かつ 収束中 かつ 距離が設定値(f1_min)以内
+        current_diff = ma25 - ma5
         prev_diff = prev_ma25 - prev_ma5
-        threshold = close * (f1_min / 100)
+        threshold_val = close * (st.session_state.f1_min / 100)
 
-        # 条件：まだGC前(diff > 0) かつ 収束中(diff < prev_diff) かつ 閾値以内(diff < threshold)
-        is_pre_gc = (diff > 0) and (diff < prev_diff) and (diff < threshold)
+        is_pre_gc = (current_diff > 0) and (current_diff < prev_diff) and (current_diff < threshold_val)
 
         if is_pre_gc:
-            # GC発動前夜。ここで「罠」を張る
-            return "S+🎯", "#ff5252", 6, "GC前夜(罠設置)"
+            # 獲物が罠にかかる寸前の状態。最高評価 S+
+            return "S+🎯", "#ff5252", 6, f"GC前夜(接近:{st.session_state.f1_min}%)"
 
-        # 3. 既存のGC確定後ロジック（後追い判定のランクを下げて維持）
+        # 3. 既存のGC発動後ロジック（後追い判定）
+        # ※画像(image_3b9b14.png)の状態。罠を張る段階を過ぎたため、評価を一段落とす
         if is_assault_mode:
             if gc_days == 1: 
-                # 画像(image_3b9b14.png)の状態。ランクをSからA+へ調整
                 return "A+🔥", "#26a69a", 5, "GC直後(1日目)"
             return "A⚡", "#ed6c02", 4, f"GC継続({gc_days}日目)"
         else:
             if gc_days == 1: 
-                # RSI 50以下なら強気、それ以外は通常
                 return ("A+🔥", "#26a69a", 5, "GC直後") if rsi <= 50 else ("A⚡", "#ed6c02", 4, "GC直後")
             return "B📈", "#0288d1", 3, f"GC継続({gc_days}日目)"
             
@@ -1374,6 +1371,26 @@ for t in selected_themes:
 if custom_theme_input:
     custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
     target_theme_codes.update(custom_list)
+
+st.sidebar.divider()
+
+# --- 🎯 強襲：先行検知（Pre-GC）設定（追加箇所） ---
+st.sidebar.header("🎯 強襲：先行検知設定")
+
+# 接近閾値（f1_min）をセッションに登録。デフォルトは0.5%
+if "f1_min" not in st.session_state:
+    st.session_state.f1_min = 0.5
+
+# スライダーの実装。これを動かすと判定の厳しさがリアルタイムに変わります
+st.session_state.f1_min = st.sidebar.slider(
+    "強襲：接近閾値 (%)",
+    min_value=0.1,
+    max_value=2.0,
+    value=float(st.session_state.f1_min),
+    step=0.1,
+    help="短期MAが長期MAにこの距離(%)まで接近したら『罠設置』と判定します。",
+    key="f1_min_slider"
+)
 
 st.sidebar.divider()
 
