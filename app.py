@@ -989,6 +989,12 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     else: macd_t = "減衰"
     
     if mode == "強襲":
+        # 🚨 【改修】GC前（gc_days <= 0）でも、MACDヒストグラムが好転（下落減衰・上昇拡大）していれば兆しと判定
+        if gc_days <= 0:
+            if macd_hist < 0 and macd_hist > macd_hist_prev and rsi < 75:
+                return "S+🎯", "#ff5252", 6, "GC前夜(激熱)"
+            return "圏外🚫", "#ef5350", 0, macd_t
+
         if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#ef5350", 0, macd_t
         if is_assault_mode:
             if gc_days == 1: return "S🔥", "#26a69a", 5, "GC直後(1日目)"
@@ -1017,12 +1023,37 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     """強襲モード専用：25日線との距離、RSI、鮮度を複合した精密判定"""
-    if gc_days <= 0 or df_chart is None or df_chart.empty: 
+    if df_chart is None or df_chart.empty: 
         return "圏外 💀", "#424242", 0, ""
 
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
     
+    # 🚨 【改修】GC前の兆し（S+）を最優先で捕捉する数理ロジック
+    if gc_days <= 0:
+        row = df_chart.iloc[-1]
+        ma5 = row.get('MA5', 0)
+        ma25 = row.get('MA25', 0)
+        
+        if len(df_chart) >= 2 and ma5 > 0 and ma25 > 0:
+            prev_row = df_chart.iloc[-2]
+            prev_ma5 = prev_row.get('MA5', 0)
+            prev_ma25 = prev_row.get('MA25', 0)
+            
+            curr_diff = ma25 - ma5
+            prev_diff = prev_ma25 - prev_ma5
+            
+            # コンソールの接近閾値 (f1_min) と物理同期
+            f1_min_rate = st.session_state.get('f1_min', 0.5)
+            thresh = lc * (f1_min_rate / 100)
+            
+            # 条件：まだクロス前 かつ 前日より急速接近（収束） かつ 閾値以内
+            if 0 < curr_diff < thresh and curr_diff < prev_diff:
+                # ソート順を最上位にするため、既存MAXの85を超える「95」を割り振る
+                return "S+🎯", "#ff5252", 95, f"GC前夜(激熱:接近{f1_min_rate}%)"
+                
+        return "圏外 💀", "#424242", 0, ""
+
     row = df_chart.iloc[-1]
     ma25 = row.get('MA25', 0)
     score = 50 
@@ -1067,7 +1098,6 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     event_alerts = check_event_mines(code, raw['events'])
     event_html = ""
     for alert in event_alerts:
-        # 🚨 修正：辞書形式ではなく文字列の内容で色を判定
         color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
         label = alert.split("】")[1] if "】" in alert else alert
         event_html += f'<span style="background: {color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; font-weight: bold;">{label}</span>'
@@ -1841,7 +1871,7 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-					# 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
+                    # 🚨 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), 
                         "f1_max": float(st.session_state.f1_max),
@@ -1864,7 +1894,7 @@ with tab2:
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                     m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
                     
-                    # 直近終値での価格フィルタリング
+                    # 直近終値での価格フィルターリング
                     latest_date = full_df['Date'].max()
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
@@ -1879,7 +1909,7 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
-                    st.write("⚙️ 第3段階：並列演算・鉄の掟フィルタリング中...")
+                    st.write("⚙️ 第3段階：並列演算・鉄の掟フィルターリング中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
@@ -1921,7 +1951,9 @@ with tab2:
                             if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
                             elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
                             elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
-                        if gc_days == 0: return None
+                        
+                        # 🚨 【改修】gc_days == 0（GC未遂・前夜）の即時足切りを撤廃。
+                        # 機関部の get_assault_triage_info に判定を委ねる。
 
                         # ⑫ ファンダメンタルズ（赤字除外）
                         if cfg["f12_ex_overvalued"]:
@@ -1930,7 +1962,10 @@ with tab2:
                         
                         # ⚡ トリアージ情報の取得
                         is_assault = "狙撃優先" in cfg["tactics"]
-                        t_rank, t_color, t_score, _ = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+                        t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
+                        
+                        # 🚨 【改修】S+兆し条件、または既存の強襲条件に合致しない「圏外」を物理排除
+                        if t_rank == "圏外 💀" or "圏外" in t_rank: return None
                         
                         h_vals = group['AdjH'].values
                         h14 = h_vals[-14:].max()
@@ -1940,7 +1975,8 @@ with tab2:
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
                             'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
-                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
+                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
+                            'T_Desc': t_desc  # 🚨 描画時の表示用にステータス文を同期
                         }
 
                     # --- 🚀 並列実行エンジン ---
@@ -1953,10 +1989,10 @@ with tab2:
                                 if res: results.append(res)
                             except: pass
                     
-                    # トリアージ順にソート（ここが原材料になります）
+                    # トリアージ順にソート（S+のスコア95が自動的に最上位へ整列）
                     sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     
-                    # 💥 ここを修正：その場で絞り込まず、300件を「原材料」として保存
+                    # 300件を「原材料」として保存
                     st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
                     t_calc = time.time()
@@ -1970,8 +2006,6 @@ with tab2:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                 status.update(label="🚨 エラー発生により中断", state="error")
 
-	# --- 🛡️ 座標B：フィルタ ＆ 報告板 (ロジックのみ最新) ---
-    # === ここから上書き開始 ===
     # --- 🛡️ 座標B：リアルタイム・フィルター ＆ 報告板 ---
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
@@ -1986,7 +2020,7 @@ with tab2:
         
         for r in raw_hits_t2:
             c_code = str(r['Code'])
-            m_info = master_map_t1.get(c_code, {})
+            m_info = master_map_t2.get(c_code, {})  # 物理修正: master_map_t2 に統一
             m_actual = str(m_info.get('Market', ''))
             sector = str(m_info.get('Sector', '不明')).strip()
             
@@ -2033,12 +2067,17 @@ with tab2:
                 sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
                 vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
 
+                # 🚨 【改修】GC前夜（兆し）とGC発動後で日数バッジの表記を動的に切り替える
+                if r['GC_Days'] <= 0:
+                    status_badge_html = f'<span style="background-color: rgba(239, 83, 80, 0.15); border: 1px solid #ef5350; color: #ef5350; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r.get("T_Desc", "GC前夜(激熱)")}</span>'
+                else:
+                    status_badge_html = f'<span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r["GC_Days"]}日目</span>'
+
                 st.markdown(f"""
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                            {badge_html}{t_badge}{sector_badge}{vol_badge}
-                            <span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r['GC_Days']}日目</span>
+                            {badge_html}{t_badge}{sector_badge}{vol_badge}{status_badge_html}
                             <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                         </div>
                     </div>
@@ -2161,7 +2200,6 @@ with tab3:
                         # 1. APIからのデータ取得試行
                         data = get_single_data(api_code, 1)
                         if data and isinstance(data.get("events"), dict):
-                            # APIにデータがあれば、一旦それを取り込む
                             api_ev = data.get("events", {})
                             if api_ev.get("earnings"): 
                                 events["earnings"].extend(api_ev["earnings"])
@@ -2169,7 +2207,6 @@ with tab3:
                                 events["dividend"].extend(api_ev["dividend"])
 
                         # 2. 三重フォールバック（価格データ補完）
-                        # ※価格が不足している場合のみ yfinance で株価を補う（ボスの掟）
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -2194,10 +2231,8 @@ with tab3:
                                 import yfinance as yf
                                 tk_ev = yf.Ticker(c_str + ".T")
                                 info_ev = tk_ev.info
-                                # 複数の日付候補（絨毯爆撃）
                                 e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
                                 if e_date:
-                                    # リスト形式で届く場合があるため、先頭を抽出
                                     if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
                                     events["earnings"].append({"Code": api_code, "Date": str(e_date)})
                             except Exception:
@@ -2208,7 +2243,6 @@ with tab3:
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
                         if f_data:
-                            # --- ボスのDNA：詳細なキー存在チェック ＆ 多重フォールバック ---
                             if f_data.get('per'): r_per = f_data.get('per')
                             if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
                             if r_per is None and f_data.get('trailingPE'): r_per = f_data.get('trailingPE')
@@ -2227,7 +2261,6 @@ with tab3:
                             if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
                             if r_roe is None and f_data.get('returnOnEquity'): r_roe = f_data.get('returnOnEquity')
                             
-                            # --- ボスのDNA：ROE算出バリデーション ---
                             if r_roe is None:
                                 try:
                                     ni = f_data.get("NetIncome")
@@ -2240,12 +2273,11 @@ with tab3:
                                 except Exception:
                                     r_roe = 0.0
                             
-                            # 🕵️ get_fundamentals 内の日付情報も強制統合
                             e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate") or f_data.get("AnnouncementDate")
                             if e_date_f:
                                 events["earnings"].append({"Code": api_code, "Date": str(e_date_f)})
 
-                        # 4. yfinanceによる最終補完トラップ（ボスのDNA）
+                        # 4. yfinanceによる最終補完トラップ
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
                                 import yfinance as yf
@@ -2262,10 +2294,8 @@ with tab3:
                             except Exception:
                                 pass
                         
-                        # 🚀 物理修正：events を7番目の戻り値として確実に返す
                         return c_str, data, r_per, r_pbr, r_mcap, r_roe, events
                     except Exception:
-                        # 異常時も空の構造を返し、unpackエラーを防止
                         return str(c), None, None, None, None, None, {"dividend": [], "earnings": []}
 
                 raw_data_dict = {}
@@ -2274,7 +2304,6 @@ with tab3:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
                     for f in concurrent.futures.as_completed(futs):
                         try:
-                            # 🚀 物理修正：7つ目の戻り値 res_events を受取
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe, res_events = f.result()
                             raw_data_dict[str(res_c)] = {
                                 "data": res_data, 
@@ -2282,7 +2311,7 @@ with tab3:
                                 "pbr": r_pbr, 
                                 "mcap": r_mcap, 
                                 "roe": r_roe,
-                                "events": res_events # 📦 eventsを辞書に物理保存
+                                "events": res_events
                             }
                         except Exception:
                             continue
@@ -2317,7 +2346,6 @@ with tab3:
                             except Exception:
                                 res_roe = None
 
-                        # --- ボスのDNA：時価総額の全単位変換（兆・億・万）物理分岐 ---
                         res_mcap_str = "-"
                         if raw_mcap is not None:
                             try:
@@ -2335,7 +2363,6 @@ with tab3:
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                        # --- ボスのDNA：IPO判定（全カラムListing走査）ロジック ---
                         if st.session_state.get('f5_ipo', False):
                             try:
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
@@ -2351,7 +2378,6 @@ with tab3:
                             except Exception:
                                 pass
 
-                        # 🕵️ 兵站確認：events データの確定
                         curr_events = raw_s.get("events", {"dividend": [], "earnings": []})
 
                         if not bars or len(bars) < 20:
@@ -2360,7 +2386,7 @@ with tab3:
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
                                 'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
-                                'events': curr_events # 📦 兵站不足時も空の器を渡す
+                                'events': curr_events
                             })
                             continue
 
@@ -2381,11 +2407,11 @@ with tab3:
                                 'sector': c_sector, 'market': c_market,
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
                                 'error': True, 'is_deep': False,
-                                'events': curr_events # 📦 破損時も器を渡す
+                                'events': curr_events
                             })
                             continue
 
-                        # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
+# テクニカル演算（原本DNA：多重例外ガードを物理復旧）
                         try:
                             df_chart_full = calc_technicals(df_s.copy())
                         except Exception:
@@ -2423,7 +2449,7 @@ with tab3:
                             vol_pct = (atr_v / lc * 100)
                         
                         if vol_pct < 0.5:
-                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
+                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下 of 恐れあり。")
 
                         # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
                         t_events = (raw_s.get("data") or {}).get("events")
@@ -2518,7 +2544,27 @@ with tab3:
                             else:
                                 gc_days = 0
                                 gc_score = 5
-                            
+                                
+                            # 🚨 【改修】強襲モードにおけるGC前の兆し（S+）判定の組み込み
+                            is_pre_gc_t3 = False
+                            if gc_days == 0 and len(df_mini) >= 2:
+                                row_l = df_mini.iloc[-1]
+                                row_p = df_mini.iloc[-2]
+                                ma5_c = row_l.get('MA5') if pd.notna(row_l.get('MA5')) else np.mean(df_mini['AdjC'].values[-5:])
+                                ma25_c = row_l.get('MA25') if pd.notna(row_l.get('MA25')) else np.mean(df_mini['AdjC'].values[-25:])
+                                prev_ma5_c = row_p.get('MA5') if pd.notna(row_p.get('MA5')) else np.mean(df_mini['AdjC'].values[-6:-1])
+                                prev_ma25_c = row_p.get('MA25') if pd.notna(row_p.get('MA25')) else np.mean(df_mini['AdjC'].values[-26:-1])
+                                
+                                if ma5_c and ma25_c and prev_ma5_c and prev_ma25_c:
+                                    curr_diff = ma25_c - ma5_c
+                                    prev_diff = prev_ma25_c - prev_ma5_c
+                                    f1_min_rate = st.session_state.get('f1_min', 0.5)
+                                    thresh = lc * (f1_min_rate / 100)
+                                    
+                                    if 0 < curr_diff < thresh and curr_diff < prev_diff:
+                                        is_pre_gc_t3 = True
+                                        gc_score = 95 # 最上位に整列させるため既存MAXを超える高スコア
+                                
                             # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
 
@@ -2536,14 +2582,18 @@ with tab3:
                             # 🚨 修正：天井警告ペナルティ（防衛回路）
                             if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
                                 score -= 25
-                            
+                                
                             # 到達率演算
                             reach_rate = 0
                             if h14 > 0:
                                 reach_rate = (lc / h14) * 100
-                            
+                                
                             # 強襲ランク判定の物理展開（Turn 18復旧）
-                            if score >= 80:
+                            if is_pre_gc_t3:
+                                rank = "S+🎯激熱"
+                                bg_c = "#ff5252" # 激熱の赤
+                                alerts.append(f"🎯 【強襲初動】ゴールデンクロス大接近。接近閾値 {st.session_state.get('f1_min', 0.5)}% 以内を補足。")
+                            elif score >= 80:
                                 rank = "S級強襲⚡"
                                 bg_c = "#1b5e20"
                             elif score >= 60:
@@ -2587,7 +2637,7 @@ with tab3:
                             # 💥 物理修正：raw_s[res_c] 直下の 'events' を直接、または安全に取得
                             'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {}
                         })
-                                
+                                    
                     except Exception as e:
                         scope_results.append({
                             'code': target_key,
@@ -2600,11 +2650,11 @@ with tab3:
                         })
 
                 # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
-                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
+                rank_order = {"S+": 5, "S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results:
                     r_raw_str = res.get('rank', '圏外')
-                    # 正規表現によるクリーンアップ
-                    r_clean_str = re.sub(r'[^SABC圏外]', '', r_raw_str)
+                    # 正規表現によるクレンジング
+                    r_clean_str = re.sub(r'[^S\+ABC圏外]', '', r_raw_str)
                     res['r_val'] = rank_order.get(r_clean_str, 0)
                 
                 # ソート実行（ランク > スコア > 到達率）
@@ -2618,7 +2668,7 @@ with tab3:
                 st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 
-        # --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根滅） ---
+# --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根滅） ---
         def safe_int(x):
             try: return int(float(x)) if not pd.isna(x) else 0
             except Exception: return 0
@@ -2691,7 +2741,7 @@ with tab3:
 
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
-・日経平均MA25乖離率：{n225_div_rate_val}
+• 日経平均MA25乖離率：{n225_div_rate_val}
 
 ■システム判定ステータス
 ・総合判定：{vr.get('rank')}
@@ -2720,7 +2770,7 @@ with tab3:
                 st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。</p>", unsafe_allow_html=True)
                 st.code(final_copypaste_text, language="text")
 
-            # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
+        # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
         for index, r in enumerate(scope_results):
             st.divider()
             if r.get('error'):
@@ -2755,6 +2805,8 @@ with tab3:
             gc_badge = ""
             if r.get('gc_days', 0) > 0:
                 gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
+            elif "S+" in str(r.get('rank', '')):
+                gc_badge = f"<span style='background-color: #ff5252; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #ff8a80; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>🎯 GC前夜(激熱)</span>"
 
             # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
             st.markdown(f"""
@@ -2779,6 +2831,7 @@ with tab3:
                         st.warning(alert)
 
             # 3カラムレイアウト（Metrics / Golden Box / ATR Matrix）
+            st.columns([2.5, 3.5, 5.0]) # 🚨 物理修正：カラム初期化を安全に配置
             sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
             
             with sc_left:
