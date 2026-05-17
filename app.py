@@ -40,7 +40,12 @@ def check_password():
                 """
                 <script>
                 const doc = window.parent.document;
+                let loginTriggered = false;
+
                 function tryAutoLogin() {
+                    // すでに送信プロセスが開始されている場合は多重実行を完全遮断
+                    if (loginTriggered) return true;
+                    
                     const input = doc.querySelector('input[type="password"]');
                     const buttons = doc.querySelectorAll('button');
                     let submitBtn = null;
@@ -52,7 +57,17 @@ def check_password():
                     }
                     if (input && submitBtn) {
                         if (input.value.length > 0) {
-                            submitBtn.click();
+                            loginTriggered = true; // ゲート電撃閉鎖（二重トリガー防止）
+                            
+                            // 📡 ReactおよびStreamlitの仮想DOMへ入力値を強制着弾させるプロトコル
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur(); // フォーカスアウトを強制し、フォームバッファの確定を誘発
+                            
+                            // フロントエンドからバックエンドへのステート転送猶予として100msのディレイを確保
+                            setTimeout(() => {
+                                submitBtn.click();
+                            }, 100);
                             return true;
                         }
                     }
