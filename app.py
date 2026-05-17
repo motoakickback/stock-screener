@@ -168,7 +168,14 @@ st.write(f"⏱ 経過時間: {time.time() - st.session_state.login_time:.2f}秒"
 # --- ⚙️ 設定の永続化 ---
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
+# ==========================================
+# ⚙️ 設定の永続化（完全統合・決定版）
+# ==========================================
+# 🚨 ボスの user_id 連動システムとデフォルト値を完全継承し、新兵装のキーをマージ
+SETTINGS_FILE = f"saved_settings_{user_id}.json"
+
 def load_settings():
+    """再起動時にローカルJSONから設定を復元し、初期化する"""
     defaults = {
         "preset_market": "🚀 中小型株 (スタンダード・グロース)", 
         "preset_push_r": "50.0%",
@@ -180,14 +187,19 @@ def load_settings():
         "f11_ex_wave3": True, "f12_ex_overvalued": True,
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
-        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318"
+        "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
+        # 👇 🆕 新設されたサイドバーの初期値を美しく統合
+        "f_vol_min_slider": 0.5,
+        "f_max_stocks_slider": 30
     }
+    
     saved_data = {}
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 saved_data = json.load(f)
-        except: pass
+        except: 
+            pass
 
     for k, v in defaults.items():
         target_val = saved_data.get(k, v)
@@ -195,25 +207,24 @@ def load_settings():
             st.session_state[k] = target_val
 
 def save_settings():
+    """現在のウィジェットの値をローカルJSONに永久保存する"""
     keys_to_save = [
         "preset_market", "preset_push_r", "sidebar_tactics", "push_r", "limit_d", "bt_lot", "bt_tp", "bt_sl_i", "bt_sl_c", "bt_sell_d", 
         "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
         "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
-        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input"
+        "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
+        # 👇 🆕 新設されたサイドバーの保存対象キーを物理同期
+        "f_vol_min_slider", "f_max_stocks_slider"
     ]
+    
     current_settings = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
-    except: pass
+    except: 
+        pass
 
-def apply_presets():
-    p_rate = st.session_state.get("preset_push_r", "50.0%")
-    if p_rate == "25.0%": st.session_state.push_r = 25.0
-    elif p_rate == "50.0%": st.session_state.push_r = 50.0
-    elif p_rate == "61.8%": st.session_state.push_r = 61.8
-    save_settings()
-
+# --- アプリ起動時、UI描画前に必ず自動実行 ---
 load_settings()
 
 # --- 🌪️ 1. マクロ気象レーダー ---
@@ -1321,17 +1332,21 @@ PRESET_THEMES = {
     ]
 }
 
-# --- 4. サイドバー UI（原典 100% 復旧） ---
+# ==========================================
+# --- 4. サイドバー UI（完全連動版） ---
+# ==========================================
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- 🌪️ ボラティリティ・フィルターの設定 ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+# 🛠️ 変更点: 再起動時の値の復元を保証し、操作時に即時保存されるよう on_change を追加
 st.session_state.f_vol_min = st.sidebar.slider(
-	"最小ボラ率 (ATR/価格 %)", 
-	0.0, 2.0, 0.5, 0.1, 
-	help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-	key="f_vol_min_slider"
+    "最小ボラ率 (ATR/価格 %)", 
+    0.0, 2.0, float(st.session_state.f_vol_min_slider), 0.1, 
+    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
+    key="f_vol_min_slider",
+    on_change=save_settings
 )
 st.sidebar.markdown("---")
 # --- 🌐 マクロ地合い連動システム ---
@@ -1371,7 +1386,8 @@ st.sidebar.divider()
 st.sidebar.header("📂 戦略的セクター制御")
 
 # 1. セクター密度調整（30銘柄対応版）
-current_f_max = st.session_state.get("f_max_stocks_per_sector", 30)
+# 🛠️ 変更点: 保存ファイルから復元されたキー "f_max_stocks_slider" を正確に初期値へ反映
+current_f_max = st.session_state.get("f_max_stocks_slider", 30)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 30, int(current_f_max), # 10から30へ拡張
