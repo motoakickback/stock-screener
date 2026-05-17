@@ -2093,10 +2093,10 @@ with tab3:
 - **12点以上 (S級🔥)** 全力買い：複数の酒田サイン（陰の極み・二重底等）が重複、勝率・値幅共に期待値最大
 - **8〜11点 (A級💎)** 買い：トリアージ（MACD/RSI）が反転を示唆、PBR等の割安背景も良好
 - **5〜7点 (B級🛡️)** 様子見：底打ちの兆候はあるが引き金（シグナル）不足、監視を継続
-- **5点未満 (圏外💀)** 見送り：兵站（データ）不足、または下落トレンドの真っ只中、手を出すべきではない""")
+- **5点未満 (圏外💀)** 見送り：兵站（データ）不足、または下落トレンドの真っ立ち中、手を出すべきではない""")
         else:
             st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
-トレンド初動の電撃戦。14日高値突破とGCを監視。
+トレンド初動の电击戦。14日高値突破とGCを監視。
 
 **【🚨 市場連動デバフ稼働中】**
 日経平均25日乖離率が過熱（+5%〜+8%超）している場合、天井掴みを防ぐため**スコアを強制的にデグレード(-20〜-35pts)** します。
@@ -2193,11 +2193,37 @@ with tab3:
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
                         if f_data:
-                            # --- 補正：get_fundamentals 内の確定キー構造へ直結 ---
-                            r_per = f_data.get('per')
-                            r_pbr = f_data.get('pbr')
-                            r_mcap = f_data.get('cap')
-                            r_roe = f_data.get('roe')
+                            # --- ボスのDNA：詳細なキー存在チェック ＆ 多重フォールバック ---
+                            if f_data.get('per'): r_per = f_data.get('per')
+                            if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
+                            if r_per is None and f_data.get('trailingPE'): r_per = f_data.get('trailingPE')
+                            if r_per is None and f_data.get('forwardPE'): r_per = f_data.get('forwardPE')
+                            
+                            if f_data.get('pbr'): r_pbr = f_data.get('pbr')
+                            if r_pbr is None and f_data.get('PBR'): r_pbr = f_data.get('PBR')
+                            if r_pbr is None and f_data.get('priceToBook'): r_pbr = f_data.get('priceToBook')
+                            
+                            if f_data.get('cap'): r_mcap = f_data.get('cap')
+                            if r_mcap is None and f_data.get('MCAP'): r_mcap = f_data.get('MCAP')
+                            if r_mcap is None and f_data.get('marketCap'): r_mcap = f_data.get('marketCap')
+                            if r_mcap is None and f_data.get('MarketCapitalization'): r_mcap = f_data.get('MarketCapitalization')
+                            
+                            if f_data.get('roe'): r_roe = f_data.get('roe')
+                            if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
+                            if r_roe is None and f_data.get('returnOnEquity'): r_roe = f_data.get('returnOnEquity')
+                            
+                            # --- ボスのDNA：ROE算出バリデーション ---
+                            if r_roe is None:
+                                try:
+                                    ni = f_data.get("NetIncome")
+                                    eq = f_data.get("Equity")
+                                    if ni is not None and eq is not None:
+                                        ni_f, eq_f = float(ni), float(eq)
+                                        r_roe = (ni_f / eq_f) * 100 if eq_f != 0 else 0.0
+                                    else:
+                                        r_roe = 0.0
+                                except Exception:
+                                    r_roe = 0.0
                             
                             # 🕵️ get_fundamentals 内の日付情報も強制統合
                             e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate") or f_data.get("AnnouncementDate")
@@ -2276,7 +2302,7 @@ with tab3:
                             except Exception:
                                 res_roe = None
 
-                        # --- 本家DNA：時価総額の全単位変換（兆・億・万）物理分岐 ---
+                        # --- ボスのDNA：時価総額の全単位変換（兆・億・万）物理分岐 ---
                         res_mcap_str = "-"
                         if raw_mcap is not None:
                             try:
@@ -2294,7 +2320,7 @@ with tab3:
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                        # --- 本家DNA：IPO判定（全カラムListing走査）ロジック ---
+                        # --- ボスのDNA：IPO判定（全カラムListing走査）ロジック ---
                         if st.session_state.get('f5_ipo', False):
                             try:
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
@@ -2311,329 +2337,337 @@ with tab3:
                                 pass
 
                         # 🕵️ 兵站確認：events データの確定
-                        curr_events = raw_s.get("events", {"dividend": [], "earnings": []})
+                    curr_events = raw_s.get("events", {"dividend": [], "earnings": []})
 
-                        if not bars or len(bars) < 20:
-                            scope_results.append({
-                                'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
-                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
-                                'events': curr_events
-                            })
-                            continue
-
-                        df_raw = pd.DataFrame(bars)
-                        if 'Code' not in df_raw.columns:
-                            df_raw['Code'] = api_code
-                        
-                        df_s = clean_df(df_raw)
-                        
-                        if df_s.empty or len(df_s) < 20:
-                            scope_results.append({
-                                'code': target_key, 'name': c_name,
-                                'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
-                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
-                                'df_chart': pd.DataFrame(),
-                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
-                                'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector, 'market': c_market,
-                                'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
-                                'error': True, 'is_deep': False,
-                                'events': curr_events
-                            })
-                            continue
-
-                        # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
-                        try:
-                            df_chart_full = calc_technicals(df_s.copy())
-                        except Exception:
-                            df_chart_full = df_s.copy()
-                            
-                        # --- ボスのDNA：最新・直近・前々回データの物理抽出（各変数ごとに1行） ---
-                        t_latest = df_chart_full.iloc[-1]
-                        t_prev = df_chart_full.iloc[-2]
-                        t_pprev = df_chart_full.iloc[-3]
-                        
-                        lc = float(t_latest['AdjC'])
-                        lo = float(t_latest['AdjO'])
-                        lh = float(t_latest['AdjH'])
-                        ll = float(t_latest['AdjL'])
-                        
-                        # 14日レンジの物理特定ロジック（原本DNA準拠）
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
-                        ur_v = (h14 - l14)
-                        
-                        # テクニカル指標の抽出
-                        rsi_v = float(t_latest.get('RSI', 50))
-                        atr_v = float(t_latest.get('ATR', lc * 0.05))
-                        df_mini = df_chart_full.tail(260).copy()
-                        
-                        # スコアリング変数の初期化（物理行展開）
-                        score = 0
-                        alerts = []
-                        gc_days = 0
-                        is_deep = False
-
-                        # 🚨 修正：設計思想の正常化（足切り廃止 ＆ 警告メッセージ化）
-                        vol_pct = 0
-                        if lc > 0:
-                            vol_pct = (atr_v / lc * 100)
-                        
-                        if vol_pct < 0.5:
-                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
-
-                        # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
-                        t_events = (raw_s.get("data") or {}).get("events")
-                        alerts.extend(check_event_mines(target_key, raw_s.get("events", {})))
-                        
-                        # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
-                        s_results = detect_sakata_patterns(df_chart_full)
-                        for p in s_results:
-                            alerts.append(p['text'])
-
-                        if is_ambush:
-                            # --- 🌐 待伏（アンブッシュ）戦術論理：原本物理行を完全復元 ---
-                            score = 4
-
-                            # 🚨 物理結線：市場地合い（乖離率）によるバフ・デバフ（待伏モード）
-                            if n225_div_rate <= -8.0:
-                                score += 5
-                                alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
-                            elif n225_div_rate <= -5.0:
-                                score += 3
-                                alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
-                            elif n225_div_rate >= 8.0:
-                                score -= 5
-                                alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
-                            elif n225_div_rate >= 5.0:
-                                score -= 3
-                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
-
-                            base_push_r = st.session_state.push_r / 100.0
-                            bt_val_standard = h14 - (ur_v * base_push_r)
-                            bt_val_deep = h14 - (ur_v * 0.618)
-                            
-                            # ボスのDNA：オーバーシュート判定物理行
-                            if lc < (bt_val_standard * 0.95):
-                                bt_val = int(bt_val_deep)
-                                is_deep = True
-                                if not any("深海" in a for a in alerts):
-                                    alerts.append("💎 【深海待伏】目標地点より5%以上乖離。61.8%押しへ補正。")
-                            else:
-                                bt_val = int(bt_val_standard)
-
-                            m1 = float(t_latest.get('MACD_Hist', 0))
-                            m2 = float(t_prev.get('MACD_Hist', 0))
-                            
-                            # トリアージ演算
-                            tri_val, tri_msg, t_score, tri_col = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
-                            score += t_score
-                            
-                            # PBR加点（原本DNA）
-                            if res_pbr is not None:
-                                if res_pbr <= 5.0:
-                                    score += 2
-                            
-                            # 🚨 機関部サインとの物理連動（加点プロトコル）
-                            if any("二重底" in a for a in alerts):
-                                score += 3
-                            if any("たくり" in a for a in alerts):
-                                score += 5
-                            if any("陰の極み" in a for a in alerts):
-                                score += 7
-
-                            # 達成率演算（原本DNA）
-                            reach_rate = 0
-                            if (h14 - bt_val) > 0:
-                                reach_rate = ((h14 - lc) / (h14 - bt_val) * 100)
-                            
-                            # ランク判定の完全独立物理行（Turn 18復旧）
-                            if score >= 12:
-                                rank = "S級待伏🔥"
-                                bg_c = "#1b5e20"
-                            elif score >= 8:
-                                rank = "A級待伏💎"
-                                bg_c = "#2e7d32"
-                            elif score >= 5:
-                                rank = "B級待伏🛡️"
-                                bg_c = "#4caf50"
-                            else:
-                                rank = "圏外💀"
-                                bg_c = "#616161"
-                        else:
-                            # --- ⚡ 強襲（アサルト）戦術論理：原本物理行を完全復元 ---
-                            bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                            hist_vals = df_mini['MACD_Hist'].tail(5).values
-                            
-                            # ゴールデンクロス判定の物理展開
-                            if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                gc_days = 1
-                                gc_score = 60
-                            elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                gc_days = 2
-                                gc_score = 40
-                            else:
-                                gc_days = 0
-                                gc_score = 5
-                            
-                            # 強襲スコア確定
-                            score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
-
-                            # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード）
-                            if n225_div_rate >= 8.0:
-                                score -= 35
-                                alerts.append(f"⚠️ 【地合い異常過熱】日経乖離率 {n225_div_rate:+.2f}%。強襲を強制停止。")
-                            elif n225_div_rate >= 5.0:
-                                score -= 20
-                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。")
-                            elif n225_div_rate <= -5.0:
-                                score -= 15
-                                alerts.append(f"🔵 【地合い急冷】日経乖離率 {n225_div_rate:+.2f}%。トレンド崩壊注意。")
-
-                            # 🚨 修正：天井警告ペナルティ（防衛回路）
-                            if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
-                                score -= 25
-                            
-                            # 到達率演算
-                            reach_rate = 0
-                            if h14 > 0:
-                                reach_rate = (lc / h14) * 100
-                            
-                            # 強襲ランク判定の物理展開（Turn 18復旧）
-                            if score >= 80:
-                                rank = "S級強襲⚡"
-                                bg_c = "#1b5e20"
-                            elif score >= 60:
-                                rank = "A級強襲🔥"
-                                bg_c = "#2e7d32"
-                            elif score >= 40:
-                                rank = "B級強襲📈"
-                                bg_c = "#4caf50"
-                            else:
-                                rank = "圏外💀"
-                                bg_c = "#616161"
-
-                        # 演算結果の物理パッキング（原本DNA）
+                    if not bars or len(bars) < 20:
                         scope_results.append({
-                            'code': target_key,
-                            'name': c_name,
-                            'lc': lc,
-                            'h14': h14,
-                            'l14': l14,
-                            'ur': ur_v,
-                            'bt_val': bt_val,
-                            'atr_val': atr_v,
-                            'rsi': rsi_v,
-                            'rank': rank,
-                            'bg': bg_c,
-                            'score': score,
-                            'reach_val': reach_rate,
-                            'gc_days': gc_days,
-                            'df_chart': df_chart_full, # 物理結線：全演算DataFrameを完全にストック
-                            'per': res_per,
-                            'pbr': res_pbr,
-                            'roe': res_roe,
-                            'mcap': res_mcap_str,
+                            'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                            'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                            'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
+                            'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
+                            'events': curr_events
+                        })
+                        continue
+
+                    df_raw = pd.DataFrame(bars)
+                    if 'Code' not in df_raw.columns:
+                        df_raw['Code'] = api_code
+                    
+                    df_s = clean_df(df_raw)
+                    
+                    if df_s.empty or len(df_s) < 20:
+                        scope_results.append({
+                            'code': target_key, 'name': c_name,
+                            'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                            'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0,
+                            'df_chart': pd.DataFrame(),
+                            'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str,
                             'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                            'sector': c_sector,
-                            'market': c_market, 
-                            'alerts': alerts,
-                            'sakata_patterns': s_results,
-                            'error': False,
-                            'is_deep': is_deep,
-                            'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {}
+                            'sector': c_sector, 'market': c_market,
+                            'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
+                            'error': True, 'is_deep': False,
+                            'events': curr_events
                         })
+                        continue
+
+                    # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
+                    try:
+                        df_chart_full = calc_technicals(df_s.copy())
+                    except Exception:
+                        df_chart_full = df_s.copy()
                         
-                    except Exception as e:
-                        scope_results.append({
-                            'code': target_key,
-                            'name': f"銘柄 {target_key}",
-                            'rank': '圏外💀',
-                            'bg': '#616161',
-                            'alerts': [f"⚠️ 演算エラー: {str(e)}"],
-                            'error': True,
-                            'df_chart': pd.DataFrame()
-                        })
+                    # --- ボスのDNA：最新・直近・前々回データの物理抽出（各変数ごとに1行） ---
+                    t_latest = df_chart_full.iloc[-1]
+                    t_prev = df_chart_full.iloc[-2]
+                    t_pprev = df_chart_full.iloc[-3]
+                    
+                    lc = float(t_latest['AdjC'])
+                    lo = float(t_latest['AdjO'])
+                    lh = float(t_latest['AdjH'])
+                    ll = float(t_latest['AdjL'])
+                    
+                    # 14日レンジの物理特定ロジック（原本DNA準拠）
+                    h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                    l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                    ur_v = (h14 - l14)
+                    
+                    # テクニカル指標の抽出
+                    rsi_v = float(t_latest.get('RSI', 50))
+                    atr_v = float(t_latest.get('ATR', lc * 0.05))
+                    df_mini = df_chart_full.tail(260).copy()
+                    
+                    # スコアリング変数の初期化（物理行展開）
+                    score = 0
+                    alerts = []
+                    gc_days = 0
+                    is_deep = False
 
-                # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
-                rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
-                for res in scope_results:
-                    r_raw_str = res.get('rank', '圏外')
-                    # 正規表現によるクリーンアップ
-                    r_clean_str = re.sub(r'[^SABC圏外]', '', r_raw_str)
-                    res['r_val'] = rank_order.get(r_clean_str, 0)
-                
-                # ソート実行（ランク > スコア > 到達率）
-                scope_results = sorted(
-                    scope_results, 
-                    key=lambda x: (x.get('r_val', 0), x.get('score', 0), x.get('reach_val', 0)), 
-                    reverse=True
-                )
-                
-                t_calc = time.time()
-                st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
-                status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
+                    # 🚨 修正：設計思想の正常化（足切り廃止 ＆ 警告メッセージ化）
+                    vol_pct = 0
+                    if lc > 0:
+                        vol_pct = (atr_v / lc * 100)
+                    
+                    if vol_pct < 0.5:
+                        alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
-            # --- 📋 【改修要件】作戦参謀への分析依頼データ一括テキスト生成回路 ---
-            valid_results = [x for x in scope_results if not x.get('error')]
-            if valid_results:
-                export_texts = []
-                # 2026年現在の正確な日時をフォーマット化
-                current_date_str = datetime.now().strftime("%Y/%m/%d") + " 大引け後"
-                
-                # マクロ環境（地合い）確値の安全取得
-                n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円" if n225_m_data and n225_m_data.get('close') else "取得不可"
-                n225_div_rate_val = f"{n225_div_rate:+.2f}%"
-                
-                for vr in valid_results:
-                    # アラート・シグナルのクレンジング（HTMLインジェクションを完全除去）
-                    clean_alerts = []
-                    for al in vr.get('alerts', []):
-                        if isinstance(al, str):
-                            clean_text = re.sub(r'<[^>]*>', '', al).strip()
-                            if clean_text:
-                                clean_alerts.append(clean_text)
-                    alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+                    # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
+                    t_events = (raw_s.get("data") or {}).get("events")
+                    alerts.extend(check_event_mines(target_key, raw_s.get("events", {})))
                     
-                    # 0/3グリーン条件の厳格な物理カウント同期
-                    v_roe = safe_float(vr.get('roe'))
-                    v_per = safe_float(vr.get('per'))
-                    v_pbr = safe_float(vr.get('pbr'))
-                    g_count = 0
-                    if v_roe is not None and v_roe >= 10.0: g_count += 1
-                    if v_per is not None and v_per <= 20.0: g_count += 1
-                    if v_pbr is not None and v_pbr <= 5.0: g_count += 1
-                    fund_status = f"{g_count}/3グリーン"
-                    
-                    # 個別銘柄のMA25抽出（多重例外ガード＆自律演算フォールバック）
-                    v_df_chart = vr.get('df_chart', pd.DataFrame())
-                    v_ma25 = None
-                    if not v_df_chart.empty:
-                        last_row = v_df_chart.iloc[-1]
-                        for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
-                            if k in last_row and pd.notna(last_row[k]):
-                                v_ma25 = safe_float(last_row[k])
-                                break
-                        # 機関部未定義時の最終防衛：AdjCから25日移動平均を安全に直前再演算
-                        if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
-                            try:
-                                v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
-                            except:
-                                v_ma25 = None
-                    ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
-                    
-                    # システム算出買目標値の文言（待伏・強襲による戦術論理分岐）
+                    # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
+                    s_results = detect_sakata_patterns(df_chart_full)
+                    for p in s_results:
+                        alerts.append(p['text'])
+
                     if is_ambush:
-                        bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
-                        bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
-                    else:
-                        stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
-                        bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+                        # --- 🌐 待伏（アンブッシュ）戦術論理：原本物理行を完全復元 ---
+                        score = 4
 
-                    # 要件定義に完全準拠したプレーンテキストの構築
-                    text_template = f"""【作戦参謀への分析依頼データ】
+                        # 🚨 物理結線：市場地合い（乖離率）によるバフ・デバフ（待伏モード）
+                        if n225_div_rate <= -8.0:
+                            score += 5
+                            alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
+                        elif n225_div_rate <= -5.0:
+                            score += 3
+                            alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                        elif n225_div_rate >= 8.0:
+                            score -= 5
+                            alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                        elif n225_div_rate >= 5.0:
+                            score -= 3
+                            alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+
+                        base_push_r = st.session_state.push_r / 100.0
+                        bt_val_standard = h14 - (ur_v * base_push_r)
+                        bt_val_deep = h14 - (ur_v * 0.618)
+                        
+                        # ボスのDNA：オーバーシュート判定物理行
+                        if lc < (bt_val_standard * 0.95):
+                            bt_val = int(bt_val_deep)
+                            is_deep = True
+                            if not any("深海" in a for a in alerts):
+                                alerts.append("💎 【深海待伏】目標地点より5%以上乖離。61.8%押しへ補正。")
+                        else:
+                            bt_val = int(bt_val_standard)
+
+                        m1 = float(t_latest.get('MACD_Hist', 0))
+                        m2 = float(t_prev.get('MACD_Hist', 0))
+                        
+                        # トリアージ演算
+                        tri_val, tri_msg, t_score, tri_col = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                        score += t_score
+                        
+                        # PBR加点（原本DNA）
+                        if res_pbr is not None:
+                            if res_pbr <= 5.0:
+                                score += 2
+                        
+                        # 🚨 機関部サインとの物理連動（加点プロトコル）
+                        if any("二重底" in a for a in alerts):
+                            score += 3
+                        if any("たくり" in a for a in alerts):
+                            score += 5
+                        if any("陰の極み" in a for a in alerts):
+                            score += 7
+
+                        # 達成率演算（原本DNA）
+                        reach_rate = 0
+                        if (h14 - bt_val) > 0:
+                            reach_rate = ((h14 - lc) / (h14 - bt_val) * 100)
+                        
+                        # ランク判定の完全独立物理行（Turn 18復旧）
+                        if score >= 12:
+                            rank = "S級待伏🔥"
+                            bg_c = "#1b5e20"
+                        elif score >= 8:
+                            rank = "A級待伏💎"
+                            bg_c = "#2e7d32"
+                        elif score >= 5:
+                            rank = "B級待伏🛡️"
+                            bg_c = "#4caf50"
+                        else:
+                            rank = "圏外💀"
+                            bg_c = "#616161"
+                    else:
+                        # --- ⚡ 強襲（アサルト）戦術論理：原本物理行を完全復元 ---
+                        bt_val = int(max(h14, lc + (atr_v * 0.5)))
+                        hist_vals = df_mini['MACD_Hist'].tail(5).values
+                        
+                        # ゴールデンクロス判定の物理展開
+                        if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
+                            gc_days = 1
+                            gc_score = 60
+                        elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
+                            gc_days = 2
+                            gc_score = 40
+                        else:
+                            gc_days = 0
+                            gc_score = 5
+                        
+                        # 強襲スコア確定
+                        score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
+
+                        # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード）
+                        if n225_div_rate >= 8.0:
+                            score -= 35
+                            alerts.append(f"⚠️ 【地合い異常過熱】日経乖離率 {n225_div_rate:+.2f}%。強襲を強制停止。")
+                        elif n225_div_rate >= 5.0:
+                            score -= 20
+                            alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。")
+                        elif n225_div_rate <= -5.0:
+                            score -= 15
+                            alerts.append(f"🔵 【地合い急冷】日経乖離率 {n225_div_rate:+.2f}%。トレンド崩壊注意。")
+
+                        # 🚨 修正：天井警告ペナルティ（防衛回路）
+                        if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
+                            score -= 25
+                        
+                        # 到達率演算
+                        reach_rate = 0
+                        if h14 > 0:
+                            reach_rate = (lc / h14) * 100
+                        
+                        # 強襲ランク判定の物理展開（Turn 18復旧）
+                        if score >= 80:
+                            rank = "S級強襲⚡"
+                            bg_c = "#1b5e20"
+                        elif score >= 60:
+                            rank = "A級強襲🔥"
+                            bg_c = "#2e7d32"
+                        elif score >= 40:
+                            rank = "B級強襲📈"
+                            bg_c = "#4caf50"
+                        else:
+                            rank = "圏外💀"
+                            bg_c = "#616161"
+
+                    # 演算結果の物理パッキング（原本DNA）
+                    scope_results.append({
+                        'code': target_key,
+                        'name': c_name,
+                        'lc': lc,
+                        'h14': h14,
+                        'l14': l14,
+                        'ur': ur_v,
+                        'bt_val': bt_val,
+                        'atr_val': atr_v,
+                        'rsi': rsi_v,
+                        'rank': rank,
+                        'bg': bg_c,
+                        'score': score,
+                        'reach_val': reach_rate,
+                        'gc_days': gc_days,
+                        'df_chart': df_chart_full, 
+                        'per': res_per,
+                        'pbr': res_pbr,
+                        'roe': res_roe,
+                        'mcap': res_mcap_str,
+                        'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
+                        'sector': c_sector,
+                        'market': c_market, 
+                        'alerts': alerts,
+                        'sakata_patterns': s_results,
+                        'error': False,
+                        'is_deep': is_deep,
+                        'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {}
+                    })
+                    
+                except Exception as e:
+                    scope_results.append({
+                        'code': target_key,
+                        'name': f"銘柄 {target_key}",
+                        'rank': '圏外💀',
+                        'bg': '#616161',
+                        'alerts': [f"⚠️ 演算エラー: {str(e)}"],
+                        'error': True,
+                        'df_chart': pd.DataFrame()
+                    })
+
+            # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
+            rank_order = {"S": 4, "A": 3, "B": 2, "圏外": 0}
+            for res in scope_results:
+                r_raw_str = res.get('rank', '圏外')
+                # 正規表現によるクリーンアップ
+                r_clean_str = re.sub(r'[^SABC圏外]', '', r_raw_str)
+                res['r_val'] = rank_order.get(r_clean_str, 0)
+            
+            # ソート実行（ランク > スコア > 到達率）
+            scope_results = sorted(
+                scope_results, 
+                key=lambda x: (x.get('r_val', 0), x.get('score', 0), x.get('reach_val', 0)), 
+                reverse=True
+            )
+            
+            t_calc = time.time()
+            st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
+            status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
+
+        # --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根絶） ---
+        def safe_int(x):
+            try: return int(float(x)) if not pd.isna(x) else 0
+            except Exception: return 0
+        def safe_float(x):
+            try: return float(x) if not pd.isna(x) else None
+            except Exception: return None
+
+        # --- 📋 【改修要件】作戦参謀への分析依頼データ一括テキスト生成回路 ---
+        valid_results = [x for x in scope_results if not x.get('error')]
+        if valid_results:
+            export_texts = []
+            # 2026年現在の正確な日時をフォーマット化
+            current_date_str = datetime.now().strftime("%Y/%m/%d") + " 大引け後"
+            
+            # マクロ環境（地合い）確値の安全取得
+            n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円" if n225_m_data and n225_m_data.get('close') else "取得不可"
+            n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+            
+            for vr in valid_results:
+                # アラート・シグナルのクレンジング（HTMLインジェクションを完全除去）
+                clean_alerts = []
+                for al in vr.get('alerts', []):
+                    if isinstance(al, str):
+                        clean_text = re.sub(r'<[^>]*>', '', al).strip()
+                        if clean_text:
+                            clean_alerts.append(clean_text)
+                alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+                
+                # 0/3グリーン条件の厳格な物理カウント同期
+                v_roe = safe_float(vr.get('roe'))
+                v_per = safe_float(vr.get('per'))
+                v_pbr = safe_float(vr.get('pbr'))
+                g_count = 0
+                if v_roe is not None and v_roe >= 10.0: g_count += 1
+                if v_per is not None and v_per <= 20.0: g_count += 1
+                if v_pbr is not None and v_pbr <= 5.0: g_count += 1
+                fund_status = f"{g_count}/3グリーン"
+                
+                # 個別銘柄のMA25抽出（多重例外ガード＆自律演算フォールバック）
+                v_df_chart = vr.get('df_chart', pd.DataFrame())
+                v_ma25 = None
+                if not v_df_chart.empty:
+                    last_row = v_df_chart.iloc[-1]
+                    for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
+                        if k in last_row and pd.notna(last_row[k]):
+                            v_ma25 = safe_float(last_row[k])
+                            break
+                    # 機関部未定義時の最終防衛：AdjCから25日移動平均を安全に直前再演算
+                    if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
+                        try:
+                            v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
+                        except:
+                            v_ma25 = None
+                ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
+                
+                # システム算出買目標値の文言（待伏・強襲による戦術論理分岐）
+                if is_ambush:
+                    bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
+                    bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
+                else:
+                    stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
+                    bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+
+                # 要件定義に完全準拠したプレーンテキストの構築（不要文字列を完全クレンジング）
+                text_template = f"""【作戦参謀への分析依頼データ】
 ■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
@@ -2658,192 +2692,192 @@ with tab3:
 ■ボラティリティ・ターゲットデータ
 ・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
 ・システム算出 買目標値：{bt_target_str}"""
-                    export_texts.append(text_template)
-                
-                # 複数銘柄の全結合（デリミタによる明確な境界分割）
-                final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
-                
-                # UIの神聖不可侵を維持しつつ、一発コピー可能なテキストエリアを最上段に配置
-                st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-                with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（全件一発抽出）", expanded=True):
-                    st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、スキャン結果の全テキストを一撃でクリップボードへ格納できます。</p>", unsafe_allow_html=True)
-                    st.code(final_copypaste_text, language="text")
+                export_texts.append(text_template)
+            
+            # 複数銘柄の全結合（デリミタによる明確な境界分割）
+            final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
+            
+            # UIの神聖不可侵を維持しつつ、一発コピー可能なテキストエリアを最上段に配置
+            st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+            with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（全件一発抽出）", expanded=True):
+                st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、スキャン結果の全テキストを一撃でクリップボードへ格納できます。</p>", unsafe_allow_html=True)
+                st.code(final_copypaste_text, language="text")
 
             # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
-            for index, r in enumerate(scope_results):
-                st.divider()
-                if r.get('error'):
-                    st.error(f"銘柄 {r['code']}: {', '.join(r['alerts'])}")
-                    continue
+        for index, r in enumerate(scope_results):
+            st.divider()
+            if r.get('error'):
+                st.error(f"銘柄 {r['code']}: {', '.join(r['alerts'])}")
+                continue
 
-                # ユーティリティ（原本DNA：重複定義を完全に物理復旧）
-                def safe_int(x):
+            # ユーティリティ（原本DNA：重複定義を完全に物理復旧）
+            def safe_int(x):
+                try: return int(float(x)) if not pd.isna(x) else 0
+                except Exception: return 0
+            def safe_float(x):
+                try: return float(x) if not pd.isna(x) else None
+                except Exception: return None
+            
+            has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
+
+            # 🚨 イベント通知バッジ（原本DNA物理復旧 ＆ 左寄せHTML）
+            event_badges = ""
+            for alert in r.get('alerts', []):
+                if "残り" in alert:
+                    color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
+                    label = alert.split("】")[1] if "】" in alert else alert
+                    event_badges += f'<span style="background:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-left:8px; font-weight:bold;">{label}</span>'
+
+            # 配色定義
+            source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
+            
+            # --- ボスのDNA：市場バッジの詳細条件物理行を完全復元（1文字も削らず） ---
+            m_lower = str(r['market']).lower()
+            if 'プライム' in m_lower or '一部' in m_lower:
+                m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #303f9f;">🏢 プライム/大型</span>'
+            elif 'グロース' in m_lower or 'マザーズ' in m_lower:
+                m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #2e7d32;">🚀 グロース/新興</span>'
+            elif 'スタンダード' in m_lower or '二部' in m_lower:
+                m_badge = '<span style="background-color: #ef6c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #f57c00;">⚖️ スタンダード/中堅</span>'
+            else:
+                m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #546e7a;">{r["market"]}</span>'
+            
+            # GCバッジ（原本DNA）
+            gc_badge = ""
+            if r.get('gc_days', 0) > 0:
+                gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
+
+            # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
+            st.markdown(f"""
+            <div style="margin-bottom: 0.8rem;">
+            <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
+            <span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
+            {m_badge}{gc_badge}
+            <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
+            <span style="background: rgba(38,166,154,0.05); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold;">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+            </div></div>""", unsafe_allow_html=True)
+            
+            # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
+            if r.get('alerts'):
+                for alert in r['alerts']:
+                    if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃", "売り三空", "陰の極み", "好機", "支援"]):
+                        st.success(alert)
+                    elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "黒三兵", "三尊", "三山", "二重天井", "赤三先", "買い三空", "撤退", "罠", "停止", "逆風"]):
+                        st.error(alert)
+                    else:
+                        st.warning(alert)
+
+            # 3カラムレイアウト（Metrics / Golden Box / ATR Matrix）
+            sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+            
+            with sc_left:
+                # 原本DNA：物理的なメトリック分割（safe_int_local再定義によるスコープ保護）
+                def safe_int_local(x):
                     try: return int(float(x)) if not pd.isna(x) else 0
                     except Exception: return 0
-                def safe_float(x):
-                    try: return float(x) if not pd.isna(x) else None
-                    except Exception: return None
                 
-                has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
-
-                # 🚨 イベント通知バッジ（原本DNA物理復旧 ＆ 左寄せHTML）
-                event_badges = ""
-                for alert in r.get('alerts', []):
-                    if "残り" in alert:
-                        color = "#ef5350" if any(x in alert for x in ["決算", "地雷", "警戒"]) else "#ffca28"
-                        label = alert.split("】")[1] if "】" in alert else alert
-                        event_badges += f'<span style="background:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; margin-left:8px; font-weight:bold;">{label}</span>'
-
-                # 配色定義
-                source_color = "#42a5f5" if "監視" in r['source'] else "#ffa726"
+                h14_v = safe_int_local(r['h14'])
+                l14_v = safe_int_local(r['l14'])
+                ur_v = safe_int_local(r['ur'])
+                lc_v = safe_int_local(r['lc'])
+                atr_v_val = safe_float(r['atr_val']) or 0.0
                 
-                # --- ボスのDNA：市場バッジの詳細条件物理行を完全復元（1文字も削らず） ---
-                m_lower = str(r['market']).lower()
-                if 'プライム' in m_lower or '一部' in m_lower:
-                    m_badge = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #303f9f;">🏢 プライム/大型</span>'
-                elif 'グロース' in m_lower or 'マザーズ' in m_lower:
-                    m_badge = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #2e7d32;">🚀 グロース/新興</span>'
-                elif 'スタンダード' in m_lower or '二部' in m_lower:
-                    m_badge = '<span style="background-color: #ef6c00; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #f57c00;">⚖️ スタンダード/中堅</span>'
+                c1, c2 = st.columns(2); c1.metric("直近高値", f"{h14_v:,}円"); c2.metric("起点安値", f"{l14_v:,}円")
+                c3, c4 = st.columns(2); c3.metric("波高(14d)", f"{ur_v:,}円"); c4.metric("最新終値", f"{lc_v:,}円")
+                
+                # ATRボラ率の物理演算表示
+                st.metric("🌪️ 1ATR", f"{safe_int_local(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
+
+            with sc_mid:
+                # ファンダメンタルズの物理抽出（原本DNA）
+                roe_v = safe_float(r['roe'])
+                per_v = safe_float(r['per'])
+                pbr_v = safe_float(r['pbr'])
+                
+                # 判定とカラーリング（原本DNA）
+                roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v is not None and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v is not None else "-", "#ef5350")
+                per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v is not None and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v is not None else "-", "#ef5350")
+                pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v is not None and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v is not None else "-", "#ef5350")
+                
+                # UI表示（待伏 ＝ 1値 / 強襲 ＝ 2値）
+                if is_ambush:
+                    box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
+                    box_val = f"{safe_int(r['bt_val']):,}円"
                 else:
-                    m_badge = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #546e7a;">{r["market"]}</span>'
-                
-                # GCバッジ（原本DNA）
-                gc_badge = ""
-                if r.get('gc_days', 0) > 0:
-                    gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
+                    box_title = "🎯 トリガー / 逆指値目安"
+                    stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
+                    box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
 
-                # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
+                # --- 💥 最終結線：バッジHTML生成（実戦配備版） ---
+                e_html = ""
+                c_code_4 = str(r['code'])[:4] 
+
+                # 未来の地雷（イベント）判定実行
+                e_alerts = check_event_mines(c_code_4, r.get('events', {}))
+
+                # 判定結果が存在する場合のみ、バッジを生成
+                for a in e_alerts:
+                    b_col = "#ef5350"
+                    e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
+
+                # ゴールデンボックスHTML（DNA復元 ＋ e_html着弾）
                 st.markdown(f"""
-                <div style="margin-bottom: 0.8rem;">
-                <h3 style="font-size: clamp(18px, 5vw, 28px); font-weight: bold; margin: 0 0 0.3rem 0;">
-                <span style="background:{source_color}; color:white; padding:2px 6px; border-radius:4px; font-size:12px; vertical-align:middle; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">{r['source']}</span> ({r['code']}) {r['name']} {event_badges}</h3>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-                <span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
-                {m_badge}{gc_badge}
-                <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
-                <span style="background: rgba(38,166,154,0.05); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold;">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+                <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
+                <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
+                <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
+                <div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
+                <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
+                <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
+                <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+                </div>
+                <div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
+                <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
                 </div></div>""", unsafe_allow_html=True)
+
+            with sc_right:
+                c_target = safe_int(r['bt_val'])
+                # 推奨利確・防衛ラインの判定（原本DNA）
+                rec_tps = [2.0, 3.0] if any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
                 
-                # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
-                if r.get('alerts'):
-                    for alert in r['alerts']:
-                        if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "赤三兵", "二重底", "たくり", "明星", "狙撃", "売り三空", "陰の極み", "好機", "支援"]):
-                            st.success(alert)
-                        elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "黒三兵", "三尊", "三山", "二重天井", "赤三先", "買い三空", "撤退", "罠", "停止", "逆風"]):
-                            st.error(alert)
-                        else:
-                            st.warning(alert)
-
-                # 3カラムレイアウト（Metrics / Golden Box / ATR Matrix）
-                sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
+                # ATRマトリクス：ボスのDNA（％計算のインライン物理記述 ＆ 独立したスタイル指定）
+                html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                 
-                with sc_left:
-                    # 原本DNA：物理的なメトリック分割（safe_int_local再定義によるスコープ保護）
-                    def safe_int_local(x):
-                        try: return int(float(x)) if not pd.isna(x) else 0
-                        except Exception: return 0
-                    
-                    h14_v = safe_int_local(r['h14'])
-                    l14_v = safe_int_local(r['l14'])
-                    ur_v = safe_int_local(r['ur'])
-                    lc_v = safe_int_local(r['lc'])
-                    atr_v_val = safe_float(r['atr_val']) or 0.0
-                    
-                    c1, c2 = st.columns(2); c1.metric("直近高値", f"{h14_v:,}円"); c2.metric("起点安値", f"{l14_v:,}円")
-                    c3, c4 = st.columns(2); c3.metric("波高(14d)", f"{ur_v:,}円"); c4.metric("最新終値", f"{lc_v:,}円")
-                    
-                    # ATRボラ率の物理演算表示
-                    st.metric("🌪️ 1ATR", f"{safe_int_local(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
+                # 利確目安の物理ループ
+                for m in [0.5, 1.0, 2.0, 3.0]:
+                    val = int(c_target + (atr_v_val * m))
+                    pct_v = ((val / c_target) - 1) * 100 if c_target > 0 else 0
+                    style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;" if m in rec_tps else "padding:3px 6px;"
+                    label = "<span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span>" if m in rec_tps else ""
+                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:+.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                
+                html_matrix += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
+                
+                # 防衛目安の物理ループ
+                for m in [0.5, 1.0, 2.0]:
+                    val = int(c_target - (atr_v_val * m))
+                    pct_v = (1 - (val / c_target)) * 100 if c_target > 0 else 0
+                    style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;" if m == 1.0 else "padding:3px 6px;"
+                    label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
+                    html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
+                
+                st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
 
-                with sc_mid:
-                    # ファンダメンタルズの物理抽出（原本DNA）
-                    roe_v = safe_float(r['roe'])
-                    per_v = safe_float(r['per'])
-                    pbr_v = safe_float(r['pbr'])
-                    
-                    # 判定とカラーリング（原本DNA）
-                    roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v is not None and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v is not None else "-", "#ef5350")
-                    per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v is not None and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v is not None else "-", "#ef5350")
-                    pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v is not None and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v is not None else "-", "#ef5350")
-                    
-                    # UI表示（待伏 ＝ 1値 / 強襲 ＝ 2値）
-                    if is_ambush:
-                        box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
-                        box_val = f"{safe_int(r['bt_val']):,}円"
-                    else:
-                        box_title = "🎯 トリガー / 逆指値目安"
-                        stop_p = safe_int(r['bt_val'] + (atr_v_val * 0.1))
-                        box_val = f"{safe_int(r['bt_val']):,}円 / {stop_p:,}円"
-
-                    # --- 💥 最終結線：バッジHTML生成（実戦配備版） ---
-                    e_html = ""
-                    c_code_4 = str(r['code'])[:4] 
-
-                    # 未来の地雷（イベント）判定実行
-                    e_alerts = check_event_mines(c_code_4, r.get('events', {}))
-
-                    # 判定結果が存在する場合のみ、バッジを生成
-                    for a in e_alerts:
-                        b_col = "#ef5350"
-                        e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
-
-                    # ゴールデンボックスHTML（DNA復元 ＋ e_html着弾）
-                    st.markdown(f"""
-                    <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
-                    <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
-                    <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
-                    <div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
-                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-                    <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
-                    </div>
-                    <div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-                    <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
-                    </div></div>""", unsafe_allow_html=True)
-
-                with sc_right:
-                    c_target = safe_int(r['bt_val'])
-                    # 推奨利確・防衛ラインの判定（原本DNA）
-                    rec_tps = [2.0, 3.0] if any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
-                    
-                    # ATRマトリクス：ボスのDNA（％計算のインライン物理記述 ＆ 独立したスタイル指定）
-                    html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
-                    
-                    # 利確目安の物理ループ
-                    for m in [0.5, 1.0, 2.0, 3.0]:
-                        val = int(c_target + (atr_v_val * m))
-                        pct_v = ((val / c_target) - 1) * 100 if c_target > 0 else 0
-                        style = "background:rgba(38,166,154,0.15); border:1px solid #26a69a; border-radius:4px; padding:2px 6px;" if m in rec_tps else "padding:3px 6px;"
-                        label = "<span style='font-size:10px; background:#26a69a; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>推奨</span>" if m in rec_tps else ""
-                        html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>+{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:+.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                    
-                    html_matrix += "</div><div style='flex:1;'><div style='color:#ef5350; border-bottom:2px solid #ef5350; margin-bottom:8px;'>【防衛目安】</div>"
-                    
-                    # 防衛目安の物理ループ
-                    for m in [0.5, 1.0, 2.0]:
-                        val = int(c_target - (atr_v_val * m))
-                        pct_v = (1 - (val / c_target)) * 100 if c_target > 0 else 0
-                        style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;" if m == 1.0 else "padding:3px 6px;"
-                        label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
-                        html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                    
-                    st.markdown(html_matrix + "</div></div></div>", unsafe_allow_html=True)
-
-                # 下部チャートエリア
-                if has_chart:
-                    try:
-                        # 物理スペーサー（原本DNA）
-                        st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
-                        # レーダーチャート呼び出し
-                        st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
-                        st.markdown("---")
-                        # 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶 ＆ 酒田サインの物理結線
-                        u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
-                        draw_chart(r['df_chart'], c_target, sakata=r.get('sakata_patterns', []), chart_key=u_key)
-                        st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
-                    except Exception as e:
-                        st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
+            # --- 下部チャートエリア ---
+            if has_chart:
+                try:
+                    # 物理スペーサー（原本DNA）
+                    st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
+                    # レーダーチャート呼び出し
+                    st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
+                    st.markdown("---")
+                    # 最終完遂：原本DNA 100% ＆ 全幅・凡例下 ＆ 重複エラー根絶 ＆ 酒田サインの物理結線
+                    u_key = f"t3_chart_final_{r['code']}_{index}_{cache_key}_{int(time.time()*1000)}"
+                    draw_chart(r['df_chart'], c_target, sakata=r.get('sakata_patterns', []), chart_key=u_key)
+                    st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
