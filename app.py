@@ -2445,7 +2445,7 @@ with tab3:
                             vol_pct = (atr_v / lc * 100)
                         
                         if vol_pct < 0.5:
-                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下 of 恐れあり。")
+                            alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
                         # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
                         t_events = (raw_s.get("data") or {}).get("events")
@@ -2541,7 +2541,7 @@ with tab3:
                                 gc_days = 0
                                 gc_score = 5
                                 
-                            # 🚨 【改修】強襲モードにおけるGC前の兆し（S+）判定の組み込み
+                            # 🚨 【改修】5MAと25MAの接近モメンタム（速度）から翌日GC予測を物理判定
                             is_pre_gc_t3 = False
                             if gc_days == 0 and len(df_mini) >= 2:
                                 row_l = df_mini.iloc[-1]
@@ -2552,12 +2552,11 @@ with tab3:
                                 prev_ma25_c = row_p.get('MA25') if pd.notna(row_p.get('MA25')) else np.mean(df_mini['AdjC'].values[-26:-1])
                                 
                                 if ma5_c and ma25_c and prev_ma5_c and prev_ma25_c:
-                                    curr_diff = ma25_c - ma5_c
-                                    prev_diff = prev_ma25_c - prev_ma5_c
-                                    f1_min_rate = st.session_state.get('f1_min', 0.5)
-                                    thresh = lc * (f1_min_rate / 100)
+                                    curr_diff = ma25_c - ma5_c      # 本日の残り距離
+                                    prev_diff = prev_ma25_c - prev_ma5_c  # 前日の距離
                                     
-                                    if 0 < curr_diff < thresh and curr_diff < prev_diff:
+                                    # 条件：残り距離が1日あたりの収束速度（prev_diff - curr_diff）以下なら明日クロス
+                                    if 0 < curr_diff <= (prev_diff - curr_diff):
                                         is_pre_gc_t3 = True
                                         gc_score = 95 # 最上位に整列させるため既存MAXを超える高スコア
                                 
@@ -2586,21 +2585,22 @@ with tab3:
                                 
                             # 強襲ランク判定の物理展開（Turn 18復旧）
                             if is_pre_gc_t3:
-                                rank = "S+🎯激熱"
+                                rank = "S+🎯"  # 🚨 物理クレンジングを通過させるため、ランク名を「S+🎯」に統一
                                 bg_c = "#ff5252" # 激熱の赤
-                                alerts.append(f"🎯 【強襲初動】ゴールデンクロス大接近。接近閾値 {st.session_state.get('f1_min', 0.5)}% 以内を補足。")
-                            elif score >= 80:
-                                rank = "S級強襲⚡"
-                                bg_c = "#1b5e20"
-                            elif score >= 60:
-                                rank = "A級強襲🔥"
-                                bg_c = "#2e7d32"
-                            elif score >= 40:
-                                rank = "B級強襲📈"
-                                bg_c = "#4caf50"
+                                alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロスを達成する、本物の超直前モメンタムを補足。")
                             else:
-                                rank = "圏外💀"
-                                bg_c = "#616161"
+                                if score >= 80:
+                                    rank = "S級強襲⚡"
+                                    bg_c = "#1b5e20"
+                                elif score >= 60:
+                                    rank = "A級強襲🔥"
+                                    bg_c = "#2e7d32"
+                                elif score >= 40:
+                                    rank = "B級強襲📈"
+                                    bg_c = "#4caf50"
+                                else:
+                                    rank = "圏外💀"
+                                    bg_c = "#616161"
 
                         # 演算結果の物理パッキング（原本DNA）
                         scope_results.append({
@@ -2630,7 +2630,6 @@ with tab3:
                             'sakata_patterns': s_results,
                             'error': False,
                             'is_deep': is_deep,
-                            # 💥 物理修正：raw_s[res_c] 直下の 'events' を直接、または安全に取得
                             'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {}
                         })
                                     
@@ -2646,10 +2645,11 @@ with tab3:
                         })
 
                 # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
+                # 🚨 【改修】S+ を最高位(5)として定義追加
                 rank_order = {"S+": 5, "S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results:
                     r_raw_str = res.get('rank', '圏外')
-                    # 正規表現によるクレンジング
+                    # 正規表現によるクレンジング（S+ を保護するため \+ を物理追加）
                     r_clean_str = re.sub(r'[^S\+ABC圏外]', '', r_raw_str)
                     res['r_val'] = rank_order.get(r_clean_str, 0)
                 
@@ -2737,7 +2737,7 @@ with tab3:
 
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
-• 日経平均MA25乖離率：{n225_div_rate_val}
+・日経平均MA25乖離率：{n225_div_rate_val}
 
 ■システム判定ステータス
 ・総合判定：{vr.get('rank')}
@@ -2802,7 +2802,7 @@ with tab3:
             if r.get('gc_days', 0) > 0:
                 gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
             elif "S+" in str(r.get('rank', '')):
-                gc_badge = f"<span style='background-color: #ff5252; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #ff8a80; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>🎯 GC前夜(激熱)</span>"
+                gc_badge = f"<span style='background-color: #ff5252; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #ff8a80; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>🎯 明日GC見込(激熱)</span>"
 
             # 銘柄ヘッダーHTML（原本DNA：1pxのマージンまで維持）
             st.markdown(f"""
@@ -2827,7 +2827,6 @@ with tab3:
                         st.warning(alert)
 
             # 3カラムレイアウト（Metrics / Golden Box / ATR Matrix）
-            st.columns([2.5, 3.5, 5.0]) # 🚨 物理修正：カラム初期化を安全に配置
             sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
             
             with sc_left:
