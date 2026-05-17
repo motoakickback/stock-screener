@@ -1371,7 +1371,7 @@ st.sidebar.divider()
 st.sidebar.header("📂 戦略的セクター制御")
 
 # 1. セクター密度調整（30銘柄対応版）
-current_f_max = st.session_state.get("f_max_stocks_per_sector", 3)
+current_f_max = st.session_state.get("f_max_stocks_per_sector", 30)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 30, int(current_f_max), # 10から30へ拡張
