@@ -169,9 +169,9 @@ st.write(f"⏱ 経過時間: {time.time() - st.session_state.login_time:.2f}秒"
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 # ==========================================
-# ⚙️ 設定の永続化（完全統合・決定版）
+# ⚙️ 設定の永続化（完全統合・決定版・物理結線済）
 # ==========================================
-# 🚨 ボスの user_id 連動システムとデフォルト値を完全継承し、新兵装のキーをマージ
+# 🚨 ボスの user_id 連動システムとデフォルト値を完全継承し、未定義だったプリセット連動関数を完全内包
 SETTINGS_FILE = f"saved_settings_{user_id}.json"
 
 def load_settings():
@@ -188,7 +188,7 @@ def load_settings():
         "tab2_rsi_limit": 75, "tab2_vol_limit": 15000, 
         "t3_scope_mode": "🌐 【待伏】 押し目・逆張り",
         "gigi_input": "2134, 3350, 6172, 6740, 7647, 8783, 8836, 8925, 9318",
-        # 👇 🆕 新設されたサイドバーの初期値を美しく統合
+        # 👇 新設されたサイドバーの初期値を美しく統合
         "f_vol_min_slider": 0.5,
         "f_max_stocks_slider": 30
     }
@@ -213,7 +213,7 @@ def save_settings():
         "f1_min", "f1_max", "f2_m30", "f3_drop", "f5_ipo", "f6_risk", "f7_ex_etf", "f8_ex_bio", 
         "f9_min14", "f9_max14", "f10_ex_knife", "f11_ex_wave3", "f12_ex_overvalued",
         "tab2_rsi_limit", "tab2_vol_limit", "t3_scope_mode", "gigi_input",
-        # 👇 🆕 新設されたサイドバーの保存対象キーを物理同期
+        # 👇 新設されたサイドバーの保存対象キーを物理同期
         "f_vol_min_slider", "f_max_stocks_slider"
     ]
     
@@ -223,6 +223,18 @@ def save_settings():
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
     except: 
         pass
+
+def apply_presets():
+    """🚨 物理結線パッチ: 押し目プリセット文字列（例: '50.0%'）を数値（50.0）に変換し同期・自動保存する"""
+    if "preset_push_r" in st.session_state:
+        try:
+            val_str = st.session_state["preset_push_r"]
+            # "50.0%" から "%" を剥ぎ取り、純粋な数値 50.0 として計算エンジン用の変数に直着弾させる
+            st.session_state["push_r"] = float(val_str.replace("%", "").strip())
+        except:
+            pass
+    # 値の書き換えと同時に、即座にストレージへ永久磁気保存
+    save_settings()
 
 # --- アプリ起動時、UI描画前に必ず自動実行 ---
 load_settings()
