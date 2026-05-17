@@ -989,10 +989,11 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     else: macd_t = "減衰"
     
     if mode == "強襲":
-        # 🚨 【改修】GC前（gc_days <= 0）でも、MACDヒストグラムが好転（下落減衰・上昇拡大）していれば兆しと判定
+        # 🚨 【改修】MACDヒストグラムの接近モメンタムから翌日GC予測を物理判定
         if gc_days <= 0:
-            if macd_hist < 0 and macd_hist > macd_hist_prev and rsi < 75:
-                return "S+🎯", "#ff5252", 6, "GC前夜(激熱)"
+            # 残り距離: -macd_hist / 接近速度: macd_hist - macd_hist_prev
+            if macd_hist < 0 and (-macd_hist <= (macd_hist - macd_hist_prev)) and rsi < 75:
+                return "S+🎯", "#ff5252", 6, "明日GC見込(激熱)"
             return "圏外🚫", "#ef5350", 0, macd_t
 
         if macd_t == "下落継続" or rsi >= 75: return "圏外🚫", "#ef5350", 0, macd_t
@@ -1029,7 +1030,7 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
     
-    # 🚨 【改修】GC前の兆し（S+）を最優先で捕捉する数理ロジック
+    # 🚨 【改修】5MAと25MAの接近モメンタム（速度）から「明日確実にクロスするか」を物理特定
     if gc_days <= 0:
         row = df_chart.iloc[-1]
         ma5 = row.get('MA5', 0)
@@ -1040,17 +1041,13 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
             prev_ma5 = prev_row.get('MA5', 0)
             prev_ma25 = prev_row.get('MA25', 0)
             
-            curr_diff = ma25 - ma5
-            prev_diff = prev_ma25 - prev_ma5
+            curr_diff = ma25 - ma5      # 本日の残り距離
+            prev_diff = prev_ma25 - prev_ma5  # 前日の距離
             
-            # コンソールの接近閾値 (f1_min) と物理同期
-            f1_min_rate = st.session_state.get('f1_min', 0.5)
-            thresh = lc * (f1_min_rate / 100)
-            
-            # 条件：まだクロス前 かつ 前日より急速接近（収束） かつ 閾値以内
-            if 0 < curr_diff < thresh and curr_diff < prev_diff:
-                # ソート順を最上位にするため、既存MAXの85を超える「95」を割り振る
-                return "S+🎯", "#ff5252", 95, f"GC前夜(激熱:接近{f1_min_rate}%)"
+            # 条件：残り距離が1日あたりの収束速度（prev_diff - curr_diff）以下なら明日クロス
+            if 0 < curr_diff <= (prev_diff - curr_diff):
+                # ソート順を最上位にするため、固定値ではなく最高優先スコア「95」を確定割付
+                return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                 
         return "圏外 💀", "#424242", 0, ""
 
@@ -1952,8 +1949,7 @@ with tab2:
                             elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
                             elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
                         
-                        # 🚨 【改修】gc_days == 0（GC未遂・前夜）の即時足切りを撤廃。
-                        # 機関部の get_assault_triage_info に判定を委ねる。
+                        # 🚨 【改修】モメンタム予測(gc_days<=0)を通すため、ここでの即時足切り(return None)を撤廃。
 
                         # ⑫ ファンダメンタルズ（赤字除外）
                         if cfg["f12_ex_overvalued"]:
@@ -1964,7 +1960,7 @@ with tab2:
                         is_assault = "狙撃優先" in cfg["tactics"]
                         t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
                         
-                        # 🚨 【改修】S+兆し条件、または既存の強襲条件に合致しない「圏外」を物理排除
+                        # 🚨 【改修】翌日GC予測、または既存強襲のいずれにも合致しない「圏外」を物理排除
                         if t_rank == "圏外 💀" or "圏外" in t_rank: return None
                         
                         h_vals = group['AdjH'].values
@@ -1976,7 +1972,7 @@ with tab2:
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
                             'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
-                            'T_Desc': t_desc  # 🚨 描画時の表示用にステータス文を同期
+                            'T_Desc': t_desc  # 🚨 予測文言の同期用
                         }
 
                     # --- 🚀 並列実行エンジン ---
@@ -2067,9 +2063,9 @@ with tab2:
                 sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
                 vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
 
-                # 🚨 【改修】GC前夜（兆し）とGC発動後で日数バッジの表記を動的に切り替える
+                # 🚨 【改修】予測状態(GC前夜)と発動後で日数バッジの文言を動的切り替え
                 if r['GC_Days'] <= 0:
-                    status_badge_html = f'<span style="background-color: rgba(239, 83, 80, 0.15); border: 1px solid #ef5350; color: #ef5350; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r.get("T_Desc", "GC前夜(激熱)")}</span>'
+                    status_badge_html = f'<span style="background-color: rgba(239, 83, 80, 0.15); border: 1px solid #ef5350; color: #ef5350; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r.get("T_Desc", "明日GC見込(激熱)")}</span>'
                 else:
                     status_badge_html = f'<span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {r["GC_Days"]}日目</span>'
 
