@@ -2612,7 +2612,8 @@ with tab3:
             except Exception: return None
 
         # --- 📋 【改修要件】作戦参謀への分析依頼データ一括テキスト生成回路 ---
-        valid_results = [x for x in scope_results if not x.get('error')]
+        # 物理フィルター：エラーがなく、かつ判定がS級またはA級（システム内部値 r_val が 3 以上）の銘柄のみを徹底抽出
+        valid_results = [x for x in scope_results if not x.get('error') and x.get('r_val', 0) >= 3]
         if valid_results:
             export_texts = []
             # 2026年現在の正確な日時をフォーマット化
@@ -2680,7 +2681,7 @@ with tab3:
 ■システム判定ステータス
 ・総合判定：{vr.get('rank')}
 ・点灯シグナル・アラート：{alerts_str}
-・テクニカルスコア：{vr.get('score')} pts
+• テクニカルスコア：{vr.get('score')} pts
 ・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
 ・ファンダメンタルズ判定：{fund_status}
 
@@ -2695,12 +2696,13 @@ with tab3:
 ・システム算出 買目標値：{bt_target_str}"""
                 export_texts.append(text_template)
             
+            # 複数銘柄の全結合（デリミタによる明確な境界分割）
             final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
             
             # UIの神聖不可侵を維持しつつ、一発コピー可能なテキストエリアを最上段に配置
             st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-            with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（全件一発抽出）", expanded=True):
-                st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、スキャン結果の全テキストを一撃でクリップボードへ格納できます。</p>", unsafe_allow_html=True)
+            with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（S/A級限定抽出）", expanded=True):
+                st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。</p>", unsafe_allow_html=True)
                 st.code(final_copypaste_text, language="text")
 
             # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
