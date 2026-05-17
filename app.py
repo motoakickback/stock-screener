@@ -2193,37 +2193,11 @@ with tab3:
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
                         if f_data:
-                            # --- ボスのDNA：詳細なキー存在チェック ＆ 多重フォールバック ---
-                            if f_data.get('per'): r_per = f_data.get('per')
-                            if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
-                            if r_per is None and f_data.get('trailingPE'): r_per = f_data.get('trailingPE')
-                            if r_per is None and f_data.get('forwardPE'): r_per = f_data.get('forwardPE')
-                            
-                            if f_data.get('pbr'): r_pbr = f_data.get('pbr')
-                            if r_pbr is None and f_data.get('PBR'): r_pbr = f_data.get('PBR')
-                            if r_pbr is None and f_data.get('priceToBook'): r_pbr = f_data.get('priceToBook')
-                            
-                            if f_data.get('cap'): r_mcap = f_data.get('cap')
-                            if r_mcap is None and f_data.get('MCAP'): r_mcap = f_data.get('MCAP')
-                            if r_mcap is None and f_data.get('marketCap'): r_mcap = f_data.get('marketCap')
-                            if r_mcap is None and f_data.get('MarketCapitalization'): r_mcap = f_data.get('MarketCapitalization')
-                            
-                            if f_data.get('roe'): r_roe = f_data.get('roe')
-                            if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
-                            if r_roe is None and f_data.get('returnOnEquity'): r_roe = f_data.get('returnOnEquity')
-                            
-                            # --- ボスのDNA：ROE算出バリデーション ---
-                            if r_roe is None:
-                                try:
-                                    ni = f_data.get("NetIncome")
-                                    eq = f_data.get("Equity")
-                                    if ni is not None and eq is not None:
-                                        ni_f, eq_f = float(ni), float(eq)
-                                        r_roe = (ni_f / eq_f) * 100 if eq_f != 0 else 0.0
-                                    else:
-                                        r_roe = 0.0
-                                except Exception:
-                                    r_roe = 0.0
+                            # --- 補正：get_fundamentals 内の確定キー構造へ直結 ---
+                            r_per = f_data.get('per')
+                            r_pbr = f_data.get('pbr')
+                            r_mcap = f_data.get('cap')
+                            r_roe = f_data.get('roe')
                             
                             # 🕵️ get_fundamentals 内の日付情報も強制統合
                             e_date_f = f_data.get("EarningsDate") or f_data.get("NextEarningsDate") or f_data.get("AnnouncementDate")
@@ -2302,7 +2276,7 @@ with tab3:
                             except Exception:
                                 res_roe = None
 
-                        # --- ボスのDNA：時価総額の全単位変換（兆・億・万）物理分岐 ---
+                        # --- 本家DNA：時価総額の全単位変換（兆・億・万）物理分岐 ---
                         res_mcap_str = "-"
                         if raw_mcap is not None:
                             try:
@@ -2320,7 +2294,7 @@ with tab3:
 
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
 
-                        # --- ボスのDNA：IPO判定（全カラムListing走査）ロジック ---
+                        # --- 本家DNA：IPO判定（全カラムListing走査）ロジック ---
                         if st.session_state.get('f5_ipo', False):
                             try:
                                 m_row = master_df[master_df['Code'].astype(str).isin([target_key, api_code])]
@@ -2345,7 +2319,7 @@ with tab3:
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
                                 'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
-                                'events': curr_events # 📦 兵站不足時も空の器を渡す
+                                'events': curr_events
                             })
                             continue
 
@@ -2366,7 +2340,7 @@ with tab3:
                                 'sector': c_sector, 'market': c_market,
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
                                 'error': True, 'is_deep': False,
-                                'events': curr_events # 📦 破損時も器を渡す
+                                'events': curr_events
                             })
                             continue
 
@@ -2375,7 +2349,7 @@ with tab3:
                             df_chart_full = calc_technicals(df_s.copy())
                         except Exception:
                             df_chart_full = df_s.copy()
-							
+                            
                         # --- ボスのDNA：最新・直近・前々回データの物理抽出（各変数ごとに1行） ---
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
@@ -2557,7 +2531,7 @@ with tab3:
                             'score': score,
                             'reach_val': reach_rate,
                             'gc_days': gc_days,
-                            'df_chart': df_mini, 
+                            'df_chart': df_chart_full, # 物理結線：全演算DataFrameを完全にストック
                             'per': res_per,
                             'pbr': res_pbr,
                             'roe': res_roe,
@@ -2568,11 +2542,10 @@ with tab3:
                             'alerts': alerts,
                             'sakata_patterns': s_results,
                             'error': False,
-							'is_deep': is_deep,
-                            # 💥 物理修正：raw_s[res_c] 直下の 'events' を直接、または安全に取得
+                            'is_deep': is_deep,
                             'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {}
                         })
-						
+                        
                     except Exception as e:
                         scope_results.append({
                             'code': target_key,
@@ -2602,6 +2575,99 @@ with tab3:
                 t_calc = time.time()
                 st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
+
+            # --- 📋 【改修要件】作戦参謀への分析依頼データ一括テキスト生成回路 ---
+            valid_results = [x for x in scope_results if not x.get('error')]
+            if valid_results:
+                export_texts = []
+                # 2026年現在の正確な日時をフォーマット化
+                current_date_str = datetime.now().strftime("%Y/%m/%d") + " 大引け後"
+                
+                # マクロ環境（地合い）確値の安全取得
+                n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円" if n225_m_data and n225_m_data.get('close') else "取得不可"
+                n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+                
+                for vr in valid_results:
+                    # アラート・シグナルのクレンジング（HTMLインジェクションを完全除去）
+                    clean_alerts = []
+                    for al in vr.get('alerts', []):
+                        if isinstance(al, str):
+                            clean_text = re.sub(r'<[^>]*>', '', al).strip()
+                            if clean_text:
+                                clean_alerts.append(clean_text)
+                    alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+                    
+                    # 0/3グリーン条件の厳格な物理カウント同期
+                    v_roe = safe_float(vr.get('roe'))
+                    v_per = safe_float(vr.get('per'))
+                    v_pbr = safe_float(vr.get('pbr'))
+                    g_count = 0
+                    if v_roe is not None and v_roe >= 10.0: g_count += 1
+                    if v_per is not None and v_per <= 20.0: g_count += 1
+                    if v_pbr is not None and v_pbr <= 5.0: g_count += 1
+                    fund_status = f"{g_count}/3グリーン"
+                    
+                    # 個別銘柄のMA25抽出（多重例外ガード＆自律演算フォールバック）
+                    v_df_chart = vr.get('df_chart', pd.DataFrame())
+                    v_ma25 = None
+                    if not v_df_chart.empty:
+                        last_row = v_df_chart.iloc[-1]
+                        for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
+                            if k in last_row and pd.notna(last_row[k]):
+                                v_ma25 = safe_float(last_row[k])
+                                break
+                        # 機関部未定義時の最終防衛：AdjCから25日移動平均を安全に直前再演算
+                        if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
+                            try:
+                                v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
+                            except:
+                                v_ma25 = None
+                    ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
+                    
+                    # システム算出買目標値の文言（待伏・強襲による戦術論理分岐）
+                    if is_ambush:
+                        bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
+                        bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
+                    else:
+                        stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
+                        bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+
+                    # 要件定義に完全準拠したプレーンテキストの構築
+                    text_template = f"""【作戦参謀への分析依頼データ】
+■銘柄基本情報
+・銘柄コード：{vr.get('code')}
+・データ抽出日時：{current_date_str}
+
+■マクロ環境（地合い）
+・日経平均終値：{n225_close_val}
+・日経平均MA25乖離率：{n225_div_rate_val}
+
+■システム判定ステータス
+・総合判定：{vr.get('rank')}
+・点灯シグナル・アラート：{alerts_str}
+・テクニカルスコア：{vr.get('score')} pts
+・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
+・ファンダメンタルズ判定：{fund_status}
+
+■絶対価格データ（確値）
+・最新終値：{int(vr.get('lc', 0)):,}円
+・MA25（25日移動平均線）：{ma25_str}
+・直近高値（スイングハイ）：{int(vr.get('h14', 0)):,}円
+・起点安値（スイングロウ）：{int(vr.get('l14', 0)):,}円
+
+■ボラティリティ・ターゲットデータ
+・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
+・システム算出 買目標値：{bt_target_str}"""
+                    export_texts.append(text_template)
+                
+                # 複数銘柄の全結合（デリミタによる明確な境界分割）
+                final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
+                
+                # UIの神聖不可侵を維持しつつ、一発コピー可能なテキストエリアを最上段に配置
+                st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+                with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（全件一発抽出）", expanded=True):
+                    st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、スキャン結果の全テキストを一撃でクリップボードへ格納できます。</p>", unsafe_allow_html=True)
+                    st.code(final_copypaste_text, language="text")
 
             # --- 🎨 6. 神聖UI描画（原本DNA 100% 物理復旧 ＆ 全幅・並列UI最終版） ---
             for index, r in enumerate(scope_results):
@@ -2656,7 +2722,7 @@ with tab3:
                 <span style='background:{r['bg']}; color:white; padding:2px 10px; border-radius:4px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);'>🎯 {r['rank']}</span>
                 {m_badge}{gc_badge}
                 <span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; border: 1px solid #78909c;">🏭 {r['sector']}</span>
-                <span style="border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; background: rgba(38,166,154,0.05);">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
+                <span style="background: rgba(38,166,154,0.05); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold;">RSI: {safe_float(r['rsi']) or 0:.1f}%</span>
                 </div></div>""", unsafe_allow_html=True)
                 
                 # 🚨 色彩戦略：ポジティブ/ネガティブの完全同期（原本DNA）
@@ -2712,7 +2778,6 @@ with tab3:
 
                     # --- 💥 最終結線：バッジHTML生成（実戦配備版） ---
                     e_html = ""
-                    # 判定用に4桁コードを確実に抽出
                     c_code_4 = str(r['code'])[:4] 
 
                     # 未来の地雷（イベント）判定実行
@@ -2720,9 +2785,7 @@ with tab3:
 
                     # 判定結果が存在する場合のみ、バッジを生成
                     for a in e_alerts:
-                        # 全て「警告（赤）」として出力
                         b_col = "#ef5350"
-                        
                         e_html += f'<span style="background:{b_col}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:6px; font-weight:bold; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.3);">{a}</span>'
 
                     # ゴールデンボックスHTML（DNA復元 ＋ e_html着弾）
