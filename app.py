@@ -239,7 +239,7 @@ def apply_presets():
 # --- アプリ起動時、UI描画前に必ず自動実行 ---
 load_settings()
 
-# --- 🌪️ 1. マクロ気象レーダー ---
+# --- 🌪️ 1. マクロ気象レーダー（インデックス名ブレ・tz対策版） ---
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
@@ -247,9 +247,14 @@ def get_macro_weather():
         tk = yf.Ticker("^N225")
         df_raw = tk.history(period="3mo")
         if not df_raw.empty:
+            # 🚨 1. タイムゾーンをインデックスの段階で安全に剥離（Naive化しエラーを徹底防衛）
+            if df_raw.index.tz is not None:
+                df_raw.index = df_raw.index.tz_localize(None)
+            
+            # 🚨 2. yfinanceの仕様変更によるインデックス名（Date / Datetime）のブレを強制リネームで中和
             df_ni = df_raw.reset_index()
-            if df_ni['Date'].dt.tz is not None:
-                df_ni['Date'] = df_ni['Date'].dt.tz_convert('Asia/Tokyo').dt.tz_localize(None)
+            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
+            
             df_ni = df_ni.dropna(subset=['Close'])
             if len(df_ni) >= 2:
                 latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
@@ -262,7 +267,8 @@ def get_macro_weather():
                         "date": latest['Date'].strftime('%m/%d')
                     }
                 }
-    except: pass
+    except:
+        pass
     return None
 
 def fetch_current_prices_fast(codes):
