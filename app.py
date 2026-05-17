@@ -2105,16 +2105,36 @@ with tab3:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key=f"t3_scope_mode_vfinal_{cache_key}")
+        # 🚨 【永久消滅・物理修正】動的キーを完全撤廃。固定不変キーにより、他タブの演算・Rerunに伴う「勝手なモード初期化」を100%根絶。
+        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode_absolute_lock_v2026")
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
+        # 🚨 【永久消滅・物理修正】非表示時に消滅するStreamlitのステートバグをシャドウバッファ同期で完全迎撃。
         if is_ambush:
-            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, height=120, key=f"t3_am_watch_ui_vfinal")
-            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, height=120, key=f"t3_am_daily_ui_vfinal")
+            # ウィジェットが画面に再出現した初回フレームのみ、退避していた本尊の値をステートへ再注入
+            if "t3_am_watch_ui_fixed" not in st.session_state:
+                st.session_state["t3_am_watch_ui_fixed"] = st.session_state.t3_am_watch
+            if "t3_am_daily_ui_fixed" not in st.session_state:
+                st.session_state["t3_am_daily_ui_fixed"] = st.session_state.t3_am_daily
+                
+            watch_in = st.text_area("🌐 【待伏】主力監視部隊", key="t3_am_watch_ui_fixed", height=120)
+            daily_in = st.text_area("🌐 【待伏】本日新規部隊", key="t3_am_daily_ui_fixed", height=120)
+            
+            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイムリアル同期
+            st.session_state.t3_am_watch = watch_in
+            st.session_state.t3_am_daily = daily_in
         else:
-            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, height=120, key=f"t3_as_watch_ui_vfinal")
-            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, height=120, key=f"t3_as_daily_ui_vfinal")
+            if "t3_as_watch_ui_fixed" not in st.session_state:
+                st.session_state["t3_as_watch_ui_fixed"] = st.session_state.t3_as_watch
+            if "t3_as_daily_ui_fixed" not in st.session_state:
+                st.session_state["t3_as_daily_ui_fixed"] = st.session_state.t3_as_daily
+                
+            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", key="t3_as_watch_ui_fixed", height=120)
+            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", key="t3_as_daily_ui_fixed", height=120)
+            
+            st.session_state.t3_as_watch = watch_in
+            st.session_state.t3_as_daily = daily_in
             
         run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_vfinal_{cache_key}")
         
@@ -2177,11 +2197,8 @@ with tab3:
                     try:
                         c_str = str(c).upper().strip()
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
-                        
-                        # 📦 イベントコンテナの初期化（空振りを防ぐための器）
                         events = {"dividend": [], "earnings": []}
                         
-                        # 1. APIからのデータ取得試行
                         data = get_single_data(api_code, 1)
                         if data and isinstance(data.get("events"), dict):
                             api_ev = data.get("events", {})
@@ -2190,7 +2207,6 @@ with tab3:
                             if api_ev.get("dividend"): 
                                 events["dividend"].extend(api_ev["dividend"])
 
-                        # 2. 三重フォールバック（価格データ補完）
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
                             try:
                                 import yfinance as yf
@@ -2209,7 +2225,6 @@ with tab3:
                             except Exception:
                                 data = None
 
-                        # --- 🚨 強襲探索フェーズ：決算データがまだ空なら、株価に関わらず yfinance を強襲 ---
                         if not events["earnings"]:
                             try:
                                 import yfinance as yf
@@ -2222,7 +2237,6 @@ with tab3:
                             except Exception:
                                 pass
 
-                        # 3. ファンダメンタルズ取得 ＆ 決算日の二重チェック（中略なし完全版）
                         f_data = get_fundamentals(c_str)
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
@@ -2261,7 +2275,6 @@ with tab3:
                             if e_date_f:
                                 events["earnings"].append({"Code": api_code, "Date": str(e_date_f)})
 
-                        # 4. yfinanceによる最終補完トラップ
                         if r_per is None or r_pbr is None or r_mcap is None or r_roe is None:
                             try:
                                 import yfinance as yf
