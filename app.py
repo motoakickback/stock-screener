@@ -2396,6 +2396,7 @@ with tab3:
                             continue
 
 # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
+                        # テクニカル演算（原本DNA：多重例外ガードを物理復旧）
                         try:
                             df_chart_full = calc_technicals(df_s.copy())
                         except Exception:
@@ -2443,6 +2444,9 @@ with tab3:
                         s_results = detect_sakata_patterns(df_chart_full)
                         for p in s_results:
                             alerts.append(p['text'])
+
+                        # 🚨 【新設防衛回路】酒田の天井シグナル持ちか否かを物理フラグ化
+                        has_top_trap_t3 = any(x in "".join(alerts) for x in ["三山", "三尊", "二重天井", "買い三空", "二重頂", "三尊天井"])
 
                         if is_ambush:
                             # --- 🌐 待伏（アンブッシュ）戦術論理：原本物理行を完全復元 ---
@@ -2546,7 +2550,7 @@ with tab3:
                                     # 条件：残り距離が1日あたりの収束速度（prev_diff - curr_diff）以下なら明日クロス
                                     if 0 < curr_diff <= (prev_diff - curr_diff):
                                         is_pre_gc_t3 = True
-                                        gc_score = 95 # 最上位に整列させるため既存MAXを超える高スコア
+                                        gc_score = 95
                                 
                             # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
@@ -2571,24 +2575,30 @@ with tab3:
                             if h14 > 0:
                                 reach_rate = (lc / h14) * 100
                                 
-                            # 強襲ランク判定の物理展開（Turn 18復旧）
-                            if is_pre_gc_t3:
-                                rank = "S+🎯"  # 🚨 物理クレンジングを通過させるため、ランク名を「S+🎯」に統一
-                                bg_c = "#ff5252" # 激熱の赤
-                                alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロスを達成する、本物の超直前モメンタムを補足。")
+                            # 🚨 【完全迎撃】酒田の天井シグナル（地雷）がある場合は、モメンタムに関わらず一律「S+剥奪 ＆ 圏外」へ叩き落とす
+                            if has_top_trap_t3:
+                                rank = "圏外💀"
+                                bg_c = "#ef5350"  # 警告赤
+                                score = 0         # スコアも破棄
+                                alerts.append("🔴 【絶対排除】明日GC予測ですが、酒田の天井シグナル（限界値）を同時検知。往復ビンタ回避のためS+評価を完全破棄。")
                             else:
-                                if score >= 80:
-                                    rank = "S級強襲⚡"
-                                    bg_c = "#1b5e20"
-                                elif score >= 60:
-                                    rank = "A級強襲🔥"
-                                    bg_c = "#2e7d32"
-                                elif score >= 40:
-                                    rank = "B級強襲📈"
-                                    bg_c = "#4caf50"
+                                if is_pre_gc_t3:
+                                    rank = "S+🎯"
+                                    bg_c = "#ff5252"
+                                    alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロスを達成する、本物の超直前モメンタムを補足。")
                                 else:
-                                    rank = "圏外💀"
-                                    bg_c = "#616161"
+                                    if score >= 80:
+                                        rank = "S級強襲⚡"
+                                        bg_c = "#1b5e20"
+                                    elif score >= 60:
+                                        rank = "A級強襲🔥"
+                                        bg_c = "#2e7d32"
+                                    elif score >= 40:
+                                        rank = "B級強襲📈"
+                                        bg_c = "#4caf50"
+                                    else:
+                                        rank = "圏外💀"
+                                        bg_c = "#616161"
 
                         # 演算結果の物理パッキング（原本DNA）
                         scope_results.append({
@@ -2632,12 +2642,9 @@ with tab3:
                             'df_chart': pd.DataFrame()
                         })
 
-                # --- ボスのDNA：精密ソート物理行の全展開（原本 100% 復旧） ---
-                # 🚨 【改修】S+ を最高位(5)として定義追加
                 rank_order = {"S+": 5, "S": 4, "A": 3, "B": 2, "圏外": 0}
                 for res in scope_results:
                     r_raw_str = res.get('rank', '圏外')
-                    # 正規表現によるクレンジング（S+ を保護するため \+ を物理追加）
                     r_clean_str = re.sub(r'[^S\+ABC圏外]', '', r_raw_str)
                     res['r_val'] = rank_order.get(r_clean_str, 0)
                 
