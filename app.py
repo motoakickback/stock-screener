@@ -2666,7 +2666,7 @@ with tab3:
                     stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                     bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
-                # 要件定義に完全準拠したプレーンテキストの構築（不要文字列を完全クレンジング）
+                # 要件定義に完全準拠したプレーンテキストの構築
                 text_template = f"""【作戦参謀への分析依頼データ】
 ■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
@@ -2674,7 +2674,7 @@ with tab3:
 
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
-・日経平均MA25乖離率：{n225_div_rate_val}
+自由日経平均MA25乖離率：{n225_div_rate_val}
 
 ■システム判定ステータス
 ・総合判定：{vr.get('rank')}
