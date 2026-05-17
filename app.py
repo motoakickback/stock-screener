@@ -1345,20 +1345,19 @@ PRESET_THEMES = {
 }
 
 # ==========================================
-# --- 4. サイドバー UI（完全連動版） ---
+# --- 4. サイドバー UI（RAM防衛・完全連動版） ---
 # ==========================================
 # 🚨 英語の不純物を排除し、ボスの原本タイトルを復元
 st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- 🌪️ ボラティリティ・フィルターの設定 ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
-# 🛠️ 変更点: 再起動時の値の復元を保証し、操作時に即時保存されるよう on_change を追加
+# 🛠️ 変更点【RAM防衛】: スライダー操作中の連続リランによる破裂を防ぐため on_change を解除し、下部の保存ボタンへ集約
 st.session_state.f_vol_min = st.sidebar.slider(
     "最小ボラ率 (ATR/価格 %)", 
-    0.0, 2.0, float(st.session_state.f_vol_min_slider), 0.1, 
+    0.0, 2.0, float(st.session_state.get("f_vol_min_slider", 0.5)), 0.1, 
     help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-    key="f_vol_min_slider",
-    on_change=save_settings
+    key="f_vol_min_slider"
 )
 st.sidebar.markdown("---")
 # --- 🌐 マクロ地合い連動システム ---
@@ -1398,14 +1397,13 @@ st.sidebar.divider()
 st.sidebar.header("📂 戦略的セクター制御")
 
 # 1. セクター密度調整（30銘柄対応版）
-# 🛠️ 変更点: 保存ファイルから復元されたキー "f_max_stocks_slider" を正確に初期値へ反映
+# 🛠️ 変更点【RAM防衛】: スライダー操作中の連続リランによる破裂を防ぐため on_change を解除し安全化
 current_f_max = st.session_state.get("f_max_stocks_slider", 30)
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 30, int(current_f_max), # 10から30へ拡張
     key="f_max_stocks_slider",
-    help="特定セクターへの集中度を調整します。",
-    on_change=save_settings
+    help="特定セクターへの集中度を調整します。"
 )
 
 st.sidebar.divider()
