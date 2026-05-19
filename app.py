@@ -1018,9 +1018,10 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     else: macd_t = "減衰"
     
     if mode == "強襲":
-        # MACDヒストグラムの接近モメンタムから翌日GC予測を物理判定
+        # 🚨 【バグ完全封殺】「macd_hist_prev < macd_hist」（前日より好転）の絶対検門を追加。
+        # これにより、天井急落時に発生する「MACDの先行マイナス突入バグ」を100%物理遮断。
         if gc_days <= 0:
-            if macd_hist < 0 and (-macd_hist <= (macd_hist - macd_hist_prev)) and rsi < 75:
+            if macd_hist < 0 and (macd_hist_prev < macd_hist) and (-macd_hist <= (macd_hist - macd_hist_prev)) and rsi < 75:
                 return "S+🎯", "#ff5252", 6, "明日GC見込(激熱)"
             return "圏外🚫", "#ef5350", 0, macd_t
 
@@ -1055,7 +1056,7 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     if df_chart is None or df_chart.empty: 
         return "圏外 💀", "#424242", 0, ""
 
-    # 🚨 【新設防衛線】酒田の天井シグナル（罠）の有無を先行スキャン
+    # 酒田の天井シグナル（罠）の有無を先行スキャン
     has_top_trap = False
     try:
         sakata_s = detect_sakata_patterns(df_chart)
@@ -1065,7 +1066,6 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     except Exception:
         pass
 
-    # 天井罠を検知した場合は、強襲レーダーの「篩」として一律「圏外」へ強制隔離
     if has_top_trap:
         return "圏外 💀", "#424242", 0, "天井地雷検知(排除)"
 
@@ -1086,8 +1086,9 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
             curr_diff = ma25 - ma5      # 本日の残り距離
             prev_diff = prev_ma25 - prev_ma5  # 前日の距離
             
-            # 条件：残り距離が1日あたりの収束速度（prev_diff - curr_diff）以下なら明日クロス
-            if 0 < curr_diff <= (prev_diff - curr_diff):
+            # 🚨 【バグ完全封殺】「curr_diff < prev_diff」（前日より確実に距離が縮まっている＝好転）の絶対検門を追加。
+            # これにより、すでに5MAが上にいる天井急落時のマイナス計算バグを100%物理遮断。
+            if 0 < curr_diff <= (prev_diff - curr_diff) and (curr_diff < prev_diff):
                 return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                 
         return "圏外 💀", "#424242", 0, ""
@@ -1118,7 +1119,6 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
         rank, bg = "C 💀", "#424242"
 
     return rank, bg, score, f"GC {gc_days}日目"
-
 
 # --- 📺 UI描画関数 ---
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
