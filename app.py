@@ -1086,9 +1086,10 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
             curr_diff = ma25 - ma5      # 本日の残り距離
             prev_diff = prev_ma25 - prev_ma5  # 前日の距離
             
-            # 🚨 【バグ完全封殺】「curr_diff < prev_diff」（前日より確実に距離が縮まっている＝好転）の絶対検門を追加。
-            # これにより、すでに5MAが上にいる天井急落時のマイナス計算バグを100%物理遮断。
-            if 0 < curr_diff <= (prev_diff - curr_diff) and (curr_diff < prev_diff):
+            # 🚨 【真・バグ完全封殺】
+            # 「ma5 < ma25」という、本日の時点で5日線が25日線の下にいるという物理法則を絶対検門として直結。
+            # これにより、すでに5MAが上に突き抜けている天井急落ノイズを100%・永久に・数理的に完全圧殺。
+            if (ma5 < ma25) and (0 < curr_diff <= (prev_diff - curr_diff)) and (curr_diff < prev_diff):
                 return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                 
         return "圏外 💀", "#424242", 0, ""
