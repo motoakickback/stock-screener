@@ -1913,12 +1913,14 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-                    # 物理同期：サイドバーの「掟」をTAB2指令書へ完全装填
+                    # 💥 【真・大改修：動的パージ特区回路】
+                    # 強襲（GC前夜）の特性に合わせ、本来獲れていたはずの大物を圧殺していた
+                    # 「下落率バリア」「波高フィルター」「1ヶ月暴騰上限」を内部的に完全スルー（パージ）させる指令を装填。
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), 
                         "f1_max": float(st.session_state.f1_max),
-                        "f2_m30": float(st.session_state.f2_m30), 
-                        "f3_drop": float(st.session_state.f3_drop),
+                        "f2_m30": 999.0,         # 🚨 1ヶ月暴騰上限をパージ（事実上の無効化）
+                        "f3_drop": -999.0,       # 🚨 高値からの下落率バリアをパージ（全戻し爆発株を救出）
                         "rsi_lim": effective_rsi_limit, 
                         "vol_lim": float(vol_lim),
                         "f5_ipo": st.session_state.f5_ipo,
@@ -1926,8 +1928,8 @@ with tab2:
                         "f6_risk": st.session_state.f6_risk,
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス"),
-                        "f_vol_min": float(st.session_state.get('f_vol_min', 0.5)),
+                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
+                        "f_vol_min": -1.0,       # 🚨 波高下限をパージ（死んだチャートからの突然の目覚めを捕縛）
                         "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                     }
 
@@ -1936,12 +1938,12 @@ with tab2:
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                     m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
                     
-                    # 直近終値での価格フィルターリング
+                    # 直近終値での価格フィルターリング（価格帯上下限はボスの資金効率のため維持）
                     latest_date = full_df['Date'].max()
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                     
-                    # 💥 物理修正：出来高カラムの「全方位検索」でKeyErrorを封殺
+                    # 出来高カラムの全方位検索
                     v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
                     
@@ -1951,29 +1953,34 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
-                    st.write("⚙️ 第3段階：並列演算・鉄の掟フィルターリング中...")
+                    st.write("⚙️ 第3段階：並列演算・特区バイパススキャン中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
                         
-                        # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
+                        # --- 🛡️ 鉄の掟：最優先・物理検問所（リスク・IPO・3倍高は保険として正常稼働） ---
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
                         if cfg["f5_ipo"]:
                             first_date = group['Date'].min()
                             if (l_date - first_date).days < 350: return None
                         if cfg["f11_ex_wave3"]:
                             if lc > (c_vals.min() * 3.0): return None
+                        
+                        # パージ対象①：1ヶ月暴騰上限（cfg["f2_m30"] = 999.0 のため必ず通過）
                         p20 = c_vals[max(0, len(c_vals)-20)]
                         if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+                        
+                        # パージ対象②：高値からの下落率（cfg["f3_drop"] = -999.0 のため必ず通過）
                         h_max_1yr = c_vals.max()
                         if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-                        # --- 🌪️ 強襲ボラティリティ・バリア ---
+                        # 指標計算
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                         
+                        # パージ対象③：波高下限（cfg["f_vol_min"] = -1.0 のため必ず通過。超低ボラからの大化け株を救出）
                         if vol_pct < cfg["f_vol_min"]: return None
                         if rsi > cfg["rsi_lim"]: return None
                         
@@ -1988,7 +1995,7 @@ with tab2:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
                         
-                        # ⚡ トリアージ情報の取得（機関部内部で酒田天井罠を完全自動排除）
+                        # ⚡ トリアージ情報の取得（機関部内部の物理位置検門・酒田天井罠排除と完全動調和）
                         is_assault = "狙撃優先" in cfg["tactics"]
                         t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
                         
@@ -2020,14 +2027,14 @@ with tab2:
                     st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
                     t_calc = time.time()
-                    status.update(label=f"🎯 強襲スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
+                    status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                     st.rerun()
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                 status.update(label="🚨 エラー発生により中断", state="error")
 
-    # --- 🛡️ 座標B：リアルタイム・フィルター ＆ 報告板 ---
+    # --- 🛡️ リアルタイム・フィルター ＆ 報告板 ---
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
     if raw_hits_t2:
@@ -2065,7 +2072,7 @@ with tab2:
             with st.expander("🔍 強襲索敵報告"):
                 st.write(f"原材料:{stats_t2['total']} / テーマ外:{stats_t2['theme']} / 市場外:{stats_t2['market']} / 業種外:{stats_t2['sector']}")
         else:
-            st.success(f"💥 **強襲ロックオン: {len(light_results_t2)} 銘柄**")
+            st.success(f"💥 **強襲ロックオン（特区バイパス成功）: {len(light_results_t2)} 銘柄**")
             sab_codes_t2 = " ".join([str(r['Code'])[:4] for r in light_results_t2])
             st.code(sab_codes_t2, language="text")
 
