@@ -33,6 +33,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
         st.session_state["current_user"] = "" 
+        
     if not st.session_state["password_correct"]:
         # 🚨 ボスの指示通り「鉄の掟」へ修正
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
@@ -62,14 +63,15 @@ def check_password():
                             loginTriggered = true; // ゲート電撃閉鎖（二重トリガー防止）
                             
                             // 📡 ReactおよびStreamlitの仮想DOMへ入力値を強制着弾させるプロトコル
+                            input.focus(); // 一度フォーカスを当ててReactのリスナーを強制起動
                             input.dispatchEvent(new Event('input', { bubbles: true }));
                             input.dispatchEvent(new Event('change', { bubbles: true }));
                             input.blur(); // フォーカスアウトを強制し、フォームバッファの確定を誘発
                             
-                            // フロントエンドからバックエンドへのステート転送猶予として100msのディレイを確保
+                            // フロントエンドからバックエンドへのステート転送猶予として150msの安全ディレイを確保
                             setTimeout(() => {
                                 submitBtn.click();
-                            }, 100);
+                            }, 150);
                             return true;
                         }
                     }
@@ -87,16 +89,28 @@ def check_password():
                 """,
                 height=0,
             )
-            with st.form("login_form"):
-                password = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード")
-                submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
-                if submitted:
-                    if password in ALLOWED_PASSWORDS:
-                        st.session_state["password_correct"] = True
-                        st.session_state["current_user"] = password 
-                        st.rerun()
-                    else:
-                        st.error("🚨 認証失敗：コードが違います。")
+            
+            # 🚨 フォームによる遅延を破砕。keyを設定してセッション状態へ直結・永続化する。
+            password = st.text_input(
+                "Access Code", 
+                type="password", 
+                label_visibility="collapsed", 
+                placeholder="アクセスコード",
+                key="input_access_code"
+            )
+            
+            submitted = st.button("認証 (ENTER)", use_container_width=True)
+            
+            # ボタン押下、またはJavaScriptによる自動クリックが発火した際のロジック
+            if submitted or (password and password in ALLOWED_PASSWORDS):
+                if password in ALLOWED_PASSWORDS:
+                    st.session_state["password_correct"] = True
+                    st.session_state["current_user"] = password 
+                    st.rerun()
+                elif submitted:
+                    # 明示的に間違ったパスワードが送信された場合のみエラーを表示
+                    st.error("🚨 認証失敗：コードが違います。")
+                    
         return False
     return True
     
