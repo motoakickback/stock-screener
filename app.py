@@ -2841,8 +2841,32 @@ with tab3:
             export_texts = []
             current_date_str = datetime.now().strftime("%Y/%m/%d") + " 大引け後"
             
-            n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円" if n225_m_data and n225_m_data.get('close') else "取得不可"
-            n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+            # 🚨 【TAB3専用・マクロ環境強制同期シールド】
+            # 古い内部キャッシュや同期ズレを完全にバイパスし、先ほど構築したハイブリッド防衛ラインから直近の確定値を強制代入。
+            n225_close_val = "取得不可"
+            n225_div_rate_val = "計算不可"
+            
+            _macro_fallback = get_macro_weather()
+            if _macro_fallback and "nikkei" in _macro_fallback:
+                _ni_fb = _macro_fallback["nikkei"]
+                _df_fb = _ni_fb["df"].copy()
+                _df_fb['MA25'] = _df_fb['Close'].rolling(window=25).mean()
+                _price_fb = _ni_fb["price"]
+                
+                # ボスの指定したカンマ区切りフォーマットを完全再現
+                n225_close_val = f"{int(_price_fb):,}円"
+                
+                if not _df_fb.empty and 'MA25' in _df_fb.columns and not pd.isna(_df_fb['MA25'].iloc[-1]):
+                    _ma25_fb = _df_fb['MA25'].iloc[-1]
+                    _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
+                    n225_div_rate_val = f"{_div_fb:+.2f}%"
+            else:
+                # 📡 万が一 get_macro_weather が値を返さなかった場合の安全用フォールバック（原本ロジックを維持）
+                if n225_m_data and n225_m_data.get('close'):
+                    n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円"
+                if 'n225_div_rate' in locals() or 'n225_div_rate' in globals():
+                    try: n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+                    except: pass
             
             for vr in valid_results:
                 clean_alerts = []
