@@ -1678,6 +1678,44 @@ st.sidebar.caption(f"KEY: {cache_key}")
 # ⬇️⬇️⬇️ ここにマクロ気象局を挿入 ⬇️⬇️⬇️
 # --- 📍 マクロ気象局アラートの表示 ---
 n225_macro = get_nikkei_macro_status()
+
+# 🚨 【メイン画面・マクロ気象局強制同期シールド】
+# get_nikkei_macro_statusの内部的な遅延・ロールバックを完全にバイパスし、
+# 先ほど完全に防衛したget_macro_weatherの最新確値から25日乖離率をその場で再演算して上書き。
+_macro_fallback = get_macro_weather()
+if _macro_fallback and "nikkei" in _macro_fallback:
+    _ni_fb = _macro_fallback["nikkei"]
+    _df_fb = _ni_fb["df"].copy()
+    _df_fb['MA25'] = _df_fb['Close'].rolling(window=25).mean()
+    
+    if not _df_fb.empty and 'MA25' in _df_fb.columns and not pd.isna(_df_fb['MA25'].iloc[-1]):
+        _close_fb = _ni_fb["price"]
+        _ma25_fb = _df_fb['MA25'].iloc[-1]
+        _div_fb = ((_close_fb / _ma25_fb) - 1) * 100
+        
+        # 乖離率の正負・臨界値に応じたステータス・カラーの動的再判定（ボスのUI表現を完全トレース）
+        if _div_fb >= 2.0:
+            _status, _icon, _color = "過熱警戒", "🔥", "#ef5350"   # 損失・警戒の赤
+        elif _div_fb >= 0.0:
+            _status, _icon, _color = "巡航速度", "🚢", "#26a69a"   # 利益・平時の緑
+        elif _div_fb <= -5.0:
+            _status, _icon, _color = "厳戒態勢", "🚨", "#ef5350"   # 損失・警戒の赤
+        elif _div_fb <= -2.0:
+            _status, _icon, _color = "警戒態勢", "⚠️", "#ffa726"   # 警戒のオレンジ
+        else:
+            # 軽いマイナス（-0.x%等）の場合、ボスの「マイナス（赤）であるべき」という判定を最優先し、安全側のアラートへ動的シフト
+            _status, _icon, _color = "調整局面", "📉", "#ef5350"   # 損失・警戒の赤
+        
+        # 既存システムへのNameErrorや構造破壊を防ぐため、ディクショナリを最新確値で完全上書き
+        if n225_macro is None:
+            n225_macro = {}
+        n225_macro['close'] = _close_fb
+        n225_macro['ma25'] = _ma25_fb
+        n225_macro['div_rate'] = _div_fb
+        n225_macro['status'] = _status
+        n225_macro['icon'] = _icon
+        n225_macro['color'] = _color
+
 if n225_macro:
     div_v = n225_macro['div_rate']
     st.markdown(f"""
