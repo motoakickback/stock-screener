@@ -239,13 +239,14 @@ def apply_presets():
 # --- アプリ起動時、UI描画前に必ず自動実行 ---
 load_settings()
 
-# --- 🌪️ 1. マクロ気象レーダー（インデックス名ブレ・tz対策版） ---
+# --- 🌪️ 1. マクロ気象レーダー（インデックス名ブレ・tz対策・早朝ロールバック防衛版） ---
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
         tk = yf.Ticker("^N225")
-        df_raw = tk.history(period="3mo")
+        # 🚨 早朝に直近行が間引かれる挙動を中和するため、取得期間を5ヶ月へ安全に拡張
+        df_raw = tk.history(period="5mo")
         if not df_raw.empty:
             # 🚨 1. タイムゾーンをインデックスの段階で安全に剥離（Naive化しエラーを徹底防衛）
             if df_raw.index.tz is not None:
@@ -256,14 +257,44 @@ def get_macro_weather():
             df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
             
             df_ni = df_ni.dropna(subset=['Close'])
+            
             if len(df_ni) >= 2:
-                latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+                # 🚨 3. 時系列走査による早朝ロールバック防衛ロジック
+                tz_jst = pytz.timezone('Asia/Tokyo')
+                now_jst = datetime.now(tz_jst)
+                today_date = now_jst.date()
+                
+                # Date列を比較用にdatetime.date型に変換
+                df_ni['Date_only'] = df_ni['Date'].dt.date
+                
+                if now_jst.hour < 9 or (now_jst.hour == 9 and now_jst.minute < 30):
+                    # AM 9:30前は、本日より前の過去データ（前日確定値）の中で最大の日付を探索
+                    past_df = df_ni[df_ni['Date_only'] < today_date]
+                    if not past_df.empty:
+                        idx_latest = past_df['Date_only'].idxmax()
+                    else:
+                        idx_latest = df_ni.index[-1]
+                else:
+                    # AM 9:30以降は、データフレーム全体の末尾を最新値として採用
+                    idx_latest = df_ni.index[-1]
+                
+                # 最新レコードのインデックス位置から、前日（最新）と前々日（その1つ前）を物理特定
+                pos_latest = df_ni.index.get_loc(idx_latest)
+                if pos_latest < 1:
+                    pos_latest = 1 # 配列外参照防止
+                    
+                latest = df_ni.iloc[pos_latest]
+                prev = df_ni.iloc[pos_latest - 1]
+                
+                # 元の3mo表示のUI資産を守るため、直近3ヶ月分（約65営業日）にデータフレームをスライス
+                df_display = df_ni.iloc[max(0, pos_latest - 65):pos_latest + 1].copy()
+                
                 return {
                     "nikkei": {
                         "price": float(latest['Close']),
                         "diff": float(latest['Close'] - prev['Close']),
                         "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
-                        "df": df_ni,
+                        "df": df_display,
                         "date": latest['Date'].strftime('%m/%d')
                     }
                 }
