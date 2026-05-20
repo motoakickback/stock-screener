@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import re
 import json
+import datetime
 from datetime import datetime, timedelta
 from io import BytesIO
 import plotly.graph_objects as go
@@ -13,6 +14,7 @@ import streamlit.components.v1 as components
 import gc
 import pytz
 import time # 🚨 プロファイリング用に追加
+
 
 # --- st.metricの文字切れ（...）を防ぐスナイパーパッチ ---
 st.markdown("""
