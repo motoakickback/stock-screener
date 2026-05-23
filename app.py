@@ -1139,24 +1139,37 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
     
-    # 直近の確定データを取得
+    # 🚨 【堅牢化】DataFrameのブレ（大文字/小文字等）を吸収し、確実にMA5/MA25の数値を物理抽出する
     row = df_chart.iloc[-1]
-    ma5 = row.get('MA5', 0)
-    ma25 = row.get('MA25', 0)
+    ma5, ma25 = 0.0, 0.0
+    
+    for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
+        if k in row and pd.notna(row[k]):
+            ma5 = float(row[k])
+            break
+            
+    for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
+        if k in row and pd.notna(row[k]):
+            ma25 = float(row[k])
+            break
 
     # 🚨 【偽証判定フィルター（ダマシGCの完全破砕）】
-    # 上流の抽出エンジンがMACD等のノイズで「gc_days > 0（クロス済）」と誤判定して送ってきても、
-    # 実際のチャート上で「MA5 < MA25（未交差）」であれば、強制的に「未クロス（gc_days = 0）」にリセットする。
-    if gc_days > 0 and (ma5 < ma25):
+    # 値が正常に取れていて、かつ実際のチャート上で「MA5 < MA25（未交差）」であれば強制リセット
+    if gc_days > 0 and ma5 > 0 and ma25 > 0 and (ma5 < ma25):
         gc_days = 0
 
     # 🚨 【新・GC前夜（激熱）抽出エンジン：実体価格4条件ベース】
     if gc_days <= 0:
         if len(df_chart) >= 2 and ma5 > 0 and ma25 > 0:
             prev_row = df_chart.iloc[-2]
-            prev_ma5 = prev_row.get('MA5', 0)
+            prev_ma5 = 0.0
             
-            # MA5とMA25の乖離率（％）を算出
+            # 前日のMA5も同様に堅牢抽出
+            for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
+                if k in prev_row and pd.notna(prev_row[k]):
+                    prev_ma5 = float(prev_row[k])
+                    break
+            
             dist_pct = ((ma5 / ma25) - 1) * 100
             
             # ボスの定義した4つの絶対条件の論理積（AND）
@@ -1170,8 +1183,10 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
             if is_pre_gc:
                 return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                 
+        # クロスしておらず、GC前夜の条件も満たさない場合は問答無用で圏外へ弾く
         return "圏外 💀", "#424242", 0, ""
 
+    # ---- 以下は真のGC（クロス済み）と判定された場合のみ実行される ----
     score = 50 
 
     if ma25 > 0:
