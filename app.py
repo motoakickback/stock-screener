@@ -1139,30 +1139,39 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
     
-    # 5MAと25MAの接近モメンタム（速度）から「明日確実にクロスするか」を物理特定
+    # 直近の確定データを取得
+    row = df_chart.iloc[-1]
+    ma5 = row.get('MA5', 0)
+    ma25 = row.get('MA25', 0)
+
+    # 🚨 【偽証判定フィルター（ダマシGCの完全破砕）】
+    # 上流の抽出エンジンがMACD等のノイズで「gc_days > 0（クロス済）」と誤判定して送ってきても、
+    # 実際のチャート上で「MA5 < MA25（未交差）」であれば、強制的に「未クロス（gc_days = 0）」にリセットする。
+    if gc_days > 0 and (ma5 < ma25):
+        gc_days = 0
+
+    # 🚨 【新・GC前夜（激熱）抽出エンジン：実体価格4条件ベース】
     if gc_days <= 0:
-        row = df_chart.iloc[-1]
-        ma5 = row.get('MA5', 0)
-        ma25 = row.get('MA25', 0)
-        
         if len(df_chart) >= 2 and ma5 > 0 and ma25 > 0:
             prev_row = df_chart.iloc[-2]
             prev_ma5 = prev_row.get('MA5', 0)
-            prev_ma25 = prev_row.get('MA25', 0)
             
-            curr_diff = ma25 - ma5      # 本日の残り距離
-            prev_diff = prev_ma25 - prev_ma5  # 前日の距離
+            # MA5とMA25の乖離率（％）を算出
+            dist_pct = ((ma5 / ma25) - 1) * 100
             
-            # 🚨 【真・バグ完全封殺】
-            # 「ma5 < ma25」という、本日の時点で5日線が25日線の下にいるという物理法則を絶対検門として直結。
-            # これにより、すでに5MAが上に突き抜けている天井急落ノイズを100%・永久に・数理的に完全圧殺。
-            if (ma5 < ma25) and (0 < curr_diff <= (prev_diff - curr_diff)) and (curr_diff < prev_diff):
+            # ボスの定義した4つの絶対条件の論理積（AND）
+            is_pre_gc = (
+                (ma5 < ma25) and                         # 条件①: まだGCしていない（未交差の証明）
+                (lc > ma5) and (lc > ma25) and           # 条件②: 株価実体はすでに両線を上にブレイク（先行ブレイク）
+                (-2.0 <= dist_pct < 0.0) and             # 条件③: MA5とMA25の乖離が -2.0% 〜 0%未満（射程圏内）
+                (ma5 > prev_ma5)                         # 条件④: MA5が明確に上向き（推進力）
+            )
+            
+            if is_pre_gc:
                 return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                 
         return "圏外 💀", "#424242", 0, ""
 
-    row = df_chart.iloc[-1]
-    ma25 = row.get('MA25', 0)
     score = 50 
 
     if ma25 > 0:
