@@ -2087,13 +2087,11 @@ with tab2:
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
                     # 💥 【真・大改修：動的パージ特区回路】
-                    # 強襲（GC前夜）の特性に合わせ、本来獲れていたはずの大物を圧殺していた
-                    # 「下落率バリア」「波高フィルター」「1ヶ月暴騰上限」を内部的に完全スルー（パージ）させる指令を装填。
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), 
                         "f1_max": float(st.session_state.f1_max),
-                        "f2_m30": 999.0,         # 🚨 1ヶ月暴騰上限をパージ（事実上の無効化）
-                        "f3_drop": -999.0,       # 🚨 高値からの下落率バリアをパージ（全戻し爆発株を救出）
+                        "f2_m30": 999.0,         # 🚨 1ヶ月暴騰上限をパージ
+                        "f3_drop": -999.0,       # 🚨 高値からの下落率バリアをパージ
                         "rsi_lim": effective_rsi_limit, 
                         "vol_lim": float(vol_lim),
                         "f5_ipo": st.session_state.f5_ipo,
@@ -2102,7 +2100,7 @@ with tab2:
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
-                        "f_vol_min": -1.0,       # 🚨 波高下限をパージ（死んだチャートからの突然の目覚めを捕縛）
+                        "f_vol_min": -1.0,       # 🚨 波高下限をパージ
                         "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
                     }
 
@@ -2111,29 +2109,26 @@ with tab2:
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                     m_targets = [c for c, m in master_map_t2.items() if any(k in str(m['Market']) for k in target_keywords)]
                     
-                    # 直近終値での価格フィルターリング（価格帯上下限はボスの資金効率のため維持）
                     latest_date = full_df['Date'].max()
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                     
-                    # 出来高カラムの全方位検索
                     v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
                     
-                    # 安全な5日平均出来高の算出
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
-                    st.write("⚙️ 第3段階：並列演算・特区バイパススキャン中...")
+                    st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
                         
-                        # --- 🛡️ 鉄の掟：最優先・物理検問所（リスク・IPO・3倍高は保険として正常稼働） ---
+                        # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
                         if cfg["f5_ipo"]:
                             first_date = group['Date'].min()
@@ -2141,38 +2136,68 @@ with tab2:
                         if cfg["f11_ex_wave3"]:
                             if lc > (c_vals.min() * 3.0): return None
                         
-                        # パージ対象①：1ヶ月暴騰上限（cfg["f2_m30"] = 999.0 のため必ず通過）
                         p20 = c_vals[max(0, len(c_vals)-20)]
                         if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
                         
-                        # パージ対象②：高値からの下落率（cfg["f3_drop"] = -999.0 のため必ず通過）
                         h_max_1yr = c_vals.max()
                         if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
-                        # 指標計算
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                         
-                        # パージ対象③：波高下限（cfg["f_vol_min"] = -1.0 のため必ず通過。超低ボラからの大化け株を救出）
                         if vol_pct < cfg["f_vol_min"]: return None
                         if rsi > cfg["rsi_lim"]: return None
                         
-                        # --- 📡 強襲シグナル（MACD GC判定） ---
+                        # 🚨 【真・強襲シグナル（実体MAクロス ＆ GC前夜 完全物理判定）】
+                        if len(c_vals) < 25: return None
+                        
+                        # ローソク足実体からその場で正確な移動平均線を再演算
+                        s_c = pd.Series(c_vals)
+                        ma5_s = s_c.rolling(5).mean().values
+                        ma25_s = s_c.rolling(25).mean().values
+                        
+                        # 後続のトリアージ関数やTAB3が確実に数値を読めるよう、df(group)へ物理注入
+                        group = group.copy()
+                        group['MA5'] = ma5_s
+                        group['MA25'] = ma25_s
+                        
+                        ma5, ma25 = ma5_s[-1], ma25_s[-1]
+                        prev_ma5 = ma5_s[-2]
+                        
                         gc_days = 0
-                        if len(hist) >= 4:
-                            if hist[-2] < 0 and hist[-1] >= 0: gc_days = 1
-                            elif hist[-3] < 0 and hist[-1] >= 0: gc_days = 2
-                            elif hist[-4] < 0 and hist[-1] >= 0: gc_days = 3
+                        is_pre_gc = False
+                        
+                        if ma5 >= ma25:
+                            # すでに交差済み（GC後）。過去3日間でどこでクロスしたか探査
+                            for d in range(1, 4): 
+                                if ma5_s[-d] >= ma25_s[-d] and ma5_s[-(d+1)] < ma25_s[-(d+1)]:
+                                    gc_days = d
+                                    break
+                        else:
+                            # 未交差。ボス指定の「GC前夜」4大物理条件を判定
+                            dist_pct = ((ma5 / ma25) - 1) * 100
+                            if (lc > ma5) and (lc > ma25) and (-2.0 <= dist_pct < 0.0) and (ma5 > prev_ma5):
+                                is_pre_gc = True
+                                
+                        # 🚨 絶対防衛検門：GC直後（3日以内）でもなく、GC前夜（4条件クリア）でもないダマシ銘柄は、ここで完全パージ（圧殺）
+                        if gc_days == 0 and not is_pre_gc:
+                            return None
 
                         if cfg["f12_ex_overvalued"]:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
                         
-                        # ⚡ トリアージ情報の取得（機関部内部の物理位置検門・酒田天井罠排除と完全動調和）
+                        # ⚡ トリアージ情報の取得
                         is_assault = "狙撃優先" in cfg["tactics"]
                         t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
                         
-                        if t_rank == "圏外 💀" or "圏外" in t_rank: return None
+                        # 🚨 新・物理エンジンの特権オーバーライド
+                        # 旧・トリアージ関数のバグによる圏外落ちから、完璧なGC前夜株を強制救済する
+                        if is_pre_gc:
+                            t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
+                            
+                        # 救済対象外で、かつ圏外判定のものは最終ドロップ
+                        if not is_pre_gc and (t_rank == "圏外 💀" or "圏外" in t_rank): return None
                         
                         h_vals = group['AdjH'].values
                         h14 = h_vals[-14:].max()
