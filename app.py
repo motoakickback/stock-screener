@@ -2769,37 +2769,39 @@ with tab3:
                                 rank = "圏外💀"
                                 bg_c = "#616161"
                         else:
-                            # --- ⚡ 強襲（アサルト）戦術論理：原本物理行を完全復元 ---
+                            # --- ⚡ 強襲（アサルト）戦術論理：完全物理同期エンジン ---
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
-                            hist_vals = df_mini['MACD_Hist'].tail(5).values
                             
-                            # ゴールデンクロス判定の物理展開
-                            if len(hist_vals) >= 2 and hist_vals[-2] < 0 and hist_vals[-1] >= 0:
-                                gc_days = 1
-                                gc_score = 60
-                            elif len(hist_vals) >= 3 and hist_vals[-3] < 0 and hist_vals[-1] >= 0:
-                                gc_days = 2
-                                gc_score = 40
+                            # 🚨 【真の物理結線】MACDの推測を完全排除し、ローソク足の実体からMA5とMA25を再演算
+                            c_vals_t3 = df_mini['AdjC'].values
+                            if len(c_vals_t3) >= 25:
+                                s_c_t3 = pd.Series(c_vals_t3)
+                                ma5_s_t3 = s_c_t3.rolling(5).mean().values
+                                ma25_s_t3 = s_c_t3.rolling(25).mean().values
+                                
+                                ma5_t3 = ma5_s_t3[-1]
+                                ma25_t3 = ma25_s_t3[-1]
+                                prev_ma5_t3 = ma5_s_t3[-2]
                             else:
-                                gc_days = 0
-                                gc_score = 5
+                                ma5_t3, ma25_t3, prev_ma5_t3 = 0, 0, 0
                                 
-                            # 🚨 【改修】5MAと25MAの接近モメンタム（速度）から翌日GC予測を物理判定
+                            gc_days = 0
+                            gc_score = 5
                             is_pre_gc_t3 = False
-                            if gc_days == 0 and len(df_mini) >= 2:
-                                row_l = df_mini.iloc[-1]
-                                row_p = df_mini.iloc[-2]
-                                ma5_c = row_l.get('MA5') if pd.notna(row_l.get('MA5')) else np.mean(df_mini['AdjC'].values[-5:])
-                                ma25_c = row_l.get('MA25') if pd.notna(row_l.get('MA25')) else np.mean(df_mini['AdjC'].values[-25:])
-                                prev_ma5_c = row_p.get('MA5') if pd.notna(row_p.get('MA5')) else np.mean(df_mini['AdjC'].values[-6:-1])
-                                prev_ma25_c = row_p.get('MA25') if pd.notna(row_p.get('MA25')) else np.mean(df_mini['AdjC'].values[-26:-1])
-                                
-                                if ma5_c and ma25_c and prev_ma5_c and prev_ma25_c:
-                                    curr_diff = ma25_c - ma5_c      # 本日の残り距離
-                                    prev_diff = prev_ma25_c - prev_ma5_c  # 前日の距離
-                                    
-                                    # 条件：残り距離が1日あたりの収束速度（prev_diff - curr_diff）以下なら明日クロス
-                                    if 0 < curr_diff <= (prev_diff - curr_diff):
+                            
+                            if ma5_t3 > 0 and ma25_t3 > 0 and prev_ma5_t3 > 0:
+                                if ma5_t3 >= ma25_t3:
+                                    # 実体クロス済み（GC後）。過去3日間でどこでクロスしたか物理探査
+                                    for d in range(1, 4): 
+                                        if ma5_s_t3[-d] >= ma25_s_t3[-d] and ma5_s_t3[-(d+1)] < ma25_s_t3[-(d+1)]:
+                                            gc_days = d
+                                            break
+                                    if gc_days == 1: gc_score = 60
+                                    elif gc_days == 2: gc_score = 40
+                                else:
+                                    # 🚨 【新・GC前夜（激熱）物理判定】
+                                    dist_pct_t3 = ((ma5_t3 / ma25_t3) - 1) * 100
+                                    if (lc > ma5_t3) and (lc > ma25_t3) and (-2.0 <= dist_pct_t3 < 0.0) and (ma5_t3 > prev_ma5_t3):
                                         is_pre_gc_t3 = True
                                         gc_score = 95
                                 
@@ -2832,18 +2834,23 @@ with tab3:
                                 bg_c = "#ef5350"  # 警告赤
                                 score = 0         # スコア破棄
                                 
-                                # 標的の状態（明日予測か、すでにGC済みか）によって警告メッセージを完璧に明確に切り分ける
-                                if gc_days <= 0:
+                                # 標的の状態によって警告メッセージを完璧に明確に切り分ける
+                                if is_pre_gc_t3:
                                     alerts.append("🔴 【絶対排除】明日GC予測（初動）のモメンタムを検知しましたが、酒田の天井シグナル（限界値）を同時検知。往復ビンタ回避のためS+資格を完全剥奪。")
                                 else:
-                                    alerts.append(f"🔴 【天井地雷】GC発動 {gc_days}日目を維持していますが、高値圏での致命的な天井転換サイン（三山・買い三空等）を検知。強襲を強制停止し、即時撤退・利確を推奨。")
+                                    alerts.append(f"🔴 【天井地雷】高値圏での致命的な天井転換サイン（三山・買い三空等）を検知。強襲を強制停止し、即時撤退・利確を推奨。")
                             else:
                                 if is_pre_gc_t3:
                                     rank = "S+🎯"
                                     bg_c = "#ff5252"
                                     alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロスを達成する、本物の超直前モメンタムを補足。")
                                 else:
-                                    if score >= 80:
+                                    # 🚨 【究極防衛】クロスもしておらず、GC前夜でもないダマシ銘柄は問答無用で圏外に叩き落とす
+                                    if gc_days == 0 and not is_pre_gc_t3:
+                                        rank = "圏外💀"
+                                        bg_c = "#616161"
+                                        score = 0
+                                    elif score >= 80:
                                         rank = "S級強襲⚡"
                                         bg_c = "#1b5e20"
                                     elif score >= 60:
