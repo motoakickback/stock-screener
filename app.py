@@ -2054,12 +2054,14 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    col_t2_1, col_t2_2 = st.columns(2)
+    col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 70
-    if 'tab2_vol_limit' not in st.session_state: st.session_state.tab2_vol_limit = 50000
+    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 100000000  # 修正案①：マスト条件「1億円」
+    if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.5        # 修正案②：エネルギー点火「1.5倍」
     
     rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final_physical_lock")
-    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.tab2_vol_limit), step=5000, key="t2_vol_v2026_final_physical_lock")
+    val_lim = col_t2_2.number_input("最低5日平均売買代金（円）", value=int(st.session_state.tab2_val_limit), step=10000000, key="t2_val_v2026_final_physical_lock")
+    vol_ratio = col_t2_3.number_input("点火出来高倍率（5日平均比）", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_final_physical_lock")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
         st.session_state.tab2_scan_results = None
@@ -2086,14 +2088,15 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-                    # 💥 【真・大改修：動的パージ特区回路】
+                    # 💥 【真・大改修：動的パージ特区回路 ＆ 新規則の装填】
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), 
                         "f1_max": float(st.session_state.f1_max),
                         "f2_m30": 999.0,         # 🚨 1ヶ月暴騰上限をパージ
                         "f3_drop": -999.0,       # 🚨 高値からの下落率バリアをパージ
                         "rsi_lim": effective_rsi_limit, 
-                        "vol_lim": float(vol_lim),
+                        "val_lim": float(val_lim),      # 修正案①：売買代金基準
+                        "vol_ratio": float(vol_ratio),  # 修正案②：点火倍率基準
                         "f5_ipo": st.session_state.f5_ipo,
                         "f11_ex_wave3": st.session_state.f11_ex_wave3,
                         "f6_risk": st.session_state.f6_risk,
@@ -2113,17 +2116,16 @@ with tab2:
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= config_t2["f1_min"]) & (full_df['AdjC'] <= config_t2["f1_max"])
                     valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
                     
+                    # 出来高カラムの全方位検索
                     v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
-                    
-                    avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
-                    st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
+                    st.write("⚙️ 第3段階：並列演算・物理抽出エンジン（売買代金＆点火フィルター版）稼働中...")
 
-                    def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
+                    def scan_unit_t2_parallel(code, group, cfg, v_column, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
@@ -2148,15 +2150,26 @@ with tab2:
                         if vol_pct < cfg["f_vol_min"]: return None
                         if rsi > cfg["rsi_lim"]: return None
                         
-                        # 🚨 【真・強襲シグナル（実体MAクロス ＆ GC前夜 完全物理判定）】
                         if len(c_vals) < 25: return None
                         
+                        # 🚨 【修正案①：5日平均売買代金の厳密な算定】
+                        tail_5 = group.tail(5)
+                        # 各日の「終値 × 出来高」の5日平均を正確に算出
+                        avg_daily_value = (tail_5['AdjC'] * tail_5[v_column]).mean()
+                        if avg_daily_value < cfg["val_lim"]: 
+                            return None
+                            
+                        # 🚨 【修正案②：エネルギー点火フィルター（当日出来高 ＞ 5日平均出来高×倍率）】
+                        today_vol = tail_5[v_column].values[-1]
+                        avg_vol_5 = tail_5[v_column].mean()
+                        if today_vol < (avg_vol_5 * cfg["vol_ratio"]): 
+                            return None
+
                         # ローソク足実体からその場で正確な移動平均線を再演算
                         s_c = pd.Series(c_vals)
                         ma5_s = s_c.rolling(5).mean().values
                         ma25_s = s_c.rolling(25).mean().values
                         
-                        # 後続のトリアージ関数やTAB3が確実に数値を読めるよう、df(group)へ物理注入
                         group = group.copy()
                         group['MA5'] = ma5_s
                         group['MA25'] = ma25_s
@@ -2168,18 +2181,15 @@ with tab2:
                         is_pre_gc = False
                         
                         if ma5 >= ma25:
-                            # すでに交差済み（GC後）。過去3日間でどこでクロスしたか探査
                             for d in range(1, 4): 
                                 if ma5_s[-d] >= ma25_s[-d] and ma5_s[-(d+1)] < ma25_s[-(d+1)]:
                                     gc_days = d
                                     break
                         else:
-                            # 未交差。ボス指定の「GC前夜」4大物理条件を判定
                             dist_pct = ((ma5 / ma25) - 1) * 100
                             if (lc > ma5) and (lc > ma25) and (-2.0 <= dist_pct < 0.0) and (ma5 > prev_ma5):
                                 is_pre_gc = True
                                 
-                        # 🚨 絶対防衛検門：GC直後（3日以内）でもなく、GC前夜（4条件クリア）でもないダマシ銘柄は、ここで完全パージ（圧殺）
                         if gc_days == 0 and not is_pre_gc:
                             return None
 
@@ -2191,12 +2201,9 @@ with tab2:
                         is_assault = "狙撃優先" in cfg["tactics"]
                         t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
                         
-                        # 🚨 新・物理エンジンの特権オーバーライド
-                        # 旧・トリアージ関数のバグによる圏外落ちから、完璧なGC前夜株を強制救済する
                         if is_pre_gc:
                             t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
                             
-                        # 救済対象外で、かつ圏外判定のものは最終ドロップ
                         if not is_pre_gc and (t_rank == "圏外 💀" or "圏外" in t_rank): return None
                         
                         h_vals = group['AdjH'].values
@@ -2207,14 +2214,14 @@ with tab2:
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
                             'GC_Days': gc_days, 'h14': float(h14), 'atr': float(atr), 
-                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
+                            'avg_value': float(avg_daily_value), 'vol_pct': float(vol_pct),
                             'T_Desc': t_desc
                         }
 
                     # --- 🚀 並列実行エンジン ---
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
+                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, v_col, latest_date) for c, g in df.groupby('Code')]
                         for f in concurrent.futures.as_completed(futures):
                             try:
                                 res = f.result()
@@ -2289,6 +2296,7 @@ with tab2:
                 t_badge = f'<span style="background-color: {r["T_Color"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["T_Rank"]}</span>'
                 sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
                 vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
+                val_badge = f'<span style="background-color: rgba(30, 136, 229, 0.1); border: 1px solid #1e88e5; color: #1e88e5; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">💰 5日平均代金: {r["avg_value"]/100000000:.2f}億円</span>'
 
                 if r['GC_Days'] <= 0:
                     status_badge_html = f'<span style="background-color: rgba(239, 83, 80, 0.15); border: 1px solid #ef5350; color: #ef5350; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r.get("T_Desc", "明日GC見込(激熱)")}</span>'
@@ -2299,7 +2307,7 @@ with tab2:
                     <div style="margin-bottom: 0.8rem;">
                         <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                            {badge_html}{t_badge}{sector_badge}{vol_badge}{status_badge_html}
+                            {badge_html}{t_badge}{sector_badge}{vol_badge}{val_badge}{status_badge_html}
                             <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {r['RSI']:.1f}%</span>
                         </div>
                     </div>
@@ -2314,7 +2322,7 @@ with tab2:
                 m_cols[1].metric("RSI", f"{r['RSI']:.1f}%")
                 m_cols[2].metric("ボラ(推定)", f"{atr_v:,}円")
                 m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
-                m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
+                m_cols[4].markdown(f'<div style="background: rgba(255, 215,gold, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
             
 # --- 8. タブコンテンツ (TAB3: 精密スコープ) ---
 with tab3:
