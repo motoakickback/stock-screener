@@ -1123,10 +1123,6 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return t_p
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
-    """
-    🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ 酒田サインの絶対表示 🚨
-    【物理修正】ローソク足のホバーに MA5 / MA25 / MA75 を完全統合し、個別の線グラフも復活
-    """
     import plotly.graph_objects as go
     from datetime import timedelta
     import pandas as pd
@@ -1138,29 +1134,25 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     df_plot = df.copy()
     
-    # 🚨 フェイルセーフ：万が一前の処理でMAデータが欠落していても、ここで強制的に再計算して絶対表示させる
-    if 'MA5' not in df_plot.columns and 'AdjC' in df_plot.columns:
-        df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
-    if 'MA25' not in df_plot.columns and 'AdjC' in df_plot.columns:
-        df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
-    if 'MA75' not in df_plot.columns and 'AdjC' in df_plot.columns:
-        df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
+    # 🚨 フェイルセーフ：万が一計算されていなくても、関数内で強制的にMA5/25/75を算出する
+    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
+    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
+    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
 
     # 騰落矢印（▲/▼）
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # 🚨 ホバー用のMA文字列を作成（値がない場合はハイフン）
-    ma5_text = df_plot.get('MA5', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
-    ma25_text = df_plot.get('MA25', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
-    ma75_text = df_plot.get('MA75', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    # 🚨 ホバー用のテキスト配列を生成（NaNの場合はハイフン）
+    ma5_str = df_plot['MA5'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma25_str = df_plot['MA25'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma75_str = df_plot['MA75'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
 
-    # customdata に複数要素（矢印, MA5, MA25, MA75）を配列としてスタック
-    customdata = np.stack((df_plot['arrow'], ma5_text, ma25_text, ma75_text), axis=-1)
+    # customdata に 矢印, MA5, MA25, MA75 を統合
+    customdata = np.column_stack((df_plot['arrow'], ma5_str, ma25_str, ma75_str))
 
-    # --- 1. フィギュア構築 ---
     fig = go.Figure()
 
-    # --- 2. ローソク足（MA値をホバーに統合） ---
+    # --- 1. ローソク足本体 ＆ 統合ホバー ---
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
@@ -1182,13 +1174,9 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         decreasing_line_color='#ef5350'
     ))
 
-    # --- 3. 移動平均線（チャート上に線としても描画） ---
-    # ローソク足のホバーで数値は見えるため、線自体のホバー表示はスキップしてスッキリさせます
-    ma_configs = [
-        ('MA5', '#ffd700', 'MA5'), 
-        ('MA25', '#42a5f5', 'MA25'), 
-        ('MA75', '#ab47bc', 'MA75')
-    ]
+    # --- 2. MAラインの描画 ---
+    # ホバーはローソク足側で表示するため、線自体のホバーはスキップする
+    ma_configs = [('MA5', '#ffd700', 'MA5'), ('MA25', '#42a5f5', 'MA25'), ('MA75', '#ab47bc', 'MA75')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
@@ -1199,7 +1187,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 hoverinfo='skip'
             ))
 
-    # --- 4. 買付目標 ---
+    # --- 3. 買付目標 ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
@@ -1209,61 +1197,37 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 5. 酒田サイン ---
+    # --- 4. 酒田サイン ---
     date_str_series = df_plot['Date'].astype(str).str[:10]
-    
     for i, p in enumerate(sakata):
         try:
-            s_date = p.get('date')
-            s_type = p.get('type', 'bull')
-            s_label = p.get('label', 'Sign')
-            s_color = p.get('color', '#FFFFFF')
-            
-            if not s_date:
-                continue
-
+            s_date, s_type, s_label, s_color = p.get('date'), p.get('type', 'bull'), p.get('label', 'Sign'), p.get('color', '#FFFFFF')
+            if not s_date: continue
             is_bear = (s_type == 'bear')
             offset_ay = -60 - (i * 30) if is_bear else 60 + (i * 30)
-            
             target_date_str = str(s_date)[:10]
             match_row = df_plot[date_str_series == target_date_str]
-            
-            if not match_row.empty:
-                price_ref = match_row['AdjH' if is_bear else 'AdjL'].values[0]
-            else:
-                price_ref = df_plot['AdjC'].iloc[-1]
+            price_ref = match_row['AdjH' if is_bear else 'AdjL'].values[0] if not match_row.empty else df_plot['AdjC'].iloc[-1]
 
             fig.add_annotation(
-                x=s_date, y=price_ref, text=s_label,
-                showarrow=True, arrowhead=2, arrowcolor=s_color,
-                ax=0, ay=offset_ay,
-                bgcolor="rgba(10,10,10,0.85)", bordercolor=s_color,
-                borderwidth=1, font=dict(color=s_color, size=11)
+                x=s_date, y=price_ref, text=s_label, showarrow=True, arrowhead=2, arrowcolor=s_color,
+                ax=0, ay=offset_ay, bgcolor="rgba(10,10,10,0.85)", bordercolor=s_color, borderwidth=1, font=dict(color=s_color, size=11)
             )
-        except Exception as e:
+        except Exception:
             continue
 
-    # --- 6. 神聖レイアウト ---
+    # --- 5. レイアウト ---
     fig.update_layout(
-        template='plotly_dark',
-        height=550,
-        margin=dict(l=0, r=0, t=30, b=80),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        hovermode="x unified",
+        template='plotly_dark', height=550, margin=dict(l=0, r=0, t=30, b=80),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
-        xaxis_rangeslider_visible=True,
-        xaxis_rangeslider_thickness=0.04,
+        xaxis_rangeslider_visible=True, xaxis_rangeslider_thickness=0.04,
         yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False),
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]),
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
     )
 
-    st.plotly_chart(
-        fig, use_container_width=True, 
-        config={'displayModeBar': False, 'responsive': True}, 
-        key=f"{chart_key}_{int(time.time()*1000)}"
-    )
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
 # ==========================================
 # 🚨 修正：データの先行確定（NameError物理根絶）
@@ -1721,12 +1685,15 @@ with tab1:
                             if res: results.append(res)
                         except: pass
                 
-                # --- 🛡️ 統合ロジック：最終ソート ＆ 戦略的セクター制限 ---
-                # --- 🛡️ 索敵段階：原材料（候補）を 100 件確保するだけにする ---
+                # --- TAB1: ソート実行直後の部分から書き換え ---
                 sorted_raw = sorted(results, key=lambda x: (x['t_score'], x['score']), reverse=True)
                 
                 # 絞り込まずに保存してリラン（これで原材料が確定する）
                 st.session_state.tab1_scan_results = sorted_raw[:300] 
+                
+                t_calc = time.time()
+                # 🚨 セッションステートに処理時間を保存（rerun後も消えないようにする）
+                st.session_state.tab1_time_msg = f"⏱️ 処理時間: {t_calc - t_global_start:.2f}秒 (取得: {t_fetch - t_global_start:.2f}秒 / 解析: {t_calc - t_fetch:.2f}秒)"
                 
                 status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab1_scan_results)} 銘柄確保）", state="complete", expanded=False)
                 st.rerun()
@@ -1759,13 +1726,11 @@ with tab1:
                 st.rerun()
 
     if st.session_state.tab1_scan_results:
+        # 🚨 結果表示の先頭に、保存した処理時間を表示
+        if "tab1_time_msg" in st.session_state:
+            st.caption(st.session_state.tab1_time_msg)
+
         raw_hits = st.session_state.tab1_scan_results
-        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
-        sel_sects = st.session_state.get("f_selected_sectors", [])
-        curr_market = st.session_state.get("preset_market", "")
-        
-        light_results = []
-        sector_counts = {}
         
         # 📊 状況分析用カウンタ
         stats = {"total_raw": len(raw_hits), "market_filtered": 0, "theme_filtered": 0, "sector_filtered": 0}
@@ -2046,10 +2011,14 @@ with tab2:
                                 if res: results.append(res)
                             except: pass
                     
+                    # --- TAB2: ソート実行直後の部分から書き換え ---
                     sorted_raw = sorted(results, key=lambda x: (-x['T_Score'], x['GC_Days']))
                     st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
                     t_calc = time.time()
+                    # 🚨 セッションステートに処理時間を保存
+                    st.session_state.tab2_time_msg = f"⏱️ 処理時間: {t_calc - t_global_start:.2f}秒 (取得: {t_fetch - t_global_start:.2f}秒 / 解析: {t_calc - t_fetch:.2f}秒)"
+                    
                     status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                     st.rerun()
 
@@ -2061,6 +2030,10 @@ with tab2:
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
     if raw_hits_t2:
+        # 🚨 結果表示の先頭に、保存した処理時間を表示
+        if "tab2_time_msg" in st.session_state:
+            st.caption(st.session_state.tab2_time_msg)
+            
         max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
         sel_sects = st.session_state.get("f_selected_sectors", [])
         curr_market = st.session_state.get("preset_market", "")
