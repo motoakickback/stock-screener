@@ -1123,33 +1123,72 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return t_p
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
+    """
+    🚨 ボスのDNA：全ホバー項目の物理的整合性 ＆ 酒田サインの絶対表示 🚨
+    【物理修正】ローソク足のホバーに MA5 / MA25 / MA75 を完全統合し、個別の線グラフも復活
+    """
+    import plotly.graph_objects as go
+    from datetime import timedelta
+    import pandas as pd
+    import numpy as np
+    import time
+
     if df is None or df.empty:
         return
 
     df_plot = df.copy()
+    
+    # 🚨 フェイルセーフ：万が一前の処理でMAデータが欠落していても、ここで強制的に再計算して絶対表示させる
+    if 'MA5' not in df_plot.columns and 'AdjC' in df_plot.columns:
+        df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
+    if 'MA25' not in df_plot.columns and 'AdjC' in df_plot.columns:
+        df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
+    if 'MA75' not in df_plot.columns and 'AdjC' in df_plot.columns:
+        df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
+
+    # 騰落矢印（▲/▼）
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
+    # 🚨 ホバー用のMA文字列を作成（値がない場合はハイフン）
+    ma5_text = df_plot.get('MA5', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma25_text = df_plot.get('MA25', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma75_text = df_plot.get('MA75', pd.Series([None]*len(df_plot))).apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+
+    # customdata に複数要素（矢印, MA5, MA25, MA75）を配列としてスタック
+    customdata = np.stack((df_plot['arrow'], ma5_text, ma25_text, ma75_text), axis=-1)
+
+    # --- 1. フィギュア構築 ---
     fig = go.Figure()
 
+    # --- 2. ローソク足（MA値をホバーに統合） ---
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
         low=df_plot['AdjL'], close=df_plot['AdjC'],
         name='価格',
-        customdata=df_plot['arrow'],
+        customdata=customdata,
         hovertemplate=(
             "価格：<br>"
             "始値：%{open:,.0f}<br>"
-            "終値：%{close:,.0f}%{customdata}<br>"
+            "終値：%{close:,.0f}%{customdata[0]}<br>"
             "高値：%{high:,.0f}<br>"
             "安値：%{low:,.0f}<br>"
+            "MA5 ：%{customdata[1]}<br>"
+            "MA25：%{customdata[2]}<br>"
+            "MA75：%{customdata[3]}<br>"
             "<extra></extra>"
         ),
         increasing_line_color='#26a69a', 
         decreasing_line_color='#ef5350'
     ))
 
-    ma_configs = [('MA5', '#ffd700', 'MA5：'), ('MA25', '#42a5f5', 'MA25：'), ('MA75', '#ab47bc', 'MA75：')]
+    # --- 3. 移動平均線（チャート上に線としても描画） ---
+    # ローソク足のホバーで数値は見えるため、線自体のホバー表示はスキップしてスッキリさせます
+    ma_configs = [
+        ('MA5', '#ffd700', 'MA5'), 
+        ('MA25', '#42a5f5', 'MA25'), 
+        ('MA75', '#ab47bc', 'MA75')
+    ]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
@@ -1157,9 +1196,10 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 name=label,
                 line=dict(color=color, width=1.5),
                 connectgaps=True,
-                hovertemplate=f"{label}%{{y:,.0f}}<extra></extra>"
+                hoverinfo='skip'
             ))
 
+    # --- 4. 買付目標 ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
@@ -1169,6 +1209,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
+    # --- 5. 酒田サイン ---
     date_str_series = df_plot['Date'].astype(str).str[:10]
     
     for i, p in enumerate(sakata):
@@ -1200,39 +1241,22 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 borderwidth=1, font=dict(color=s_color, size=11)
             )
         except Exception as e:
-            print(f"Sakata Draw Error: {e}")
             continue
 
+    # --- 6. 神聖レイアウト ---
     fig.update_layout(
         template='plotly_dark',
         height=550,
-        margin=dict(l=0, r=0, t=30, b=80),  
+        margin=dict(l=0, r=0, t=30, b=80),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=True,
         xaxis_rangeslider_thickness=0.04,
-        yaxis=dict(
-            side="right", 
-            tickformat=",.0f", 
-            gridcolor='rgba(255,255,255,0.05)',
-            autorange=True,
-            fixedrange=False 
-        ),
-        xaxis=dict(
-            showgrid=True, 
-            gridcolor='rgba(255,255,255,0.05)',
-            range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]
-        ),
-        legend=dict(
-            orientation="h", 
-            yanchor="top", 
-            y=-0.32,  
-            xanchor="center", 
-            x=0.5, 
-            font=dict(color="#eee", size=11)
-        )
+        yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]),
+        legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
     )
 
     st.plotly_chart(
