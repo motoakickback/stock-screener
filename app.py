@@ -1574,6 +1574,8 @@ with tab1:
 
     if run_scan_t1:
         st.session_state.tab1_scan_results = None
+        # 🚨 物理初期化：タイムログ配列を完全に導通
+        st.session_state.tab1_time_log = []
         gc.collect() 
         t_global_start = time.time()
         
@@ -1581,7 +1583,9 @@ with tab1:
             st.write("📡 第1段階：280日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
             t_fetch = time.time()
-            st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+            msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+            st.write(msg1)
+            st.session_state.tab1_time_log.append(msg1) # 🚨 メモリへ退避
             
             if full_df is not None and not full_df.empty:
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
@@ -1613,7 +1617,9 @@ with tab1:
                 
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 t_clean = time.time()
-                st.write(f"✔️ 第2段階完了：ターゲット抽出 {len(valid_codes)}銘柄 [{t_clean - t_fetch:.2f}秒]")
+                msg2 = f"✔️ 第2段階完了：ターゲット抽出 {len(valid_codes)}銘柄 [{t_clean - t_fetch:.2f}秒]"
+                st.write(msg2)
+                st.session_state.tab1_time_log.append(msg2)
                 st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg, l_date):
@@ -1692,16 +1698,20 @@ with tab1:
                 st.session_state.tab1_scan_results = filtered_results
                 
                 t_calc = time.time()
-                # 🚨 物理配線：不揮発メモリ空間へ処理時間をシールド退避
-                st.session_state.tab1_time_elapsed = f"⏱️ 索敵時間: {t_calc - t_global_start:.2f}秒 (取得: {t_fetch - t_global_start:.2f}秒 / 抽出: {t_clean - t_fetch:.2f}秒 / 解析: {t_calc - t_clean:.2f}秒)"
+                msg3 = f"✔️ 第3段階完了：解析・色彩同期済み [{t_calc - t_clean:.2f}秒]"
+                st.session_state.tab1_time_log.append(msg3)
+                msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
+                st.session_state.tab1_time_log.append(msg4)
                 
                 status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
                 st.rerun()
 
     if st.session_state.tab1_scan_results:
-        # 🚨 物理展開：リrun後も最上部に処理時間を永久固定して表示
-        if "tab1_time_elapsed" in st.session_state:
-            st.markdown(f"<div style='background-color:rgba(38,166,154,0.08); border-left:4px solid #26a69a; padding:0.6rem; border-radius:4px; margin-bottom:1rem; color:#26a69a; font-size:13px; font-weight:bold; font-family:Consolas;'>{st.session_state.tab1_time_elapsed}</div>", unsafe_allow_html=True)
+        # 🚨 TAB3仕様完全再現：リラン後、完了したstatusボックスと同じ外観で永久ホールド
+        if "tab1_time_log" in st.session_state and st.session_state.tab1_time_log:
+            with st.expander(f"🎯 索敵完了！（候補 {len(st.session_state.tab1_scan_results)} 銘柄確保）", expanded=False):
+                for log in st.session_state.tab1_time_log:
+                    st.write(log)
 
         raw_hits = st.session_state.tab1_scan_results
         max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
@@ -1810,6 +1820,8 @@ with tab2:
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
         st.session_state.tab2_scan_results = None
+        # 🚨 物理初期化
+        st.session_state.tab2_time_log = []
         gc.collect()
         t_global_start = time.time()
 
@@ -1818,7 +1830,9 @@ with tab2:
                 st.write("📡 第1段階：260日分のローソク足データを取得中...")
                 raw = get_hist_data_cached(cache_key)
                 t_fetch = time.time()
-                st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+                st.write(msg1)
+                st.session_state.tab2_time_log.append(msg1)
                 
                 if raw is None or len(raw) == 0:
                     st.error("J-Quants APIからの応答が途絶。")
@@ -1865,7 +1879,9 @@ with tab2:
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
-                    st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
+                    msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
+                    st.write(msg2)
+                    st.session_state.tab2_time_log.append(msg2)
                     st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
@@ -1957,8 +1973,10 @@ with tab2:
                     st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                     
                     t_calc = time.time()
-                    # 🚨 物理配線：不揮発メモリ空間へ処理時間をシールド退避
-                    st.session_state.tab2_time_elapsed = f"⏱️ 強襲時間: {t_calc - t_global_start:.2f}秒 (取得: {t_fetch - t_global_start:.2f}秒 / 抽出: {t_clean - t_fetch:.2f}秒 / 解析: {t_calc - t_clean:.2f}秒)"
+                    msg3 = f"✔️ 第3段階完了：解析・色彩同期済み [{t_calc - t_clean:.2f}秒]"
+                    st.session_state.tab2_time_log.append(msg3)
+                    msg4 = f"⏱️ 物理総計強襲時間: {t_calc - t_global_start:.2f}秒"
+                    st.session_state.tab2_time_log.append(msg4)
                     
                     status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                     st.rerun()
@@ -1970,9 +1988,11 @@ with tab2:
     raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
     
     if raw_hits_t2:
-        # 🚨 物理展開：リrun後も最上部に処理時間を永久固定して表示
-        if "tab2_time_elapsed" in st.session_state:
-            st.markdown(f"<div style='background-color:rgba(38,166,154,0.08); border-left:4px solid #26a69a; padding:0.6rem; border-radius:4px; margin-bottom:1rem; color:#26a69a; font-size:13px; font-weight:bold; font-family:Consolas;'>{st.session_state.tab2_time_elapsed}</div>", unsafe_allow_html=True)
+        # 🚨 TAB3仕様完全再現：リラン後、完了したstatusボックスと同じ外観で永久ホールド
+        if "tab2_time_log" in st.session_state and st.session_state.tab2_time_log:
+            with st.expander(f"🎯 強襲特区スキャン完了！精鋭候補 {len(raw_hits_t2)}銘柄確保", expanded=False):
+                for log in st.session_state.tab2_time_log:
+                    st.write(log)
 
         max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
         sel_sects = st.session_state.get("f_selected_sectors", [])
