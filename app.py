@@ -813,6 +813,45 @@ def get_fundamentals(code):
     except: pass
     return None
 
+# =========================================================
+# 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
+# =========================================================
+def get_upcoming_event_alerts(code_str):
+    """
+    指定された銘柄コード（4桁）の決算日・権利落ち日をチェックし、
+    直近14日以内の場合に目立つアラート文字列のリストを返す
+    """
+    alerts = []
+    try:
+        tz = pytz.timezone('Asia/Tokyo')
+        today = datetime.now(tz).date()
+        
+        # 既存のファンダメンタルズ取得関数を流用
+        f_data = get_fundamentals(str(code_str)[:4])
+        if not f_data:
+            return alerts
+            
+        # 1. 決算日の判定（文字列を安全に日付型へ変換して引き算）
+        earnings_date_str = f_data.get("earnings_date") or f_data.get("next_div_date") 
+        if earnings_date_str:
+            e_date = datetime.strptime(str(earnings_date_str).strip()[:10], "%Y-%m-%d").date()
+            days_to_earnings = (e_date - today).days
+            if 0 <= days_to_earnings <= 14:
+                alerts.append(f"📅 決算発表まであと {days_to_earnings} 日 ({e_date.strftime('%m/%d')})")
+                
+        # 2. 権利落ち日の判定
+        ex_div_date_str = f_data.get("ex_dividend_date")
+        if ex_div_date_str:
+            d_date = datetime.strptime(str(ex_div_date_str).strip()[:10], "%Y-%m-%d").date()
+            days_to_div = (d_date - today).days
+            if 0 <= days_to_div <= 14:
+                alerts.append(f"🍇 権利落ち（配当・優待）まであと {days_to_div} 日 ({d_date.strftime('%m/%d')})")
+                
+    except:
+        pass  # エラー時は沈黙して空リストを返す
+        
+    return alerts
+
 @st.cache_data(ttl=86400)
 def load_master():
     try:
@@ -2490,9 +2529,44 @@ with tab3:
                         if vol_pct < 0.5:
                             alerts.append(f"⚠️ 【超低ボラ】ボラ率 {vol_pct:.2f}%。資金効率低下の恐れあり。")
 
-                        # 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
+						# 💥 物理修正：Noneエラーを回避し、安全にイベント情報を抽出
                         t_events = (raw_s.get("data") or {}).get("events")
                         alerts.extend(check_event_mines(target_key, raw_s.get("events", {})))
+                        
+                        # ▼▼▼【絶対発火：年間イベント検知（型エラー完全回避版）】▼▼▼
+                        try:
+                            import pytz
+                            from datetime import datetime
+                            tz = pytz.timezone('Asia/Tokyo')
+                            today_d = datetime.now(tz).date()
+                            ev_data = raw_s.get("events", {})
+                            
+                            def parse_and_check(date_val, event_name, icon):
+                                d_str = str(date_val).strip()
+                                if not d_str or d_str == "None": return
+                                try:
+                                    # UNIXタイムスタンプ(10桁)とYYYY-MM-DD文字列の両方を安全に捌く
+                                    if d_str.isdigit() and len(d_str) >= 10:
+                                        d_obj = datetime.fromtimestamp(int(d_str[:10]), tz).date()
+                                    else:
+                                        d_obj = datetime.strptime(d_str[:10], "%Y-%m-%d").date()
+                                    
+                                    days_diff = (d_obj - today_d).days
+                                    if 0 <= days_diff <= 14:
+                                        msg = f"{icon} 【{event_name}接近】あと {days_diff} 日 ({d_obj.strftime('%m/%d')})"
+                                        # 重複表示を物理排除してアラート配列に合流
+                                        if not any(event_name in a for a in alerts):
+                                            alerts.append(msg)
+                                except Exception:
+                                    pass
+
+                            # すでに並列取得済みのデータ(ev_data)から決算と権利落ちを再評価
+                            for e in ev_data.get("earnings", []):
+                                parse_and_check(e.get("Date"), "決算", "📅")
+                            for d in ev_data.get("dividend", []):
+                                parse_and_check(d.get("Date"), "権利落ち", "🍇")
+                        except Exception:
+                            pass
                         
                         # 2. 酒田エンジン(機関部)の判定を正とし、重複を物理排除
                         s_results = detect_sakata_patterns(df_chart_full)
