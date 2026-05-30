@@ -1896,7 +1896,7 @@ with tab2:
                     st.write(msg2)
                     st.session_state.tab2_time_log.append(msg2)
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
-
+					
 					def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
 					    c_str = str(code)[:4]
 					    c_vals = group['AdjC'].values
