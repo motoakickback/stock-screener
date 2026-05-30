@@ -1799,7 +1799,6 @@ with tab1:
 
 # --- 7. タブコンテンツ (TAB2: 強襲レーダー) ---
 with tab2:
-    master_map_t2 = master_map  # 👈【物理対策】この1行を完全に追加してください
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
