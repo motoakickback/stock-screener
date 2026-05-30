@@ -1229,8 +1229,9 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
-# --- 共通領域：マスタマップの生成 ---
+# --- 【確定版】全タブ共通のマスタマップ ---
 master_df = load_master()
+master_map = {}
 if not master_df.empty:
     m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
     m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
@@ -1905,14 +1906,15 @@ with tab2:
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
-                        c_str = str(code)[:4]; c_vals = group['AdjC'].values; lc = c_vals[-1]
-                        
-                        # --- 🛡️ 物理連動：大口流動性バリアチェック ---
-                        if v_avg < cfg.get("vol_lim", 0): return None
-                        trading_val = lc * v_avg
-                        # コンソールで設定した億円未満を完全パージ
-                        min_t_val = float(st.session_state.get("f_trading_val_min", 1.5)) * 100_000_000
-                        if trading_val < min_t_val: return None 
+					    c_str = str(code)[:4]
+					    c_vals = group['AdjC'].values
+					    lc = c_vals[-1]
+					    
+					    # 物理連動：大口流動性バリアチェック
+					    if v_avg < cfg.get("vol_lim", 0): return None
+					    trading_val = lc * v_avg
+					    min_t_val = float(st.session_state.get("f_trading_val_min", 1.5)) * 100_000_000
+					    if trading_val < min_t_val: return None
                         
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
                         if cfg["f5_ipo"]:
