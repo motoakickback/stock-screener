@@ -1296,14 +1296,6 @@ st.session_state.f_vol_min = st.sidebar.slider(
     key="f_vol_min_slider"
 )
 
-# 🚨 【今回の重要追加】TAB2/3連動：最低売買代金バリア（億円）
-st.sidebar.markdown("### 💰 大口流動性バリア (TAB2/3)")
-st.session_state.f_trading_val_min = st.sidebar.slider(
-    "最低売買代金下限（直近5日平均・億円）", 
-    0.1, 10.0, float(st.session_state.get("f_trading_val_min", 1.5)), 0.1, 
-    help="直近5日間の平均売買代金（株価×出来高）がこの値未満の過疎銘柄を、TAB2/3で即座にパージします。",
-    key="f_trading_val_min"
-)
 st.sidebar.markdown("---")
 
 # --- 🌐 マクロ地合い連動システム (既存のものを完全温存) ---
@@ -1809,23 +1801,25 @@ with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    if 'tab2_scan_results_raw' not in st.session_state: st.session_state.tab2_scan_results_raw = None
-    
-    master_map_t2 = {}
-    if not master_df.empty:
-        m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
-        m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-        master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
-        del m_df_tmp
-
-    # 🚨 強襲・スクイーズ特化型のコントロールパネルをTAB2へ集約
+    # --- 🚨 強襲・スクイーズ特化コントロールパネル ---
+    st.markdown("#### ⚙️ 強襲パラメータ設定")
     col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
     
-    rsi_lim = col_t2_1.number_input("RSI上限（過熱感足切り）", value=int(st.session_state.get('tab2_rsi_limit', 70)), step=5, key="tab2_rsi_limit", on_change=save_settings)
-    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.get('tab2_vol_limit', 50000)), step=5000, key="tab2_vol_limit", on_change=save_settings)
-    trading_val_min = col_t2_3.number_input("大口流動性バリア（億円）", value=float(st.session_state.get('f_trading_val_min', 1.5)), step=0.1, format="%.1f", key="f_trading_val_min", help="直近5日の平均売買代金がこの値未満の銘柄を過疎として物理排除します。", on_change=save_settings)
+    # 物理修正：代入（st.session_state.x = ...）をせず、keyとon_changeのみで管理する
+    rsi_lim = col_t2_1.number_input("RSI上限（足切り）", value=int(st.session_state.get('tab2_rsi_limit', 70)), step=5, key="tab2_rsi_limit")
+    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.get('tab2_vol_limit', 50000)), step=5000, key="tab2_vol_limit")
+    
+    # 大口流動性バリア（TAB2に移動・代入なし）
+    trading_val_min = col_t2_3.number_input(
+        "大口流動性バリア（億円）", 
+        value=float(st.session_state.get('f_trading_val_min', 1.5)), 
+        step=0.1, format="%.1f", 
+        key="f_trading_val_min",
+        help="直近5日の平均売買代金がこの値未満の銘柄を排除します。"
+    )
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
+        # (以下、既存の強襲開始処理へ続く)
         st.session_state.tab2_scan_results_raw = None
         st.session_state.tab2_time_log = []
         gc.collect()
