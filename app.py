@@ -32,6 +32,13 @@ st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide"
 
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
+# 【新規追加】指紋認証等で値が変わった瞬間に、パスワードを強制確保する関数
+def login_attempt():
+    pw = st.session_state.get("input_access_code", "")
+    if pw in ALLOWED_PASSWORDS:
+        st.session_state["password_correct"] = True
+        st.session_state["current_user"] = pw
+
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -89,24 +96,24 @@ def check_password():
                 height=0,
             )
             
-            password = st.text_input(
+            # ▼▼▼【修正の要】on_change（即時確定）とon_clickを導入 ▼▼▼
+            st.text_input(
                 "Access Code", 
                 type="password", 
                 label_visibility="collapsed", 
                 placeholder="アクセスコード",
-                key="input_access_code"
+                key="input_access_code",
+                on_change=login_attempt  # 指紋認証で文字が入った瞬間に「login_attempt」を自動実行
             )
             
-            submitted = st.button("認証 (ENTER)", use_container_width=True)
+            submitted = st.button("認証 (ENTER)", use_container_width=True, on_click=login_attempt)
             
-            if submitted or (password and password in ALLOWED_PASSWORDS):
-                if password in ALLOWED_PASSWORDS:
-                    st.session_state["password_correct"] = True
-                    st.session_state["current_user"] = password 
-                    st.rerun()
-                elif submitted:
-                    st.error("🚨 認証失敗：コードが違います。")
-                    
+            # コールバック判定の結果をここで受け取る
+            if st.session_state.get("password_correct"):
+                st.rerun()
+            elif submitted:
+                st.error("🚨 認証失敗：コードが違います。")
+                
         return False
     return True
     
