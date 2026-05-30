@@ -1229,10 +1229,15 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
-# ==========================================
-# 🚨 修正：データの先行確定（NameError物理根絶）
-# ==========================================
+# --- 共通領域：マスタマップの生成 ---
 master_df = load_master()
+if not master_df.empty:
+    m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
+    m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+    master_map = m_df_tmp.set_index('Code').to_dict('index')
+    del m_df_tmp
+else:
+    master_map = {}
 tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
 
 # --- 共通マスタ生成（TABの直前に配置） ---
