@@ -77,7 +77,7 @@ def check_password():
                             
                             setTimeout(() => {
                                 submitBtn.click();
-                            }, 150);
+                            }, 800);
                             return true;
                         }
                     }
