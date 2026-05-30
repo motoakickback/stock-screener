@@ -1797,6 +1797,7 @@ with tab1:
 
 # --- 7. タブコンテンツ (TAB2: 強襲レーダー) ---
 with tab2:
+    master_map_t2 = master_map  # 👈【物理対策】この1行を完全に追加してください
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
@@ -1883,6 +1884,7 @@ with tab2:
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
+					master_map_t2 = master_map  # 👈【二重防壁】ここにも追加
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
