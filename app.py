@@ -1239,6 +1239,7 @@ tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟
 # TAB1/TAB2共通でマスタを高速参照するため、ここで生成しておく
 m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
 m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+# 変数名をグローバルな master_map に統一
 master_map = m_df_tmp.set_index('Code').to_dict('index')
 del m_df_tmp
 
