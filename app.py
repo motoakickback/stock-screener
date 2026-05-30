@@ -1229,7 +1229,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
-# --- 【修正1】共通マスタマップの生成（全タブから参照可能にする） ---
+# --- 司令官が先ほど追加した共通マスタ定義 ---
 master_df = load_master()
 master_map = {}
 if master_df is not None and not master_df.empty:
@@ -1237,8 +1237,10 @@ if master_df is not None and not master_df.empty:
     m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
     master_map = m_df_tmp.set_index('Code').to_dict('index')
     del m_df_tmp
-else:
-    master_map = {}
+
+# 👇【ここに追加】インデントなし（左端）で記述してください
+master_map_t1 = master_map
+master_map_t2 = master_map
 tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
 
 # ==========================================
