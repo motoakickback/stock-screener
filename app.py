@@ -1885,7 +1885,7 @@ with tab2:
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
-		            df = full_df[full_df['Code'].isin(valid_codes)]
+                    df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
                     st.write(msg2)
