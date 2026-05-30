@@ -1235,6 +1235,13 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 master_df = load_master()
 tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
 
+# --- 共通マスタ生成（TABの直前に配置） ---
+# TAB1/TAB2共通でマスタを高速参照するため、ここで生成しておく
+m_df_tmp = master_df[['Code', 'CompanyName', 'Market', 'Sector']].copy()
+m_df_tmp['Code'] = m_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+master_map = m_df_tmp.set_index('Code').to_dict('index')
+del m_df_tmp
+
 # ==========================================
 # 🎯 2026年式：戦略テーマ・ハイブリッド辞書
 # ==========================================
@@ -1805,25 +1812,39 @@ with tab2:
     st.markdown("#### ⚙️ 強襲パラメータ設定")
     col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
     
-    # 物理修正：代入（st.session_state.x = ...）をせず、keyとon_changeのみで管理する
-    rsi_lim = col_t2_1.number_input("RSI上限（足切り）", value=int(st.session_state.get('tab2_rsi_limit', 70)), step=5, key="tab2_rsi_limit")
-    vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.get('tab2_vol_limit', 50000)), step=5000, key="tab2_vol_limit")
-    
-    # 大口流動性バリア（TAB2に移動・代入なし）
+    # 【物理修正】キー指定のみにし、st.session_state への直接代入（=）を排除してAPIエラーを根絶
+    rsi_lim = col_t2_1.number_input(
+        "RSI上限（足切り）", 
+        value=int(st.session_state.get('tab2_rsi_limit', 70)), 
+        step=5, 
+        key="tab2_rsi_limit"
+    )
+    vol_lim = col_t2_2.number_input(
+        "最低出来高（5日平均）", 
+        value=int(st.session_state.get('tab2_vol_limit', 50000)), 
+        step=5000, 
+        key="tab2_vol_limit"
+    )
+    # 【追加】大口流動性バリアをTAB2内に物理移設
     trading_val_min = col_t2_3.number_input(
         "大口流動性バリア（億円）", 
         value=float(st.session_state.get('f_trading_val_min', 1.5)), 
-        step=0.1, format="%.1f", 
+        step=0.1, 
+        format="%.1f", 
         key="f_trading_val_min",
         help="直近5日の平均売買代金がこの値未満の銘柄を排除します。"
     )
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
-        # (以下、既存の強襲開始処理へ続く)
+        # スキャン開始時に保存を強制実行
+        save_settings() 
         st.session_state.tab2_scan_results_raw = None
         st.session_state.tab2_time_log = []
         gc.collect()
         t_global_start = time.time()
+        
+        # (以下、既存のスキャン処理へ続く)
+        # ※ここから下のスキャン処理内では、 st.session_state.f_trading_val_min を参照してフィルタリングすること
 
         with st.status("🚀 索敵スキャンを実行中... 強襲ルートを計算しています", expanded=True) as status:
             try:
