@@ -2003,7 +2003,6 @@ with tab2:
                     st.session_state.tab2_time_log.append(msg4)
                     
                     status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
-                    st.rerun()
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}"); status.update(label="🚨 エラー発生により中断", state="error")
