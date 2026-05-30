@@ -134,6 +134,38 @@ def get_cache_key():
 
 cache_key = get_cache_key()
 
+# =========================================================
+# 🛡️ 【絶対防壁】19時キャッシュクリア時の強制復旧フック
+# =========================================================
+def force_load_saved_settings():
+    """パージの瞬間に SETTINGS_FILE から設定と除外銘柄を強制救出する"""
+    try:
+        if os.path.exists(SETTINGS_FILE): 
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved_data = json.load(f)
+                
+                # 1. 保存されていた全ての設定をセッションに叩き込む
+                for k, v in saved_data.items():
+                    st.session_state[k] = v  
+                    
+                # 2. 除外銘柄（gigi_input）をリスト化してシステム内部変数にも完全同期
+                if "gigi_input" in saved_data and saved_data["gigi_input"]:
+                    # カンマや読点で区切られた文字列をリストに変換
+                    raw_str = saved_data["gigi_input"].replace('、', ',').replace(' ', ',').replace('　', ',')
+                    codes = [c.strip() for c in raw_str.split(',') if c.strip()]
+                    st.session_state.exclude_codes = codes
+                    st.session_state.gigi_codes = codes
+    except Exception as e:
+        pass
+
+# キャッシュキーの変動を物理検知
+current_sys_cache_key = get_cache_key()
+if st.session_state.get("last_sys_cache_key") != current_sys_cache_key:
+    # 19時を跨いでキーが変わった瞬間、デフォルトに戻される「前」に強制ロード
+    st.session_state.last_sys_cache_key = current_sys_cache_key
+    force_load_saved_settings()
+# =========================================================
+
 # --- 🚁 司令部へ帰還ボタン ---
 components.html(
     """
