@@ -1723,8 +1723,16 @@ with tab1:
                     if vol_pct < cfg["f_vol_min"]: return None
 
                     h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
-                    r4h = h_vals[-4:]; h4 = r4h.max()
-                    g_max_idx = len(h_vals) - 4 + r4h.argmax()
+                    
+                    # 🚨 【修正】波高検知の非対称化
+                    # 直近高値(h_max_5d): 本日から5日以内 (最新5日間の高値)
+                    recent_5h = h_vals[-5:] 
+                    h4 = recent_5h.max() # h4 という変数名はそのまま使い、中身を5日間の最大値にする
+                    
+                    # h4(直近5日の高値) が記録されたインデックスを取得
+                    g_max_idx = len(h_vals) - 5 + recent_5h.argmax()
+                    
+                    # 直近安値(l14): h4が記録された日から過去14日間の最安値
                     l14 = l_vals[max(0, g_max_idx - 14) : g_max_idx + 1].min()
 
                     if l14 <= 0 or h4 <= l14: return None
