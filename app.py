@@ -39,8 +39,6 @@ def login_attempt():
         st.session_state["password_correct"] = True
         st.session_state["current_user"] = pw
 
-ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
-
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -50,26 +48,72 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            # 🚨 諸悪の根源だったJS（components.html）を完全消去し、st.formで堅牢にカプセル化
-            with st.form(key="login_form", clear_on_submit=False):
-                password = st.text_input(
-                    "Access Code", 
-                    type="password", 
-                    label_visibility="collapsed", 
-                    placeholder="アクセスコード"
-                )
+            components.html(
+                """
+                <script>
+                const doc = window.parent.document;
+                let loginTriggered = false;
+
+                function tryAutoLogin() {
+                    if (loginTriggered) return true;
+                    
+                    const input = doc.querySelector('input[type="password"]');
+                    const buttons = doc.querySelectorAll('button');
+                    let submitBtn = null;
+                    for (const btn of buttons) {
+                        if (btn.innerText && btn.innerText.includes("認証")) {
+                            submitBtn = btn;
+                            break;
+                        }
+                    }
+                    if (input && submitBtn) {
+                        if (input.value.length > 0) {
+                            loginTriggered = true; 
+                            
+                            input.focus(); 
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur(); 
+                            
+                            setTimeout(() => {
+                                submitBtn.click();
+                            }, 1000);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                const monitor = setInterval(() => {
+                    if (tryAutoLogin()) {
+                        clearInterval(monitor);
+                    }
+                }, 200);
+                doc.addEventListener('input', (e) => {
+                    if (e.target.type === 'password') tryAutoLogin();
+                });
+                </script>
+                """,
+                height=0,
+            )
+            
+            # ▼▼▼【修正の要】on_change（即時確定）とon_clickを導入 ▼▼▼
+            st.text_input(
+                "Access Code", 
+                type="password", 
+                label_visibility="collapsed", 
+                placeholder="アクセスコード",
+                key="input_access_code",
+                on_change=login_attempt  # 指紋認証で文字が入った瞬間に「login_attempt」を自動実行
+            )
+            
+            submitted = st.button("認証 (ENTER)", use_container_width=True, on_click=login_attempt)
+            
+            # コールバック判定の結果をここで受け取る
+            if st.session_state.get("password_correct"):
+                st.rerun()
+            elif submitted:
+                st.error("🚨 認証失敗：コードが違います。")
                 
-                # st.form内では、指紋認証後の自動Enterや、キーボードのEnterで必ずこれが発火する
-                submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
-                
-                if submitted:
-                    if password in ALLOWED_PASSWORDS:
-                        st.session_state["password_correct"] = True
-                        st.session_state["current_user"] = password
-                        st.rerun()
-                    elif password:  # パスワードが入力されているのに弾かれた場合のみエラー
-                        st.error("🚨 認証失敗：コードが違います。")
-                        
         return False
     return True
     
