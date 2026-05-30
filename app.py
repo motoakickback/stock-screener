@@ -1724,14 +1724,12 @@ with tab1:
 
                     h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
                     
-                    # 🚨 【修正】波高検知の起点分離（完全独立化）
-                    # 直近高値(h4): 本日を含む過去5日間の最高値
-                    h4 = h_vals[-5:].max()
+                    # 🚨 【修正】波高検知の完全14日統一（美しい山と谷の判定）
+                    # 直近高値(h4): 本日を含む過去14日間の最高値
+                    h4 = h_vals[-14:].max()
                     
                     # 直近安値(l14): 本日を含む過去14日間の最安値
                     l14 = l_vals[-14:].min()
-
-                    if l14 <= 0 or h4 <= l14: return None
 
                     if l14 <= 0 or h4 <= l14: return None
                     wh = h4 / l14
