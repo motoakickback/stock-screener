@@ -2100,22 +2100,21 @@ with tab2:
                     
                     t_calc = time.time()
                     msg3 = f"✔️ 第3段階完了：解析・色彩同期済み [{t_calc - t_clean:.2f}秒]"
-                    st.session_state.tab2_time_log.append(msg3)
+                    st.write(msg3)  # 🚨 修正: appendを廃止し、直接上のボックスに書き込む
+                    
                     msg4 = f"⏱️ 物理総計強襲時間: {t_calc - t_global_start:.2f}秒"
-                    st.session_state.tab2_time_log.append(msg4)
+                    st.write(msg4)  # 🚨 修正: appendを廃止し、直接上のボックスに書き込む
                     
                     status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
 
             except Exception as e:
                 st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}"); status.update(label="🚨 エラー発生により中断", state="error")
 
-    raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
-    if raw_hits_t2:
-        if "tab2_time_log" in st.session_state and st.session_state.tab2_time_log:
-            with st.expander(f"🎯 強襲特区スキャン完了！精鋭候補 {len(raw_hits_t2)}銘柄確保", expanded=False):
-                for log in st.session_state.tab2_time_log: st.write(log)
+        raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
+        if raw_hits_t2:
+            # 🚨 【完全消去】ここにあった if "tab2_time_log" ... の重複エキスパンダー表示を削ぎ落としました。
 
-        max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
+            max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
         sel_sects = st.session_state.get("f_selected_sectors", [])
         curr_market = st.session_state.get("preset_market", "")
         
