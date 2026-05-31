@@ -1919,6 +1919,11 @@ with tab2:
         # スキャン開始時に保存を強制実行
         save_settings() 
         st.session_state.tab2_scan_results_raw = None
+        
+        # 🚨 【修正】欠落していた初期化と時間計測（タイマー）の起動処理を復元
+        st.session_state.tab2_time_log = []
+        gc.collect()
+        t_global_start = time.time()
 
         with st.status("🚀 索敵スキャンを実行中... 強襲ルートを計算しています", expanded=True) as status:
             try:
