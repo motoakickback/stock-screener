@@ -1943,11 +1943,10 @@ with tab2:
                     for col in ['AdjC', 'AdjH', 'AdjL']:
                         if col in full_df.columns: full_df[col] = full_df[col].astype('float32')
 
-                    # 🚨 【修正】削除された古いUI変数（rsi_lim / vol_lim）の参照エラーを無力化
+                    # 🚨 【修正】古いRSI計算や不要な変数を跡形もなく完全消去
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
                         "f2_m30": 999.0, "f3_drop": -999.0,        
-                        "rsi_lim": 70.0, "vol_lim": 0.0,  # ← ダミー値を直接入れてエラーを回避
                         "f5_ipo": st.session_state.f5_ipo, "f11_ex_wave3": st.session_state.f11_ex_wave3,
                         "f6_risk": st.session_state.f6_risk,
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
