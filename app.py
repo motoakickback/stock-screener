@@ -1943,6 +1943,12 @@ with tab2:
                     for col in ['AdjC', 'AdjH', 'AdjL']:
                         if col in full_df.columns: full_df[col] = full_df[col].astype('float32')
 
+                    # 🚨 【基礎調査パッチ】推測を排除し、生データを画面に強制出力して完全停止する
+                    st.error("【事実確認モード】推測によるスキャンを停止し、生データを表示します")
+                    st.write("📊 実際のカラム名一覧:", full_df.columns.tolist())
+                    st.dataframe(full_df.tail(5)) # ※事実確認のため、念のため5行表示にします
+                    st.stop() # ここで全システムを安全に強制停止
+
                     # 🚨 【修正】UIの数値をメインスレッドで取得し、スレッドに渡すための config_t2 を構築
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
