@@ -1082,88 +1082,84 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if df_chart is None or df_chart.empty: 
-        return "圏外 💀", "#424242", 0, ""
-
-    has_top_trap = False
+    """
+    【精密スコープ (TAB3) 強襲モード用判定】
+    銘柄を削ぎ落とさず（return Noneせず）、インプットされた銘柄の
+    5連装フィルターに対する達成状況を詳細に解析・採点して出力する。
+    ※引数 gc_days は他との互換性維持のため残すが内部では完全無視（撤廃）。
+    """
+    if df_chart is None or df_chart.empty or len(df_chart) < 14:
+        return "圏外 💀", "#424242", 0, "⚠️ レーダー解析不能：データ不足"
+        
     try:
-        sakata_s = detect_sakata_patterns(df_chart)
-        sakata_texts = "".join([p.get('text', '') for p in sakata_s])
-        if any(x in sakata_texts for x in ["三山", "三尊", "二重天井", "買い三空", "二重頂", "三尊天井"]):
-            has_top_trap = True
-    except Exception:
-        pass
+        latest_row = df_chart.iloc[-1]
+        lh = float(latest_row['AdjH'])
+        ll = float(latest_row['AdjL'])
+        lv = float(latest_row['Volume'])
+        lc = float(latest_row['AdjC'])
+        
+        recent_5 = df_chart.tail(5)
+        recent_14 = df_chart.tail(14)
+        
+        # UI（TAB2画面内）からのパラメータ取得。設定がない場合はデフォルト値
+        min_val = st.session_state.get("t2_min_val", 300000000)
+        approach_pct = 1.0 - (st.session_state.get("t2_approach_pct", 3.0) / 100.0)
+        vol_spike = st.session_state.get("t2_vol_spike", 1.5)
+        body_min = st.session_state.get("t2_body_ratio", 70.0) / 100.0
 
-    if has_top_trap:
-        return "圏外 💀", "#424242", 0, "天井地雷検知(排除)"
-
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
-    
-    row = df_chart.iloc[-1]
-    ma5, ma25 = 0.0, 0.0
-    
-    for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
-        if k in row and pd.notna(row[k]):
-            ma5 = float(row[k])
-            break
+        score = 0
+        msgs = []
+        
+        # 🛡️ 第2防壁: 流動性
+        avg_trading_val_5d = (recent_5['AdjC'] * recent_5['Volume']).mean()
+        if avg_trading_val_5d >= min_val:
+            score += 20
+            msgs.append(f"✅ 流動性確保: 5日平均売買代金 {int(avg_trading_val_5d/1000000):,}百万円")
+        else:
+            msgs.append(f"❌ 流動性不足: 5日平均売買代金 {int(avg_trading_val_5d/1000000):,}百万円 (目標: {int(min_val/1000000):,}百万円以上)")
             
-    for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
-        if k in row and pd.notna(row[k]):
-            ma25 = float(row[k])
-            break
-
-    if gc_days > 0 and ma5 > 0 and ma25 > 0 and (ma5 < ma25):
-        gc_days = 0
-
-    if gc_days <= 0:
-        if len(df_chart) >= 2 and ma5 > 0 and ma25 > 0:
-            prev_row = df_chart.iloc[-2]
-            prev_ma5 = 0.0
+        # 🛡️ 第3防壁: 位置エネルギー
+        recent_high = float(recent_14['AdjH'].max())
+        if recent_high * approach_pct <= lc < recent_high:
+            score += 25
+            msgs.append(f"✅ エネルギー充填: 直近高値({int(recent_high):,}円)へ肉薄中")
+        else:
+            dist = (lc / recent_high) * 100 if recent_high > 0 else 0
+            msgs.append(f"❌ 位置エネルギー: 直近高値({int(recent_high):,}円)に対する現在位置 {dist:.1f}%")
             
-            for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
-                if k in prev_row and pd.notna(prev_row[k]):
-                    prev_ma5 = float(prev_row[k])
-                    break
+        # 🛡️ 第4防壁: ボリュームスパイク
+        avg_vol_5d = recent_5['Volume'].mean()
+        if lv > (avg_vol_5d * vol_spike):
+            score += 25
+            msgs.append(f"✅ クジラ検知: 出来高が平均の {lv/avg_vol_5d:.1f}倍 に急増")
+        else:
+            msgs.append(f"❌ ボリューム: 出来高スパイクなし (現在 {lv/avg_vol_5d:.1f}倍)")
             
-            dist_pct = ((ma5 / ma25) - 1) * 100
+        # 🛡️ 第5防壁: ローソク足実体比率
+        if lh == ll:
+            body_ratio = 1.0
+        else:
+            body_ratio = (lc - ll) / (lh - ll)
             
-            is_pre_gc = (
-                (ma5 < ma25) and                         
-                (lc > ma5) and (lc > ma25) and           
-                (-2.0 <= dist_pct < 0.0) and             
-                (ma5 > prev_ma5)                         
-            )
+        if body_ratio >= body_min:
+            score += 30
+            msgs.append(f"✅ 買い意欲強: 実体比率 {body_ratio*100:.1f}% の陽線")
+        else:
+            msgs.append(f"❌ 上ヒゲ警戒: 実体比率 {body_ratio*100:.1f}% (目標: {body_min*100:.1f}%以上)")
             
-            if is_pre_gc:
-                return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
-                
-        return "圏外 💀", "#424242", 0, ""
-
-    score = 50 
-
-    if ma25 > 0:
-        if lc >= ma25 * 0.95: score += 10
-        if lc >= ma25: score += 10
-    
-    if is_assault_mode:
-        if 50 <= rsi_v <= 75: score += 15
-    else:
-        if 50 <= rsi_v <= 65: score += 10
-        elif rsi_v > 70: score -= 20
-
-    score -= (gc_days - 1) * 5
-
-    if score >= (85 if is_strict else 80): 
-        rank, bg = "S🔥", "#26a69a"
-    elif score >= (65 if is_strict else 60): 
-        rank, bg = "A⚡", "#ed6c02"
-    elif score >= (45 if is_strict else 40): 
-        rank, bg = "B📈", "#0288d1"
-    else: 
-        rank, bg = "C 💀", "#424242"
-
-    return rank, bg, score, f"GC {gc_days}日目"
+        # 🎯 総合判定（そぎ落とさず、ありのままの分析結果を返す）
+        full_msg = " / ".join(msgs)
+        if score >= 100:
+            return "S+🔥", "#d32f2f", score, f"🚀 【特級指定】全条件突破！即時強襲推奨\n({full_msg})"
+        elif score >= 75:
+            return "A⚡", "#ed6c02", score, f"⚡ 【強襲突撃】大口の足跡確認。ブレイクアウト秒読み\n({full_msg})"
+        elif score >= 45:
+            return "B📈", "#0288d1", score, f"📈 【監視継続】一部条件未達だがポテンシャルあり\n({full_msg})"
+        else:
+            return "圏外💀", "#424242", score, f"💀 【条件未達】強襲条件に合致せず\n({full_msg})"
+            
+    except Exception as e:
+        return "エラー ⚠️", "#424242", 0, f"⚠️ 解析エラー: {str(e)}"
 
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df.empty: return None
@@ -1884,43 +1880,45 @@ with tab2:
     st.markdown('<h3 style="font-size: 24px;">⚡ 【強襲】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
-    # --- 🚨 強襲・スクイーズ特化コントロールパネル ---
-    st.markdown("#### ⚙️ 強襲パラメータ設定")
-    col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
-    
-    # 【物理修正】キー指定のみにし、st.session_state への直接代入（=）を排除してAPIエラーを根絶
-    rsi_lim = col_t2_1.number_input(
-        "RSI上限（足切り）", 
-        value=int(st.session_state.get('tab2_rsi_limit', 70)), 
-        step=5, 
-        key="tab2_rsi_limit"
-    )
-    vol_lim = col_t2_2.number_input(
-        "最低出来高（5日平均）", 
-        value=int(st.session_state.get('tab2_vol_limit', 50000)), 
-        step=5000, 
-        key="tab2_vol_limit"
-    )
-    # --- 【修正2】大口流動性バリア（代入をせず、keyのみで状態を管理する） ---
-    trading_val_min = col_t2_3.number_input(
-        "大口流動性バリア（億円）", 
-        value=float(st.session_state.get('f_trading_val_min', 1.5)), 
-        step=0.1, 
-        format="%.1f", 
-        key="f_trading_val_min",
-        help="直近5日の平均売買代金がこの値未満の銘柄を排除します。"
-    )
+    # --- 🚨 新・強襲コントロールパネル（5連装フィルター用） ---
+    with st.expander("⚙️ 強襲専用パラメーター（5連装フィルター）", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            # 🛡️ 第2防壁用
+            st.number_input(
+                "最小売買代金 (円)", 
+                value=300000000, 
+                step=10000000, 
+                key="t2_min_val",
+                help="大口が入れる流動性（板の厚さ）を死守するための金額ベースの下限です。"
+            )
+            # 🛡️ 第3防壁用
+            st.slider(
+                "直近高値への接近許容 (%)", 
+                1.0, 10.0, 3.0, 0.5, 
+                key="t2_approach_pct",
+                help="直近高値（スイングハイ）から何%以内まで肉薄している銘柄を狙うかを設定します。"
+            )
+        with c2:
+            # 🛡️ 第4防壁用
+            st.slider(
+                "出来高急増倍率", 
+                1.1, 5.0, 1.5, 0.1, 
+                key="t2_vol_spike",
+                help="クジラの参入検知。当日の出来高が過去5日平均の何倍以上かを指定します。"
+            )
+            # 🛡️ 第5防壁用
+            st.slider(
+                "陽線実体比率 (%)", 
+                50.0, 100.0, 70.0, 5.0, 
+                key="t2_body_ratio",
+                help="上ヒゲダマシを排除するため、日足ローソクの実体が全体の何%以上を占めているかを指定します。"
+            )
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
         # スキャン開始時に保存を強制実行
         save_settings() 
         st.session_state.tab2_scan_results_raw = None
-        st.session_state.tab2_time_log = []
-        gc.collect()
-        t_global_start = time.time()
-        
-        # (以下、既存のスキャン処理へ続く)
-        # ※ここから下のスキャン処理内では、 st.session_state.f_trading_val_min を参照してフィルタリングすること
 
         with st.status("🚀 索敵スキャンを実行中... 強襲ルートを計算しています", expanded=True) as status:
             try:
@@ -1975,69 +1973,86 @@ with tab2:
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
                     
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
-                        c_str = str(code)[:4]
-                        c_vals = group['AdjC'].values
-                        lc = c_vals[-1]
-                        
-                        # 物理連動：大口流動性バリアチェック
-                        if v_avg < cfg.get("vol_lim", 0): 
-                            return None
-                        trading_val = lc * v_avg
-                        min_t_val = float(st.session_state.get("f_trading_val_min", 1.5)) * 100_000_000
-                        if trading_val < min_t_val: 
-                            return None 
-                        
-                        # 除外銘柄チェック
-                        if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): 
-                            return None
-                        if cfg["f5_ipo"]:
-                            first_date = group['Date'].min()
-                            if (l_date - first_date).days < 350: 
-                                return None
-                        if cfg["f11_ex_wave3"]:
-                            if lc > (c_vals.min() * 3.0): 
-                                return None
-                        
-                        rsi, atr_v, _, hist = get_fast_indicators(c_vals)
-                        vol_pct = (atr_v / lc * 100) if lc > 0 else 0
-                        if vol_pct < cfg["f_vol_min"]: 
-                            return None
-                        if rsi > cfg["rsi_lim"]: 
-                            return None
-                        if len(c_vals) < 25: 
-                            return None
-                        
-                        s_c = pd.Series(c_vals)
-                        ma5_s = s_c.rolling(5).mean().values
-                        ma25_s = s_c.rolling(25).mean().values
-                        
-                        group = group.copy()
-                        group['MA5'] = ma5_s
-                        group['MA25'] = ma25_s
-                        
-                        ma5, ma25 = ma5_s[-1], ma25_s[-1]
-                        prev_ma5 = ma5_s[-2]
-                        
-                        gc_days = 0
-                        is_pre_gc = False
-                        
-                        if ma5 >= ma25:
-                            for d in range(1, 4): 
-                                if ma5_s[-d] >= ma25_s[-d] and ma5_s[-(d+1)] < ma25_s[-(d+1)]:
-                                    gc_days = d
-                                    break
-                        else:
-                            lo = float(group.iloc[-1].get('AdjO', lc))
-                            macd_h = float(group.iloc[-1].get('MACD_Hist', 0))
-                            macd_h_prev = float(group.iloc[-2].get('MACD_Hist', 0)) if len(group) > 1 else 0
-                            dist_pct = ((ma5 / ma25) - 1) * 100
-                            
-                            # 明日GC見込みの臨界スクイーズ判定
-                            if (ma5 < ma25) and (lc >= ma25 * 0.99) and (-1.0 <= dist_pct < 0.0) and (ma5 > prev_ma5) and (lc >= lo) and (macd_h > macd_h_prev):
-                                is_pre_gc = True
-                                
-                        if gc_days == 0 and not is_pre_gc: 
-                            return None
+					    """
+					    【強襲レーダー (TAB2)】
+					    GCロジック完全撤廃。大口実弾流入とブレイクアウト前夜のエネルギー充填状態を検知。
+					    パラメータはst.session_stateから動的に取得し、条件未達の銘柄を完全に削ぎ落とす。
+					    """
+					    try:
+					        c_str = str(code)[:4]
+					        if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
+					        
+					        df_chart = group.copy()
+					        if len(df_chart) < 14: return None
+					        
+					        latest_row = df_chart.iloc[-1]
+					        lc = float(latest_row['AdjC'])
+					        lh = float(latest_row['AdjH'])
+					        ll = float(latest_row['AdjL'])
+					        lv = float(latest_row['Volume'])
+					        
+					        recent_5 = df_chart.tail(5)
+					        recent_14 = df_chart.tail(14)
+					        
+					        # UI（TAB2画面内）からのパラメータ取得。設定がない場合は鉄壁のデフォルト値を適用
+					        min_trading_val = st.session_state.get("t2_min_val", 300000000)
+					        approach_limit = 1.0 - (st.session_state.get("t2_approach_pct", 3.0) / 100.0)
+					        vol_spike = st.session_state.get("t2_vol_spike", 1.5)
+					        body_min = st.session_state.get("t2_body_ratio", 70.0) / 100.0
+					
+					        # 🛡️ 第1防壁: GC条件は完全撤廃済み
+					
+					        # 🛡️ 第2防壁: 5日平均売買代金（流動性の死守）
+					        avg_trading_val_5d = (recent_5['AdjC'] * recent_5['Volume']).mean()
+					        if avg_trading_val_5d < min_trading_val:
+					            return None
+					            
+					        # 🛡️ 第3防壁: 位置エネルギー（直近高値への肉薄）
+					        recent_high = float(recent_14['AdjH'].max())
+					        if not (recent_high * approach_limit <= lc < recent_high):
+					            return None
+					            
+					        # 🛡️ 第4防壁: 当日の出来高急増（クジラの足跡）
+					        avg_vol_5d = recent_5['Volume'].mean()
+					        if lv <= (avg_vol_5d * vol_spike):
+					            return None
+					            
+					        # 🛡️ 第5防壁: ローソク足の実体比率（上ヒゲダマシの排除）
+					        if lh == ll:
+					            body_ratio = 1.0
+					        else:
+					            body_ratio = (lc - ll) / (lh - ll)
+					            
+					        if body_ratio < body_min:
+					            return None
+					
+					        # 🎯 最終判定（全防壁突破＝怪物確定）
+					        rsi, _, _, _ = get_fast_indicators(df_chart['AdjC'].values)
+					        
+					        # 実体比率が90%を超えるものは、引けにかけて大口が買い上がった極上の形としてS+
+					        if body_ratio >= 0.90:
+					            rank, bg, t_score = "S+🔥", "#d32f2f", 95
+					        else:
+					            rank, bg, t_score = "A⚡", "#ed6c02", 80
+					            
+					        target_buy = recent_high  # ブレイクアウトのトリガーライン
+					        
+					        return {
+					            'Code': code, 
+					            'lc': float(lc), 
+					            'RSI': float(rsi), 
+					            'target_buy': float(target_buy), 
+					            'reach_rate': float((target_buy / lc) * 100) if lc > 0 else 0.0, 
+					            'triage_rank': rank, 
+					            'triage_bg': bg, 
+					            't_score': t_score, 
+					            'score': int(t_score/10), 
+					            'high_14d': float(recent_high), 
+					            'avg_vol': int(avg_vol_5d), 
+					            'vol_pct': float(avg_trading_val_5d) 
+					        }
+					    except Exception:
+					        return None
 
                         # ファンダメンタルズ判定（グローバルスコープの master_map を参照）
                         if cfg["f12_ex_overvalued"]:
