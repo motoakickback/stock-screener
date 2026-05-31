@@ -1985,10 +1985,8 @@ with tab2:
                             df_chart = group.copy()
                             if len(df_chart) < 14: return None
                             
-                            # 🚨 【完全防壁1】カラム名の揺れによるKeyError（サイレントクラッシュ）を完全に防ぐ
-                            v_cols = [c for c in df_chart.columns if 'Volume' in c or 'Vo' in c]
-                            v_col = v_cols[0] if v_cols else df_chart.columns[-1]
-
+                            # 🚨 【致命的バグ修正】曖昧な検索を完全廃止し、確実に「出来高(Volume)」を指定
+                            v_col = 'Volume'
                             c_col = 'AdjC' if 'AdjC' in df_chart.columns else 'Close'
                             h_col = 'AdjH' if 'AdjH' in df_chart.columns else 'High'
                             l_col = 'AdjL' if 'AdjL' in df_chart.columns else 'Low'
@@ -2002,26 +2000,25 @@ with tab2:
                             recent_5 = df_chart.tail(5)
                             recent_14 = df_chart.tail(14)
                             
-                            # パラメーター取得
                             min_trading_val = float(cfg.get("t2_min_val", 300000000))
                             approach_limit = 1.0 - (float(cfg.get("t2_approach_pct", 3.0)) / 100.0)
                             vol_spike = float(cfg.get("t2_vol_spike", 1.5))
                             body_min = float(cfg.get("t2_body_ratio", 70.0)) / 100.0
 
-                            # 🛡️ 第2防壁: 流動性（NaNエラー回避）
+                            # 🛡️ 第2防壁: 正しい出来高で売買代金を計算（ここで数十億の正しい数値になります）
                             trading_vals = recent_5[c_col] * recent_5[v_col]
                             avg_trading_val_5d = float(trading_vals.mean())
                             if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: return None
                                 
-                            # 🛡️ 第3防壁: 位置エネルギー（上限突破の逆転バグを防ぐため、下限のみで判定）
+                            # 🛡️ 第3防壁
                             recent_high = float(recent_14[h_col].max())
                             if lc < (recent_high * approach_limit): return None
                                 
-                            # 🛡️ 第4防壁: クジラの足跡
+                            # 🛡️ 第4防壁
                             avg_vol_5d = float(recent_5[v_col].mean())
                             if pd.isna(avg_vol_5d) or avg_vol_5d == 0 or lv < (avg_vol_5d * vol_spike): return None
                                 
-                            # 🛡️ 第5防壁: 買い意欲
+                            # 🛡️ 第5防壁
                             if lh == ll:
                                 body_ratio = 1.0
                             else:
@@ -2029,11 +2026,10 @@ with tab2:
                                 
                             if body_ratio < body_min: return None
 
-                            # 🚨 【完全防壁2】テクニカル指標計算での配列長不足エラーを個別キャッチしてバイパス
                             try:
                                 rsi, _, _, _ = get_fast_indicators(df_chart[c_col].values)
                             except:
-                                rsi = 50.0  # 計算不能な場合は標準値を入れてクラッシュを防ぐ
+                                rsi = 50.0
 
                             atr = recent_high * 0.03
                             
@@ -2053,7 +2049,7 @@ with tab2:
                                 'h14': float(recent_high), 
                                 'atr': float(atr), 
                                 'avg_vol': int(avg_vol_5d), 
-                                'vol_pct': float(avg_trading_val_5d),
+                                'vol_pct': float(avg_trading_val_5d), # 正しい売買代金が格納されます
                                 'T_Desc': t_desc
                             }
                         except Exception:
