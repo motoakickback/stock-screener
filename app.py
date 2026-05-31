@@ -1985,32 +1985,41 @@ with tab2:
                             df_chart = group.copy()
                             if len(df_chart) < 14: return None
                             
+                            # 🚨 【完全防壁1】カラム名の揺れによるKeyError（サイレントクラッシュ）を完全に防ぐ
+                            v_cols = [c for c in df_chart.columns if 'Volume' in c or 'Vo' in c]
+                            v_col = v_cols[0] if v_cols else df_chart.columns[-1]
+
+                            c_col = 'AdjC' if 'AdjC' in df_chart.columns else 'Close'
+                            h_col = 'AdjH' if 'AdjH' in df_chart.columns else 'High'
+                            l_col = 'AdjL' if 'AdjL' in df_chart.columns else 'Low'
+
                             latest_row = df_chart.iloc[-1]
-                            lc = float(latest_row['AdjC'])
-                            lh = float(latest_row['AdjH'])
-                            ll = float(latest_row['AdjL'])
-                            lv = float(latest_row['Volume'])
+                            lc = float(latest_row.get(c_col, 0))
+                            lh = float(latest_row.get(h_col, 0))
+                            ll = float(latest_row.get(l_col, 0))
+                            lv = float(latest_row.get(v_col, 0))
                             
                             recent_5 = df_chart.tail(5)
                             recent_14 = df_chart.tail(14)
                             
-                            # 🚨 スレッドセーフ: session_stateではなく cfg から安全にパラメータを取得
-                            min_trading_val = cfg.get("t2_min_val", 300000000)
-                            approach_limit = 1.0 - (cfg.get("t2_approach_pct", 3.0) / 100.0)
-                            vol_spike = cfg.get("t2_vol_spike", 1.5)
-                            body_min = cfg.get("t2_body_ratio", 70.0) / 100.0
+                            # パラメーター取得
+                            min_trading_val = float(cfg.get("t2_min_val", 300000000))
+                            approach_limit = 1.0 - (float(cfg.get("t2_approach_pct", 3.0)) / 100.0)
+                            vol_spike = float(cfg.get("t2_vol_spike", 1.5))
+                            body_min = float(cfg.get("t2_body_ratio", 70.0)) / 100.0
 
-                            # 🛡️ 第2防壁: 流動性
-                            avg_trading_val_5d = (recent_5['AdjC'] * recent_5['Volume']).mean()
-                            if avg_trading_val_5d < min_trading_val: return None
+                            # 🛡️ 第2防壁: 流動性（NaNエラー回避）
+                            trading_vals = recent_5[c_col] * recent_5[v_col]
+                            avg_trading_val_5d = float(trading_vals.mean())
+                            if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: return None
                                 
-                            # 🛡️ 第3防壁: 位置エネルギー（<= に修正。高値引けした最強銘柄の除外バグを防止）
-                            recent_high = float(recent_14['AdjH'].max())
-                            if not (recent_high * approach_limit <= lc <= recent_high): return None
+                            # 🛡️ 第3防壁: 位置エネルギー（上限突破の逆転バグを防ぐため、下限のみで判定）
+                            recent_high = float(recent_14[h_col].max())
+                            if lc < (recent_high * approach_limit): return None
                                 
                             # 🛡️ 第4防壁: クジラの足跡
-                            avg_vol_5d = recent_5['Volume'].mean()
-                            if lv <= (avg_vol_5d * vol_spike): return None
+                            avg_vol_5d = float(recent_5[v_col].mean())
+                            if pd.isna(avg_vol_5d) or avg_vol_5d == 0 or lv < (avg_vol_5d * vol_spike): return None
                                 
                             # 🛡️ 第5防壁: 買い意欲
                             if lh == ll:
@@ -2020,9 +2029,13 @@ with tab2:
                                 
                             if body_ratio < body_min: return None
 
-                            # 🎯 最終判定（TAB2のUI描画が要求する辞書キーに完全準拠）
-                            rsi, _, _, _ = get_fast_indicators(df_chart['AdjC'].values)
-                            atr = recent_high * 0.03  # UI計算用の概算ボラティリティ
+                            # 🚨 【完全防壁2】テクニカル指標計算での配列長不足エラーを個別キャッチしてバイパス
+                            try:
+                                rsi, _, _, _ = get_fast_indicators(df_chart[c_col].values)
+                            except:
+                                rsi = 50.0  # 計算不能な場合は標準値を入れてクラッシュを防ぐ
+
+                            atr = recent_high * 0.03
                             
                             if body_ratio >= 0.90:
                                 t_rank, t_color, t_score, t_desc = "S+🔥", "#d32f2f", 95, "強襲特級(即撃)"
