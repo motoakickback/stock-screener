@@ -1943,16 +1943,19 @@ with tab2:
                     for col in ['AdjC', 'AdjH', 'AdjL']:
                         if col in full_df.columns: full_df[col] = full_df[col].astype('float32')
 
-                    # 🚨 【修正】古いRSI計算や不要な変数を跡形もなく完全消去
+                    # 🚨 【修正】UIの数値をメインスレッドで取得し、スレッドに渡すための config_t2 を構築
                     config_t2 = {
                         "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
-                        "f2_m30": 999.0, "f3_drop": -999.0,        
                         "f5_ipo": st.session_state.f5_ipo, "f11_ex_wave3": st.session_state.f11_ex_wave3,
                         "f6_risk": st.session_state.f6_risk,
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
-                        "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+                        # --- 新・強襲フィルター用パラメータ（スレッドセーフ化のためここへ格納） ---
+                        "t2_min_val": float(st.session_state.get("t2_min_val", 300000000)),
+                        "t2_approach_pct": float(st.session_state.get("t2_approach_pct", 3.0)),
+                        "t2_vol_spike": float(st.session_state.get("t2_vol_spike", 1.5)),
+                        "t2_body_ratio": float(st.session_state.get("t2_body_ratio", 70.0))
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
