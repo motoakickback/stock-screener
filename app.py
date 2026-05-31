@@ -1978,11 +1978,6 @@ with tab2:
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
                     
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
-                        """
-                        【強襲レーダー (TAB2)】
-                        GCロジック完全撤廃。大口実弾流入とブレイクアウト前夜のエネルギー充填状態を検知。
-                        パラメータはst.session_stateから動的に取得し、条件未達の銘柄を完全に削ぎ落とす。
-                        """
                         try:
                             c_str = str(code)[:4]
                             if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
@@ -1999,62 +1994,54 @@ with tab2:
                             recent_5 = df_chart.tail(5)
                             recent_14 = df_chart.tail(14)
                             
-                            # UI（TAB2画面内）からのパラメータ取得。設定がない場合は鉄壁のデフォルト値を適用
-                            min_trading_val = st.session_state.get("t2_min_val", 300000000)
-                            approach_limit = 1.0 - (st.session_state.get("t2_approach_pct", 3.0) / 100.0)
-                            vol_spike = st.session_state.get("t2_vol_spike", 1.5)
-                            body_min = st.session_state.get("t2_body_ratio", 70.0) / 100.0
+                            # 🚨 スレッドセーフ: session_stateではなく cfg から安全にパラメータを取得
+                            min_trading_val = cfg.get("t2_min_val", 300000000)
+                            approach_limit = 1.0 - (cfg.get("t2_approach_pct", 3.0) / 100.0)
+                            vol_spike = cfg.get("t2_vol_spike", 1.5)
+                            body_min = cfg.get("t2_body_ratio", 70.0) / 100.0
 
-                            # 🛡️ 第1防壁: GC条件は完全撤廃済み
-
-                            # 🛡️ 第2防壁: 5日平均売買代金（流動性の死守）
+                            # 🛡️ 第2防壁: 流動性
                             avg_trading_val_5d = (recent_5['AdjC'] * recent_5['Volume']).mean()
-                            if avg_trading_val_5d < min_trading_val:
-                                return None
+                            if avg_trading_val_5d < min_trading_val: return None
                                 
-                            # 🛡️ 第3防壁: 位置エネルギー（直近高値への肉薄）
+                            # 🛡️ 第3防壁: 位置エネルギー（<= に修正。高値引けした最強銘柄の除外バグを防止）
                             recent_high = float(recent_14['AdjH'].max())
-                            if not (recent_high * approach_limit <= lc < recent_high):
-                                return None
+                            if not (recent_high * approach_limit <= lc <= recent_high): return None
                                 
-                            # 🛡️ 第4防壁: 当日の出来高急増（クジラの足跡）
+                            # 🛡️ 第4防壁: クジラの足跡
                             avg_vol_5d = recent_5['Volume'].mean()
-                            if lv <= (avg_vol_5d * vol_spike):
-                                return None
+                            if lv <= (avg_vol_5d * vol_spike): return None
                                 
-                            # 🛡️ 第5防壁: ローソク足の実体比率（上ヒゲダマシの排除）
+                            # 🛡️ 第5防壁: 買い意欲
                             if lh == ll:
                                 body_ratio = 1.0
                             else:
                                 body_ratio = (lc - ll) / (lh - ll)
                                 
-                            if body_ratio < body_min:
-                                return None
+                            if body_ratio < body_min: return None
 
-                            # 🎯 最終判定（全防壁突破＝怪物確定）
+                            # 🎯 最終判定（TAB2のUI描画が要求する辞書キーに完全準拠）
                             rsi, _, _, _ = get_fast_indicators(df_chart['AdjC'].values)
+                            atr = recent_high * 0.03  # UI計算用の概算ボラティリティ
                             
-                            # 実体比率が90%を超えるものは、引けにかけて大口が買い上がった極上の形としてS+
                             if body_ratio >= 0.90:
-                                rank, bg, t_score = "S+🔥", "#d32f2f", 95
+                                t_rank, t_color, t_score, t_desc = "S+🔥", "#d32f2f", 95, "強襲特級(即撃)"
                             else:
-                                rank, bg, t_score = "A⚡", "#ed6c02", 80
+                                t_rank, t_color, t_score, t_desc = "A⚡", "#ed6c02", 80, "強襲圏内(要監視)"
                                 
-                            target_buy = recent_high  # ブレイクアウトのトリガーライン
-                            
                             return {
                                 'Code': code, 
                                 'lc': float(lc), 
                                 'RSI': float(rsi), 
-                                'target_buy': float(target_buy), 
-                                'reach_rate': float((target_buy / lc) * 100) if lc > 0 else 0.0, 
-                                'triage_rank': rank, 
-                                'triage_bg': bg, 
-                                't_score': t_score, 
-                                'score': int(t_score/10), 
-                                'high_14d': float(recent_high), 
+                                'T_Rank': t_rank, 
+                                'T_Color': t_color, 
+                                'T_Score': t_score, 
+                                'GC_Days': 0, 
+                                'h14': float(recent_high), 
+                                'atr': float(atr), 
                                 'avg_vol': int(avg_vol_5d), 
-                                'vol_pct': float(avg_trading_val_5d) 
+                                'vol_pct': float(avg_trading_val_5d),
+                                'T_Desc': t_desc
                             }
                         except Exception:
                             return None
