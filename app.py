@@ -1985,8 +1985,12 @@ with tab2:
                             df_chart = group.copy()
                             if len(df_chart) < 14: return None
                             
-                            # 🚨 【致命的バグ修正】曖昧な検索を完全廃止し、確実に「出来高(Volume)」を指定
-                            v_col = 'Volume'
+                            # 🚨 【最終修正】'Volume'という文字を含む列を安全に取得（Volatility誤認とKeyErrorを完全防止）
+                            v_cols = [c for c in df_chart.columns if 'Volume' in str(c)]
+                            if not v_cols:
+                                return None  # 出来高カラムが見つからない異常データは安全に除外
+                            v_col = v_cols[0]
+
                             c_col = 'AdjC' if 'AdjC' in df_chart.columns else 'Close'
                             h_col = 'AdjH' if 'AdjH' in df_chart.columns else 'High'
                             l_col = 'AdjL' if 'AdjL' in df_chart.columns else 'Low'
@@ -2005,20 +2009,20 @@ with tab2:
                             vol_spike = float(cfg.get("t2_vol_spike", 1.5))
                             body_min = float(cfg.get("t2_body_ratio", 70.0)) / 100.0
 
-                            # 🛡️ 第2防壁: 正しい出来高で売買代金を計算（ここで数十億の正しい数値になります）
+                            # 🛡️ 第2防壁: 正しい出来高で売買代金を計算（数億円〜の正常な数値になります）
                             trading_vals = recent_5[c_col] * recent_5[v_col]
                             avg_trading_val_5d = float(trading_vals.mean())
                             if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: return None
                                 
-                            # 🛡️ 第3防壁
+                            # 🛡️ 第3防壁: 位置エネルギー
                             recent_high = float(recent_14[h_col].max())
                             if lc < (recent_high * approach_limit): return None
                                 
-                            # 🛡️ 第4防壁
+                            # 🛡️ 第4防壁: クジラの足跡
                             avg_vol_5d = float(recent_5[v_col].mean())
-                            if pd.isna(avg_vol_5d) or avg_vol_5d == 0 or lv < (avg_vol_5d * vol_spike): return None
+                            if pd.isna(avg_vol_5d) or avg_vol_5d <= 0 or lv < (avg_vol_5d * vol_spike): return None
                                 
-                            # 🛡️ 第5防壁
+                            # 🛡️ 第5防壁: 買い意欲
                             if lh == ll:
                                 body_ratio = 1.0
                             else:
@@ -2026,6 +2030,7 @@ with tab2:
                                 
                             if body_ratio < body_min: return None
 
+                            # RSI計算エラー回避
                             try:
                                 rsi, _, _, _ = get_fast_indicators(df_chart[c_col].values)
                             except:
@@ -2049,7 +2054,7 @@ with tab2:
                                 'h14': float(recent_high), 
                                 'atr': float(atr), 
                                 'avg_vol': int(avg_vol_5d), 
-                                'vol_pct': float(avg_trading_val_5d), # 正しい売買代金が格納されます
+                                'vol_pct': float(avg_trading_val_5d), # UI側で「億円」として正しく割られます
                                 'T_Desc': t_desc
                             }
                         except Exception:
