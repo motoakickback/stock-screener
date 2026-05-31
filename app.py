@@ -1991,14 +1991,14 @@ with tab2:
                             df_chart = group.copy()
                             if len(df_chart) < 14: return None
                             
-                            # 🚨 【事実ベース修正】生データのカラム名を直接取得（株式分割に対応）
-                            c_col = 'AdjustmentClose' if 'AdjustmentClose' in df_chart.columns else ('Adj Close' if 'Adj Close' in df_chart.columns else 'Close')
-                            h_col = 'AdjustmentHigh' if 'AdjustmentHigh' in df_chart.columns else ('High' if 'High' in df_chart.columns else 'Close')
-                            l_col = 'AdjustmentLow' if 'AdjustmentLow' in df_chart.columns else ('Low' if 'Low' in df_chart.columns else 'Close')
-                            v_col = 'AdjustmentVolume' if 'AdjustmentVolume' in df_chart.columns else 'Volume'
-                            
-                            # J-Quants固有の正確な売買代金カラム
-                            t_col = 'TurnoverValue' if 'TurnoverValue' in df_chart.columns else None
+                            # 出来高列を安全に取得（無い場合は除外）
+                            v_cols = [c for c in df_chart.columns if 'Volume' in str(c)]
+                            if not v_cols: return None
+                            v_col = v_cols[0]
+
+                            c_col = 'AdjC' if 'AdjC' in df_chart.columns else 'Close'
+                            h_col = 'AdjH' if 'AdjH' in df_chart.columns else 'High'
+                            l_col = 'AdjL' if 'AdjL' in df_chart.columns else 'Low'
 
                             latest_row = df_chart.iloc[-1]
                             lc = float(latest_row.get(c_col, 0))
@@ -2014,23 +2014,16 @@ with tab2:
                             vol_spike = float(cfg.get("t2_vol_spike", 1.5))
                             body_min = float(cfg.get("t2_body_ratio", 70.0)) / 100.0
 
-                            # 🛡️ 第2防壁: 売買代金（正確なTurnoverValueを優先使用）
-                            if t_col:
-                                avg_trading_val_5d = float(recent_5[t_col].mean())
-                            else:
-                                avg_trading_val_5d = float((recent_5[c_col] * recent_5[v_col]).mean())
-                                
+                            trading_vals = recent_5[c_col] * recent_5[v_col]
+                            avg_trading_val_5d = float(trading_vals.mean())
                             if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: return None
                                 
-                            # 🛡️ 第3防壁: 位置エネルギー
                             recent_high = float(recent_14[h_col].max())
                             if lc < (recent_high * approach_limit): return None
                                 
-                            # 🛡️ 第4防壁: クジラの足跡（出来高スパイク）
                             avg_vol_5d = float(recent_5[v_col].mean())
                             if pd.isna(avg_vol_5d) or avg_vol_5d <= 0 or lv < (avg_vol_5d * vol_spike): return None
                                 
-                            # 🛡️ 第5防壁: 買い意欲
                             if lh == ll:
                                 body_ratio = 1.0
                             else:
@@ -2051,17 +2044,10 @@ with tab2:
                                 t_rank, t_color, t_score, t_desc = "A⚡", "#ed6c02", 80, "強襲圏内(要監視)"
                                 
                             return {
-                                'Code': code, 
-                                'lc': float(lc), 
-                                'RSI': float(rsi), 
-                                'T_Rank': t_rank, 
-                                'T_Color': t_color, 
-                                'T_Score': t_score, 
-                                'GC_Days': 0, 
-                                'h14': float(recent_high), 
-                                'atr': float(atr), 
-                                'avg_vol': int(avg_vol_5d), 
-                                'vol_pct': float(avg_trading_val_5d), # 完全な売買代金。UIで1億で割られます
+                                'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                                'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
+                                'GC_Days': 0, 'h14': float(recent_high), 'atr': float(atr), 
+                                'avg_vol': int(avg_vol_5d), 'vol_pct': float(avg_trading_val_5d),
                                 'T_Desc': t_desc
                             }
                         except Exception:
