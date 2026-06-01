@@ -1880,7 +1880,7 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    # 👑 【5連奏パラメータUI】ボスの設計を完全維持
+    # 👑 【5連奏パラメータUI】ボスの設計を完全維持（絶対不可侵）
     col_t2_1, col_t2_2, col_t2_3, col_t2_4, col_t2_5 = st.columns(5)
     
     if 'f1_min' not in st.session_state: st.session_state.f1_min = 100.0
@@ -1933,9 +1933,7 @@ with tab2:
                         "f6_risk": st.session_state.f6_risk,
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
-                        "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
-                        "f_vol_min": -1.0,       
-                        "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+                        "f_vol_min": -1.0
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -1958,7 +1956,9 @@ with tab2:
                         try:
                             c_str = str(code)[:4]
                             c_vals = group['AdjC'].values
-                            if len(c_vals) < 25: return None
+                            
+                            # 【要件1】過去20日間のデータが確保できない銘柄は除外
+                            if len(c_vals) < 20: return None
                             
                             lc = float(c_vals[-1])
                             
@@ -1970,11 +1970,8 @@ with tab2:
                             if cfg["f11_ex_wave3"]:
                                 if lc > (c_vals.min() * 3.0): return None
                             
-                            p20 = c_vals[max(0, len(c_vals)-20)]
+                            p20 = c_vals[-20]
                             if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
-                            
-                            h_max_1yr = c_vals.max()
-                            if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
 
                             rsi, atr_v, _, _ = get_fast_indicators(c_vals)
                             vol_pct = (atr_v / lc * 100) if lc > 0 else 0
@@ -1982,9 +1979,13 @@ with tab2:
                             if vol_pct < cfg["f_vol_min"]: return None
                             if rsi > cfg["rsi_lim"]: return None
 
-                            # 🚨 5日平均売買代金の厳密算定
-                            tail_5 = group.tail(5)
-                            avg_daily_value = float((tail_5['AdjC'] * tail_5[v_column]).mean())
+                            # 🚨 【要件2】5日平均売買代金の厳格な算定（円ベース完全一致）
+                            tail_5 = group.tail(5).copy()
+                            # 欠損値を0で埋め、株価×出来高で日ごとの真の売買代金を算出
+                            tail_5[v_column] = tail_5[v_column].fillna(0)
+                            daily_values = tail_5['AdjC'] * tail_5[v_column]
+                            avg_daily_value = float(daily_values.mean())
+                            
                             if avg_daily_value < cfg["val_lim"]: 
                                 return None
                                 
@@ -1994,12 +1995,16 @@ with tab2:
                             if today_vol < (avg_vol_5 * cfg["vol_ratio"]): 
                                 return None
 
-                            # 🚨 直近高値（スイングハイ）ブレイク前夜判定
-                            h_vals = group['AdjH'].values
-                            swing_high = float(h_vals[-25:].max()) 
+                            # 🚨 【要件1】直近高値は「過去20日間」に限定
+                            h_vals_20 = group['AdjH'].values[-20:]
+                            swing_high = float(h_vals_20.max())
                             
-                            # 要件3：直近高値 × 0.97 <= 最新終値 < 直近高値
-                            is_breakout_eve = (swing_high * 0.97 <= lc < swing_high)
+                            # 🚨 【調整用変数】肉薄条件（デフォルト: 高値から10%以内）
+                            # ボスが手動で極限緩和したい場合は、この数値を直接いじってください。
+                            # 例: 3%以内なら 0.97 / 10%以内なら 0.90
+                            BREAKOUT_MARGIN = 0.90 
+
+                            is_breakout_eve = (swing_high * BREAKOUT_MARGIN <= lc < swing_high)
                             is_breakout_done = (lc >= swing_high)
 
                             if not is_breakout_eve and not is_breakout_done:
@@ -2009,16 +2014,15 @@ with tab2:
                                 f_data = get_fundamentals(c_str)
                                 if f_data and (f_data.get("op", 0) or 0) < 0: return None
                             
-                            # ⚡ 要件4：トリアージ判定の連動
-                            is_assault = "狙撃優先" in cfg["tactics"]
-                            t_rank, t_color, t_score, t_desc = get_assault_triage_info(lc, rsi, group, is_strict=is_assault)
-                            
+                            # 🚨 【要件3】ゾンビコード（旧トリアージ関数）への依存を完全撤廃
+                            # MAやGCなどの亡霊条件が一切介入しないよう、ここで直接ステータスを付与
                             if is_breakout_eve:
-                                t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, "ブレイク直前(肉薄3%)"
+                                margin_pct = int((1.0 - BREAKOUT_MARGIN) * 100)
+                                t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, f"ブレイク直前({margin_pct}%肉薄)"
                             elif is_breakout_done:
                                 t_rank, t_color, t_score, t_desc = "A🔥", "#ed6c02", 85, "高値ブレイク達成"
-                            
-                            if t_rank == "圏外 💀" or "圏外" in t_rank: return None
+                            else:
+                                return None # 安全弁
                             
                             atr = swing_high * 0.03
                             
@@ -2126,7 +2130,6 @@ with tab2:
                 t_price = max(h14_v, lc_v + int(atr_v * 0.5))
                 d_price = t_price - atr_v
                 
-                # 👑 【5連奏の下部メトリック】ボスのUI設計を完全維持
                 m_cols = st.columns([1, 1, 1, 1.2, 1.5])
                 m_cols[0].metric("最新終値", f"{lc_v:,}円")
                 m_cols[1].metric("RSI", f"{r.get('RSI', 0):.1f}%")
