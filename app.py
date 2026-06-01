@@ -1549,15 +1549,6 @@ st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_
 st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=extended_save_settings)
 st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.f10_ex_knife), key="f10_ex_knife", on_change=extended_save_settings)
 
-st.sidebar.text_area(
-    "除外銘柄コード", 
-    value=str(st.session_state.gigi_input), 
-    key="gigi_input", 
-    on_change=extended_save_settings
-)
-
-st.sidebar.divider()
-
 # --- システムボタン ---
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
     save_exclude_codes_to_file()
