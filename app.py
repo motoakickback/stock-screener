@@ -1885,10 +1885,10 @@ with tab2:
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
     
     # --- 🚨 強襲・スクイーズ特化コントロールパネル ---
-    st.markdown("#### ⚙️ 強襲パラメータ設定")
-    col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
+    st.markdown("#### ⚙️ 強襲パラメータ設定（5連装フィルター連動）")
     
-    # 【物理修正】キー指定のみにし、st.session_state への直接代入（=）を排除してAPIエラーを根絶
+    # 上段：基礎流動性パラメータ
+    col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
     rsi_lim = col_t2_1.number_input(
         "RSI上限（足切り）", 
         value=int(st.session_state.get('tab2_rsi_limit', 70)), 
@@ -1901,18 +1901,43 @@ with tab2:
         step=5000, 
         key="tab2_vol_limit"
     )
-    # --- 【修正2】大口流動性バリア（代入をせず、keyのみで状態を管理する） ---
     trading_val_min = col_t2_3.number_input(
         "大口流動性バリア（億円）", 
-        value=float(st.session_state.get('f_trading_val_min', 1.5)), 
-        step=0.1, 
+        value=float(st.session_state.get('f_trading_val_min', 3.0)), 
+        step=0.5, 
         format="%.1f", 
         key="f_trading_val_min",
-        help="直近5日の平均売買代金がこの値未満の銘柄を排除します。"
+        help="直近5日の平均売買代金。デフォルト3.0億円"
+    )
+
+    # 下段：物理・形状パラメータ
+    col_t2_4, col_t2_5, col_t2_6 = st.columns(3)
+    p_high_prox = col_t2_4.number_input(
+        "直近高値への肉薄幅 (%)", 
+        value=float(st.session_state.get('tab2_high_prox', 3.0)), 
+        step=0.5, 
+        format="%.1f", 
+        key="tab2_high_prox",
+        help="直近20日高値から何%以内をターゲットとするか（デフォルト3.0%）"
+    )
+    p_vol_spike = col_t2_5.number_input(
+        "出来高急増スパイク (倍)", 
+        value=float(st.session_state.get('tab2_vol_spike', 1.5)), 
+        step=0.1, 
+        format="%.1f", 
+        key="tab2_vol_spike",
+        help="当日の出来高が過去5日平均の何倍を超えているか（デフォルト1.5倍）"
+    )
+    p_body_ratio = col_t2_6.number_input(
+        "ローソク足実体比率 (%)", 
+        value=float(st.session_state.get('tab2_body_ratio', 70.0)), 
+        step=5.0, 
+        format="%.1f", 
+        key="tab2_body_ratio",
+        help="当日の値幅に対する実体部分の割合。上ヒゲ排除用（デフォルト70.0%）"
     )
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
-        # スキャン開始時に保存を強制実行
         save_settings() 
         st.session_state.tab2_scan_results_raw = None
         st.session_state.tab2_time_log = []
@@ -1949,7 +1974,12 @@ with tab2:
                         "gigi_codes": [c.strip() for c in str(st.session_state.gigi_input).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
-                        "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
+                        "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
+                        # --- 🚨 新規追加：UIパラメータの内部変換 ---
+                        "val_min_raw": float(trading_val_min) * 100_000_000,           # 億円 → 円
+                        "high_prox_ratio": 1.0 - (float(p_high_prox) / 100.0),         # 3.0% → 0.97
+                        "vol_spike": float(p_vol_spike),                               # 1.5倍
+                        "body_ratio": float(p_body_ratio) / 100.0                      # 70.0% → 0.70
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -1971,15 +2001,11 @@ with tab2:
                     st.session_state.tab2_time_log.append(msg2)
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
                     
-                    # =========================================================
-                    # 🎯 【PG】開発参謀 実装：並列スキャンユニット（5連装・鉄壁仕様）
-                    # =========================================================
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
                         
-                        # --- 既存の除外判定（維持） ---
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): 
                             return None
                         if cfg["f5_ipo"]:
@@ -1990,7 +2016,6 @@ with tab2:
                             if lc > (c_vals.min() * 3.0): 
                                 return None
                         
-                        # --- RSI・ボラティリティ足切り判定（維持） ---
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                         if vol_pct < cfg["f_vol_min"]: 
@@ -2000,50 +2025,43 @@ with tab2:
                         if len(group) < 25: 
                             return None
                         
-                        # --- ファンダメンタルズ判定（維持） ---
                         if cfg["f12_ex_overvalued"]:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: 
                                 return None
 
-                        # =========================================================
-                        # 🚨 5連装・鉄壁仕様フィルター（数理定義の完全適用）
-                        # =========================================================
                         group_df = group.copy()
                         v_col_name = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c][0]
 
-                        # 2. 5日平均売買代金フィルター（3億円以上の生数直接比較を厳守）
+                        # 2. 5日平均売買代金フィルター（UIパラメータ連動）
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5).mean()
-                        if group_df['avg_value_5'].iloc[-1] < 300000000:
+                        if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]:
                             return None
 
-                        # 3. 位置エネルギー：直近高値（スイングハイ）まで「3%以内」に肉薄
+                        # 3. 位置エネルギー：直近高値（UIパラメータ連動）
                         group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20).max()
                         rec_high = group_df['recent_high'].iloc[-1]
-                        if pd.isna(rec_high) or not (rec_high * 0.97 <= lc < rec_high):
+                        if pd.isna(rec_high) or not (rec_high * cfg["high_prox_ratio"] <= lc < rec_high):
                             return None
 
-                        # 4. エネルギー：当日の出来高急増（ボリューム・スパイク 1.5倍超）
+                        # 4. エネルギー：出来高スパイク（UIパラメータ連動）
                         group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5).mean()
                         avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
                         curr_vol = group_df[v_col_name].iloc[-1]
-                        if pd.isna(avg_vol_5) or curr_vol <= (avg_vol_5 * 1.5):
+                        if pd.isna(avg_vol_5) or curr_vol <= (avg_vol_5 * cfg["vol_spike"]):
                             return None
 
-                        # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
+                        # 5. 形状：ローソク足実体比率（UIパラメータ連動）
                         group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
                         group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
                         c_range = group_df['candle_range'].iloc[-1]
                         b_range = group_df['body_range'].iloc[-1]
-                        if c_range <= 0 or (b_range / c_range) < 0.70:
+                        if c_range <= 0 or (b_range / c_range) < cfg["body_ratio"]:
                             return None
 
-                        # =========================================================
-                        # 全条件を突破した精鋭銘柄への付与データ
-                        # =========================================================
                         t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
-                        gc_days = 0  # UI側で激熱判定として処理させるためのフラグ値
+                        gc_days = 0 
                         
                         h_vals = group_df['AdjH'].values
                         h14 = h_vals[-14:].max()
