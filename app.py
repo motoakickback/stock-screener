@@ -1344,6 +1344,7 @@ PRESET_THEMES = {
 # ==========================================
 EXCLUDE_FILE = "exclude_codes.txt"
 
+# 19時のキャッシュクリアやリロード時に備え、ファイルから初期値を安全にサルベージ
 if "gigi_input" not in st.session_state:
     if os.path.exists(EXCLUDE_FILE):
         try:
@@ -1354,131 +1355,60 @@ if "gigi_input" not in st.session_state:
     else:
         st.session_state.gigi_input = ""
 
+# ファイルへ除外コードを物理保存する内部関数
 def save_exclude_codes_to_file():
     try:
+        # text_areaの最新値（key="gigi_input"）を取得してファイルへ書き込み
         current_input = st.session_state.get("gigi_input", "")
         with open(EXCLUDE_FILE, "w", encoding="utf-8") as f:
             f.write(str(current_input).strip())
     except:
         pass
 
+# 既存のsave_settingsを安全にラップし、ファイル保存を強制連動させる
 def extended_save_settings():
-    save_exclude_codes_to_file()
-    save_settings()
+    save_exclude_codes_to_file() # 特殊除外ファイルを物理保存
+    if "save_settings" in globals():
+        try:
+            globals()["save_settings"]()
+        except:
+            pass
 
-# --- 4. サイドバー UI 展開 ---
-st.sidebar.title("🛠️ 戦術コンソール")
-
-# --- 🌪️ ボラティリティ・フィルターの設定 ---
-st.sidebar.markdown("### 🌪️ ボラティリティ審査")
-st.session_state.f_vol_min = st.sidebar.slider(
-    "最小ボラ率 (ATR/価格 %)", 
-    0.0, 2.0, float(st.session_state.get("f_vol_min_slider", 0.5)), 0.1, 
-    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-    key="f_vol_min_slider"
-)
-
-st.sidebar.markdown("---")
-
-# --- 🌐 マクロ地合い連動システム (既存のものを完全温存) ---
-st.sidebar.markdown("### 🌐 マクロ地合い連動")
-use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
-
-st.session_state.push_penalty = 0.0
-st.session_state.rsi_penalty = 0
-st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
-
-if use_macro:
-    api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
-    manual_pct = st.sidebar.number_input(
-        "日経騰落率（API値自動入力 %）", 
-        value=float(api_nikkei_pct), 
-        step=0.1, 
-        format="%.2f",
-        help="暴落シミュレーションをする場合は数値を書き換えてください。"
+with st.sidebar:
+    # 🚨 入力変更時にローカルファイルへ即時オートセーブをかける電撃配線
+    st.text_area(
+        "除外銘柄コード", 
+        value=str(st.session_state.gigi_input), 
+        key="gigi_input", 
+        on_change=extended_save_settings
     )
+    st.divider()
 
-    if manual_pct <= -2.0:
-        st.session_state.push_penalty = 0.10  
-        st.session_state.rsi_penalty = 20     
-        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）"
-    elif manual_pct <= -1.0:
-        st.session_state.push_penalty = 0.05  
-        st.session_state.rsi_penalty = 10     
-        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）"
-    else:
-        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
-
-st.sidebar.divider()
-
-# ==========================================
-# 📂 1.5. 戦略的セクター制御（新兵装追加）
-# ==========================================
-st.sidebar.header("📂 戦略的セクター制御")
-
-current_f_max = st.session_state.get("f_max_stocks_slider", 30)
-st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
-    "1セクターあたりの最大表示数",
-    1, 30, int(current_f_max),
-    key="f_max_stocks_slider",
-    help="特定セクターへの集中度を調整します。"
-)
-
-st.sidebar.divider()
-st.sidebar.header("🎯 戦略テーマ選別")
-
-selected_themes = st.sidebar.multiselect(
-    "注目テーマ（複数選択可）",
-    options=list(PRESET_THEMES.keys()),
-    default=[],
-    help="選択したテーマの銘柄のみを抽出します。"
-)
-
-custom_theme_input = st.sidebar.text_input(
-    "手動コード追加 (例: 9501, 3778)",
-    value="",
-    help="リストにない期待銘柄を即座に追加できます。"
-)
-
-target_theme_codes = set()
-for t in selected_themes:
-    target_theme_codes.update(PRESET_THEMES[t])
-
-if custom_theme_input:
-    custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
-    target_theme_codes.update(custom_list)
-
-st.sidebar.divider()
-
-if master_df is not None and not master_df.empty:
-    all_sectors = sorted(master_df['Sector'].unique().tolist())
-    if "f_selected_sectors" not in st.session_state:
-        st.session_state.f_selected_sectors = all_sectors
-
-    with st.sidebar.expander("業種別フィルター設定", expanded=False):
-        col_all, col_none = st.columns(2)
-        
-        if col_all.button("全選択", key="btn_sec_all", use_container_width=True):
-            for s in all_sectors:
-                st.session_state[f"cb_sec_{s}"] = True 
-            st.session_state.f_selected_sectors = all_sectors
-            st.rerun()
-
-        if col_none.button("全解除", key="btn_sec_none", use_container_width=True):
-            for s in all_sectors:
-                st.session_state[f"cb_sec_{s}"] = False 
-            st.session_state.f_selected_sectors = []
-            st.rerun()
-
-        selected_list = []
-        for s in all_sectors:
-            if st.checkbox(s, value=st.session_state.get(f"cb_sec_{s}", True), key=f"cb_sec_{s}"):
-                selected_list.append(s)
-        st.session_state.f_selected_sectors = selected_list
-else:
-    st.sidebar.warning("⚠️ 業種マスタの読み込みを待機中...")
-
-st.sidebar.divider()
+    # --- 以下、元々存在していたグローバル設定群 ---
+    if 'f1_min' not in st.session_state: st.session_state.f1_min = 100.0
+    if 'f1_max' not in st.session_state: st.session_state.f1_max = 15000.0
+    st.number_input("価格下限（円）", value=float(st.session_state.f1_min), step=50.0, key="f1_min")
+    st.number_input("価格上限（円）", value=float(st.session_state.f1_max), step=500.0, key="f1_max")
+    
+    if 'f5_ipo' not in st.session_state: st.session_state.f5_ipo = True
+    if 'f11_ex_wave3' not in st.session_state: st.session_state.f11_ex_wave3 = True
+    if 'f6_risk' not in st.session_state: st.session_state.f6_risk = True
+    if 'f12_ex_overvalued' not in st.session_state: st.session_state.f12_ex_overvalued = True
+    
+    st.checkbox("IPO即除外フィルター（350日未満）", value=st.session_state.f5_ipo, key="f5_ipo")
+    st.checkbox("3浪天井・大株主パージ（3倍化株除外）", value=st.session_state.f11_ex_wave3, key="f11_ex_wave3")
+    st.checkbox("特殊リスク銘柄・監理パージ", value=st.session_state.f6_risk, key="f6_risk")
+    st.checkbox("過大評価・営業赤字転落パージ", value=st.session_state.f12_ex_overvalued, key="f12_ex_overvalued")
+    
+    if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
+    if 'preset_market' not in st.session_state: st.session_state.preset_market = ["中小型株"]
+    if 'f_max_stocks_per_sector' not in st.session_state: st.session_state.f_max_stocks_per_sector = 3
+    if 'f_selected_sectors' not in st.session_state: st.session_state.f_selected_sectors = []
+    
+    st.selectbox("強襲戦術モード", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先"], key="sidebar_tactics")
+    st.multiselect("対象市場", ["大型株", "中小型株"], default=st.session_state.preset_market, key="preset_market")
+    st.number_input("1業種あたりの最大抽出数", value=int(st.session_state.f_max_stocks_per_sector), step=1, key="f_max_stocks_per_sector")
+    st.divider()
 
 # ==========================================
 # 📍 2. ターゲット選別（原本 100% 維持）
