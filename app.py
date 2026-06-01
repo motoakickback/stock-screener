@@ -1975,11 +1975,10 @@ with tab2:
                         "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
                         "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
-                        # --- 🚨 新規追加：UIパラメータの内部変換 ---
-                        "val_min_raw": float(trading_val_min) * 100_000_000,           # 億円 → 円
-                        "high_prox_ratio": 1.0 - (float(p_high_prox) / 100.0),         # 3.0% → 0.97
-                        "vol_spike": float(p_vol_spike),                               # 1.5倍
-                        "body_ratio": float(p_body_ratio) / 100.0                      # 70.0% → 0.70
+                        "val_min_raw": float(trading_val_min) * 100_000_000,           
+                        "high_prox_ratio": 1.0 - (float(p_high_prox) / 100.0),         
+                        "vol_spike": float(p_vol_spike),                               
+                        "body_ratio": float(p_body_ratio) / 100.0                      
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -2033,31 +2032,35 @@ with tab2:
                         group_df = group.copy()
                         v_col_name = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c][0]
 
-                        # 2. 5日平均売買代金フィルター（UIパラメータ連動）
+                        # 2. 5日平均売買代金フィルター
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5).mean()
                         if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]:
                             return None
 
-                        # 3. 位置エネルギー：直近高値（UIパラメータ連動）
+                        # 3. 位置エネルギー：直近高値（ブレイクアウト許容：上限撤廃パッチ適用）
                         group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20).max()
                         rec_high = group_df['recent_high'].iloc[-1]
-                        if pd.isna(rec_high) or not (rec_high * cfg["high_prox_ratio"] <= lc < rec_high):
+                        if pd.isna(rec_high) or lc < (rec_high * cfg["high_prox_ratio"]):
                             return None
 
-                        # 4. エネルギー：出来高スパイク（UIパラメータ連動）
+                        # 4. エネルギー：出来高スパイク
                         group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5).mean()
                         avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
                         curr_vol = group_df[v_col_name].iloc[-1]
                         if pd.isna(avg_vol_5) or curr_vol <= (avg_vol_5 * cfg["vol_spike"]):
                             return None
 
-                        # 5. 形状：ローソク足実体比率（UIパラメータ連動）
+                        # 5. 形状：ローソク足実体比率（ストップ高無条件パス・パッチ適用）
                         group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
                         group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
                         c_range = group_df['candle_range'].iloc[-1]
                         b_range = group_df['body_range'].iloc[-1]
-                        if c_range <= 0 or (b_range / c_range) < cfg["body_ratio"]:
+                        
+                        if c_range > 0:
+                            if (b_range / c_range) < cfg["body_ratio"]:
+                                return None
+                        elif c_range < 0:
                             return None
 
                         t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
