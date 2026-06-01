@@ -446,6 +446,69 @@ def render_macro_board():
 
 render_macro_board()
 
+def iron_rule_screener(df: pd.DataFrame,
+                       min_avg_value: float = 300000000.0,
+                       high_proximity_ratio: float = 0.97,
+                       vol_spike_ratio: float = 1.5,
+                       body_ratio: float = 0.70) -> pd.DataFrame:
+    """
+    【戦術スコープ『鉄の掟』：TAB2/TAB3 スクリーナー改修版】
+    
+    データ前提：
+    dfには以下の列が含まれている必要があります。
+    'open', 'high', 'low', 'close', 'volume'
+    
+    出力：
+    5つの条件をすべて同時に満たしたレコードに総合判定「S+🎯」を付与して抽出したDataFrame
+    """
+    
+    # 元データを破壊しないようコピーして計算
+    df_calc = df.copy()
+
+    # 1. 移動平均線（GC/MA）条件の【完全クレンジング】
+    # ※ ma5, ma25, ゴールデンクロス(GC)に関する変数および判定は完全に削除済み。
+
+    # 2. 5日平均売買代金フィルター（流動性の死守）
+    # 当日の売買代金（単日）の計算式
+    df_calc['daily_value'] = df_calc['volume'] * df_calc['close']
+    # 5日平均売買代金の計算式（当日を含む過去5日間の移動平均）
+    df_calc['avg_value_5'] = df_calc['daily_value'].rolling(window=5).mean()
+    # 判定条件（3億円以上など、生数への直接比較）
+    cond_value = df_calc['avg_value_5'] >= min_avg_value
+
+    # 3. 位置エネルギー：直近高値（スイングハイ）まで「3%以内」に肉薄
+    # 「直近高値」の定義：当日を除く、過去1日前からさかのぼった20営業日間の最高高値
+    df_calc['recent_high'] = df_calc['high'].shift(1).rolling(window=20).max()
+    # 肉薄の判定条件（最新終値が、直近高値のマイナス3%以上、かつ直近高値未満であること）
+    cond_proximity = (df_calc['recent_high'] * high_proximity_ratio <= df_calc['close']) & \
+                     (df_calc['close'] < df_calc['recent_high'])
+
+    # 4. エネルギー：当日の出来高急増（ボリューム・スパイク）
+    # 「過去5日平均出来高」の定義：当日を除く、過去1日前からさかのぼった5営業日間の平均出来高
+    df_calc['avg_volume_5'] = df_calc['volume'].shift(1).rolling(window=5).mean()
+    # 急増の判定条件（当日の出来高が、過去5日平均の1.5倍を超えていること）
+    cond_volume_spike = df_calc['volume'] > (df_calc['avg_volume_5'] * vol_spike_ratio)
+
+    # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
+    # 値幅と実体の計算
+    df_calc['candle_range'] = df_calc['high'] - df_calc['low']
+    df_calc['body_range'] = df_calc['close'] - df_calc['low']
+    # 判定条件（値幅が0でないことを前提とし、比率が0.7以上であること）
+    cond_body_shape = (df_calc['candle_range'] > 0) & \
+                      ((df_calc['body_range'] / df_calc['candle_range']) >= body_ratio)
+
+    # 【出力プロトコル】
+    # 上記1〜5の条件を【すべて同時に満たした（AND条件）】銘柄の判定
+    df_calc['is_target'] = cond_value & cond_proximity & cond_volume_spike & cond_body_shape
+
+    # ターゲットのみを抽出（フィルタリング）
+    df_result = df_calc[df_calc['is_target']].copy()
+
+    # 総合判定「S+🎯」を抽出されたデータに付与
+    df_result['rank'] = 'S+🎯'
+
+    return df_result
+
 # --- 3. 共通関数 & 演算エンジン ---
 def clean_df(df):
     if df is None or df.empty: 
