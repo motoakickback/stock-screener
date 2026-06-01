@@ -1880,20 +1880,20 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    # 👑 【5連奏パラメータUI】ボスの設計を完全維持（絶対不可侵）
+    # 👑 【5連奏パラメータUI】ボスの設計・変数連動を完全死守（価格上下限の重複矛盾を完全排除）
     col_t2_1, col_t2_2, col_t2_3, col_t2_4, col_t2_5 = st.columns(5)
     
-    if 'f1_min' not in st.session_state: st.session_state.f1_min = 100.0
-    if 'f1_max' not in st.session_state: st.session_state.f1_max = 15000.0
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 75
-    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000
-    if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.0
+    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000 # デフォルト: 3億円
+    if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.5       # デフォルト: 1.5倍
+    if 'tab2_margin_pct' not in st.session_state: st.session_state.tab2_margin_pct = 3.0     # デフォルト: 3%肉薄
+    if 'tab2_period' not in st.session_state: st.session_state.tab2_period = 20              # 厳格仕様: 20日間
     
-    p_min = col_t2_1.number_input("価格下限（円）", value=float(st.session_state.f1_min), step=50.0, key="t2_pmin_v2026_lock")
-    p_max = col_t2_2.number_input("価格上限（円）", value=float(st.session_state.f1_max), step=500.0, key="t2_pmax_v2026_lock")
-    rsi_lim = col_t2_3.number_input("RSI上限（足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_lock")
-    val_lim = col_t2_4.number_input("最低5日平均売買代金", value=int(st.session_state.tab2_val_limit), step=50000000, key="t2_val_v2026_lock")
-    vol_ratio = col_t2_5.number_input("点火出来高倍率", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_lock")
+    rsi_lim = col_t2_1.number_input("RSI上限（足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_lock")
+    val_lim = col_t2_2.number_input("最低5日平均売買代金（円）", value=int(st.session_state.tab2_val_limit), step=50000000, key="t2_val_v2026_lock")
+    vol_ratio = col_t2_3.number_input("点火出来高倍率（倍）", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_lock")
+    margin_pct = col_t2_4.number_input("高値肉薄度（%以内）", value=float(st.session_state.margin_pct) if 'margin_pct' in st.session_state else float(st.session_state.tab2_margin_pct), step=1.0, key="t2_margin_v2026_lock")
+    lookback_period = col_t2_5.number_input("高値参照期間（日）", value=int(st.session_state.tab2_period), step=1, key="t2_period_v2026_lock")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
         st.session_state.tab2_scan_results = None
@@ -1920,14 +1920,15 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
+                    # サイドバー（グローバル設定）の価格上下限を安全にインポート
                     config_t2 = {
-                        "f1_min": float(p_min), 
-                        "f1_max": float(p_max),
-                        "f2_m30": 999.0,         
-                        "f3_drop": -999.0,       
+                        "f1_min": float(st.session_state.get("f1_min", 100.0)), 
+                        "f1_max": float(st.session_state.get("f1_max", 15000.0)),
                         "rsi_lim": effective_rsi_limit, 
                         "val_lim": float(val_lim),      
                         "vol_ratio": float(vol_ratio),  
+                        "margin_rate": float(margin_pct),
+                        "p_days": int(lookback_period),
                         "f5_ipo": st.session_state.f5_ipo,
                         "f11_ex_wave3": st.session_state.f11_ex_wave3,
                         "f6_risk": st.session_state.f6_risk,
@@ -1950,88 +1951,93 @@ with tab2:
                     df = full_df[full_df['Code'].isin(valid_codes)]
                     t_clean = time.time()
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
-                    st.write("⚙️ 第3段階：並列演算・ブレイクアウト物理抽出エンジン稼働中...")
+                    st.write("⚙️ 第3段階：完全数理仕様・ブレイクアウト物理抽出エンジン稼働中...")
 
+                    # 🚨 【完全鏡面ロジック】引数と数式定義を100%同期
                     def scan_unit_t2_parallel_final(code, group, cfg, v_column, l_date):
                         try:
                             c_str = str(code)[:4]
-                            c_vals = group['AdjC'].values
                             
-                            # 【要件1】過去20日間のデータが確保できない銘柄は除外
-                            if len(c_vals) < 20: return None
-                            
-                            lc = float(c_vals[-1])
-                            
-                            # --- 🛡️ 鉄の掟：最優先・物理検問所 ---
+                            # 🛡️ 鉄の掟：最優先・グローバル物理検問所
                             if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
                             if cfg["f5_ipo"]:
                                 first_date = group['Date'].min()
                                 if (l_date - first_date).days < 350: return None
                             if cfg["f11_ex_wave3"]:
-                                if lc > (c_vals.min() * 3.0): return None
-                            
-                            p20 = c_vals[-20]
-                            if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
+                                if group['AdjC'].values[-1] > (group['AdjC'].values.min() * 3.0): return None
 
-                            rsi, atr_v, _, _ = get_fast_indicators(c_vals)
-                            vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                            # 🚨 【データ前提のマッピング】生の数値ベースに完全変換
+                            df_calc = pd.DataFrame({
+                                'open': group['AdjO'] if 'AdjO' in group.columns else group['Open'],
+                                'high': group['AdjH'] if 'AdjH' in group.columns else group['High'],
+                                'low': group['AdjL'] if 'AdjL' in group.columns else group['Low'],
+                                'close': group['AdjC'] if 'AdjC' in group.columns else group['Close'],
+                                'volume': group[v_column]
+                            }).copy()
                             
-                            if vol_pct < cfg["f_vol_min"]: return None
+                            # 最小データ長チェック（指定された参照期間をカバーできなければパージ）
+                            if len(df_calc) < max(int(cfg["p_days"]) + 1, 6): return None
+                            
+                            # RSI（アセットとして残すための安全弁チェック）
+                            rsi, atr_v, _, _ = get_fast_indicators(group['AdjC'].values)
+                            vol_pct = (atr_v / float(df_calc['close'].iloc[-1]) * 100) if float(df_calc['close'].iloc[-1]) > 0 else 0
                             if rsi > cfg["rsi_lim"]: return None
 
-                            # 🚨 【要件2】5日平均売買代金の厳格な算定（円ベース完全一致）
-                            tail_5 = group.tail(5).copy()
-                            # 欠損値を0で埋め、株価×出来高で日ごとの真の売買代金を算出
-                            tail_5[v_column] = tail_5[v_column].fillna(0)
-                            daily_values = tail_5['AdjC'] * tail_5[v_column]
-                            avg_daily_value = float(daily_values.mean())
+                            # =======================================================
+                            # 🔥 【厳格数理定義エリア：1文字の狂いもなき直列回路】
+                            # =======================================================
                             
-                            if avg_daily_value < cfg["val_lim"]: 
-                                return None
-                                
-                            # エネルギー点火フィルター
-                            today_vol = tail_5[v_column].values[-1]
-                            avg_vol_5 = tail_5[v_column].mean()
-                            if today_vol < (avg_vol_5 * cfg["vol_ratio"]): 
-                                return None
+                            # 1. 移動平均線（GC/MA）条件の【完全クレンジング】
+                            # ma5, ma25などの変数、および判定ロジックはここから物理的に1文字も排除されています。
 
-                            # 🚨 【要件1】直近高値は「過去20日間」に限定
-                            h_vals_20 = group['AdjH'].values[-20:]
-                            swing_high = float(h_vals_20.max())
+                            # 2. 5日平均売買代金フィルター（流動性の死守）
+                            df_calc['daily_value'] = df_calc['volume'] * df_calc['close']
+                            df_calc['avg_value_5'] = df_calc['daily_value'].rolling(window=5).mean()
+
+                            # 3. 位置エネルギー：直近高値（スイングハイ）まで肉薄
+                            df_calc['recent_high'] = df_calc['high'].shift(1).rolling(window=int(cfg["p_days"])).max()
+
+                            # 4. エネルギー：当日の出来高急増（ボリューム·スパイク）
+                            df_calc['avg_volume_5'] = df_calc['volume'].shift(1).rolling(window=5).mean()
+
+                            # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
+                            df_calc['candle_range'] = df_calc['high'] - df_calc['low']
+                            df_calc['body_range'] = df_calc['close'] - df_calc['low']
+
+                            # --- 最終判定行のパース（最新当日の値をパージ） ---
+                            latest = df_calc.iloc[-1]
                             
-                            # 🚨 【調整用変数】肉薄条件（デフォルト: 高値から10%以内）
-                            # ボスが手動で極限緩和したい場合は、この数値を直接いじってください。
-                            # 例: 3%以内なら 0.97 / 10%以内なら 0.90
-                            BREAKOUT_MARGIN = 0.90 
-
-                            is_breakout_eve = (swing_high * BREAKOUT_MARGIN <= lc < swing_high)
-                            is_breakout_done = (lc >= swing_high)
-
-                            if not is_breakout_eve and not is_breakout_done:
-                                return None
+                            # 数理チェック①：売買代金（入力値に完全連動：3億〜テスト100万）
+                            if not (latest['avg_value_5'] >= float(cfg["val_lim"])): return None
+                            
+                            # 数理チェック②：直近高値肉薄（入力値に完全連動：3%〜テスト10%）
+                            low_bound_ratio = 1.0 - (float(cfg["margin_rate"]) / 100.0)
+                            cond_high = (latest['recent_high'] * low_bound_ratio <= latest['close']) and (latest['close'] < latest['recent_high'])
+                            if not cond_high: return None
+                            
+                            # 数理チェック③：出来高急増（入力値に完全連動：1.5倍〜最小化）
+                            if not (latest['volume'] > (latest['avg_volume_5'] * float(cfg["vol_ratio"]))): return None
+                            
+                            # 数理チェック④：ローソク足実体比率70%以上
+                            cond_candle = (latest['candle_range'] > 0) and ((latest['body_range'] / latest['candle_range']) >= 0.70)
+                            if not cond_candle: return None
 
                             if cfg["f12_ex_overvalued"]:
                                 f_data = get_fundamentals(c_str)
                                 if f_data and (f_data.get("op", 0) or 0) < 0: return None
                             
-                            # 🚨 【要件3】ゾンビコード（旧トリアージ関数）への依存を完全撤廃
-                            # MAやGCなどの亡霊条件が一切介入しないよう、ここで直接ステータスを付与
-                            if is_breakout_eve:
-                                margin_pct = int((1.0 - BREAKOUT_MARGIN) * 100)
-                                t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, f"ブレイク直前({margin_pct}%肉薄)"
-                            elif is_breakout_done:
-                                t_rank, t_color, t_score, t_desc = "A🔥", "#ed6c02", 85, "高値ブレイク達成"
-                            else:
-                                return None # 安全弁
-                            
-                            atr = swing_high * 0.03
+                            # =======================================================
+                            # 👑 【出力プロトコル】全AND条件を突破した精鋭のみ「S+🎯」を強制付与
+                            # =======================================================
+                            t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, f"ブレイク前夜({cfg['margin_rate']}%肉薄)"
+                            atr = float(latest['recent_high']) * 0.03
                             
                             return {
-                                'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                                'Code': code, 'lc': float(latest['close']), 'RSI': float(rsi), 
                                 'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                                'h14': float(swing_high), 'atr': float(atr), 
-                                'avg_value': float(avg_daily_value), 'vol_pct': float(vol_pct),
-                                'T_Desc': t_desc, 'T_Color': t_color
+                                'h14': float(latest['recent_high']), 'atr': float(atr), 
+                                'avg_value': float(latest['avg_value_5']), 'vol_pct': float(vol_pct),
+                                'T_Desc': t_desc
                             }
                         except:
                             return None
@@ -2109,7 +2115,7 @@ with tab2:
                 elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
                 else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
                 
-                t_badge = f'<span style="background-color: {r.get("T_Color", "#000")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("T_Rank", "")}</span>'
+                t_badge = f'<span style="background-color: {r.get("T_Color", "#000")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 総合判定: {r.get("T_Rank", "")}</span>'
                 sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
                 vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r.get("vol_pct", 0):.2f}%</span>'
                 val_badge = f'<span style="background-color: rgba(30, 136, 229, 0.1); border: 1px solid #1e88e5; color: #1e88e5; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">💰 5日平均代金: {r.get("avg_value", 0)/100000000:.2f}億円</span>'
