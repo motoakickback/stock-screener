@@ -1401,12 +1401,21 @@ with st.sidebar:
     st.checkbox("過大評価・営業赤字転落パージ", value=st.session_state.f12_ex_overvalued, key="f12_ex_overvalued")
     
     if 'sidebar_tactics' not in st.session_state: st.session_state.sidebar_tactics = "⚖️ バランス (掟達成率 ＞ 到達度)"
-    if 'preset_market' not in st.session_state: st.session_state.preset_market = ["中小型株"]
     if 'f_max_stocks_per_sector' not in st.session_state: st.session_state.f_max_stocks_per_sector = 3
     if 'f_selected_sectors' not in st.session_state: st.session_state.f_selected_sectors = []
     
     st.selectbox("強襲戦術モード", ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先"], key="sidebar_tactics")
-    st.multiselect("対象市場", ["大型株", "中小型株"], default=st.session_state.preset_market, key="preset_market")
+    
+    # --- 🛡️ 対象市場（preset_market）のクラッシュ防止安全配線 ---
+    market_options = ["大型株", "中小型株"]
+    if 'preset_market' not in st.session_state: 
+        st.session_state.preset_market = ["中小型株"]
+    elif isinstance(st.session_state.preset_market, str): 
+        st.session_state.preset_market = [st.session_state.preset_market]
+        
+    st.multiselect("対象市場", market_options, key="preset_market")
+    # --------------------------------------------------------
+    
     st.number_input("1業種あたりの最大抽出数", value=int(st.session_state.f_max_stocks_per_sector), step=1, key="f_max_stocks_per_sector")
     st.divider()
 
