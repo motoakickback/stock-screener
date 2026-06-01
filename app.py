@@ -1880,23 +1880,20 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
+    # 👑 【5連奏パラメータUI】ボスの設計を完全維持
+    col_t2_1, col_t2_2, col_t2_3, col_t2_4, col_t2_5 = st.columns(5)
+    
+    if 'f1_min' not in st.session_state: st.session_state.f1_min = 100.0
+    if 'f1_max' not in st.session_state: st.session_state.f1_max = 15000.0
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 75
-    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000  # 初期値：3億円
+    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000
     if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.0
     
-    rsi_lim = col_t2_1.number_input("RSI上限（過熱感の足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_final_physical_lock")
-    val_lim = col_t2_2.number_input("最低5日平均売買代金（円）", value=int(st.session_state.tab2_val_limit), step=50000000, key="t2_val_v2026_final_physical_lock")
-    vol_ratio = col_t2_3.number_input("点火出来高倍率（5日平均比）", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_final_physical_lock")
-
-    # 🚨 【ボスの電撃配線：即時オートセーブ版UI】
-    st.sidebar.text_area(
-        "除外銘柄コード", 
-        value=str(st.session_state.get("gigi_input", "")), 
-        key="gigi_input", 
-        on_change=extended_save_settings
-    )
-    st.sidebar.divider()
+    p_min = col_t2_1.number_input("価格下限（円）", value=float(st.session_state.f1_min), step=50.0, key="t2_pmin_v2026_lock")
+    p_max = col_t2_2.number_input("価格上限（円）", value=float(st.session_state.f1_max), step=500.0, key="t2_pmax_v2026_lock")
+    rsi_lim = col_t2_3.number_input("RSI上限（足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_lock")
+    val_lim = col_t2_4.number_input("最低5日平均売買代金", value=int(st.session_state.tab2_val_limit), step=50000000, key="t2_val_v2026_lock")
+    vol_ratio = col_t2_5.number_input("点火出来高倍率", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_lock")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
         st.session_state.tab2_scan_results = None
@@ -1924,8 +1921,8 @@ with tab2:
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
                     config_t2 = {
-                        "f1_min": float(st.session_state.f1_min), 
-                        "f1_max": float(st.session_state.f1_max),
+                        "f1_min": float(p_min), 
+                        "f1_max": float(p_max),
                         "f2_m30": 999.0,         
                         "f3_drop": -999.0,       
                         "rsi_lim": effective_rsi_limit, 
@@ -1957,12 +1954,11 @@ with tab2:
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
                     st.write("⚙️ 第3段階：並列演算・ブレイクアウト物理抽出エンジン稼働中...")
 
-                    # 🚨 内部並列関数：引数と判定パイプラインを完全直結
                     def scan_unit_t2_parallel_final(code, group, cfg, v_column, l_date):
                         try:
                             c_str = str(code)[:4]
                             c_vals = group['AdjC'].values
-                            if len(c_vals) < 14: return None
+                            if len(c_vals) < 25: return None
                             
                             lc = float(c_vals[-1])
                             
@@ -1998,21 +1994,29 @@ with tab2:
                             if today_vol < (avg_vol_5 * cfg["vol_ratio"]): 
                                 return None
 
-                            # 直近14日高値（スイングハイ）抽出
+                            # 🚨 直近高値（スイングハイ）ブレイク前夜判定
                             h_vals = group['AdjH'].values
-                            swing_high = float(h_vals[-14:].max())
+                            swing_high = float(h_vals[-25:].max()) 
                             
-                            # 広域セーフティ：10%肉薄から5%上抜けまでを許容して後段トリアージへ流す
-                            if not (swing_high * 0.90 <= lc <= swing_high * 1.05):
+                            # 要件3：直近高値 × 0.97 <= 最新終値 < 直近高値
+                            is_breakout_eve = (swing_high * 0.97 <= lc < swing_high)
+                            is_breakout_done = (lc >= swing_high)
+
+                            if not is_breakout_eve and not is_breakout_done:
                                 return None
 
                             if cfg["f12_ex_overvalued"]:
                                 f_data = get_fundamentals(c_str)
                                 if f_data and (f_data.get("op", 0) or 0) < 0: return None
                             
-                            # ⚡ トリアージ関数呼び出し（GC依存を排除した最新版に同期）
+                            # ⚡ 要件4：トリアージ判定の連動
                             is_assault = "狙撃優先" in cfg["tactics"]
                             t_rank, t_color, t_score, t_desc = get_assault_triage_info(lc, rsi, group, is_strict=is_assault)
+                            
+                            if is_breakout_eve:
+                                t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, "ブレイク直前(肉薄3%)"
+                            elif is_breakout_done:
+                                t_rank, t_color, t_score, t_desc = "A🔥", "#ed6c02", 85, "高値ブレイク達成"
                             
                             if t_rank == "圏外 💀" or "圏外" in t_rank: return None
                             
@@ -2122,6 +2126,7 @@ with tab2:
                 t_price = max(h14_v, lc_v + int(atr_v * 0.5))
                 d_price = t_price - atr_v
                 
+                # 👑 【5連奏の下部メトリック】ボスのUI設計を完全維持
                 m_cols = st.columns([1, 1, 1, 1.2, 1.5])
                 m_cols[0].metric("最新終値", f"{lc_v:,}円")
                 m_cols[1].metric("RSI", f"{r.get('RSI', 0):.1f}%")
