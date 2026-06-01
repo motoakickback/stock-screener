@@ -1991,6 +1991,10 @@ with tab2:
                     
                     v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
                     v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                    
+                    # 🚨 修正パッチ1：Volumeデータの強制数値化（文字列によるTypeError全滅を防御）
+                    full_df[v_col] = pd.to_numeric(full_df[v_col], errors='coerce').fillna(0).astype('float32')
+                    
                     avg_vols_series = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
 
                     df = full_df[full_df['Code'].isin(valid_codes)]
@@ -2029,29 +2033,30 @@ with tab2:
                             if f_data and (f_data.get("op", 0) or 0) < 0: 
                                 return None
 
-                        group_df = group.copy()
-                        v_col_name = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c][0]
+                        # 🚨 修正パッチ2：欠損値によるNaN汚染を ffill と min_periods=1 で完全防御
+                        group_df = group.copy().ffill().bfill()
+                        v_col_name = v_col  # 外のスコープで特定した正確なカラム名を明示指定
 
                         # 2. 5日平均売買代金フィルター
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-                        group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5).mean()
+                        group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
                         if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]:
                             return None
 
-                        # 3. 位置エネルギー：直近高値（ブレイクアウト許容：上限撤廃パッチ適用）
-                        group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20).max()
+                        # 3. 位置エネルギー：直近高値（ブレイクアウト許容）
+                        group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20, min_periods=1).max()
                         rec_high = group_df['recent_high'].iloc[-1]
                         if pd.isna(rec_high) or lc < (rec_high * cfg["high_prox_ratio"]):
                             return None
 
                         # 4. エネルギー：出来高スパイク
-                        group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5).mean()
+                        group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
                         avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
                         curr_vol = group_df[v_col_name].iloc[-1]
-                        if pd.isna(avg_vol_5) or curr_vol <= (avg_vol_5 * cfg["vol_spike"]):
+                        if pd.isna(avg_vol_5) or avg_vol_5 <= 0 or curr_vol <= (avg_vol_5 * cfg["vol_spike"]):
                             return None
 
-                        # 5. 形状：ローソク足実体比率（ストップ高無条件パス・パッチ適用）
+                        # 5. 形状：ローソク足実体比率（ストップ高無条件パス）
                         group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
                         group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
                         c_range = group_df['candle_range'].iloc[-1]
@@ -2066,7 +2071,7 @@ with tab2:
                         t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
                         gc_days = 0 
                         
-                        h_vals = group_df['AdjH'].values
+                        h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
                         h14 = h_vals[-14:].max()
                         atr = h14 * 0.03
                         
