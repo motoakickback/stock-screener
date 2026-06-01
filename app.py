@@ -1985,20 +1985,22 @@ with tab2:
                     
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         try:
+                            # 🛡️ 1. 基礎データと除外フィルターの確認
                             c_str = str(code)[:4]
-                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
+                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
+                                return None
                             
                             df_chart = group.copy()
-                            if len(df_chart) < 14: return None
+                            # 🚨 【修正1】直近20日間の高値を正確に測るため、最低20日のデータを要求
+                            if len(df_chart) < 20: 
+                                return None
                             
-                            # 出来高列を安全に取得（無い場合は除外）
-                            v_cols = [c for c in df_chart.columns if 'Volume' in str(c)]
-                            if not v_cols: return None
-                            v_col = v_cols[0]
-
-                            c_col = 'AdjC' if 'AdjC' in df_chart.columns else 'Close'
-                            h_col = 'AdjH' if 'AdjH' in df_chart.columns else 'High'
-                            l_col = 'AdjL' if 'AdjL' in df_chart.columns else 'Low'
+                            # 🛡️ 2. J-Quantsの正確なカラム名を取得（事実ベース）
+                            c_col = 'AdjustmentClose' if 'AdjustmentClose' in df_chart.columns else ('Adj Close' if 'Adj Close' in df_chart.columns else 'Close')
+                            h_col = 'AdjustmentHigh' if 'AdjustmentHigh' in df_chart.columns else ('High' if 'High' in df_chart.columns else 'Close')
+                            l_col = 'AdjustmentLow' if 'AdjustmentLow' in df_chart.columns else ('Low' if 'Low' in df_chart.columns else 'Close')
+                            v_col = 'AdjustmentVolume' if 'AdjustmentVolume' in df_chart.columns else 'Volume'
+                            t_col = 'TurnoverValue' if 'TurnoverValue' in df_chart.columns else None
 
                             latest_row = df_chart.iloc[-1]
                             lc = float(latest_row.get(c_col, 0))
@@ -2006,31 +2008,45 @@ with tab2:
                             ll = float(latest_row.get(l_col, 0))
                             lv = float(latest_row.get(v_col, 0))
                             
+                            # 直近5日（出来高平均用）と直近20日（高値基準用）を厳密に切り出し
                             recent_5 = df_chart.tail(5)
-                            recent_14 = df_chart.tail(14)
+                            recent_20 = df_chart.tail(20) # 🚨 【修正1】過去数ヶ月ではなく、厳密に直近20日
                             
-                            min_trading_val = float(cfg.get("t2_min_val", 300000000))
-                            approach_limit = 1.0 - (float(cfg.get("t2_approach_pct", 3.0)) / 100.0)
-                            vol_spike = float(cfg.get("t2_vol_spike", 1.5))
-                            body_min = float(cfg.get("t2_body_ratio", 70.0)) / 100.0
+                            # UIパラメータの取得（デフォルト値の安全確保）
+                            min_trading_val = float(cfg.get("t2_min_val", 1000000)) # 例: 100万なら 1000000
+                            approach_limit = 1.0 - (float(cfg.get("t2_approach_pct", 10.0)) / 100.0) # 10%以内なら 0.90
+                            vol_spike = float(cfg.get("t2_vol_spike", 1.0)) # 1.0倍以上（緩和時）
+                            body_min = float(cfg.get("t2_body_ratio", 0.0)) / 100.0 # 0%以上（緩和時）
 
-                            trading_vals = recent_5[c_col] * recent_5[v_col]
-                            avg_trading_val_5d = float(trading_vals.mean())
-                            if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: return None
+                            # 🛡️ 3. 【修正2】売買代金の正確な計算（円ベースでの比較）
+                            if t_col:
+                                avg_trading_val_5d = float(recent_5[t_col].mean())
+                            else:
+                                avg_trading_val_5d = float((recent_5[c_col] * recent_5[v_col]).mean())
                                 
-                            recent_high = float(recent_14[h_col].max())
-                            if lc < (recent_high * approach_limit): return None
+                            if pd.isna(avg_trading_val_5d) or avg_trading_val_5d < min_trading_val: 
+                                return None
                                 
+                            # 🛡️ 4. 【修正1】位置エネルギー（直近20日の高値に対する接近率）
+                            recent_high = float(recent_20[h_col].max())
+                            if lc < (recent_high * approach_limit): 
+                                return None
+                                
+                            # 🛡️ 5. クジラの足跡（出来高スパイク）
                             avg_vol_5d = float(recent_5[v_col].mean())
-                            if pd.isna(avg_vol_5d) or avg_vol_5d <= 0 or lv < (avg_vol_5d * vol_spike): return None
+                            if pd.isna(avg_vol_5d) or avg_vol_5d <= 0 or lv < (avg_vol_5d * vol_spike): 
+                                return None
                                 
+                            # 🛡️ 6. 買い意欲（陽線実体比率）
                             if lh == ll:
                                 body_ratio = 1.0
                             else:
                                 body_ratio = (lc - ll) / (lh - ll)
                                 
-                            if body_ratio < body_min: return None
+                            if body_ratio < body_min: 
+                                return None
 
+                            # 🚨 【修正3】GCやMAのゾンビコードはすべて削除。RSI等の表示用データのみ計算。
                             try:
                                 rsi, _, _, _ = get_fast_indicators(df_chart[c_col].values)
                             except:
@@ -2038,16 +2054,24 @@ with tab2:
 
                             atr = recent_high * 0.03
                             
+                            # ランク判定
                             if body_ratio >= 0.90:
                                 t_rank, t_color, t_score, t_desc = "S+🔥", "#d32f2f", 95, "強襲特級(即撃)"
                             else:
                                 t_rank, t_color, t_score, t_desc = "A⚡", "#ed6c02", 80, "強襲圏内(要監視)"
                                 
                             return {
-                                'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
-                                'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                                'GC_Days': 0, 'h14': float(recent_high), 'atr': float(atr), 
-                                'avg_vol': int(avg_vol_5d), 'vol_pct': float(avg_trading_val_5d),
+                                'Code': code, 
+                                'lc': float(lc), 
+                                'RSI': float(rsi), 
+                                'T_Rank': t_rank, 
+                                'T_Color': t_color, 
+                                'T_Score': t_score, 
+                                'GC_Days': 0, # UIクラッシュ防止のためゼロを送信（足切りには影響しない）
+                                'h14': float(recent_high), 
+                                'atr': float(atr), 
+                                'avg_vol': int(avg_vol_5d), 
+                                'vol_pct': float(avg_trading_val_5d),
                                 'T_Desc': t_desc
                             }
                         except Exception:
