@@ -1424,7 +1424,6 @@ with st.sidebar:
 # ==========================================
 st.sidebar.header("📍 ターゲット選別")
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, key="preset_market", on_change=extended_save_settings)
 
 push_r_options = ["25.0%", "50.0%", "61.8%"]
 st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
