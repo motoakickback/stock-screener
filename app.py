@@ -1880,7 +1880,7 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    # 👑 【真の5連奏パラメータUI】価格上下限を完全追放。競合・矛盾を100%抹消
+    # 👑 【5連奏パラメータUI】ボスの設計・変数連動を完全死守（画像と100%一致）
     col_t2_1, col_t2_2, col_t2_3, col_t2_4, col_t2_5 = st.columns(5)
     
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 75
@@ -1920,7 +1920,6 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-                    # 🛡️ 価格上下限はサイドバーの設定（グローバル）を絶対優先して直結
                     config_t2 = {
                         "f1_min": float(st.session_state.get("f1_min", 100.0)), 
                         "f1_max": float(st.session_state.get("f1_max", 15000.0)),
@@ -1953,6 +1952,7 @@ with tab2:
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
                     st.write("⚙️ 第3段階：完全数理仕様・ブレイクアウト物理抽出エンジン稼働中...")
 
+                    # 🚨 【完全鏡面・防弾数理ロジック】引数と数式定義を100%同期
                     def scan_unit_t2_parallel_final(code, group, cfg, v_column, l_date):
                         try:
                             c_str = str(code)[:4]
@@ -1960,23 +1960,31 @@ with tab2:
                             # 🛡️ 鉄の掟：最優先・グローバル物理検問所
                             if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
                             if cfg["f5_ipo"]:
-                                first_date = group['Date'].min()
-                                if (l_date - first_date).days < 350: return None
+                                first_date = pd.to_datetime(group['Date'].min())
+                                latest_date_dt = pd.to_datetime(l_date)
+                                if (latest_date_dt - first_date).days < 350: return None
                             if cfg["f11_ex_wave3"]:
                                 if group['AdjC'].values[-1] > (group['AdjC'].values.min() * 3.0): return None
 
-                            # 🚨 【データ前提のマッピング】生の数値ベースに完全変換
+                            # 🚨 【超重要バグ修正：時系列順への厳格強制ソート】
+                            # これがないとshift(1)やrollingが過去のデタラメな行の価格を拾う
+                            group_sorted = group.sort_values('Date')
+
+                            # 🚨 【超重要バグ修正：型変換安全シールド】
+                            # API由来の生データ（Object/String）を強制的に数値化し、NaNを0埋めして計算不能エラーを根絶
                             df_calc = pd.DataFrame({
-                                'open': group['AdjO'] if 'AdjO' in group.columns else group['Open'],
-                                'high': group['AdjH'] if 'AdjH' in group.columns else group['High'],
-                                'low': group['AdjL'] if 'AdjL' in group.columns else group['Low'],
-                                'close': group['AdjC'] if 'AdjC' in group.columns else group['Close'],
-                                'volume': group[v_column]
-                            }).copy()
+                                'open': pd.to_numeric(group_sorted['AdjO'] if 'AdjO' in group_sorted.columns else group_sorted['Open'], errors='coerce'),
+                                'high': pd.to_numeric(group_sorted['AdjH'] if 'AdjH' in group_sorted.columns else group_sorted['High'], errors='coerce'),
+                                'low': pd.to_numeric(group_sorted['AdjL'] if 'AdjL' in group_sorted.columns else group_sorted['Low'], errors='coerce'),
+                                'close': pd.to_numeric(group_sorted['AdjC'] if 'AdjC' in group_sorted.columns else group_sorted['Close'], errors='coerce'),
+                                'volume': pd.to_numeric(group_sorted[v_column], errors='coerce')
+                            }).fillna(0).copy()
                             
+                            # 最小データ長チェック（指定された参照期間を満たせなければパージ）
                             if len(df_calc) < max(int(cfg["p_days"]) + 1, 6): return None
                             
-                            rsi, atr_v, _, _ = get_fast_indicators(group['AdjC'].values)
+                            # RSI（アセットとして残すための足切りチェック）
+                            rsi, atr_v, _, _ = get_fast_indicators(df_calc['close'].values)
                             vol_pct = (atr_v / float(df_calc['close'].iloc[-1]) * 100) if float(df_calc['close'].iloc[-1]) > 0 else 0
                             if rsi > cfg["rsi_lim"]: return None
 
@@ -1992,27 +2000,29 @@ with tab2:
                             df_calc['avg_value_5'] = df_calc['daily_value'].rolling(window=5).mean()
 
                             # 3. 位置エネルギー：直近高値（スイングハイ）まで肉薄
+                            # 当日を除く、過去1日前からさかのぼった指定営業日（p_days）間の最高高値
                             df_calc['recent_high'] = df_calc['high'].shift(1).rolling(window=int(cfg["p_days"])).max()
 
                             # 4. エネルギー：当日の出来高急増（ボリューム・スパイク）
+                            # 当日を除く、過去1日前からさかのぼった5営業日間の平均出来高
                             df_calc['avg_volume_5'] = df_calc['volume'].shift(1).rolling(window=5).mean()
 
                             # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
                             df_calc['candle_range'] = df_calc['high'] - df_calc['low']
                             df_calc['body_range'] = df_calc['close'] - df_calc['low']
 
-                            # --- 最終判定行のパース（最新当日の値をパージ） ---
+                            # --- 最終判定行のパース（最新当日の値を検証） ---
                             latest = df_calc.iloc[-1]
                             
-                            # 数理チェック①：売買代金（入力値に完全連動：3億〜テスト100万）
+                            # 数理チェック①：5日平均売買代金（入力値に完全連動：3億〜緩和500万）
                             if not (latest['avg_value_5'] >= float(cfg["val_lim"])): return None
                             
-                            # 数理チェック②：直近高値肉薄（入力値に完全連動：3%〜テスト10%）
+                            # 数理チェック②：直近高値肉薄（入力値に完全連動：3%〜緩和10%）
                             low_bound_ratio = 1.0 - (float(cfg["margin_rate"]) / 100.0)
                             cond_high = (latest['recent_high'] * low_bound_ratio <= latest['close']) and (latest['close'] < latest['recent_high'])
                             if not cond_high: return None
                             
-                            # 数理チェック③：出来高急増（入力値に完全連動：1.5倍〜最小化）
+                            # 数理チェック③：出来高急増（入力値に完全連動：1.5倍〜緩和1.1倍）
                             if not (latest['volume'] > (latest['avg_volume_5'] * float(cfg["vol_ratio"]))): return None
                             
                             # 数理チェック④：ローソク足実体比率70%以上
