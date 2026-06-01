@@ -1880,19 +1880,19 @@ with tab2:
         master_map_t2 = m_df_tmp.set_index('Code').to_dict('index')
         del m_df_tmp
 
-    # 👑 【5連奏パラメータUI】ボスの設計・変数連動を完全死守（価格上下限の重複矛盾を完全排除）
+    # 👑 【真の5連奏パラメータUI】価格上下限を完全追放。競合・矛盾を100%抹消
     col_t2_1, col_t2_2, col_t2_3, col_t2_4, col_t2_5 = st.columns(5)
     
     if 'tab2_rsi_limit' not in st.session_state: st.session_state.tab2_rsi_limit = 75
-    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000 # デフォルト: 3億円
-    if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.5       # デフォルト: 1.5倍
-    if 'tab2_margin_pct' not in st.session_state: st.session_state.tab2_margin_pct = 3.0     # デフォルト: 3%肉薄
-    if 'tab2_period' not in st.session_state: st.session_state.tab2_period = 20              # 厳格仕様: 20日間
+    if 'tab2_val_limit' not in st.session_state: st.session_state.tab2_val_limit = 300000000
+    if 'tab2_vol_ratio' not in st.session_state: st.session_state.tab2_vol_ratio = 1.5
+    if 'tab2_margin_pct' not in st.session_state: st.session_state.tab2_margin_pct = 3.0
+    if 'tab2_period' not in st.session_state: st.session_state.tab2_period = 20
     
     rsi_lim = col_t2_1.number_input("RSI上限（足切り）", value=int(st.session_state.tab2_rsi_limit), step=5, key="t2_rsi_v2026_lock")
     val_lim = col_t2_2.number_input("最低5日平均売買代金（円）", value=int(st.session_state.tab2_val_limit), step=50000000, key="t2_val_v2026_lock")
     vol_ratio = col_t2_3.number_input("点火出来高倍率（倍）", value=float(st.session_state.tab2_vol_ratio), step=0.1, format="%.1f", key="t2_ratio_v2026_lock")
-    margin_pct = col_t2_4.number_input("高値肉薄度（%以内）", value=float(st.session_state.margin_pct) if 'margin_pct' in st.session_state else float(st.session_state.tab2_margin_pct), step=1.0, key="t2_margin_v2026_lock")
+    margin_pct = col_t2_4.number_input("高値肉薄度（%以内）", value=float(st.session_state.tab2_margin_pct), step=1.0, key="t2_margin_v2026_lock")
     lookback_period = col_t2_5.number_input("高値参照期間（日）", value=int(st.session_state.tab2_period), step=1, key="t2_period_v2026_lock")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock"):
@@ -1920,7 +1920,7 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
                     
-                    # サイドバー（グローバル設定）の価格上下限を安全にインポート
+                    # 🛡️ 価格上下限はサイドバーの設定（グローバル）を絶対優先して直結
                     config_t2 = {
                         "f1_min": float(st.session_state.get("f1_min", 100.0)), 
                         "f1_max": float(st.session_state.get("f1_max", 15000.0)),
@@ -1953,7 +1953,6 @@ with tab2:
                     st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
                     st.write("⚙️ 第3段階：完全数理仕様・ブレイクアウト物理抽出エンジン稼働中...")
 
-                    # 🚨 【完全鏡面ロジック】引数と数式定義を100%同期
                     def scan_unit_t2_parallel_final(code, group, cfg, v_column, l_date):
                         try:
                             c_str = str(code)[:4]
@@ -1975,10 +1974,8 @@ with tab2:
                                 'volume': group[v_column]
                             }).copy()
                             
-                            # 最小データ長チェック（指定された参照期間をカバーできなければパージ）
                             if len(df_calc) < max(int(cfg["p_days"]) + 1, 6): return None
                             
-                            # RSI（アセットとして残すための安全弁チェック）
                             rsi, atr_v, _, _ = get_fast_indicators(group['AdjC'].values)
                             vol_pct = (atr_v / float(df_calc['close'].iloc[-1]) * 100) if float(df_calc['close'].iloc[-1]) > 0 else 0
                             if rsi > cfg["rsi_lim"]: return None
@@ -1997,7 +1994,7 @@ with tab2:
                             # 3. 位置エネルギー：直近高値（スイングハイ）まで肉薄
                             df_calc['recent_high'] = df_calc['high'].shift(1).rolling(window=int(cfg["p_days"])).max()
 
-                            # 4. エネルギー：当日の出来高急増（ボリューム·スパイク）
+                            # 4. エネルギー：当日の出来高急増（ボリューム・スパイク）
                             df_calc['avg_volume_5'] = df_calc['volume'].shift(1).rolling(window=5).mean()
 
                             # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
