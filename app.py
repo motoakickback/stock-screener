@@ -1982,9 +1982,6 @@ with tab2:
         gc.collect()
         t_global_start = time.time()
         
-        # (以下、既存のスキャン処理へ続く)
-        # ※ここから下のスキャン処理内では、 st.session_state.f_trading_val_min を参照してフィルタリングすること
-
         with st.status("🚀 索敵スキャンを実行中... 強襲ルートを計算しています", expanded=True) as status:
             try:
                 st.write("📡 第1段階：260日分のローソク足データを取得中...")
@@ -2037,20 +2034,15 @@ with tab2:
                     st.session_state.tab2_time_log.append(msg2)
                     st.write("⚙️ 第3段階：並列爆発前夜探査エンジン稼働中...")
                     
+                    # =========================================================
+                    # 🎯 【PG】開発参謀 実装：並列スキャンユニット（5連装・鉄壁仕様）
+                    # =========================================================
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = c_vals[-1]
                         
-                        # 物理連動：大口流動性バリアチェック
-                        if v_avg < cfg.get("vol_lim", 0): 
-                            return None
-                        trading_val = lc * v_avg
-                        min_t_val = float(st.session_state.get("f_trading_val_min", 1.5)) * 100_000_000
-                        if trading_val < min_t_val: 
-                            return None 
-                        
-                        # 除外銘柄チェック
+                        # --- 既存の除外判定（維持） ---
                         if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): 
                             return None
                         if cfg["f5_ipo"]:
@@ -2061,63 +2053,62 @@ with tab2:
                             if lc > (c_vals.min() * 3.0): 
                                 return None
                         
+                        # --- RSI・ボラティリティ足切り判定（維持） ---
                         rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                         if vol_pct < cfg["f_vol_min"]: 
                             return None
                         if rsi > cfg["rsi_lim"]: 
                             return None
-                        if len(c_vals) < 25: 
+                        if len(group) < 25: 
                             return None
                         
-                        s_c = pd.Series(c_vals)
-                        ma5_s = s_c.rolling(5).mean().values
-                        ma25_s = s_c.rolling(25).mean().values
-                        
-                        group = group.copy()
-                        group['MA5'] = ma5_s
-                        group['MA25'] = ma25_s
-                        
-                        ma5, ma25 = ma5_s[-1], ma25_s[-1]
-                        prev_ma5 = ma5_s[-2]
-                        
-                        gc_days = 0
-                        is_pre_gc = False
-                        
-                        if ma5 >= ma25:
-                            for d in range(1, 4): 
-                                if ma5_s[-d] >= ma25_s[-d] and ma5_s[-(d+1)] < ma25_s[-(d+1)]:
-                                    gc_days = d
-                                    break
-                        else:
-                            lo = float(group.iloc[-1].get('AdjO', lc))
-                            macd_h = float(group.iloc[-1].get('MACD_Hist', 0))
-                            macd_h_prev = float(group.iloc[-2].get('MACD_Hist', 0)) if len(group) > 1 else 0
-                            dist_pct = ((ma5 / ma25) - 1) * 100
-                            
-                            # 明日GC見込みの臨界スクイーズ判定
-                            if (ma5 < ma25) and (lc >= ma25 * 0.99) and (-1.0 <= dist_pct < 0.0) and (ma5 > prev_ma5) and (lc >= lo) and (macd_h > macd_h_prev):
-                                is_pre_gc = True
-                                
-                        if gc_days == 0 and not is_pre_gc: 
-                            return None
-
-                        # ファンダメンタルズ判定（グローバルスコープの master_map を参照）
+                        # --- ファンダメンタルズ判定（維持） ---
                         if cfg["f12_ex_overvalued"]:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: 
                                 return None
-                        
-                        is_assault = "狙撃優先" in cfg["tactics"]
-                        t_rank, t_color, t_score, t_desc = get_assault_triage_info(gc_days, lc, rsi, group, is_strict=is_assault)
-                        
-                        if is_pre_gc:
-                            t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
-                            
-                        if not is_pre_gc and (t_rank == "圏外 💀" or "圏外" in t_rank): 
+
+                        # =========================================================
+                        # 🚨 5連装・鉄壁仕様フィルター（数理定義の完全適用）
+                        # =========================================================
+                        group_df = group.copy()
+                        v_col_name = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c][0]
+
+                        # 2. 5日平均売買代金フィルター（3億円以上の生数直接比較を厳守）
+                        group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
+                        group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5).mean()
+                        if group_df['avg_value_5'].iloc[-1] < 300000000:
                             return None
+
+                        # 3. 位置エネルギー：直近高値（スイングハイ）まで「3%以内」に肉薄
+                        group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20).max()
+                        rec_high = group_df['recent_high'].iloc[-1]
+                        if pd.isna(rec_high) or not (rec_high * 0.97 <= lc < rec_high):
+                            return None
+
+                        # 4. エネルギー：当日の出来高急増（ボリューム・スパイク 1.5倍超）
+                        group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5).mean()
+                        avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
+                        curr_vol = group_df[v_col_name].iloc[-1]
+                        if pd.isna(avg_vol_5) or curr_vol <= (avg_vol_5 * 1.5):
+                            return None
+
+                        # 5. 形状：ローソク足の実体比率が「70%以上」（上ヒゲダマシの完全排除）
+                        group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
+                        group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
+                        c_range = group_df['candle_range'].iloc[-1]
+                        b_range = group_df['body_range'].iloc[-1]
+                        if c_range <= 0 or (b_range / c_range) < 0.70:
+                            return None
+
+                        # =========================================================
+                        # 全条件を突破した精鋭銘柄への付与データ
+                        # =========================================================
+                        t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
+                        gc_days = 0  # UI側で激熱判定として処理させるためのフラグ値
                         
-                        h_vals = group['AdjH'].values
+                        h_vals = group_df['AdjH'].values
                         h14 = h_vals[-14:].max()
                         atr = h14 * 0.03
                         
