@@ -193,21 +193,15 @@ components.html(
     """, height=0, width=0
 )
 
-# --- 2. 認証・通信設定（Connection Poolingの導入） ---
-user_id = st.session_state["current_user"]
-st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
-
-API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
-BASE_URL = "https://api.jquants.com/v2"
-
 # 🚨 通信セッションの永続化とリトライバッファの構築
 if "api_session" not in st.session_state:
     session = requests.Session()
     session.headers.update({"x-api-key": API_KEY})
+    # 🚨 修正：429（レート制限）を自動リトライから外し、カスタム冷却ループに制御を完全委譲
     retry_strategy = Retry(
         total=3,
         backoff_factor=0.5,
-        status_forcelist=[429, 500, 502, 503, 504]
+        status_forcelist=[500, 502, 503, 504] 
     )
     adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry_strategy)
     session.mount("https://", adapter)
@@ -923,7 +917,7 @@ def get_nikkei_macro_status():
         return None
 
 # =========================================================
-# 🚀 修正パッチ：調速機能付き・並列兵站エンジン（バースト制限回避版）
+# 🚀 修正パッチ：調速機能付き・並列兵站エンジン（内部競合排除版）
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
@@ -982,20 +976,20 @@ def get_hist_data_cached(key):
                             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
                     return temp_df
                 elif r.status_code == 429:
-                    # 🚨 制限に引っかかった場合のみ、長めの冷却時間を挟んで再突撃
-                    time.sleep(2.0 + attempt * 1.5)
+                    # 🚨 内部競合を排除したため、ここで確実に冷却処理（3秒〜11秒）が作動します
+                    time.sleep(3.0 + attempt * 2.0)
                     continue
                 elif r.status_code in [401, 403]:
                     return "AUTH_ERROR"
                 else:
                     time.sleep(1.0); continue
             except Exception:
-                time.sleep(1.0); continue
+                time.sleep(2.0); continue
         return "SKIP"
 
-    # 🚨 【並列処理の復活】ただし max_workers=3 に抑え、瞬間バーストを防ぐ
+    # 🚨 APIの制限を絶対に超えないよう、ワーカー数を「2」に制限
     import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
         futs = {exe.submit(fetch_and_compress, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             dt_val = futs[f]
@@ -1013,8 +1007,8 @@ def get_hist_data_cached(key):
             progress_bar.progress(min(p_val, 1.0))
             status_text.text(f"📡 逐次圧縮中: {i+1}/260日 完了 (失敗: {len(failed_dates)})")
             
-            # 🚨 弾幕の合間にわずかな冷却時間を強制挿入（スピード違反の完全防止）
-            time.sleep(0.1)
+            # 発射間隔の強制インターバル
+            time.sleep(0.15)
 
     progress_bar.empty()
     status_text.empty()
