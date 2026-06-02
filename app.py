@@ -1872,7 +1872,7 @@ with tab1:
             
             u_badge = '<span style="background-color: #26a69a; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem; box-shadow: 0 0 10px rgba(38,166,154,0.5);">💎 陰の極み</span>' if r.get('ultimate') else ""
             t_badge = f'<span style="background-color: {r["triage_bg"]}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r["triage_rank"]}</span>'
-            score_val = safe_int(r["score"]); score_color = "#26a69a" if score_val >= 8 else "#ff5722"; score_bg = "rgba(38, 166, 154, 0.15)" if score_val >= 8 else "rgba(255, 87, 34, 0.15)"
+            score_val = safe_int(r.get("score", 0)); score_color = "#26a69a" if score_val >= 8 else "#ff5722"; score_bg = "rgba(38, 166, 154, 0.15)" if score_val >= 8 else "rgba(255, 87, 34, 0.15)"
             score_badge = f'<span style="background-color: {score_bg}; border: 1px solid {score_color}; color: {score_color}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 0.5rem;">🎖️ 掟スコア: {score_val}/9</span>'
             sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
             vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r["vol_pct"]:.2f}%</span>'
