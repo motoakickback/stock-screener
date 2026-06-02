@@ -1745,7 +1745,7 @@ with tab1:
                 status.update(label=f"🎯 スキャン完了！ {len(filtered_results)}銘柄着弾", state="complete", expanded=False)
                 st.rerun()
 
-    if st.session_state.tab1_scan_results:
+    if st.session_state.tab1_scan_results is not None:
         # 🚨 TAB3仕様完全再現：リラン後、完了したstatusボックスと同じ外観で永久ホールド
         if "tab1_time_log" in st.session_state and st.session_state.tab1_time_log:
             with st.expander(f"🎯 索敵完了！（候補 {len(st.session_state.tab1_scan_results)} 銘柄確保）", expanded=False):
