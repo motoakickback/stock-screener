@@ -1569,55 +1569,41 @@ st.sidebar.caption(f"KEY: {cache_key}")
 # ==========================================
 
 # --- 📍 マクロ気象局アラートの表示 ---
-n225_macro = get_nikkei_macro_status()
 
 _macro_fallback = get_macro_weather()
 if _macro_fallback and "nikkei" in _macro_fallback:
     _ni_fb = _macro_fallback["nikkei"]
     _df_fb = _ni_fb["df"].copy()
-    _df_fb['MA25'] = _df_fb['Close'].rolling(window=25).mean()
     
-    if not _df_fb.empty and 'MA25' in _df_fb.columns and not pd.isna(_df_fb['MA25'].iloc[-1]):
-        _close_fb = _ni_fb["price"]
+    if not _df_fb.empty and len(_df_fb) >= 25:
+        _df_fb['MA25'] = _df_fb['Close'].rolling(window=25).mean()
+        _price_fb = _ni_fb["price"]
         _ma25_fb = _df_fb['MA25'].iloc[-1]
-        _div_fb = ((_close_fb / _ma25_fb) - 1) * 100
         
-        if _div_fb >= 2.0:
-            _status, _icon, _color = "過熱警戒", "🔥", "#ef5350"
-        elif _div_fb >= 0.0:
-            _status, _icon, _color = "巡航速度", "🚢", "#26a69a"
-        elif _div_fb <= -5.0:
-            _status, _icon, _color = "厳戒態勢", "🚨", "#ef5350"
-        elif _div_fb <= -2.0:
-            _status, _icon, _color = "警戒態勢", "⚠️", "#ffa726"
-        else:
-            _status, _icon, _color = "調整局面", "📉", "#ef5350"
-        
-        if n225_macro is None:
-            n225_macro = {}
-        n225_macro['close'] = _close_fb
-        n225_macro['ma25'] = _ma25_fb
-        n225_macro['div_rate'] = _div_fb
-        n225_macro['status'] = _status
-        n225_macro['icon'] = _icon
-        n225_macro['color'] = _color
-
-if n225_macro:
-    div_v = n225_macro['div_rate']
-    st.markdown(f"""
-        <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 10px; border-left: 5px solid {n225_macro['color']}; margin-bottom: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 14px; color: #aaa;">📡 マクロ気象観測：日経平均25日乖離率</span>
-                <span style="font-size: 18px; font-weight: bold; color: {n225_macro['color']};">{n225_macro['icon']} {n225_macro['status']}</span>
+        if pd.notna(_ma25_fb) and _ma25_fb > 0:
+            _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
+            
+            # 🚨 最新の正しい数値（+6.68%など）でアラート文を強制生成
+            if _div_fb >= 5.0:
+                alert_text = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
+                icon = "🔴"
+            elif _div_fb <= -5.0:
+                alert_text = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
+                icon = "🟢"
+            else:
+                alert_text = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
+                icon = "⚪"
+            
+            # 🚨 古い yfinance の計算を捨て、ここで正しい値に完全に上書き固定する
+            st.session_state.macro_alert = alert_text
+            
+            # 画面上の気象局表示も正しい数値に統一
+            st.markdown(f"""
+            <div style="background-color: rgba(30, 30, 30, 0.5); padding: 10px; border-radius: 5px; border: 1px solid #444; margin-bottom: 15px;">
+                <b>📡 マクロ気象観測：日経平均25日乖離率</b> {icon} {alert_text}<br>
+                日経現在値: {_price_fb:,.0f}円 ｜ 25日移動平均: {_ma25_fb:,.0f}円 ｜ <b>乖離率: {_div_fb:+.2f}%</b>
             </div>
-            <div style="display: flex; gap: 20px; margin-top: 5px;">
-                <div><span style="font-size: 12px; color: #888;">日経現在値:</span> <b style="font-size: 16px;">{n225_macro['close']:,.0f}円</b></div>
-                <div><span style="font-size: 12px; color: #888;">25日移動平均:</span> <b style="font-size: 16px;">{n225_macro['ma25']:,.0f}円</b></div>
-                <div><span style="font-size: 12px; color: #888;">乖離率:</span> <b style="font-size: 20px; color: {n225_macro['color']};">{div_v:+.2f}%</b></div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-    st.session_state.macro_alert = n225_macro['status']
+            """, unsafe_allow_html=True)
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
