@@ -1717,55 +1717,32 @@ with tab1:
                 st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg, l_date):
-                    c_str = str(code)[:4]
                     c_vals = group['AdjC'].values
                     lc = c_vals[-1]
+                    if cfg["f6_risk"] and (str(code) in cfg["gigi_codes"]): return None
                     
-                    if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): return None
-                    if cfg["f5_ipo"]:
-                        first_date = group['Date'].min()
-                        if (l_date - first_date).days < 350: return None
-                        
-                    if cfg["f11_ex_wave3"]:
-                        if lc > (c_vals.min() * 3.0): return None
-                    p20 = c_vals[max(0, len(c_vals)-20)]
-                    if p20 > 0 and (lc / p20) > cfg["f2_m30"]: return None
-
-                    h_max_1yr = c_vals.max()
-                    if lc < h_max_1yr * (1 + (cfg["f3_drop"] / 100.0)): return None
-
+                    # 指標計算
                     rsi, atr_v, _, _ = get_fast_indicators(c_vals)
                     vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                     if vol_pct < cfg["f_vol_min"]: return None
-
+                    
                     h_vals, l_vals = group['AdjH'].values, group['AdjL'].values
-                    
-                    # 🚨 【修正】波高検知の完全14日統一（美しい山と谷の判定）
-                    # 直近高値(h4): 本日を含む過去14日間の最高値
                     h4 = h_vals[-14:].max()
-                    
-                    # 直近安値(l14): 本日を含む過去14日間の最安値
                     l14 = l_vals[-14:].min()
-
                     if l14 <= 0 or h4 <= l14: return None
-                    wh = h4 / l14
-                    if not (cfg["f9_min14"] <= wh <= cfg["f9_max14"]): return None
                     
-                    base_push = (h4 - l14) * (cfg["push_r"] / 100.0)
-                    target_buy = h4 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
-                    
-                    dist_pct = ((lc / target_buy) - 1) * 100
+                    dist_pct = ((lc / (h4 - (h4 - l14) * (cfg["push_r"] / 100.0) * (1.0 - cfg["push_penalty"]))) - 1) * 100
                     if dist_pct < -cfg["sl_c"]: return None
 
-                    if dist_pct <= 2.0: rank, bg, t_score = "S🔥", "#26a69a", 5.5
-                    elif dist_pct <= 6.0: rank, bg, t_score = "A⚡", "#ed6c02", 4.5
-                    else: rank, bg, t_score = "B📈", "#0288d1", 3.5
-
+                    rank, bg, t_score = ("S🔥", "#26a69a", 5.5) if dist_pct <= 2.0 else ("A⚡", "#ed6c02", 4.5)
+                    
+                    # 🚨 必須キーを全て網羅して返すよう修正
                     return {
-                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 'target_buy': float(target_buy), 
-                        'reach_rate': float((target_buy / lc) * 100), 'triage_rank': rank, 'triage_bg': bg, 
-                        't_score': t_score, 'score': 4, 'high_4d': float(h4), 'low_14d': float(l14), 
+                        'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                        'target_buy': float(h4 - (h4 - l14) * (cfg["push_r"] / 100.0)),
+                        'reach_rate': float(((h4 - (h4 - l14) * (cfg["push_r"] / 100.0)) / lc) * 100),
+                        'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 
+                        'score': 4, 'high_4d': float(h4), 'low_14d': float(l14), 
                         'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
                     }
 
