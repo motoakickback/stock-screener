@@ -2680,16 +2680,29 @@ with tab3:
                             # 強襲スコア確定
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
 
-                            # 🚨 物理結線：市場地合いによる自動ブレーキ（強襲モード）
-                            if n225_div_rate >= 8.0:
-                                score -= 35
-                                alerts.append(f"⚠️ 【地合い異常過熱】日経乖離率 {n225_div_rate:+.2f}%。強襲を強制停止。")
-                            elif n225_div_rate >= 5.0:
-                                score -= 20
-                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。")
+                            # 🚨 【完全同期パッチ】古い n225_div_rate を最新の「25日MA乖離率」で強制上書きする
+                            _macro_t3 = get_macro_weather()
+                            if _macro_t3 and "nikkei" in _macro_t3:
+                                _df_m = _macro_t3["nikkei"]["df"]
+                                if not _df_m.empty and len(_df_m) >= 25:
+                                    _ma25_m = _df_m['Close'].rolling(window=25).mean().iloc[-1]
+                                    _price_m = _macro_t3["nikkei"]["price"]
+                                    if pd.notna(_ma25_m) and _ma25_m > 0:
+                                        n225_div_rate = ((_price_m / _ma25_m) - 1) * 100
+
+                            # 🚨 物理結線：市場地合い（乖離率）によるバフ・デバフ（待伏モード）
+                            if n225_div_rate <= -8.0:
+                                score += 5
+                                alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
                             elif n225_div_rate <= -5.0:
-                                score -= 15
-                                alerts.append(f"🔵 【地合い急冷】日経乖離率 {n225_div_rate:+.2f}%。トレンド崩壊注意。")
+                                score += 3
+                                alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                            elif n225_div_rate >= 8.0:
+                                score -= 5
+                                alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                            elif n225_div_rate >= 5.0:
+                                score -= 3
+                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
 
                             # 🚨 修正：天井警告ペナルティ（防衛回路）
                             if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
