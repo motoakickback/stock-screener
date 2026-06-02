@@ -150,7 +150,6 @@ def force_load_saved_settings():
                     
                 # 2. 除外銘柄（gigi_input）をリスト化してシステム内部変数にも完全同期
                 if "gigi_input" in saved_data and saved_data["gigi_input"]:
-                    # カンマや読点で区切られた文字列をリストに変換
                     raw_str = saved_data["gigi_input"].replace('、', ',').replace(' ', ',').replace('　', ',')
                     codes = [c.strip() for c in raw_str.split(',') if c.strip()]
                     st.session_state.exclude_codes = codes
@@ -158,10 +157,8 @@ def force_load_saved_settings():
     except Exception as e:
         pass
 
-# キャッシュキーの変動を物理検知
 current_sys_cache_key = get_cache_key()
 if st.session_state.get("last_sys_cache_key") != current_sys_cache_key:
-    # 19時を跨いでキーが変わった瞬間、デフォルトに戻される「前」に強制ロード
     st.session_state.last_sys_cache_key = current_sys_cache_key
     force_load_saved_settings()
 # =========================================================
@@ -314,6 +311,7 @@ def get_macro_weather():
                     try:
                         r = api_session.get(url, timeout=3.0)
                         if r.status_code == 200:
+                            # 🚨 J-Quants仕様修正：daily_quotesも確実に取得
                             data = r.json().get("daily_quotes") or r.json().get("data") or []
                             if data:
                                 jq_latest = sorted(data, key=lambda x: x['Date'])[-1]
@@ -451,6 +449,7 @@ def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
     
+    # 🚨 出来高の欠損を防ぐ柔軟な抽出
     vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo']
     for c in vol_candidates:
         if c in df.columns and c != 'AdjustmentVolume':
@@ -570,7 +569,7 @@ def check_event_mines(code, event_data=None):
         except: continue
             
     return alerts
-	
+
 def detect_sakata_patterns(df):
     if len(df) < 5: return []
     patterns = []
@@ -817,21 +816,15 @@ def get_fundamentals(code):
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
 # =========================================================
 def get_upcoming_event_alerts(code_str):
-    """
-    指定された銘柄コード（4桁）の決算日・権利落ち日をチェックし、
-    直近14日以内の場合に目立つアラート文字列のリストを返す
-    """
     alerts = []
     try:
         tz = pytz.timezone('Asia/Tokyo')
         today = datetime.now(tz).date()
         
-        # 既存のファンダメンタルズ取得関数を流用
         f_data = get_fundamentals(str(code_str)[:4])
         if not f_data:
             return alerts
             
-        # 1. 決算日の判定（文字列を安全に日付型へ変換して引き算）
         earnings_date_str = f_data.get("earnings_date") or f_data.get("next_div_date") 
         if earnings_date_str:
             e_date = datetime.strptime(str(earnings_date_str).strip()[:10], "%Y-%m-%d").date()
@@ -839,7 +832,6 @@ def get_upcoming_event_alerts(code_str):
             if 0 <= days_to_earnings <= 14:
                 alerts.append(f"📅 決算発表まであと {days_to_earnings} 日 ({e_date.strftime('%m/%d')})")
                 
-        # 2. 権利落ち日の判定
         ex_div_date_str = f_data.get("ex_dividend_date")
         if ex_div_date_str:
             d_date = datetime.strptime(str(ex_div_date_str).strip()[:10], "%Y-%m-%d").date()
@@ -848,7 +840,7 @@ def get_upcoming_event_alerts(code_str):
                 alerts.append(f"🍇 権利落ち（配当・優待）まであと {days_to_div} 日 ({d_date.strftime('%m/%d')})")
                 
     except:
-        pass  # エラー時は沈黙して空リストを返す
+        pass 
         
     return alerts
 
@@ -930,6 +922,9 @@ def get_nikkei_macro_status():
     except:
         return None
 
+# =========================================================
+# 🚨 修正：データ兵站の完全復旧（キー指定漏れの修復とIPO判定準備）
+# =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
     progress_bar = st.progress(0)
@@ -963,17 +958,28 @@ def get_hist_data_cached(key):
             try:
                 r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=10.0)
                 if r.status_code == 200:
-                    data = r.json().get("data", [])
+                    # 🚨 修正：J-Quantsの仕様に合わせ daily_quotes を優先取得（旧コードは data 固定で全滅していた）
+                    data = r.json().get("daily_quotes") or r.json().get("data") or []
                     if not data: return None
+                    
                     temp_df = pd.DataFrame(data)
+                    
+                    # 🚨 修正：出来高カラムを柔軟にキャッチし、後続の売買代金計算エラーを防止
+                    vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo']
+                    v_col = next((c for c in vol_candidates if c in temp_df.columns), None)
+                    if v_col and v_col != 'AdjustmentVolume':
+                        temp_df = temp_df.rename(columns={v_col: 'AdjustmentVolume'})
+
                     rename_map = {
                         'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
                         'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
-                        'AdjustmentVolume': 'AdjustmentVolume'
+                        'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'
                     }
                     temp_df = temp_df.rename(columns=rename_map)
+                    
                     keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                     temp_df = temp_df[[c for c in keep if c in temp_df.columns]].copy()
+                    
                     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
                         if col in temp_df.columns:
                             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
@@ -1212,25 +1218,20 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
 
     df_plot = df.copy()
     
-    # 🚨 フェイルセーフ：万が一計算されていなくても、関数内で強制的にMA5/25/75を算出する
     if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
     if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
     if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
 
-    # 騰落矢印（▲/▼）
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    # 🚨 ホバー用のテキスト配列を生成（NaNの場合はハイフン）
     ma5_str = df_plot['MA5'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
     ma25_str = df_plot['MA25'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
     ma75_str = df_plot['MA75'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
 
-    # customdata に 矢印, MA5, MA25, MA75 を統合
     customdata = np.column_stack((df_plot['arrow'], ma5_str, ma25_str, ma75_str))
 
     fig = go.Figure()
 
-    # --- 1. ローソク足本体 ＆ 統合ホバー ---
     fig.add_trace(go.Candlestick(
         x=df_plot['Date'],
         open=df_plot['AdjO'], high=df_plot['AdjH'],
@@ -1252,8 +1253,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         decreasing_line_color='#ef5350'
     ))
 
-    # --- 2. MAラインの描画 ---
-    # ホバーはローソク足側で表示するため、線自体のホバーはスキップする
     ma_configs = [('MA5', '#ffd700', 'MA5'), ('MA25', '#42a5f5', 'MA25'), ('MA75', '#ab47bc', 'MA75')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
@@ -1265,7 +1264,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 hoverinfo='skip'
             ))
 
-    # --- 3. 買付目標 ---
     fig.add_trace(go.Scatter(
         x=df_plot['Date'], 
         y=[targ_p] * len(df_plot),
@@ -1275,7 +1273,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         hovertemplate=f"目標：{targ_p:,.0f}<extra></extra>"
     ))
 
-    # --- 4. 酒田サイン ---
     date_str_series = df_plot['Date'].astype(str).str[:10]
     for i, p in enumerate(sakata):
         try:
@@ -1294,7 +1291,6 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         except Exception:
             continue
 
-    # --- 5. レイアウト ---
     fig.update_layout(
         template='plotly_dark', height=550, margin=dict(l=0, r=0, t=30, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
@@ -1316,7 +1312,6 @@ if master_df is not None and not master_df.empty:
     master_map = m_df_tmp.set_index('Code').to_dict('index')
     del m_df_tmp
 
-# 👇【ここに追加】インデントなし（左端）で記述してください
 master_map_t1 = master_map
 master_map_t2 = master_map
 tactics_mode = st.session_state.get('sidebar_tactics', "⚖️ バランス (掟達成率 ＞ 到達度)")
@@ -1518,7 +1513,7 @@ with c3:
 with c4:
     st.number_input("波高上限(倍)", value=float(st.session_state.f9_max14), step=0.1, key="f9_max14", on_change=extended_save_settings)
 
-st.sidebar.checkbox("🚀 IPO除外(上場1年/200日未満)", value=bool(st.session_state.f5_ipo), key="f5_ipo", on_change=extended_save_settings)
+st.sidebar.checkbox("🚀 IPO除外(上場1年未満)", value=bool(st.session_state.f5_ipo), key="f5_ipo", on_change=extended_save_settings)
 st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.f6_risk), key="f6_risk", on_change=extended_save_settings)
 st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.f11_ex_wave3), key="f11_ex_wave3", on_change=extended_save_settings)
 st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.f12_ex_overvalued), key="f12_ex_overvalued", on_change=extended_save_settings)
