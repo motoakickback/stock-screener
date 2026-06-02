@@ -923,7 +923,7 @@ def get_nikkei_macro_status():
         return None
 
 # =========================================================
-# 🚨 修正：データ兵站の完全復旧（キー指定漏れの修復とIPO判定準備）
+# 🚀 修正パッチ：調速機能付き・並列兵站エンジン（バースト制限回避版）
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
@@ -954,17 +954,14 @@ def get_hist_data_cached(key):
     failed_dates = []
 
     def fetch_and_compress(dt):
-        for attempt in range(4):
+        for attempt in range(5):
             try:
-                r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=10.0)
+                r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
                 if r.status_code == 200:
-                    # 🚨 修正：J-Quantsの仕様に合わせ daily_quotes を優先取得（旧コードは data 固定で全滅していた）
                     data = r.json().get("daily_quotes") or r.json().get("data") or []
                     if not data: return None
                     
                     temp_df = pd.DataFrame(data)
-                    
-                    # 🚨 修正：出来高カラムを柔軟にキャッチし、後続の売買代金計算エラーを防止
                     vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo']
                     v_col = next((c for c in vol_candidates if c in temp_df.columns), None)
                     if v_col and v_col != 'AdjustmentVolume':
@@ -985,7 +982,8 @@ def get_hist_data_cached(key):
                             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
                     return temp_df
                 elif r.status_code == 429:
-                    time.sleep(2.0 * (attempt + 1))
+                    # 🚨 制限に引っかかった場合のみ、長めの冷却時間を挟んで再突撃
+                    time.sleep(2.0 + attempt * 1.5)
                     continue
                 elif r.status_code in [401, 403]:
                     return "AUTH_ERROR"
@@ -995,7 +993,9 @@ def get_hist_data_cached(key):
                 time.sleep(1.0); continue
         return "SKIP"
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
+    # 🚨 【並列処理の復活】ただし max_workers=3 に抑え、瞬間バーストを防ぐ
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
         futs = {exe.submit(fetch_and_compress, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             dt_val = futs[f]
@@ -1012,7 +1012,9 @@ def get_hist_data_cached(key):
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
             status_text.text(f"📡 逐次圧縮中: {i+1}/260日 完了 (失敗: {len(failed_dates)})")
-            time.sleep(0.15)
+            
+            # 🚨 弾幕の合間にわずかな冷却時間を強制挿入（スピード違反の完全防止）
+            time.sleep(0.1)
 
     progress_bar.empty()
     status_text.empty()
