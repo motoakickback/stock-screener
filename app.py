@@ -1353,6 +1353,7 @@ st.session_state.rsi_penalty = 0
 st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
 
 if use_macro:
+    # 1. 既存の前日比ペナルティ処理（完全温存）
     api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
     manual_pct = st.sidebar.number_input(
         "日経騰落率（API値自動入力 %）", 
@@ -1365,13 +1366,40 @@ if use_macro:
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  
         st.session_state.rsi_penalty = 20     
-        st.session_state.macro_alert = f"🔴 厳戒態勢（日経 {manual_pct:+.2f}%）"
     elif manual_pct <= -1.0:
         st.session_state.push_penalty = 0.05  
         st.session_state.rsi_penalty = 10     
-        st.session_state.macro_alert = f"🟠 警戒態勢（日経 {manual_pct:+.2f}%）"
+
+    # 2. 🚨 【完全同期パッチ】アラート表示用の「25日MA乖離率」をここで正確に計算
+    div_rate = 0.0
+    if weather and "nikkei" in weather:
+        try:
+            _ni = weather["nikkei"]
+            _df = _ni["df"].copy()
+            if not _df.empty and len(_df) >= 25:
+                _df['MA25'] = _df['Close'].rolling(window=25).mean()
+                _price = _ni["price"]
+                _ma25 = _df['MA25'].iloc[-1]
+                if pd.notna(_ma25) and _ma25 > 0:
+                    div_rate = ((_price / _ma25) - 1) * 100
+        except Exception:
+            pass
+
+    # 3. 🚨 司令官指定のアラート文字列を生成（全タブの最上部へ固定配信）
+    if div_rate >= 5.0:
+        base_alert = f"🌐【地合い警戒】日経乖離率 {div_rate:+.2f}%。天井掴みに注意。"
+    elif div_rate <= -5.0:
+        base_alert = f"🌐【地合いチャンス】日経乖離率 {div_rate:+.2f}%。押し目買い好機。"
     else:
-        st.session_state.macro_alert = f"🟢 平時（日経 {manual_pct:+.2f}%）"
+        base_alert = f"🌐【地合いニュートラル】日経乖離率 {div_rate:+.2f}%。個別銘柄の動きを重視。"
+        
+    # ※暴落ペナルティ発動時は、司令官がパッと見で把握できるようプレフィックスを付ける
+    if manual_pct <= -2.0:
+        st.session_state.macro_alert = f"🔴 厳戒態勢(前日比 {manual_pct:+.2f}%) ｜ {base_alert}"
+    elif manual_pct <= -1.0:
+        st.session_state.macro_alert = f"🟠 警戒態勢(前日比 {manual_pct:+.2f}%) ｜ {base_alert}"
+    else:
+        st.session_state.macro_alert = base_alert
 
 st.sidebar.divider()
 
