@@ -1583,25 +1583,26 @@ if _macro_fallback and "nikkei" in _macro_fallback:
         if pd.notna(_ma25_fb) and _ma25_fb > 0:
             _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
             
-            # 🚨 最新の正しい数値（+6.68%など）でアラート文を強制生成
+            # 🚨 ステータス判定用アイコンと色の決定
             if _div_fb >= 5.0:
-                alert_text = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
-                icon = "🔴"
+                _icon, _color = "🔥", "#ef5350"
             elif _div_fb <= -5.0:
-                alert_text = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
-                icon = "🟢"
+                _icon, _color = "🚨", "#ef5350"
             else:
-                alert_text = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
-                icon = "⚪"
+                _icon, _color = "🚢", "#26a69a"
             
-            # 🚨 古い yfinance の計算を捨て、ここで正しい値に完全に上書き固定する
-            st.session_state.macro_alert = alert_text
-            
-            # 画面上の気象局表示も正しい数値に統一
+            # 🚨 枠内から「アラート文（🌐…）」を完全撤去し、データ観測に特化
             st.markdown(f"""
             <div style="background-color: rgba(30, 30, 30, 0.5); padding: 10px; border-radius: 5px; border: 1px solid #444; margin-bottom: 15px;">
-                <b>📡 マクロ気象観測：日経平均25日乖離率</b> {icon} {alert_text}<br>
-                日経現在値: {_price_fb:,.0f}円 ｜ 25日移動平均: {_ma25_fb:,.0f}円 ｜ <b>乖離率: {_div_fb:+.2f}%</b>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <span style="font-size: 14px; color: #aaa;">📡 マクロ気象観測：日経平均25日乖離率</span>
+                    <span style="font-size: 18px; color: {_color};">{_icon}</span>
+                </div>
+                <div style="display: flex; gap: 20px;">
+                    <div><span style="font-size: 12px; color: #888;">日経現在値:</span> <b style="font-size: 16px;">{_price_fb:,.0f}円</b></div>
+                    <div><span style="font-size: 12px; color: #888;">25日移動平均:</span> <b style="font-size: 16px;">{_ma25_fb:,.0f}円</b></div>
+                    <div><span style="font-size: 12px; color: #888;">乖離率:</span> <b style="font-size: 20px; color: {_color};">{_div_fb:+.2f}%</b></div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
