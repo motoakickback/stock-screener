@@ -226,6 +226,21 @@ if "login_time" not in st.session_state:
 
 st.write(f"⏱ 経過時間: {time.time() - st.session_state.login_time:.2f}秒")
 
+def compress_memory(df):
+    """データフレームのメモリサイズを強制的に半減させる極限圧縮処理"""
+    if df is None or df.empty:
+        return df
+        
+    for col in df.columns:
+        col_type = df[col].dtype
+        
+        if col_type == 'float64':
+            df[col] = df[col].astype('float32')
+        elif col_type == 'int64':
+            df[col] = df[col].astype('int32')
+            
+    return df
+
 # ==========================================
 # ⚙️ 設定の永続化（完全統合・決定版・物理結線済）
 # ==========================================
@@ -485,35 +500,25 @@ def clean_df(df):
     return df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def calc_vector_indicators(df):
-    df = df.copy()
+    """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化）"""
+    if df is None or df.empty or len(df) < 25:
+        return df
+
+    # 移動平均線 (float32で計算結果を保持)
+    df['SMA25'] = df['Close'].rolling(window=25).mean().astype('float32')
+    df['SMA75'] = df['Close'].rolling(window=75).mean().astype('float32')
+
+    # RSIの完全ベクトル化計算 (中間変数を減らす)
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
     
-    delta = df.groupby('Code')['AdjC'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
-    avg_loss = loss.groupby(df['Code']).ewm(alpha=1/14, adjust=False).mean().reset_index(level=0, drop=True)
-    df['RSI'] = (100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))).astype('float32')
-    
-    ema12 = df.groupby('Code')['AdjC'].ewm(span=12, adjust=False).mean().reset_index(level=0, drop=True)
-    ema26 = df.groupby('Code')['AdjC'].ewm(span=26, adjust=False).mean().reset_index(level=0, drop=True)
-    macd = ema12 - ema26
-    signal = macd.groupby(df['Code']).ewm(span=9, adjust=False).mean().reset_index(level=0, drop=True)
-    df['MACD_Hist'] = (macd - signal).astype('float32')
-    
-    df['MA5'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(5).mean()).astype('float32')
-    df['MA25'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(25).mean()).astype('float32')
-    df['MA75'] = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(75).mean()).astype('float32')
-    
-    ma20 = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(20).mean())
-    std20 = df.groupby('Code')['AdjC'].transform(lambda x: x.rolling(20).std())
-    df['BB_L3'] = (ma20 - (std20 * 3)).astype('float32')
-    
-    tr = pd.concat([
-        df['AdjH'] - df['AdjL'], 
-        (df['AdjH'] - df.groupby('Code')['AdjC'].shift(1)).abs(), 
-        (df['AdjL'] - df.groupby('Code')['AdjC'].shift(1)).abs()
-    ], axis=1).max(axis=1)
-    df['ATR'] = tr.groupby(df['Code']).transform(lambda x: x.rolling(14).mean()).astype('float32')
+    # ゼロ除算回避とRSI算出
+    rs = gain / loss.replace(0, 1e-10) 
+    df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
+
+    # メモリ圧迫の原因となる中間変数を即座に破棄
+    del delta, gain, loss, rs
     
     return df
 
@@ -3716,4 +3721,9 @@ with tab6:
             st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
             st.success("✅ 整数化完了。色彩規律を再適用しました。")
             st.rerun()
-				
+
+# ==========================================
+# 🚀 最終メモリ解放パージ（OOMクラッシュ回避）
+# ==========================================
+import gc
+gc.collect()
