@@ -1344,7 +1344,7 @@ st.session_state.f_vol_min = st.sidebar.slider(
 
 st.sidebar.markdown("---")
 
-# --- 🌐 マクロ地合い連動システム (既存のものを完全温存) ---
+# --- 🌐 マクロ地合い連動システム (完全同期・単一エンジン版) ---
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
 use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
@@ -1352,9 +1352,27 @@ st.session_state.push_penalty = 0.0
 st.session_state.rsi_penalty = 0
 st.session_state.macro_alert = "🟢 平時（通常ロジック稼働）"
 
+def get_latest_macro_sync():
+    """全タブ共通で使う、常に最新の日経平均と乖離率を算出する単一エンジン"""
+    w = get_macro_weather()
+    if not w or "nikkei" not in w:
+        return {"status": "取得失敗", "div_rate": 0.0}
+    
+    df = w["nikkei"]["df"].copy()
+    if len(df) < 25:
+        return {"status": "データ不足", "div_rate": 0.0}
+        
+    df['MA25'] = df['Close'].rolling(window=25).mean()
+    price = w["nikkei"]["price"]
+    ma25 = df['MA25'].iloc[-1]
+    div_rate = ((price / ma25) - 1) * 100
+    
+    if div_rate >= 5.0: return {"status": "地合い警戒", "div_rate": div_rate}
+    elif div_rate <= -5.0: return {"status": "地合いチャンス", "div_rate": div_rate}
+    else: return {"status": "地合いニュートラル", "div_rate": div_rate}
+
 if use_macro:
-    # 1. 既存の前日比ペナルティ処理（完全温存）
-    api_nikkei_pct = weather['nikkei']['pct'] if weather else 0.0
+    api_nikkei_pct = weather['nikkei']['pct'] if 'weather' in locals() and weather else 0.0
     manual_pct = st.sidebar.number_input(
         "日経騰落率（API値自動入力 %）", 
         value=float(api_nikkei_pct), 
@@ -1363,43 +1381,26 @@ if use_macro:
         help="暴落シミュレーションをする場合は数値を書き換えてください。"
     )
 
+    prefix = ""
     if manual_pct <= -2.0:
         st.session_state.push_penalty = 0.10  
         st.session_state.rsi_penalty = 20     
+        prefix = f"🔴 厳戒態勢(前日比 {manual_pct:+.2f}%) ｜ "
     elif manual_pct <= -1.0:
         st.session_state.push_penalty = 0.05  
         st.session_state.rsi_penalty = 10     
+        prefix = f"🟠 警戒態勢(前日比 {manual_pct:+.2f}%) ｜ "
 
-    # 2. 🚨 【完全同期パッチ】アラート表示用の「25日MA乖離率」をここで正確に計算
-    div_rate = 0.0
-    if weather and "nikkei" in weather:
-        try:
-            _ni = weather["nikkei"]
-            _df = _ni["df"].copy()
-            if not _df.empty and len(_df) >= 25:
-                _df['MA25'] = _df['Close'].rolling(window=25).mean()
-                _price = _ni["price"]
-                _ma25 = _df['MA25'].iloc[-1]
-                if pd.notna(_ma25) and _ma25 > 0:
-                    div_rate = ((_price / _ma25) - 1) * 100
-        except Exception:
-            pass
+    # 🚨 常に最新のMA25乖離率を取得してアラート文を構築
+    macro = get_latest_macro_sync()
+    div_v = macro['div_rate']
+    
+    base_alert = f"🌐【{macro['status']}】日経乖離率 {div_v:+.2f}%。"
+    if macro['status'] == "地合い警戒": base_alert += "天井掴みに注意。"
+    elif macro['status'] == "地合いチャンス": base_alert += "押し目買い好機。"
+    else: base_alert += "個別銘柄の動きを重視。"
 
-    # 3. 🚨 司令官指定のアラート文字列を生成（全タブの最上部へ固定配信）
-    if div_rate >= 5.0:
-        base_alert = f"🌐【地合い警戒】日経乖離率 {div_rate:+.2f}%。天井掴みに注意。"
-    elif div_rate <= -5.0:
-        base_alert = f"🌐【地合いチャンス】日経乖離率 {div_rate:+.2f}%。押し目買い好機。"
-    else:
-        base_alert = f"🌐【地合いニュートラル】日経乖離率 {div_rate:+.2f}%。個別銘柄の動きを重視。"
-        
-    # ※暴落ペナルティ発動時は、司令官がパッと見で把握できるようプレフィックスを付ける
-    if manual_pct <= -2.0:
-        st.session_state.macro_alert = f"🔴 厳戒態勢(前日比 {manual_pct:+.2f}%) ｜ {base_alert}"
-    elif manual_pct <= -1.0:
-        st.session_state.macro_alert = f"🟠 警戒態勢(前日比 {manual_pct:+.2f}%) ｜ {base_alert}"
-    else:
-        st.session_state.macro_alert = base_alert
+    st.session_state.macro_alert = prefix + base_alert
 
 st.sidebar.divider()
 
