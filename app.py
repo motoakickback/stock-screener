@@ -929,10 +929,14 @@ def get_nikkei_macro_status():
         return None
 
 # =========================================================
-# 🚀 修正パッチ：調速付き並列エンジン（max_workers=2, 0.5s冷却版・無音仕様）
+# 🚀 共通エンジン：進捗バー・件数表示 完全復旧版
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
+    # 🚨 必須UI：進捗バーとテキストの描画
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     # 260日分の対象日を算出
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
@@ -944,18 +948,26 @@ def get_hist_data_cached(key):
 
     dfs = []
     
-    # 🚨 スレッド数を「2」に制限し、過剰な負荷を防ぐ
+    # スレッド数を「2」に制限し、過剰な負荷を防ぐ
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
-        # 並列タスクをキューイング
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         
-        for f in concurrent.futures.as_completed(futs):
+        for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()
             if isinstance(res, pd.DataFrame):
                 dfs.append(res)
             
-            # 🚨 弾幕の合間に「0.5秒」の強制冷却インターバルを挿入し、429エラーを防止
+            # 🚨 ライブ更新：進捗バーと件数表示
+            p_val = (i + 1) / len(dates)
+            progress_bar.progress(min(p_val, 1.0))
+            status_text.text(f"📡 データ取得進捗: {i+1}/{len(dates)}日 完了")
+            
+            # 弾幕の合間に「0.5秒」の強制冷却インターバルを挿入
             time.sleep(0.5)
+
+    # 🚨 完了後：画面にゴーストとして残らないよう完全に消去
+    progress_bar.empty()
+    status_text.empty()
 
     if not dfs:
         raise ValueError("🚨 兵站断絶: データ取得失敗")
