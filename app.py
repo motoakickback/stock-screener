@@ -193,15 +193,27 @@ components.html(
     """, height=0, width=0
 )
 
+# --- 2. 認証・通信設定（Connection Poolingの導入） ---
+user_id = st.session_state["current_user"]
+st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
+
+# =========================================================
+# 🚨 ここが欠損しているか、場所がずれている可能性が高いです！
+# 必ずセッション構築の「上」に以下の2行を配置してください。
+# =========================================================
+API_KEY = st.secrets.get("JQUANTS_API_KEY", "").strip()
+BASE_URL = "https://api.jquants.com/v2"
+
 # 🚨 通信セッションの永続化とリトライバッファの構築
 if "api_session" not in st.session_state:
     session = requests.Session()
-    session.headers.update({"x-api-key": API_KEY})
+    session.headers.update({"x-api-key": API_KEY})  # ← ここでエラーが起きていました
+    
     # 🚨 修正：429（レート制限）を自動リトライから外し、カスタム冷却ループに制御を完全委譲
     retry_strategy = Retry(
         total=3,
         backoff_factor=0.5,
-        status_forcelist=[500, 502, 503, 504] 
+        status_forcelist=[500, 502, 503, 504]
     )
     adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry_strategy)
     session.mount("https://", adapter)
