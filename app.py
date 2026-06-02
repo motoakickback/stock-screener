@@ -929,13 +929,10 @@ def get_nikkei_macro_status():
         return None
 
 # =========================================================
-# 🚀 修正パッチ：調速付き並列エンジン（max_workers=2, 0.5s冷却版）
+# 🚀 修正パッチ：調速付き並列エンジン（max_workers=2, 0.5s冷却版・無音仕様）
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     # 260日分の対象日を算出
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
@@ -952,19 +949,13 @@ def get_hist_data_cached(key):
         # 並列タスクをキューイング
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         
-        for i, f in enumerate(concurrent.futures.as_completed(futs)):
+        for f in concurrent.futures.as_completed(futs):
             res = f.result()
             if isinstance(res, pd.DataFrame):
                 dfs.append(res)
             
-            p_val = (i + 1) / len(dates)
-            progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 並列索敵中: {i+1}/{len(dates)}日 完了")
             # 🚨 弾幕の合間に「0.5秒」の強制冷却インターバルを挿入し、429エラーを防止
             time.sleep(0.5)
-
-    progress_bar.empty()
-    status_text.empty()
 
     if not dfs:
         raise ValueError("🚨 兵站断絶: データ取得失敗")
@@ -1658,7 +1649,7 @@ with tab1:
                 
                 df = full_df[full_df['Code'].isin(valid_codes)]
                 t_clean = time.time()
-                msg2 = f"✔️ 第2段階完了：ターゲット抽出 {len(valid_codes)}銘柄 [{t_clean - t_fetch:.2f}秒]"
+                msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
                 st.write(msg2)
                 st.session_state.tab1_time_log.append(msg2)
                 st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
@@ -1739,7 +1730,7 @@ with tab1:
                 st.session_state.tab1_scan_results = filtered_results
                 
                 t_calc = time.time()
-                msg3 = f"✔️ 第3段階完了：解析・色彩同期済み [{t_calc - t_clean:.2f}秒]"
+                msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
                 st.session_state.tab1_time_log.append(msg3)
                 msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
                 st.session_state.tab1_time_log.append(msg4)
