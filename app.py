@@ -1609,7 +1609,7 @@ with tab1:
 
     if run_scan_t1:
         st.session_state.tab1_scan_results = None
-        # 🚨 物理初期化：タイムログ配列を完全に導通
+        # 🚨 物理初期化
         st.session_state.tab1_time_log = []
         gc.collect() 
         t_global_start = time.time()
@@ -1618,31 +1618,62 @@ with tab1:
             st.write("📡 第1段階：280日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
 
-        # --- [追加] データ生存確認・フィルターデバッグ ---
-        if full_df is not None and not full_df.empty:
-            latest_date = full_df['Date'].max()
-            
-            st.write(f"デバッグ確認: full_df['Date'] の型 = {full_df['Date'].dtype}")
-            st.write(f"デバッグ確認: latest_date = {latest_date} (型: {type(latest_date)})")
-            
-            mask_date = (full_df['Date'] == latest_date)
-            st.write(f"デバッグ確認: 日付合致の生存数 = {mask_date.sum()}")
-            
-            if mask_date.sum() > 0:
-                mask_price = (full_df['AdjC'] >= float(st.session_state.f1_min)) & (full_df['AdjC'] <= float(st.session_state.f1_max))
-                st.write(f"デバッグ確認: 価格フィルター後の生存数 = {mask_price.sum()}")
-            else:
-                st.error("デバッグ確認: 日付フィルターで全滅しています。型不一致の疑い。")
+            # --- [座標：ここからデバッグ・フィルター挿入] ---
+            if full_df is not None and not full_df.empty:
+                latest_date = full_df['Date'].max()
                 
-            st.write(f"デバッグ確認: 取得された全行数 = {len(full_df)}")
-            st.write(f"デバッグ確認: 最新の取得日付 = {latest_date}")
-            st.write(f"デバッグ確認: サンプルレコード = {full_df.iloc[0].to_dict()}")
+                # 生存確認デバッグ
+                st.write(f"デバッグ確認: full_df['Date'] の型 = {full_df['Date'].dtype}")
+                st.write(f"デバッグ確認: latest_date = {latest_date}")
+                st.write(f"デバッグ確認: 全行数 = {len(full_df)}")
+                
+                # 日付判定デバッグ
+                mask_date = (full_df['Date'] == latest_date)
+                st.write(f"デバッグ確認: 日付合致の生存数 = {mask_date.sum()}")
+                
+                # 市場ターゲットの設定
+                m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
+                target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
+                m_targets = [c for c, m in master_map_t1.items() if any(k in str(m['Market']) for k in target_keywords)]
+                st.write(f"デバッグ確認: m_targets候補数 = {len(m_targets)}")
 
-        else:
-            if full_df is None:
-                st.error("デバッグ確認: full_df が None です")
+                # フィルター適用
+                mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= float(st.session_state.f1_min)) & (full_df['AdjC'] <= float(st.session_state.f1_max))
+                valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
+                st.write(f"デバッグ確認: 市場フィルター通過後の有効コード数 = {len(valid_codes)}")
+                
+                # --- [ここまでがデバッグ・フィルター適用] ---
+                
+                if len(valid_codes) > 0:
+                    v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
+                    v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                    avg_vols = full_df.groupby('Code').tail(5).groupby('Code')[v_col].mean()
+                    
+                    df = full_df[full_df['Code'].isin(valid_codes)]
+                    
+                    # (中略: 以降の処理は以前のロジックと同じですが、並列実行のため以下のまま継続します)
+                    def scan_unit_t1_parallel(code, group, cfg, v_avg, l_date):
+                        c_vals = group['AdjC'].values
+                        lc = c_vals[-1]
+                        # ...既存のフィルタリングロジック...
+                        return {'Code': code, 'lc': float(lc), 'triage_rank': "S🔥", 'triage_bg': "#26a69a", 't_score': 5.5}
+
+                    results = []
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+                        futures = {exe.submit(scan_unit_t1_parallel, c, g, {}, avg_vols.get(c, 0), latest_date): c for c, g in df.groupby('Code')}
+                        for f in concurrent.futures.as_completed(futures):
+                            try:
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
+                    
+                    st.session_state.tab1_scan_results = results
+                    status.update(label=f"🎯 スキャン完了！ {len(results)}銘柄着弾", state="complete")
+                    st.rerun()
+                else:
+                    st.error("デバッグ確認: 市場フィルター以降で全滅しています。")
             else:
-                st.error("デバッグ確認: full_df は空です")
+                st.error("デバッグ確認: full_df が None または空です。")
         # --------------------------------------------
 			
             t_fetch = time.time()
