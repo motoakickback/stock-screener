@@ -1617,6 +1617,18 @@ with tab1:
         with st.status("🚀 索敵スキャンを実行中...", expanded=True) as status:
             st.write("📡 第1段階：280日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
+			# --- [追加] データ生存確認デバッグ ---
+        if full_df is not None:
+            st.write(f"デバッグ確認: 取得された全行数 = {len(full_df)}")
+            if not full_df.empty:
+                st.write(f"デバッグ確認: 最新の取得日付 = {full_df['Date'].max()}")
+                st.write(f"デバッグ確認: サンプルレコード = {full_df.iloc[0].to_dict()}")
+            else:
+                st.error("デバッグ確認: full_df は空です")
+        else:
+            st.error("デバッグ確認: full_df が None です")
+        # ----------------------------------
+			
             t_fetch = time.time()
             msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
             st.write(msg1)
