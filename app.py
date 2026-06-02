@@ -2780,7 +2780,7 @@ with tab3:
                 st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 
-# --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根滅） ---
+		# --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根滅） ---
         def safe_int(x):
             try: return int(float(x)) if not pd.isna(x) else 0
             except Exception: return 0
@@ -2812,15 +2812,32 @@ with tab3:
                     _ma25_fb = _df_fb['MA25'].iloc[-1]
                     _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
                     n225_div_rate_val = f"{_div_fb:+.2f}%"
+                    
+                    # 🚨 修正パッチ：計算直後に、画面表示用のアラート文言（macro_alert）も強制的に同期させる
+                    if _div_fb >= 5.0:
+                        st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
+                    elif _div_fb <= -5.0:
+                        st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
+                    else:
+                        st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
             else:
                 # 📡 万が一 get_macro_weather が値を返さなかった場合の安全用フォールバック（原本ロジックを維持）
                 if n225_m_data and n225_m_data.get('close'):
                     n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円"
                 if 'n225_div_rate' in locals() or 'n225_div_rate' in globals():
-                    try: n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+                    try: 
+                        n225_div_rate_val = f"{n225_div_rate:+.2f}%"
+                        # フォールバック時も同期
+                        if n225_div_rate >= 5.0:
+                            st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。"
+                        elif n225_div_rate <= -5.0:
+                            st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {n225_div_rate:+.2f}%。押し目買い好機。"
+                        else:
+                            st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
                     except: pass
             
             for vr in valid_results:
+				
                 clean_alerts = []
                 for al in vr.get('alerts', []):
                     if isinstance(al, str):
