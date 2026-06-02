@@ -893,40 +893,33 @@ def get_single_data(code, yrs=1):
         
     return result
 
+# --- 🚨 旧マクロ計算エンジンの完全オーバーライド ---
 def get_nikkei_macro_status():
-    try:
-        import yfinance as yf
-        n225 = yf.Ticker("^N225")
-        df_n = n225.history(period="60d")
-        if df_n.empty: return None
+    """古いyfinanceの直接取得を破棄し、枠と同じ最新のget_macro_weatherに完全にバイパスする"""
+    w = get_macro_weather()
+    if not w or "nikkei" not in w:
+        return {"status": "取得不可", "div_rate": 0.0, "close": 0, "ma25": 0, "icon": "⚪", "color": "#888"}
+    
+    df = w["nikkei"]["df"].copy()
+    if len(df) < 25:
+        return {"status": "データ不足", "div_rate": 0.0, "close": w["nikkei"]["price"], "ma25": 0, "icon": "⚪", "color": "#888"}
         
-        df_n['MA25'] = df_n['Close'].rolling(window=25).mean()
-        latest_close = df_n['Close'].iloc[-1]
-        latest_ma25 = df_n['MA25'].iloc[-1]
+    df['MA25'] = df['Close'].rolling(window=25).mean()
+    price = w["nikkei"]["price"]
+    ma25 = df['MA25'].iloc[-1]
+    
+    # 🚨 ここでコンマ1%まで正確な乖離率を算出
+    if pd.notna(ma25) and ma25 > 0:
+        div_rate = ((price / ma25) - 1) * 100
+    else:
+        div_rate = 0.0
         
-        div_rate = ((latest_close - latest_ma25) / latest_ma25) * 100
-        
-        if div_rate >= 8.0:
-            status, color, icon = "⚠️ 異常過熱（強襲停止）", "#ef5350", "🔥"
-        elif div_rate >= 5.0:
-            status, color, icon = "🟡 警戒：高値圏", "#ffca28", "⚡"
-        elif div_rate <= -8.0:
-            status, color, icon = "⚠️ 異常パニック（待伏好機）", "#42a5f5", "💎"
-        elif div_rate <= -5.0:
-            status, color, icon = "🔵 警戒：安値圏", "#26a69a", "⚓"
-        else:
-            status, color, icon = "🟢 巡航速度", "#66bb6a", "🚢"
-            
-        return {
-            "close": latest_close,
-            "ma25": latest_ma25,
-            "div_rate": div_rate,
-            "status": status,
-            "color": color,
-            "icon": icon
-        }
-    except:
-        return None
+    if div_rate >= 5.0:
+        return {"status": "地合い警戒", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🔥", "color": "#ef5350"}
+    elif div_rate <= -5.0:
+        return {"status": "地合いチャンス", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🚨", "color": "#ef5350"}
+    else:
+        return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🚢", "color": "#26a69a"}
 
 # =========================================================
 # 🚀 共通エンジン：進捗バー・件数表示 完全復旧版
