@@ -929,7 +929,7 @@ def get_nikkei_macro_status():
         return None
 
 # =========================================================
-# 🚀 修正パッチ：調速機能付き・並列兵站エンジン（内部競合排除版）
+# 🚨 診断パッチ：完全直列・セーフモード（エラー原因の直接印字機能付き）
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
@@ -945,28 +945,27 @@ def get_hist_data_cached(key):
         days += 1
         if days > 400: break
 
-    status_text.text(f"📡 初動偵察を実行中（対象: {dates[0]}）...")
-    progress_bar.progress(0.01) 
-    
-    try:
-        recon_url = f"{BASE_URL}/equities/bars/daily?date={dates[0]}"
-        recon_res = api_session.get(recon_url, timeout=10.0)
-        if recon_res.status_code in [401, 403]:
-            raise ValueError("🚨 兵站断絶: API認証エラー。トークンを更新してください。")
-    except Exception as e:
-        raise ValueError(f"🚨 兵站断絶: 物理的な通信障害 - {str(e)}")
-
     dfs = []
     failed_dates = []
+    
+    # 🚨 セッションプールを破棄し、毎回クリーンな単発リクエストを生成（WAF弾き対策）
+    headers = {"x-api-key": API_KEY}
 
-    def fetch_and_compress(dt):
-        for attempt in range(5):
+    for i, dt in enumerate(dates):
+        success = False
+        last_err_msg = ""
+        
+        for attempt in range(3):
             try:
-                r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
+                url = f"{BASE_URL}/equities/bars/daily?date={dt}"
+                r = requests.get(url, headers=headers, timeout=15.0)
+                
                 if r.status_code == 200:
                     data = r.json().get("daily_quotes") or r.json().get("data") or []
-                    if not data: return None
-                    
+                    if not data:
+                        last_err_msg = "データ空(休場日など)"
+                        break # 休場日の場合はリトライせず即スキップ
+                        
                     temp_df = pd.DataFrame(data)
                     vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo']
                     v_col = next((c for c in vol_candidates if c in temp_df.columns), None)
@@ -986,47 +985,51 @@ def get_hist_data_cached(key):
                     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
                         if col in temp_df.columns:
                             temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
-                    return temp_df
+                    
+                    dfs.append(temp_df)
+                    success = True
+                    break
+                    
                 elif r.status_code == 429:
-                    # 🚨 内部競合を排除したため、ここで確実に冷却処理（3秒〜11秒）が作動します
-                    time.sleep(3.0 + attempt * 2.0)
+                    last_err_msg = "429 Rate Limit (アクセス過多)"
+                    time.sleep(3.0)
                     continue
                 elif r.status_code in [401, 403]:
-                    return "AUTH_ERROR"
+                    # 🚨 認証エラーの場合は即座にシステムを止めて警告
+                    raise ValueError(f"🚨 認証エラー(HTTP {r.status_code}): APIキーが無効、または上限に達しています。")
                 else:
-                    time.sleep(1.0); continue
-            except Exception:
-                time.sleep(2.0); continue
-        return "SKIP"
-
-    # 🚨 APIの制限を絶対に超えないよう、ワーカー数を「2」に制限
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
-        futs = {exe.submit(fetch_and_compress, dt): dt for dt in dates}
-        for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            dt_val = futs[f]
-            res = f.result()
-            
-            if isinstance(res, str):
-                if res == "AUTH_ERROR":
-                    raise ValueError(f"🚨 兵站断絶: 認証失効({dt_val})")
-                elif res == "SKIP":
-                    failed_dates.append(dt_val)
-            elif isinstance(res, pd.DataFrame):
-                dfs.append(res)
-            
-            p_val = (i + 1) / len(dates)
-            progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 逐次圧縮中: {i+1}/260日 完了 (失敗: {len(failed_dates)})")
-            
-            # 発射間隔の強制インターバル
-            time.sleep(0.15)
+                    # 🚨 サーバーが返してきた生のエラーテキストを抽出
+                    last_err_msg = f"HTTP {r.status_code}: {r.text[:50]}"
+                    time.sleep(1.0)
+                    continue
+                    
+            except Exception as e:
+                if "🚨 認証エラー" in str(e):
+                    raise e
+                last_err_msg = f"通信例外: {str(e)}"
+                time.sleep(1.0)
+                continue
+        
+        if not success and last_err_msg != "データ空(休場日など)":
+            failed_dates.append(f"{dt} ({last_err_msg})")
+            # 🚨 画面に直接エラー原因を警告表示
+            st.warning(f"⚠️ {dt} 取得失敗: {last_err_msg}")
+        
+        p_val = (i + 1) / len(dates)
+        progress_bar.progress(min(p_val, 1.0))
+        status_text.text(f"📡 直列・診断取得中: {i+1}/260日 完了 (失敗: {len(failed_dates)})")
+        
+        # J-Quantsを怒らせないための絶対冷却時間
+        time.sleep(0.5)
 
     progress_bar.empty()
     status_text.empty()
 
     if not dfs:
-        raise ValueError("🚨 兵站断絶: データが取得できませんでした。")
+        st.error("🚨 致命的エラー：有効なデータが1件も取得できませんでした。以下のエラー内容を確認してください。")
+        if failed_dates:
+            st.code("\n".join(failed_dates[:10]), language="text")
+        raise ValueError("兵站断絶: 全データの取得に失敗")
 
     full_df = pd.concat(dfs, ignore_index=True)
     del dfs
