@@ -1617,17 +1617,33 @@ with tab1:
         with st.status("🚀 索敵スキャンを実行中...", expanded=True) as status:
             st.write("📡 第1段階：280日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
-			# --- [追加] データ生存確認デバッグ ---
-        if full_df is not None:
+
+        # --- [追加] データ生存確認・フィルターデバッグ ---
+        if full_df is not None and not full_df.empty:
+            latest_date = full_df['Date'].max()
+            
+            st.write(f"デバッグ確認: full_df['Date'] の型 = {full_df['Date'].dtype}")
+            st.write(f"デバッグ確認: latest_date = {latest_date} (型: {type(latest_date)})")
+            
+            mask_date = (full_df['Date'] == latest_date)
+            st.write(f"デバッグ確認: 日付合致の生存数 = {mask_date.sum()}")
+            
+            if mask_date.sum() > 0:
+                mask_price = (full_df['AdjC'] >= float(st.session_state.f1_min)) & (full_df['AdjC'] <= float(st.session_state.f1_max))
+                st.write(f"デバッグ確認: 価格フィルター後の生存数 = {mask_price.sum()}")
+            else:
+                st.error("デバッグ確認: 日付フィルターで全滅しています。型不一致の疑い。")
+                
             st.write(f"デバッグ確認: 取得された全行数 = {len(full_df)}")
-            if not full_df.empty:
-                st.write(f"デバッグ確認: 最新の取得日付 = {full_df['Date'].max()}")
-                st.write(f"デバッグ確認: サンプルレコード = {full_df.iloc[0].to_dict()}")
+            st.write(f"デバッグ確認: 最新の取得日付 = {latest_date}")
+            st.write(f"デバッグ確認: サンプルレコード = {full_df.iloc[0].to_dict()}")
+
+        else:
+            if full_df is None:
+                st.error("デバッグ確認: full_df が None です")
             else:
                 st.error("デバッグ確認: full_df は空です")
-        else:
-            st.error("デバッグ確認: full_df が None です")
-        # ----------------------------------
+        # --------------------------------------------
 			
             t_fetch = time.time()
             msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
