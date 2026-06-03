@@ -2186,29 +2186,20 @@ with tab3:
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
-        # 🚨 【永久消滅・物理修正】非表示時に消滅するStreamlitのステートバグをシャドウバッファ同期で完全迎撃。
+        # 🚨 【UI混線完全遮断パッチ】モードごとにキーを完全分離し、valueに直接本尊を指定して強制バインド。
+        # 冗長なシャドウバッファ（ui_fixed）はバグの温床になるため物理撤去。
         if is_ambush:
-            # ウィジェットが画面に再出現した初回フレームのみ、退避していた本尊の値をステートへ再注入
-            if "t3_am_watch_ui_fixed" not in st.session_state:
-                st.session_state["t3_am_watch_ui_fixed"] = st.session_state.t3_am_watch
-            if "t3_am_daily_ui_fixed" not in st.session_state:
-                st.session_state["t3_am_daily_ui_fixed"] = st.session_state.t3_am_daily
-                
-            watch_in = st.text_area("🌐 【待伏】主力監視部隊", key="t3_am_watch_ui_fixed", height=120)
-            daily_in = st.text_area("🌐 【待伏】本日新規部隊", key="t3_am_daily_ui_fixed", height=120)
+            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, key="t3_am_watch_input_v1", height=120)
+            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, key="t3_am_daily_input_v1", height=120)
             
-            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイムリアル同期
+            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイム同期
             st.session_state.t3_am_watch = watch_in
             st.session_state.t3_am_daily = daily_in
         else:
-            if "t3_as_watch_ui_fixed" not in st.session_state:
-                st.session_state["t3_as_watch_ui_fixed"] = st.session_state.t3_as_watch
-            if "t3_as_daily_ui_fixed" not in st.session_state:
-                st.session_state["t3_as_daily_ui_fixed"] = st.session_state.t3_as_daily
-                
-            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", key="t3_as_watch_ui_fixed", height=120)
-            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", key="t3_as_daily_ui_fixed", height=120)
+            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, key="t3_as_watch_input_v1", height=120)
+            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, key="t3_as_daily_input_v1", height=120)
             
+            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイム同期
             st.session_state.t3_as_watch = watch_in
             st.session_state.t3_as_daily = daily_in
             
