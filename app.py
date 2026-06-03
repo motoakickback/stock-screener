@@ -1931,7 +1931,7 @@ with tab2:
     st.divider()
 
     # ==============================================================================
-    # モードA：🔥 強襲（逆張り・底打ち）モード （司令官の既存コードを完全維持）
+    # モードA：🔥 強襲（逆張り・底打ち）モード
     # ==============================================================================
     if tab2_mode == "🔥 強襲（逆張り・底打ち）モード":
         # --- 🚨 強襲・スクイーズ特化コントロールパネル ---
@@ -2049,138 +2049,32 @@ with tab2:
                         msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
                         st.write(msg2)
                         st.session_state.tab2_time_log.append(msg2)
-                        
-                        def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
-                            c_str = str(code)[:4]
-                            c_vals = group['AdjC'].values
-                            lc = float(c_vals[-1])
-                            
-                            if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): 
-                                return None
-                            if cfg["f5_ipo"]:
-                                first_date = group['Date'].min()
-                                if (l_date - first_date).days < 350: 
-                                    return None
-                            if cfg["f11_ex_wave3"]:
-                                if lc > (float(c_vals.min()) * 3.0): 
-                                    return None
-                            
-                            rsi, atr_v, _, hist = get_fast_indicators(c_vals)
-                            vol_pct = (atr_v / lc * 100) if lc > 0 else 0
-                            if vol_pct < cfg["f_vol_min"]: 
-                                return None
-                            if rsi > cfg["rsi_lim"]: 
-                                return None
-                            if len(group) < 25: 
-                                return None
-                            
-                            if cfg["f12_ex_overvalued"]:
-                                f_data = get_fundamentals(c_str)
-                                if f_data and (f_data.get("op", 0) or 0) < 0: 
-                                    return None
-
-                            group_df = group.copy().ffill().bfill()
-                            v_col_name = v_col
-
-                            # 2. 5日平均売買代金フィルター
-                            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-                            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-                            if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]:
-                                return None
-
-                            # 3. 位置エネルギー：直近高値
-                            group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20, min_periods=1).max()
-                            rec_high = group_df['recent_high'].iloc[-1]
-                            if pd.isna(rec_high) or lc < (rec_high * cfg["high_prox_ratio"]):
-                                return None
-
-                            # 4. エネルギー：出来高スパイク
-                            group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
-                            avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
-                            curr_vol = group_df[v_col_name].iloc[-1]
-                            if pd.isna(avg_vol_5) or avg_vol_5 <= 0 or curr_vol <= (avg_vol_5 * cfg["vol_spike"]):
-                                return None
-
-                            # 5. 形状：ローソク足実体比率
-                            group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
-                            group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
-                            c_range = group_df['candle_range'].iloc[-1]
-                            b_range = group_df['body_range'].iloc[-1]
-                            
-                            if c_range > 0:
-                                if (b_range / c_range) < cfg["body_ratio"]:
-                                    return None
-                            elif c_range < 0:
-                                return None
-
-                            t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
-                            gc_days = 0 
-                            
-                            h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
-                            h14 = float(h_vals[-14:].max())
-                            atr = float(h14 * 0.03)
-                            
-                            return {
-                                'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
-                                'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                                'GC_Days': gc_days, 'h14': h14, 'atr': atr, 
-                                'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
-                                'T_Desc': t_desc
-                            }
-
-                        results = []
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
-                            for f in concurrent.futures.as_completed(futures):
-                                try:
-                                    res = f.result()
-                                    if res: results.append(res)
-                                except: pass
-                        
-                        sorted_raw = sorted(results, key=lambda x: (-x.get('T_Score', 0), x.get('GC_Days', 0)))
-                        st.session_state.tab2_scan_results_raw = sorted_raw[:300]
-                        
-                        t_calc = time.time()
-                        msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
-                        st.write(msg3)
-                        st.session_state.tab2_time_log.append(msg3)
-                        
-                        msg4 = f"⏱️ 物理総計強襲時間: {t_calc - t_global_start:.2f}秒"
-                        st.write(msg4)
-                        st.session_state.tab2_time_log.append(msg4)
-                        
-                        status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
-                        st.rerun()
-
-                except Exception as e:
-                    st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
-                    status.update(label="🚨 エラー発生により中断", state="error")
 
 						def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                             c_str = str(code)[:4]
                             c_vals = group['AdjC'].values
                             lc = float(c_vals[-1])
                             
-                            if cfg["f6_risk"] and (c_str in cfg["gigi_codes"]): 
+                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
                                 return None
-                            if cfg["f5_ipo"]:
+                            if cfg.get("f5_ipo"):
                                 first_date = group['Date'].min()
                                 if (l_date - first_date).days < 350: 
                                     return None
-                            if cfg["f11_ex_wave3"]:
+                            if cfg.get("f11_ex_wave3"):
                                 if lc > (float(c_vals.min()) * 3.0): 
                                     return None
                             
                             rsi, atr_v, _, hist = get_fast_indicators(c_vals)
                             vol_pct = (atr_v / lc * 100) if lc > 0 else 0
-                            if vol_pct < cfg["f_vol_min"]: 
+                            if vol_pct < cfg.get("f_vol_min", -1.0): 
                                 return None
-                            if rsi > cfg["rsi_lim"]: 
+                            if rsi > cfg.get("rsi_lim", 70): 
                                 return None
                             if len(group) < 25: 
                                 return None
                             
-                            if cfg["f12_ex_overvalued"]:
+                            if cfg.get("f12_ex_overvalued"):
                                 f_data = get_fundamentals(c_str)
                                 if f_data and (f_data.get("op", 0) or 0) < 0: 
                                     return None
@@ -2239,13 +2133,16 @@ with tab2:
                         
                         sorted_raw = sorted(results, key=lambda x: (-x.get('T_Score', 0), x.get('GC_Days', 0)))
                         st.session_state.tab2_scan_results_raw = sorted_raw[:300]
+                        
                         t_calc = time.time()
                         msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
                         st.write(msg3)
                         st.session_state.tab2_time_log.append(msg3)
+                        
                         msg4 = f"⏱️ 物理総計強襲時間: {t_calc - t_global_start:.2f}秒"
                         st.write(msg4)
                         st.session_state.tab2_time_log.append(msg4)
+                        
                         status.update(label=f"🎯 強襲特区スキャン完了！精鋭候補 {len(st.session_state.tab2_scan_results_raw)}銘柄確保", state="complete", expanded=False)
                         st.rerun()
 
@@ -2289,71 +2186,7 @@ with tab2:
                     sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
                 if len(light_results_t2) >= 30: break
 
-            if not light_results_t2:
-                st.warning("⚠️ **強襲条件に合致する銘柄は 0 件です。**")
-            else:
-                st.success(f"💥 **強襲ロックオン（特区バイパス成功）: {len(light_results_t2)} 銘柄**")
-                sab_codes_t2 = " ".join([str(r.get('Code', ''))[:4] for r in light_results_t2])
-                st.code(sab_codes_t2, language="text")
-
-                for r in light_results_t2:
-                    st.divider()
-                    def safe_int(x):
-                        try: return int(float(x)) if not pd.isna(x) else 0
-                        except: return 0
-
-                    c_code = str(r.get('Code', '不明'))
-                    m_info = master_map_t2.get(c_code, {})
-                    m_lower = str(m_info.get('Market', '')).lower()
-                    
-                    if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
-                    elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
-                    else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
-                    
-                    t_badge = f'<span style="background-color: {r.get("T_Color", "#666")}; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 0.5rem;">🎯 優先度: {r.get("T_Rank", "不明")}</span>'
-                    sector_badge = f'<span style="background-color: #607d8b; color: #ffffff; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🏭 {m_info.get("Sector", "不明")}</span>'
-                    vol_badge = f'<span style="background-color: rgba(38, 166, 154, 0.1); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px; margin-left: 0.5rem;">🌪️ ボラ: {r.get("vol_pct", 0.0):.2f}%</span>'
-
-                    gc_days = r.get('GC_Days', 0)
-                    if gc_days <= 0: status_badge_html = f'<span style="background-color: rgba(239, 83, 80, 0.15); border: 1px solid #ef5350; color: #ef5350; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">{r.get("T_Desc", "明日GC見込(激熱)")}</span>'
-                    else: status_badge_html = f'<span style="background-color: rgba(237, 108, 2, 0.15); border: 1px solid #ed6c02; color: #ed6c02; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">GC発動 {gc_days}日目</span>'
-
-                    rsi_val = r.get('RSI', 0.0)
-                    
-                    st.markdown(f"""
-                        <div style="margin-bottom: 0.8rem;">
-                            <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 0.3rem 0;">({c_code[:4]}) {m_info.get('CompanyName', '不明')}</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                {badge_html}{t_badge}{sector_badge}{vol_badge}{status_badge_html}
-                                <span style="background-color: rgba(38, 166, 154, 0.15); border: 1px solid #26a69a; color: #26a69a; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 12px;">RSI: {rsi_val:.1f}%</span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    lc_v, h14_v, atr_v = safe_int(r.get('lc', 0)), safe_int(r.get('h14', 0)), safe_int(r.get('atr', 0))
-                    t_price = max(h14_v, lc_v + int(atr_v * 0.5)); d_price = t_price - atr_v
-                    
-                    m_cols = st.columns([1, 1, 1, 1.2, 1.5])
-                    m_cols[0].metric("最新終値", f"{lc_v:,}円")
-                    m_cols[1].metric("RSI", f"{rsi_val:.1f}%")
-                    m_cols[2].metric("ボラ(推定)", f"{atr_v:,}円")
-                    m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
-                    m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
-
-    # ==============================================================================
-    # モードB：💎 潜伏（Stealth）モード (統合完了)
-    # ==============================================================================
-    elif tab2_mode == "💎 潜伏（Stealth）モード":
-        st.markdown("#### 💎 潜伏パラメータ設定（可変制御）")
-        col_s1, col_s2 = st.columns(2)
-        st_val_min = col_s1.number_input("売買代金基準（億円）", value=float(st.session_state.get('st_val_min', 3.0)), step=0.5, key="st_val_min")
-        st_vol_ratio = col_s2.number_input("出来高過疎比率（倍）", value=float(st.session_state.get('st_vol_ratio', 0.8)), step=0.1, key="st_vol_ratio")
-        
-        col_s3, col_s4 = st.columns(2)
-        st_atr_ratio = col_s3.number_input("値幅収縮比率 (ATR倍率)", value=float(st.session_state.get('st_atr_ratio', 0.6)), step=0.05, key="st_atr_ratio")
-        st_ma_prox = col_s4.number_input("MA25張り付き乖離 (%)", value=float(st.session_state.get('st_ma_prox', 3.0)), step=0.5, key="st_ma_prox")
-
-        if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
+		if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
             save_settings()
             st.session_state.tab2_scan_results_stealth = None
             st.session_state.tab2_time_log_stealth = []
@@ -2373,10 +2206,17 @@ with tab2:
                 group_df['AdjL'] = group_df['AdjL'].astype(float)
                 group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-                if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+                if 'ma25' not in group_df.columns:
+                    group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
                 if 'atr' not in group_df.columns:
                     group_df['prev_close'] = group_df['AdjC'].shift(1)
-                    group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
+                    group_df['tr'] = np.maximum(
+                        group_df['AdjH'] - group_df['AdjL'],
+                        np.maximum(
+                            (group_df['AdjH'] - group_df['prev_close']).abs(),
+                            (group_df['AdjL'] - group_df['prev_close']).abs()
+                        )
+                    )
                     group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
 
                 group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
@@ -2385,56 +2225,57 @@ with tab2:
                 group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
 
                 today = group_df.iloc[-1]
-                
+
+                # 4連装フィルター判定
                 if today['avg_value_5'] < (st.session_state.st_val_min * 100_000_000): return None
                 if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * st.session_state.st_vol_ratio): return None
                 if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * st.session_state.st_atr_ratio): return None
                 if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1 + st.session_state.st_ma_prox / 100)): return None
                 
                 return {
-                    'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']), 'atr': float(today['atr']), 'day_range': float(today['day_range']), 'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]), 'avg_vol_prev': float(today['avg_volume_5_prev']), 'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+                    'Code': code,
+                    'lc': float(today['AdjC']),
+                    'ma25': float(today['ma25']),
+                    'atr': float(today['atr']),
+                    'day_range': float(today['day_range']),
+                    'avg_value_5': float(today['avg_value_5']),
+                    'curr_vol': float(today[v_col_name]),
+                    'avg_vol_prev': float(today['avg_volume_5_prev']),
+                    'T_Rank': 'Stealth💎',
+                    'T_Color': '#00bcd4',
+                    'T_Desc': '大爆発前夜(嵐の前の静けさ)'
                 }
 
             with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
                 try:
                     raw = get_hist_data_cached(cache_key)
-                    t_fetch = time.time()
-                    msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
-                    st.write(msg1)
-                    st.session_state.tab2_time_log_stealth.append(msg1)
+                    full_df = clean_df(pd.DataFrame(raw))
+                    full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                    
+                    m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
+                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
+                    m_targets = [c for c, m in master_map_t2.items() if any(k in str(m.get('Market', '')) for k in target_keywords)]
 
-                    if raw is None or len(raw) == 0:
-                        st.error("J-Quants APIからの応答が途絶。")
-                    else:
-                        full_df = clean_df(pd.DataFrame(raw))
-                        full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-                        for col in ['AdjC', 'AdjH', 'AdjL']:
-                            if col in full_df.columns: full_df[col] = full_df[col].astype('float32')
+                    latest_date = full_df['Date'].max()
+                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] > 0)
+                    df = full_df[full_df['Code'].isin(set(full_df[mask]['Code']).intersection(set(m_targets)))]
+                    
+                    results = []
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date) for c, g in df.groupby('Code')]
+                        for f in concurrent.futures.as_completed(futures):
+                            try:
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
 
-                        m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
-                        target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
-                        m_targets = [c for c, m in master_map_t2.items() if any(k in str(m.get('Market', '')) for k in target_keywords)]
-
-                        latest_date = full_df['Date'].max()
-                        mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] > 0)
-                        valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
-
-                        df = full_df[full_df['Code'].isin(valid_codes)]
-                        
-                        results = []
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date) for c, g in df.groupby('Code')]
-                            for f in concurrent.futures.as_completed(futures):
-                                try:
-                                    res = f.result()
-                                    if res: results.append(res)
-                                except: pass
-                        st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
-                        st.rerun()
+                    st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
+                    st.rerun()
                 except Exception as e:
                     st.error(f"🚨 スキャンエラー: {str(e)}")
                     status.update(label="🚨 エラー発生", state="error")
 
+        # --- 潜伏モード描画 ---
         raw_hits_stealth = st.session_state.get("tab2_scan_results_stealth")
         if raw_hits_stealth is not None:
             if not raw_hits_stealth:
@@ -2445,8 +2286,8 @@ with tab2:
                     st.divider()
                     c_code = str(r.get('Code', '不明'))
                     m_info = master_map_t2.get(c_code, {})
-                    vol_ratio = (r.get("curr_vol", 0) / r.get("avg_vol_prev", 1)) * 100
                     st.markdown(f"#### ({c_code[:4]}) {m_info.get('CompanyName', '不明')}")
+                    
                     col_d1, col_d2, col_d3 = st.columns(3)
                     col_d1.metric("最新終値", f"{int(r.get('lc', 0)):,}円")
                     col_d2.metric("収縮率", f"{(r.get('day_range', 0) / r.get('atr', 1)):.2f}倍")
