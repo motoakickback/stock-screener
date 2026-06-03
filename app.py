@@ -79,7 +79,7 @@ def check_password():
                             // 待ち時間は安定の1秒に戻します
                             setTimeout(() => {
                                 submitBtn.click();
-                            }, 1000);
+                            }, 300);
                             return true;
                         }
                     }
