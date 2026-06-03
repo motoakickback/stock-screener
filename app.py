@@ -3205,109 +3205,119 @@ with tab3:
                 st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 				
-            # ==============================================================================
-            # 🎯 最終描画フェーズ（スコアソート ＆ 戦果レポートUI）
-            # ==============================================================================
-            if not scope_results:
-                st.warning("⚠️ 有効な解析結果が得られませんでした。部隊の編成を見直してください。")
-            else:
-                st.markdown("<br><h3 style='border-bottom: 2px solid #26a69a; padding-bottom: 5px;'>📊 精密スキャン戦果報告</h3>", unsafe_allow_html=True)
+            # 🚨 ここから下は「with st.status(...)」の外に出るため、厳格に【半角8個】にインデントを戻します
+        # ==============================================================================
+        # 🎯 最終描画フェーズ（スコアソート ＆ オリジナルUI・テキスト出力完全復元）
+        # ==============================================================================
+        if not scope_results:
+            st.warning("⚠️ 有効な解析結果が得られませんでした。部隊の編成を見直してください。")
+        else:
+            st.markdown("<br>### 📊 精密スキャン戦果報告", unsafe_allow_html=True)
+            
+            # 総合スコア（戦闘力）順にソートして精鋭を上位へ
+            scope_results.sort(key=lambda x: x['score'], reverse=True)
+            
+            # ====== 1. 個別銘柄のUI描画（オリジナルのシンプルな3カラム構成を完全復元） ======
+            for r in scope_results:
+                st.markdown("---")
+                c_target = r['bt_val']
                 
-                # 総合スコア（戦闘力）順にソートして精鋭を上位へ
-                scope_results.sort(key=lambda x: x['score'], reverse=True)
-                
-                for r in scope_results:
-                    c_target = r['bt_val']
-                    c_code = r['code']
-                    has_chart = not r['df_chart'].empty
-                    
-                    # ランクバッジとヘッダーの構成
-                    bg_c = r['bg']
-                    st.markdown(
-                        f"""<div style='padding:15px; border-radius:8px; border-left: 6px solid {bg_c}; 
-                        background-color: #1e1e1e; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
-                        <h4 style='margin:0; color:{bg_c}; font-size:1.4rem;'>
-                        [{c_code}] {r['name']} 
-                        <span style='font-size:0.9rem; color:#aaa; margin-left:10px;'>{r['sector']} / {r['market']}</span>
-                        <span style='float:right; font-size:1.2rem; padding: 3px 12px; background-color:{bg_c}22; border-radius:4px;'>
-                        総合判定: {r['rank']} ({r['score']} pts)
-                        </span>
-                        </h4>
-                        """, unsafe_allow_html=True
-                    )
-                    
-                    # メトリクス（数値指標）の展開
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("最新終値", f"{int(r['lc']):,} 円")
-                    
-                    if is_stealth and 'stealth_data' in r and r['stealth_data']:
-                        s_data = r['stealth_data']
-                        c2.metric("エントリー目標", f"{int(c_target):,} 円")
-                        c3.metric("防衛線 (撤退)", f"{int(s_data.get('stop_loss', 0)):,} 円")
-                        c4.metric("利確目標 (RR 2.0)", f"{int(s_data.get('take_profit', 0)):,} 円")
-                    elif is_ambush:
-                        c2.metric("買目標値 (待伏)", f"{int(c_target):,} 円")
-                        c3.metric("1ATR (14日)", f"{int(r['atr_val']):,} 円")
-                        c4.metric("目標到達率", f"{r['reach_val']:.1f} %")
+                # 銘柄ヘッダー（コード・ランクバッジ・アラート）
+                col_c1, col_c2, col_c3 = st.columns([1.5, 1, 2.5])
+                with col_c1:
+                    st.markdown(f"### [{r['code']}] {r['name']}")
+                    st.caption(f"{r['sector']} / {r['market']}")
+                with col_c2:
+                    st.markdown(f"<div style='padding:5px 10px; background:{r['bg']}; color:white; border-radius:4px; text-align:center; font-weight:bold; font-size:1.1rem;'>{r['rank']}<br><span style='font-size:0.75rem;'>Score: {r['score']} pts</span></div>", unsafe_allow_html=True)
+                with col_c3:
+                    if r['alerts']:
+                        for alt in r['alerts']:
+                            st.markdown(f"<div style='font-size:0.85rem; color:#ffb74d; margin-bottom:2px;'>⚠️ {alt}</div>", unsafe_allow_html=True)
                     else:
-                        c2.metric("14日高値 (強襲)", f"{int(c_target):,} 円")
-                        c3.metric("GC経過日数", f"{r['gc_days']} 日")
-                        c4.metric("RSI (14日)", f"{r['rsi']:.1f}")
-                        
-                    # アラートと基礎データの表示
-                    alert_col, data_col = st.columns([1.5, 1])
-                    with alert_col:
-                        if r['alerts']:
-                            for a in r['alerts']:
-                                st.markdown(f"<div style='font-size:0.95rem; margin-bottom:4px; padding-left:10px; border-left: 3px solid #ffb74d;'>{a}</div>", unsafe_allow_html=True)
-                        else:
-                            st.markdown("<div style='font-size:0.95rem; color:#888;'>特記事項なし</div>", unsafe_allow_html=True)
-                            
-                    with data_col:
-                        pbr_str = f"{r['pbr']:.2f} 倍" if r['pbr'] else "-"
-                        per_str = f"{r['per']:.1f} 倍" if r['per'] else "-"
-                        roe_str = f"{r['roe']:.1f} %" if r['roe'] else "-"
-                        st.markdown(f"""
-                        <div style='font-size:0.85rem; color:#bbb; text-align:right; margin-top:5px;'>
-                        <b>ファンダメンタル兵站</b><br>
-                        PBR: {pbr_str} | PER: {per_str}<br>
-                        ROE: {roe_str} | 時価総額: {r['mcap']}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown("<span style='color:#888; font-size:0.85rem;'>特記事項なし</span>", unsafe_allow_html=True)
+                
+                # 主要指標（5カラム構成メトリクス）
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("最新終値", f"{int(r['lc']):,} 円")
+                
+                if is_stealth:
+                    m2.metric("突破目標", f"{int(c_target):,} 円")
+                    m3.metric("損小防衛線", f"{int(r['stealth_data'].get('stop_loss', 0)):,} 円")
+                    m4.metric("利確目標", f"{int(r['stealth_data'].get('take_profit', 0)):,} 円")
+                elif is_ambush:
+                    m2.metric("買目標値", f"{int(c_target):,} 円")
+                    m3.metric("目標乖離", f"{int(r['lc'] - c_target):,} 円")
+                    m4.metric("目標到達率", f"{r['reach_val']:.1f} %")
+                else:
+                    m2.metric("14日高値", f"{int(c_target):,} 円")
+                    m3.metric("GC経過日数", f"{r['gc_days']} 日")
+                    m4.metric("RSI(14)", f"{r['rsi']:.1f} %")
                     
-                    # 防衛線マトリクス（ATRドロップ表）の構築
-                    if is_ambush and c_target > 0:
-                        st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
-                        html_matrix = f"""<div style='display:flex; gap:10px; font-size:0.85rem;'>
-                        <div style='flex:1; background:#2c2c2c; padding:8px; border-radius:5px;'>
-                        <div style='color:#bbb; margin-bottom:5px;'><b>🛡️ 防衛線マトリクス (買目標値からの下落耐性)</b></div>
-                        """
-                        # 0.5〜3.0 ATRまでのシミュレーション
-                        for m in [0.5, 1.0, 1.5, 2.0, 3.0]:
-                            val = int(c_target - (r['atr_val'] * m))
-                            pct_v = (1 - (val / c_target)) * 100 if c_target > 0 else 0
-                            style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:4px; padding:2px 6px;" if m == 1.0 else "padding:3px 6px;"
-                            label = "<span style='font-size:10px; background:#ef5350; color:white; padding:1px 4px; border-radius:2px; margin-left:2px;'>鉄則</span>" if m == 1.0 else ""
-                            html_matrix += f"<div style='display:flex; justify-content:space-between; margin-bottom:4px; {style}'><span>-{m}ATR <span style='font-size:10px; color:#888;'>({pct_v:.1f}%)</span>{label}</span><b style='font-size:1.1rem;'>{val:,}</b></div>"
-                        html_matrix += "</div></div>"
-                        st.markdown(html_matrix, unsafe_allow_html=True)
+                m5.metric("時価総額", r['mcap'])
+                
+                # ファンダメンタルズ詳細（横一行のシンプル表示）
+                pbr_s = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                per_s = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                roe_s = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                st.markdown(f"<div style='font-size:0.85rem; color:#aaa; margin-top:5px; margin-bottom:10px;'><b>ファンダメンタルズ兵站:</b> PBR: {pbr_s} | PER: {per_s} | ROE: {roe_s}</div>", unsafe_allow_html=True)
+                
+                # 待伏せ専用：防衛線マトリクス
+                if is_ambush and c_target > 0:
+                    html_matrix = f"""<div style='margin-top:5px; margin-bottom:10px;'>
+                    <div style='background:#222; padding:10px; border-radius:4px; font-size:0.85rem;'>
+                    <span style='color:#bbb;'><b>🛡️ 防衛線マトリクス (買目標値からの下落耐性)</b></span><br>
+                    <div style='display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-top:5px;'>"""
+                    for m in [0.5, 1.0, 1.5, 2.0, 3.0]:
+                        val = int(c_target - (r['atr_val'] * m))
+                        pct_v = (1 - (val / c_target)) * 100 if c_target > 0 else 0
+                        style = "background:rgba(239,83,80,0.15); border:1px solid #ef5350; border-radius:3px; padding:3px;" if m == 1.0 else "background:#333; padding:3px; border-radius:3px;"
+                        lbl = " (鉄則)" if m == 1.0 else ""
+                        html_matrix += f"<div style='{style}; text-align:center;'>-{m}ATR{lbl}<br><b style='font-size:1rem;'>{val:,}円</b><br><span style='font-size:11px; color:#aaa;'>-{pct_v:.1f}%</span></div>"
+                    html_matrix += "</div></div></div>"
+                    st.markdown(html_matrix, unsafe_allow_html=True)
+                
+                # 📈 【完全復活】チャートのレンダリング
+                if r['df_chart'] is not None and not r['df_chart'].empty:
+                    try:
+                        st.markdown("<div style='margin-top:0.5rem;'></div>", unsafe_allow_html=True)
+                        st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.bt_tp), unsafe_allow_html=True)
+                        st.markdown("---")
+                    except Exception as e:
+                        st.error(f"📉 チャート展開エラー: {str(e)}")
+            
+            # ====== 2. 【命】コピペ用精密スキャン結果テキストエリアの完全復元 ======
+            st.markdown("<br>### 📋 【コピペ用】精密スキャン結果テキスト", unsafe_allow_html=True)
+            out_lines = []
+            current_date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            for r in scope_results:
+                # 圏外・解析不能は出力から除外
+                if "圏外" not in r['rank'] and "解析不能" not in r['rank']:
+                    pbr_s = f"{r['pbr']:.2f}倍" if r['pbr'] is not None else "-"
+                    per_s = f"{r['per']:.1f}倍" if r['per'] is not None else "-"
+                    roe_s = f"{r['roe']:.1f}%" if r['roe'] is not None else "-"
+                    alert_s = " / ".join(r['alerts']) if r['alerts'] else "特になし"
+                    
+                    line_head = f"■ [{r['code']}] {r['name']} ({r['sector']}/{r['market']}) | 判定: {r['rank']} ({r['score']} pts)"
+                    line_body = f"  最新終値: {int(r['lc'])}円 | PBR: {pbr_s} | PER: {per_s} | ROE: {roe_s} | 時価総額: {r['mcap']}"
+                    
+                    if is_stealth:
+                        line_spec = f"  突破目標: {int(r['bt_val'])}円 | 損小防衛線: {int(r['stealth_data'].get('stop_loss',0))}円 | 利確目標: {int(r['stealth_data'].get('take_profit',0))}円"
+                    elif is_ambush:
+                        line_spec = f"  買目標値: {int(r['bt_val'])}円 | 現在値との差: {int(r['lc'] - r['bt_val'])}円 | 到達率: {r['reach_val']:.1f}%"
+                    else:
+                        line_spec = f"  突破目標(14日高値): {int(r['bt_val'])}円 | GC経過日数: {r['gc_days']}日 | RSI(14): {r['rsi']:.1f}%"
+                    
+                    line_alert = f"  点灯アラート: {alert_s}"
+                    out_lines.append(f"{line_head}\n{line_body}\n{line_spec}\n{line_alert}\n")
+            
+            if out_lines:
+                full_out_text = f"【精密スキャン戦果報告 - {current_date_str}】\n\n" + "\n".join(out_lines)
+                st.text_area("▼ 以下のテキストをコピーして記録・共有してください", value=full_out_text, height=300)
+            else:
+                st.info("※ 出力対象（圏外以外）の有力銘柄はありません。")
 
-                    # チャートのレンダリング
-                    if has_chart:
-                        try:
-                            st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
-                            if 'render_technical_radar' in globals():
-                                st.markdown(render_technical_radar(r['df_chart'], c_target, st.session_state.get('bt_tp', 0)), unsafe_allow_html=True)
-                            else:
-                                st.line_chart(r['df_chart']['AdjC'])
-                            
-                            u_key = f"t3_chart_final_{r['code']}_{cache_key}"
-                        except Exception as e:
-                            st.error(f"📉 チャート展開エラー: {str(e)}")
-                            
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-            st.success("🏁 全解析プロトコル完了。結果を出力しました。")
+        st.success("🏁 全解析プロトコル完了。結果を出力しました。")
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
