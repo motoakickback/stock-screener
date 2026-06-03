@@ -1252,19 +1252,19 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     return t_p
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)") [cite: 11]
-    is_assault_mode = "狙撃優先" in tactics [cite: 11]
-    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0)) [cite: 11]
+    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
+    is_assault_mode = "狙撃優先" in tactics
+    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0))
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if df_chart is None or df_chart.empty: [cite: 11]
-        return "圏外 💀", "#424242", 0, "" [cite: 11]
+    if df_chart is None or df_chart.empty:
+        return "圏外 💀", "#424242", 0, ""
 
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
-    if df.empty: [cite: 11]
-        return None [cite: 11]
-    p_high, p_low = df['AdjH'].max(), df['AdjL'].min() [cite: 11]
-    current_p = df.iloc[-1]['AdjC'] [cite: 11]
+    if df.empty:
+        return None
+    p_high, p_low = df['AdjH'].max(), df['AdjL'].min()
+    current_p = df.iloc[-1]['AdjC']
 
 def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -> dict:
     """
