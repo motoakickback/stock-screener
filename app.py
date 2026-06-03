@@ -2174,34 +2174,43 @@ with tab3:
                 return ""
         return ""
 
-    if "t3_am_watch" not in st.session_state: st.session_state.t3_am_watch = load_t3_text(T3_AM_WATCH_FILE)
-    if "t3_am_daily" not in st.session_state: st.session_state.t3_am_daily = load_t3_text(T3_AM_DAILY_FILE)
-    if "t3_as_watch" not in st.session_state: st.session_state.t3_as_watch = load_t3_text(T3_AS_WATCH_FILE)
-    if "t3_as_daily" not in st.session_state: st.session_state.t3_as_daily = load_t3_text(T3_AS_DAILY_FILE)
+    # 🚨 修正1：永続バッファ（buf）の初期化。非表示になってもここから復元するため絶対に蒸発しません。
+    if "t3_am_watch_buf" not in st.session_state: st.session_state.t3_am_watch_buf = load_t3_text(T3_AM_WATCH_FILE)
+    if "t3_am_daily_buf" not in st.session_state: st.session_state.t3_am_daily_buf = load_t3_text(T3_AM_DAILY_FILE)
+    if "t3_as_watch_buf" not in st.session_state: st.session_state.t3_as_watch_buf = load_t3_text(T3_AS_WATCH_FILE)
+    if "t3_as_daily_buf" not in st.session_state: st.session_state.t3_as_daily_buf = load_t3_text(T3_AS_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🚨 【永久消滅・物理修正】動的キーを完全撤廃。固定不変キーにより、他タブの演算・Rerunに伴う「勝手なモード初期化」を100%根絶。
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り"], key="t3_scope_mode_absolute_lock_v2026")
         is_ambush = "待伏" in scope_mode
         st.markdown("---")
         
-        # 🚨 【UI混線完全遮断パッチ】モードごとにキーを完全分離し、valueに直接本尊を指定して強制バインド。
-        # 冗長なシャドウバッファ（ui_fixed）はバグの温床になるため物理撤去。
+        # 🚨 修正2：【相互補完型・永続バッファ同期システム】
+        # 画面から消える瞬間にbufへ退避し、再出現した瞬間にbufから復元する防衛回路
         if is_ambush:
-            watch_in = st.text_area("🌐 【待伏】主力監視部隊", value=st.session_state.t3_am_watch, key="t3_am_watch_input_v1", height=120)
-            daily_in = st.text_area("🌐 【待伏】本日新規部隊", value=st.session_state.t3_am_daily, key="t3_am_daily_input_v1", height=120)
+            if "t3_am_watch_widget" not in st.session_state:
+                st.session_state.t3_am_watch_widget = st.session_state.t3_am_watch_buf
+            if "t3_am_daily_widget" not in st.session_state:
+                st.session_state.t3_am_daily_widget = st.session_state.t3_am_daily_buf
+                
+            watch_in = st.text_area("🌐 【待伏】主力監視部隊", key="t3_am_watch_widget", height=120)
+            daily_in = st.text_area("🌐 【待伏】本日新規部隊", key="t3_am_daily_widget", height=120)
             
-            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイム同期
-            st.session_state.t3_am_watch = watch_in
-            st.session_state.t3_am_daily = daily_in
+            # ユーザーの入力をリアルタイムに永続バッファへ退避
+            st.session_state.t3_am_watch_buf = watch_in
+            st.session_state.t3_am_daily_buf = daily_in
         else:
-            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", value=st.session_state.t3_as_watch, key="t3_as_watch_input_v1", height=120)
-            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", value=st.session_state.t3_as_daily, key="t3_as_daily_input_v1", height=120)
+            if "t3_as_watch_widget" not in st.session_state:
+                st.session_state.t3_as_watch_widget = st.session_state.t3_as_watch_buf
+            if "t3_as_daily_widget" not in st.session_state:
+                st.session_state.t3_as_daily_widget = st.session_state.t3_as_daily_buf
+                
+            watch_in = st.text_area("⚡ 【強襲】主力監視部隊", key="t3_as_watch_widget", height=120)
+            daily_in = st.text_area("⚡ 【強襲】本日新規部隊", key="t3_as_daily_widget", height=120)
             
-            # 入力されたテキストを文字消えバグを起こさずに本尊へリアルタイム同期
-            st.session_state.t3_as_watch = watch_in
-            st.session_state.t3_as_daily = daily_in
+            st.session_state.t3_as_watch_buf = watch_in
+            st.session_state.t3_as_daily_buf = daily_in
             
         run_scope = st.button("🔫 表示中の部隊を精密スキャン", use_container_width=True, type="primary", key=f"t3_run_btn_vfinal_{cache_key}")
         
@@ -2233,13 +2242,12 @@ with tab3:
 - **40点未満 (圏外💀)** 撤退/見送り：天井圏の罠（三尊・三山等）を検知、またはトレンドが未発生""")
 
     if run_scope:
+        # 🚨 修正3：重複コードを完全パージし、バッファからファイルへ確実な書き込みを実行
         if is_ambush:
-            st.session_state.t3_am_watch, st.session_state.t3_am_daily = watch_in, daily_in
-            for f, d in [(T3_AM_WATCH_FILE, watch_in), (T3_AM_DAILY_FILE, daily_in)]:
+            for f, d in [(T3_AM_WATCH_FILE, st.session_state.t3_am_watch_buf), (T3_AM_DAILY_FILE, st.session_state.t3_am_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
         else:
-            st.session_state.t3_as_watch, st.session_state.t3_as_daily = watch_in, daily_in
-            for f, d in [(T3_AS_WATCH_FILE, watch_in), (T3_AS_DAILY_FILE, daily_in)]:
+            for f, d in [(T3_AS_WATCH_FILE, st.session_state.t3_as_watch_buf), (T3_AS_DAILY_FILE, st.session_state.t3_as_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
         # 🚨 物理結線：市場地合い（乖離率）の事前取得（NameError防止 ＆ 演算同期）
