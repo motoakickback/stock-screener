@@ -2854,54 +2854,60 @@ with tab3:
                             st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
                     except: pass
 
-			# 🚨 絶対防衛線：ここで必ずリストを初期化する（NameError完全回避）
+			# 🚨 絶対防衛線：ここで必ずリストを初期化する
         export_texts = []
 
-        for vr in valid_results:
+        # 🚨 原因判明：事前にS・A級に絞られた valid_results を捨て、大元の scope_results を直接回す
+        for vr in scope_results:
+            if vr.get('error'):
+                continue
                 
-                clean_alerts = []
-                for al in vr.get('alerts', []):
-                    if isinstance(al, str):
-                        clean_text = re.sub(r'<[^>]*>', '', al).strip()
-                        if clean_text:
-                            clean_alerts.append(clean_text)
-                alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
-                
-                v_roe = safe_float(vr.get('roe'))
-                v_per = safe_float(vr.get('per'))
-                v_pbr = safe_float(vr.get('pbr'))
-                g_count = 0
-                if v_roe is not None and v_roe >= 10.0: g_count += 1
-                if v_per is not None and v_per <= 20.0: g_count += 1
-                if v_pbr is not None and v_pbr <= 5.0: g_count += 1
-                fund_status = f"{g_count}/3グリーン"
-                
-                v_df_chart = vr.get('df_chart', pd.DataFrame())
-                v_ma25 = None
-                if not v_df_chart.empty:
-                    last_row = v_df_chart.iloc[-1]
-                    for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
-                        if k in last_row and pd.notna(last_row[k]):
-                            v_ma25 = safe_float(last_row[k])
-                            break
-                    if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
-                        try:
-                            v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
-                        except:
-                            v_ma25 = None
-                ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
-                
-                if is_ambush:
-                    bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
-                    bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
-                else:
-                    stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
-                    bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+            rank_str = str(vr.get('rank', ''))
+            
+            # 🚨 動的フィルター：待伏モード かつ S/A級「以外」ならスキップ（＝強襲は全件通過する）
+            if is_ambush and not ("S" in rank_str or "A" in rank_str):
+                continue
 
-                # 🚨 修正回路：強襲モード(not is_ambush)なら全件通過、待伏モードならS級・A級のみ通過
-                rank_str = str(vr.get('rank', ''))
-                if (not is_ambush) or ("S" in rank_str or "A" in rank_str):
-                    text_template = f"""【作戦参謀への分析依頼データ】
+            clean_alerts = []
+            for al in vr.get('alerts', []):
+                if isinstance(al, str):
+                    clean_text = re.sub(r'<[^>]*>', '', al).strip()
+                    if clean_text:
+                        clean_alerts.append(clean_text)
+            alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+            
+            v_roe = safe_float(vr.get('roe'))
+            v_per = safe_float(vr.get('per'))
+            v_pbr = safe_float(vr.get('pbr'))
+            g_count = 0
+            if v_roe is not None and v_roe >= 10.0: g_count += 1
+            if v_per is not None and v_per <= 20.0: g_count += 1
+            if v_pbr is not None and v_pbr <= 5.0: g_count += 1
+            fund_status = f"{g_count}/3グリーン"
+            
+            v_df_chart = vr.get('df_chart', pd.DataFrame())
+            v_ma25 = None
+            if not v_df_chart.empty:
+                last_row = v_df_chart.iloc[-1]
+                for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
+                    if k in last_row and pd.notna(last_row[k]):
+                        v_ma25 = safe_float(last_row[k])
+                        break
+                if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
+                    try:
+                        v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
+                    except:
+                        v_ma25 = None
+            ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
+            
+            if is_ambush:
+                bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
+                bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
+            else:
+                stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
+                bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+
+            text_template = f"""【作戦参謀への分析依頼データ】
 ■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
@@ -2926,8 +2932,8 @@ with tab3:
 ■ボラティリティ・ターゲットデータ
 ・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
 ・システム算出 買目標値：{bt_target_str}"""
-                    export_texts.append(text_template)
-            
+            export_texts.append(text_template)
+        
         final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
         
         st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
@@ -2940,7 +2946,11 @@ with tab3:
         
         with st.expander(expander_title, expanded=True):
             st.markdown(f"<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>{expander_desc}</p>", unsafe_allow_html=True)
-            st.code(final_copypaste_text, language="text")
+            # 🚨 万が一カラの場合は、空のボックスではなくメッセージを出すようにUXを改善
+            if final_copypaste_text.strip():
+                st.code(final_copypaste_text, language="text")
+            else:
+                st.info("※現在表示できるテキストデータがありません。（待伏モードで該当銘柄なし等）")
 
         for index, r in enumerate(scope_results):
             st.divider()
