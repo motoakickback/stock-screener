@@ -2786,23 +2786,34 @@ with tab3:
                     except Exception:
                         return str(c), None, None, None, None, None, {"dividend": [], "earnings": []}
 						
+                # 🚨 ここから下の処理は「def fetch_parallel_t3(c):」と同じ深さ（半角スペース16個）に揃えます
                 raw_data_dict = {}
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
-                    futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
-                    for f in concurrent.futures.as_completed(futs):
-                        try:
-                            res_c, res_data, r_per, r_pbr, r_mcap, r_roe, res_events = f.result()
-                            raw_data_dict[str(res_c)] = {
-                                "data": res_data, 
-                                "per": r_per, 
-                                "pbr": r_pbr, 
-                                "mcap": r_mcap, 
-                                "roe": r_roe,
-                                "events": res_events
-                            }
-                        except Exception:
-                            continue
+                import gc
+                
+                # 🚀 速度とメモリのハイブリッド：チャンク（小分け）並列フェッチ
+                chunk_size = 5  # 5件ずつ並列処理を行う
+                for i in range(0, len(t_codes), chunk_size):
+                    chunk_codes = t_codes[i:i + chunk_size]
+                    
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+                        futs = [exe.submit(fetch_parallel_t3, c) for c in chunk_codes]
+                        for f in concurrent.futures.as_completed(futs):
+                            try:
+                                res_c, res_data, r_per, r_pbr, r_mcap, r_roe, res_events = f.result()
+                                raw_data_dict[str(res_c)] = {
+                                    "data": res_data, 
+                                    "per": r_per, 
+                                    "pbr": r_pbr, 
+                                    "mcap": r_mcap, 
+                                    "roe": r_roe,
+                                    "events": res_events
+                                }
+                            except Exception:
+                                continue
+                                
+                    # 5件の並列処理が終わるたびに、yfinance等の残骸メモリを強制焼却
+                    gc.collect()
 
                 t_fetch = time.time()
                 st.write(f"✔️ データ収集完了 [{t_fetch - t_global_start:.2f}秒]")
