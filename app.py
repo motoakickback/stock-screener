@@ -2857,11 +2857,29 @@ with tab3:
 			# 🚨 絶対防衛線：ここで必ずリストを初期化する
         export_texts = []
 
+        # 💥 【NameError完全鎮圧パッチ】消滅してしまった変数をここで強制再定義
+        import datetime
+        import pytz
+        try:
+            current_date_str = datetime.datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y/%m/%d %H:%M')
+        except Exception:
+            current_date_str = "日時不明"
+
+        try:
+            n225_close_val = f"{int(_macro_t3['nikkei']['price']):,}円" if '_macro_t3' in locals() else "取得不可"
+        except Exception:
+            n225_close_val = "取得不可"
+
+        try:
+            n225_div_rate_val = f"{n225_div_rate:+.2f}%" if 'n225_div_rate' in locals() else "取得不可"
+        except Exception:
+            n225_div_rate_val = "取得不可"
+
         # 🚨 原因判明：事前にS・A級に絞られた valid_results を捨て、大元の scope_results を直接回す
         for vr in scope_results:
             if vr.get('error'):
                 continue
-                
+               
             rank_str = str(vr.get('rank', ''))
             
             # 🚨 動的フィルター：待伏モード かつ S/A級「以外」ならスキップ（＝強襲は全件通過する）
