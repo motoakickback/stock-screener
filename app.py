@@ -2257,7 +2257,9 @@ with tab2:
                 if not a_rank_codes: 
                     a_rank_codes = [str(r.get('Code', ''))[:4] for r in light_results_t2]
                 
-                st.text_area("📋 コピペ用銘柄コード（A判定以上等）", value=",".join(a_rank_codes), height=68, help="証券会社のツール等にコピペしてご活用ください")
+                # 🎯 物理結線：右上に全コピボタンが出る黒枠ボックス
+                st.markdown("#### 📋 抽出銘柄 一括コピー（A判定以上等）")
+                st.code(",".join(a_rank_codes), language="text")
 
                 for r in light_results_t2:
                     st.divider()
@@ -2437,7 +2439,10 @@ with tab2:
 
                 # 📋 潜伏モード コピペ用銘柄一覧の完全保護
                 copy_codes_stealth = [str(r.get('Code', ''))[:4] for r in raw_hits_stealth]
-                st.text_area("📋 コピペ用銘柄コード（Stealthターゲット）", value=",".join(copy_codes_stealth), height=68)
+                
+                # 🎯 物理結線：右上に全コピボタンが出る黒枠ボックス
+                st.markdown("#### 📋 抽出銘柄 一括コピー（Stealthターゲット）")
+                st.code(",".join(copy_codes_stealth), language="text")
 
                 m_map = globals().get('master_map_t2', globals().get('master_map', {}))
                 for r in raw_hits_stealth:
@@ -2613,7 +2618,7 @@ with tab3:
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         events = {"dividend": [], "earnings": []}
                         
-                        data = get_single_data(api_code, 1)
+                        data = get_single_data(api_code, 3)
                         if data and isinstance(data.get("events"), dict):
                             api_ev = data.get("events", {})
                             if api_ev.get("earnings"): 
@@ -2621,7 +2626,7 @@ with tab3:
                             if api_ev.get("dividend"): 
                                 events["dividend"].extend(api_ev["dividend"])
 
-                        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 30:
+                        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
                             try:
                                 import yfinance as yf
                                 tk = yf.Ticker(c_str + ".T")
@@ -3005,10 +3010,21 @@ with tab3:
                             else:
                                 bt_val = int(bt_val_standard)
 
-                            m1 = float(t_latest.get('MACD_Hist', 0))
-                            m2 = float(t_prev.get('MACD_Hist', 0))
+                            import math
+                            # 🚨 NaN（計算不能）が混入した場合は安全な 0.0 に強制変換
+                            m1_raw = t_latest.get('MACD_Hist', 0)
+                            m2_raw = t_prev.get('MACD_Hist', 0)
+                            m1 = float(m1_raw) if pd.notna(m1_raw) else 0.0
+                            m2 = float(m2_raw) if pd.notna(m2_raw) else 0.0
                             
-                            tri_val, tri_msg, t_score, tri_col = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                            # 🚨 【完全防弾シールド】関数が None を返しても絶対にクラッシュしない構造
+                            triage_res = get_triage_info(m1, m2, rsi_v, lc, bt_val, mode="待伏")
+                            if triage_res and isinstance(triage_res, (list, tuple)) and len(triage_res) == 4:
+                                tri_val, tri_msg, t_score, tri_col = triage_res
+                            else:
+                                tri_val, tri_msg, t_score, tri_col = 0, "判定不能(データ不足)", 0, "#616161"
+                                alerts.append("⚠️ MACD履歴不足のためトリアージ判定をスキップしました")
+                            
                             score += t_score
                             
                             if res_pbr is not None:
