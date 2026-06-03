@@ -97,16 +97,17 @@ def check_password():
                 height=0,
             )
             
-            # 🚨 【完全解決パッチ】st.formで包み、勝手なRerun（文字消え）を物理遮断
+            # 🚨 【完全解決パッチ】st.formで包み、勝手なRerunを物理遮断
             with st.form("login_form", clear_on_submit=False):
                 acc_code = st.text_input(
                     "Access Code", 
                     type="password", 
                     label_visibility="collapsed", 
-                    placeholder="アクセスコード"
+                    placeholder="アクセスコード",
+                    key="input_access_code"  # ⚠️ ここが削落していました！復活させます！
                 )
                 
-                # フォーム専用の送信ボタンに変更（JSは「認証」の文字を探すため正常に連携します）
+                # フォーム専用の送信ボタン
                 submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
                 
                 # ボタンが押された（JSがクリックした）瞬間に判定
