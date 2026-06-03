@@ -82,7 +82,7 @@ def check_password():
                             // 🚨 【司令官の直感を採用】早撃ちを防ぐため、待機時間を1秒から2.5秒(2500ms)に延長
                             setTimeout(() => {
                                 submitBtn.click();
-                            }, 300);
+                            }, 1000);
                             return true;
                         }
                     }
