@@ -2855,7 +2855,7 @@ with tab3:
                     except: pass
             
             for vr in valid_results:
-				
+                
                 clean_alerts = []
                 for al in vr.get('alerts', []):
                     if isinstance(al, str):
@@ -2895,7 +2895,10 @@ with tab3:
                     stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                     bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
-                text_template = f"""【作戦参謀への分析依頼データ】
+                # 🚨 修正回路：強襲モード(not is_ambush)なら全件通過、待伏モードならS級・A級のみ通過
+                rank_str = str(vr.get('rank', ''))
+                if (not is_ambush) or ("S" in rank_str or "A" in rank_str):
+                    text_template = f"""【作戦参謀への分析依頼データ】
 ■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
@@ -2920,14 +2923,21 @@ with tab3:
 ■ボラティリティ・ターゲットデータ
 ・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
 ・システム算出 買目標値：{bt_target_str}"""
-                export_texts.append(text_template)
+                    export_texts.append(text_template)
             
-            final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
-            
-            st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-            with st.expander("📋 【一括コピー】作戦参謀への分析依頼データ（S/A級限定抽出）", expanded=True):
-                st.markdown("<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。</p>", unsafe_allow_html=True)
-                st.code(final_copypaste_text, language="text")
+        final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
+        
+        st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+        
+        # 🚨 UIの動的切り替え回路：モードに応じてタイトルと説明文を変化
+        expander_title = "📋 【一括コピー】作戦参謀への分析依頼データ"
+        expander_title += "（S/A級限定抽出）" if is_ambush else "（全件抽出）"
+        
+        expander_desc = "※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。" if is_ambush else "※右上のアイコンをクリックすることで、スキャン結果を全件一撃でコピーできます。"
+        
+        with st.expander(expander_title, expanded=True):
+            st.markdown(f"<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>{expander_desc}</p>", unsafe_allow_html=True)
+            st.code(final_copypaste_text, language="text")
 
         for index, r in enumerate(scope_results):
             st.divider()
@@ -2962,7 +2972,6 @@ with tab3:
             elif "S+" in str(r.get('rank', '')):
                 gc_badge = f"<span style='background-color: #ff5252; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #ff8a80; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>🎯 明日GC見込(激熱)</span>"
             elif "圏外💀" in str(r.get('rank', '')) and any(x in "".join(r.get('alerts', [])) for x in ["絶対排除"]):
-                # 🚨 精密スコープ限定：地雷を踏んで剥奪された形跡をバッジとして表示
                 gc_badge = f"<span style='background-color: #ef5350; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #b71c1c; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚠️ 天井地雷検知</span>"
 
             st.markdown(f"""
