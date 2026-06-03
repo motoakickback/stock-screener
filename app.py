@@ -2259,10 +2259,18 @@ with tab2:
     # モードB：💎 潜伏（Stealth）大爆発前夜ハントモード （増設特区）
     # ==============================================================================
     elif tab2_mode == "💎 潜伏（Stealth）モード":
-        st.markdown("#### 💎 潜伏パラメータ設定（Stealth 4連装仕様）")
-        st.info("【完全数理条件】 ①売買代金3億円以上 ②出来高が過去5日平均の0.8倍未満 ③値幅が0.6ATR未満 ④MA25直上(+3%以内)張り付き")
+        st.markdown("#### 💎 潜伏パラメータ設定（可変制御）")
+        
+        # 司令官が調整可能なパラメータ群（セッションステートで永続化）
+        col_s1, col_s2 = st.columns(2)
+        stealth_val_min = col_s1.number_input("売買代金基準（億円）", value=float(st.session_state.get('st_val_min', 3.0)), step=0.5, key="st_val_min")
+        stealth_vol_ratio = col_s2.number_input("出来高過疎比率（倍）", value=float(st.session_state.get('st_vol_ratio', 0.8)), step=0.1, key="st_vol_ratio")
+        
+        col_s3, col_s4 = st.columns(2)
+        stealth_atr_ratio = col_s3.number_input("値幅収縮比率 (ATR倍率)", value=float(st.session_state.get('st_atr_ratio', 0.6)), step=0.05, key="st_atr_ratio")
+        stealth_ma_prox = col_s4.number_input("MA25張り付き乖離 (%)", value=float(st.session_state.get('st_ma_prox', 3.0)), step=0.5, key="st_ma_prox")
 
-        if st.button("🚀 潜伏（Stealth）索敵開始", key="btn_scan_t2_stealth", type="primary"):
+        if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
             save_settings()
             st.session_state.tab2_scan_results_stealth = None
             st.session_state.tab2_time_log_stealth = []
@@ -2304,10 +2312,11 @@ with tab2:
 
                 today = group_df.iloc[-1]
 
-                if today['avg_value_5'] < 300_000_000: return None
-                if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * 0.8): return None
-                if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * 0.6): return None
-                if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * 1.03): return None
+                # エンジン内の判定部分を修正
+				if today['avg_value_5'] < (st.session_state.st_val_min * 100_000_000): return None
+				if today[v_col_name] >= (today['avg_volume_5_prev'] * st.session_state.st_vol_ratio): return None
+				if today['day_range'] >= (today['atr'] * st.session_state.st_atr_ratio): return None
+				if today['AdjC'] > (today['ma25'] * (1 + st.session_state.st_ma_prox / 100)): return None
 
                 return {
                     'Code': code,
