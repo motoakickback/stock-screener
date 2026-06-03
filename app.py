@@ -2786,7 +2786,7 @@ with tab3:
                     except Exception:
                         return str(c), None, None, None, None, None, {"dividend": [], "earnings": []}
 						
-				raw_data_dict = {}
+                raw_data_dict = {}
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
                     futs = [exe.submit(fetch_parallel_t3, c) for c in t_codes]
