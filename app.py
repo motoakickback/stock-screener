@@ -1133,7 +1133,7 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
     return "C👁️", "#616161", 1, macd_t
 
 def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
-    if df_chart is None or df_chart.empty: 
+    if df_chart is None or df_chart.empty:
         return "圏外 💀", "#424242", 0, ""
 
     has_top_trap = False
