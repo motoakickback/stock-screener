@@ -2857,11 +2857,10 @@ with tab3:
 			# 🚨 絶対防衛線：ここで必ずリストを初期化する
         export_texts = []
 
-        # 💥 【NameError完全鎮圧パッチ】消滅してしまった変数をここで強制再定義
-        import datetime
-        import pytz
+        # 💥 【NameError＆AttributeError完全鎮圧パッチ】
+        # （※import datetimeは絶対に行わない）
         try:
-            current_date_str = datetime.datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y/%m/%d %H:%M')
+            current_date_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y/%m/%d %H:%M')
         except Exception:
             current_date_str = "日時不明"
 
@@ -2879,7 +2878,8 @@ with tab3:
         for vr in scope_results:
             if vr.get('error'):
                 continue
-               
+            
+            # ⚠️⚠️司令官、ここが抜け落ちていました！⚠️⚠️
             rank_str = str(vr.get('rank', ''))
             
             # 🚨 動的フィルター：待伏モード かつ S/A級「以外」ならスキップ（＝強襲は全件通過する）
@@ -2893,6 +2893,7 @@ with tab3:
                     if clean_text:
                         clean_alerts.append(clean_text)
             alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+            # ⚠️⚠️抜け落ち復旧ここまで⚠️⚠️
             
             v_roe = safe_float(vr.get('roe'))
             v_per = safe_float(vr.get('per'))
