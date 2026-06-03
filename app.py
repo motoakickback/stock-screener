@@ -1936,61 +1936,22 @@ with tab2:
     if tab2_mode == "🔥 強襲（逆張り・底打ち）モード":
         st.markdown("#### ⚙️ 強襲パラメータ設定（5連装フィルター連動）")
         
-        # 上段：基礎流動性パラメータ
         col_t2_1, col_t2_2, col_t2_3 = st.columns(3)
-        rsi_lim = col_t2_1.number_input(
-            "RSI上限（足切り）", 
-            value=int(st.session_state.get('tab2_rsi_limit', 70)), 
-            step=5, 
-            key="tab2_rsi_limit"
-        )
-        vol_lim = col_t2_2.number_input(
-            "最低出来高（5日平均）", 
-            value=int(st.session_state.get('tab2_vol_limit', 50000)), 
-            step=5000, 
-            key="tab2_vol_limit"
-        )
-        trading_val_min = col_t2_3.number_input(
-            "大口流動性バリア（億円）", 
-            value=float(st.session_state.get('f_trading_val_min', 3.0)), 
-            step=0.5, 
-            format="%.1f", 
-            key="f_trading_val_min",
-            help="直近5日の平均売買代金。デフォルト3.0億円"
-        )
+        rsi_lim = col_t2_1.number_input("RSI上限（足切り）", value=int(st.session_state.get('tab2_rsi_limit', 70)), step=5, key="tab2_rsi_limit")
+        vol_lim = col_t2_2.number_input("最低出来高（5日平均）", value=int(st.session_state.get('tab2_vol_limit', 50000)), step=5000, key="tab2_vol_limit")
+        trading_val_min = col_t2_3.number_input("大口流動性バリア（億円）", value=float(st.session_state.get('f_trading_val_min', 3.0)), step=0.5, format="%.1f", key="f_trading_val_min")
 
-        # 下段：物理・形状パラメータ
         col_t2_4, col_t2_5, col_t2_6 = st.columns(3)
-        p_high_prox = col_t2_4.number_input(
-            "直近高値への肉薄幅 (%)", 
-            value=float(st.session_state.get('tab2_high_prox', 3.0)), 
-            step=0.5, 
-            format="%.1f", 
-            key="tab2_high_prox",
-            help="直近20日高値から何%以内をターゲットとするか（デフォルト3.0%）"
-        )
-        p_vol_spike = col_t2_5.number_input(
-            "出来高急増スパイク (倍)", 
-            value=float(st.session_state.get('tab2_vol_spike', 1.5)), 
-            step=0.1, 
-            format="%.1f", 
-            key="tab2_vol_spike",
-            help="当日の出来高が過去5日平均の何倍を超えているか（デフォルト1.5倍）"
-        )
-        p_body_ratio = col_t2_6.number_input(
-            "ローソク足実体比率 (%)", 
-            value=float(st.session_state.get('tab2_body_ratio', 70.0)), 
-            step=5.0, 
-            format="%.1f", 
-            key="tab2_body_ratio",
-            help="当日の値幅に対する実体部分の割合。上ヒゲ排除用（デフォルト70.0%）"
-        )
+        p_high_prox = col_t2_4.number_input("直近高値への肉薄幅 (%)", value=float(st.session_state.get('tab2_high_prox', 3.0)), step=0.5, format="%.1f", key="tab2_high_prox")
+        p_vol_spike = col_t2_5.number_input("出来高急増スパイク (倍)", value=float(st.session_state.get('tab2_vol_spike', 1.5)), step=0.1, format="%.1f", key="tab2_vol_spike")
+        p_body_ratio = col_t2_6.number_input("ローソク足実体比率 (%)", value=float(st.session_state.get('tab2_body_ratio', 70.0)), step=5.0, format="%.1f", key="tab2_body_ratio")
 
         if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
             try: save_settings() 
             except NameError: pass
             
             st.session_state.tab2_scan_results_raw = None
+            st.session_state.tab2_time_log = [] # 🚨 進捗ログ保存配列を初期化
             gc.collect()
             t_global_start = time.time()
             
@@ -1998,7 +1959,9 @@ with tab2:
                 try:
                     raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                     t_fetch = time.time()
-                    st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+                    msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+                    st.write(msg1)
+                    st.session_state.tab2_time_log.append(msg1)
                     
                     if raw is None or len(raw) == 0:
                         st.error("J-Quants APIからの応答が途絶。")
@@ -2030,7 +1993,6 @@ with tab2:
                         m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                         target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                         
-                        # 安全なマスタマップの取得
                         m_map = globals().get('master_map_t2', globals().get('master_map', {}))
                         m_targets = [c for c, m in m_map.items() if any(k in str(m.get('Market', '')) for k in target_keywords)] if m_map else full_df['Code'].unique()
                         
@@ -2046,7 +2008,9 @@ with tab2:
 
                         df = full_df[full_df['Code'].isin(valid_codes)]
                         t_clean = time.time()
-                        st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
+                        msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
+                        st.write(msg2)
+                        st.session_state.tab2_time_log.append(msg2)
 
                         def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                             c_str = str(code)[:4]
@@ -2122,8 +2086,13 @@ with tab2:
                         st.session_state.tab2_scan_results_raw = sorted_raw[:300]
                         
                         t_calc = time.time()
-                        st.write(f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]")
-                        st.write(f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒")
+                        msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
+                        st.write(msg3)
+                        st.session_state.tab2_time_log.append(msg3)
+                        
+                        msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
+                        st.write(msg4)
+                        st.session_state.tab2_time_log.append(msg4)
                         
                         status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab2_scan_results_raw)} 銘柄確保）", state="complete", expanded=False)
                         st.rerun()
@@ -2136,6 +2105,12 @@ with tab2:
         st.divider()
         raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
         if raw_hits_t2 is not None:
+            # 🚨 進捗ログのエキスパンダー表示を完全保護
+            if "tab2_time_log" in st.session_state and st.session_state.tab2_time_log:
+                with st.expander(f"🎯 索敵完了！（候補 {len(raw_hits_t2)} 銘柄確保）", expanded=False):
+                    for log in st.session_state.tab2_time_log: 
+                        st.write(log)
+
             max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
             sel_sects = st.session_state.get("f_selected_sectors", [])
             curr_market = st.session_state.get("preset_market", "")
@@ -2176,10 +2151,15 @@ with tab2:
             else:
                 st.success(f"🎯 **強襲ロックオン: {len(light_results_t2)} 銘柄捕捉** (上位30件表示)")
 
-                # 🚨 司令官より受領した「真のUI描画ロジック」を完全展開
+                # 📋 コピペ用コード一覧（A判定以上等）の完全保護
+                a_rank_codes = [str(r.get('Code', ''))[:4] for r in light_results_t2 if r.get('T_Score', 0) >= 60 or "S" in r.get('T_Rank', '') or "A" in r.get('T_Rank', '')]
+                if not a_rank_codes: 
+                    a_rank_codes = [str(r.get('Code', ''))[:4] for r in light_results_t2]
+                
+                st.text_area("📋 コピペ用銘柄コード（A判定以上等）", value=",".join(a_rank_codes), height=68, help="証券会社のツール等にコピペしてご活用ください")
+
                 for r in light_results_t2:
                     st.divider()
-                    # 🚨 すべての描画変数取得を KeyError 防御仕様に変更
                     c_code = str(r.get('Code', '不明'))
                     m_info = m_map.get(c_code, {})
                     m_lower = str(m_info.get('Market', '')).lower()
@@ -2208,7 +2188,6 @@ with tab2:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # safe_int が未定義環境でもエラーにならないよう組み込みintと例外処理で防御
                     def safe_int_local(val):
                         try: return int(float(val))
                         except (ValueError, TypeError): return 0
@@ -2223,41 +2202,37 @@ with tab2:
                     m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
                     m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
-    # ==============================================================================
+# ==============================================================================
     # モードB：💎 潜伏（Stealth）モード
     # ==============================================================================
     elif tab2_mode == "💎 潜伏（Stealth）モード":
         st.markdown("#### 💎 潜伏（Stealth）パラメータ設定")
-        st.caption("大爆発前夜の「嵐の前の静けさ」をハントする独立ロジック。流動性・過疎化・ボラ収縮・岩盤MA25への張り付きを検知。")
-
-        # --- 🔧 4連装フィルター コントロールパネル ---
+        
         col_s1, col_s2 = st.columns(2)
-        st_val_min = col_s1.number_input("最低売買代金 (億円)", value=3.0, step=0.5, key="st_val_min", help="5日平均売買代金の下限（デフォルト: 3.0億円）")
-        st_vol_ratio = col_s2.number_input("出来高過疎化 (倍未満)", value=0.8, step=0.1, key="st_vol_ratio", help="当日の出来高が過去5日平均の何倍未満か（デフォルト: 0.8倍未満）")
+        st_val_min = col_s1.number_input("最低売買代金 (億円)", value=3.0, step=0.5, key="st_val_min")
+        st_vol_ratio = col_s2.number_input("出来高過疎化 (倍未満)", value=0.8, step=0.1, key="st_vol_ratio")
 
         col_s3, col_s4 = st.columns(2)
-        st_atr_ratio = col_s3.number_input("値幅収縮率 (ATR倍未満)", value=0.6, step=0.1, key="st_atr_ratio", help="当日の値幅が1ATRの何倍未満か（デフォルト: 0.6倍未満）")
-        st_ma_prox = col_s4.number_input("MA25上方乖離限界 (%)", value=3.0, step=0.5, key="st_ma_prox", help="終値がMA25のプラス何%以内に収まっているか（デフォルト: +3.0%以内）")
+        st_atr_ratio = col_s3.number_input("値幅収縮率 (ATR倍未満)", value=0.6, step=0.1, key="st_atr_ratio")
+        st_ma_prox = col_s4.number_input("MA25上方乖離限界 (%)", value=3.0, step=0.5, key="st_ma_prox")
 
         if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
             try: save_settings()
             except NameError: pass
                 
             st.session_state.tab2_scan_results_stealth = None
+            st.session_state.tab2_time_log_stealth = [] 
             gc.collect()
             t_global_start = time.time()
 
             cfg_stealth = {
-                "val_min": float(st_val_min),
-                "vol_ratio": float(st_vol_ratio),
-                "atr_ratio": float(st_atr_ratio),
-                "ma_prox": float(st_ma_prox)
+                "val_min": float(st_val_min), "vol_ratio": float(st_vol_ratio),
+                "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox)
             }
 
             def scan_unit_stealth_parallel(code, group, l_date, cfg):
                 group_df = group.copy().ffill().bfill()
-                if len(group_df) < 26: 
-                    return None
+                if len(group_df) < 26: return None
 
                 v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
                 v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
@@ -2267,18 +2242,10 @@ with tab2:
                 group_df['AdjL'] = group_df['AdjL'].astype(float)
                 group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-                if 'ma25' not in group_df.columns:
-                    group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-                
+                if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
                 if 'atr' not in group_df.columns:
                     group_df['prev_close'] = group_df['AdjC'].shift(1)
-                    group_df['tr'] = np.maximum(
-                        group_df['AdjH'] - group_df['AdjL'],
-                        np.maximum(
-                            (group_df['AdjH'] - group_df['prev_close']).abs(),
-                            (group_df['AdjL'] - group_df['prev_close']).abs()
-                        )
-                    )
+                    group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
                     group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
 
                 group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
@@ -2294,31 +2261,26 @@ with tab2:
                 if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
                 
                 return {
-                    'Code': code,
-                    'lc': float(today['AdjC']),
-                    'ma25': float(today['ma25']),
-                    'atr': float(today['atr']),
-                    'day_range': float(today['day_range']),
-                    'avg_value_5': float(today['avg_value_5']),
-                    'curr_vol': float(today[v_col_name]),
+                    'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
+                    'atr': float(today['atr']), 'day_range': float(today['day_range']),
+                    'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
                     'avg_vol_prev': float(today['avg_volume_5_prev']),
-                    'T_Rank': 'Stealth💎',
-                    'T_Color': '#00bcd4',
-                    'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+                    'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
                 }
 
             with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
                 try:
                     raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                     t_fetch = time.time()
-                    st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+                    s_msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+                    st.write(s_msg1)
+                    st.session_state.tab2_time_log_stealth.append(s_msg1)
 
                     full_df = clean_df(pd.DataFrame(raw))
                     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                     
                     m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
-                    
                     m_map = globals().get('master_map_t2', globals().get('master_map', {}))
                     m_targets = [c for c, m in m_map.items() if any(k in str(m.get('Market', '')) for k in target_keywords)] if m_map else full_df['Code'].unique()
 
@@ -2327,7 +2289,9 @@ with tab2:
                     df = full_df[full_df['Code'].isin(set(full_df[mask]['Code']).intersection(set(m_targets)))]
                     
                     t_clean = time.time()
-                    st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
+                    s_msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
+                    st.write(s_msg2)
+                    st.session_state.tab2_time_log_stealth.append(s_msg2)
 
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
@@ -2341,8 +2305,13 @@ with tab2:
                     st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
                     
                     t_calc = time.time()
-                    st.write(f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]")
-                    st.write(f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒")
+                    s_msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
+                    st.write(s_msg3)
+                    st.session_state.tab2_time_log_stealth.append(s_msg3)
+
+                    s_msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
+                    st.write(s_msg4)
+                    st.session_state.tab2_time_log_stealth.append(s_msg4)
 
                     status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab2_scan_results_stealth)} 銘柄確保）", state="complete", expanded=False)
                     st.rerun()
@@ -2354,10 +2323,20 @@ with tab2:
         st.divider()
         raw_hits_stealth = st.session_state.get("tab2_scan_results_stealth")
         if raw_hits_stealth is not None:
+            # 🚨 潜伏モードの進捗ログのエキスパンダー表示を完全保護
+            if "tab2_time_log_stealth" in st.session_state and st.session_state.tab2_time_log_stealth:
+                with st.expander(f"🎯 索敵完了！（候補 {len(raw_hits_stealth)} 銘柄確保）", expanded=False):
+                    for log in st.session_state.tab2_time_log_stealth: 
+                        st.write(log)
+
             if not raw_hits_stealth:
                 st.warning("⚠️ **潜伏条件に合致する銘柄は 0 件です。現在、嵐の気配はありません。**")
             else:
                 st.success(f"💎 **潜伏（Stealth）ロックオン: {len(raw_hits_stealth)} 銘柄捕捉**")
+
+                # 📋 潜伏モード コピペ用銘柄一覧の完全保護
+                copy_codes_stealth = [str(r.get('Code', ''))[:4] for r in raw_hits_stealth]
+                st.text_area("📋 コピペ用銘柄コード（Stealthターゲット）", value=",".join(copy_codes_stealth), height=68)
 
                 m_map = globals().get('master_map_t2', globals().get('master_map', {}))
                 for r in raw_hits_stealth:
@@ -2366,7 +2345,6 @@ with tab2:
                     m_info = m_map.get(c_code, {}) if m_map else {}
                     m_lower = str(m_info.get('Market', '')).lower()
                     
-                    # 潜伏モードの美しいHTMLバッジUI
                     if 'プライム' in m_lower or '一部' in m_lower: badge_html = '<span style="background-color: #1a237e; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🏢 プライム/大型</span>'
                     elif 'グロース' in m_lower or 'マザーズ' in m_lower: badge_html = '<span style="background-color: #1b5e20; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">🚀 グロース/新興</span>'
                     else: badge_html = f'<span style="background-color: #455a64; color: #ffffff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 11px; font-weight: bold;">{m_info.get("Market","不明")}</span>'
@@ -2387,6 +2365,7 @@ with tab2:
                         </div>
                     """, unsafe_allow_html=True)
                     
+                    # 🚨 物理消滅していた残りのUI描画約30行分を、強襲モードに準拠した最高品質のインデントで完全縫合
                     col_d1, col_d2, col_d3 = st.columns(3)
                     col_d1.metric("最新終値", f"{int(r.get('lc', 0)):,}円")
                     
