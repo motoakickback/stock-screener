@@ -2853,7 +2853,10 @@ with tab3:
                         else:
                             st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
                     except: pass
-            
+
+			# 🚨 追加：テキストを格納する箱を初期化（これがないとNameErrorになります）
+            export_texts = []
+		
             for vr in valid_results:
                 
                 clean_alerts = []
