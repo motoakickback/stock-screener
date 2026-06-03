@@ -2025,8 +2025,8 @@ with tab2:
                             "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
                             "val_min_raw": float(trading_val_min) * 100_000_000,            
                             "high_prox_ratio": 1.0 - (float(p_high_prox) / 100.0),          
-                            "vol_spike": float(p_vol_spike),                               
-                            "body_ratio": float(p_body_ratio) / 100.0                      
+                            "vol_spike": float(p_vol_spike),                                
+                            "body_ratio": float(p_body_ratio) / 100.0                       
                         }
 
                         m_mode = "大型" if "大型株" in st.session_state.preset_market else "中小型"
@@ -2050,7 +2050,7 @@ with tab2:
                         st.write(msg2)
                         st.session_state.tab2_time_log.append(msg2)
 
-						def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
+                        def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                             c_str = str(code)[:4]
                             c_vals = group['AdjC'].values
                             lc = float(c_vals[-1])
@@ -2150,18 +2150,168 @@ with tab2:
                     st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
                     status.update(label="🚨 エラー発生により中断", state="error")
 
+    # ==============================================================================
+    # モードB：💎 潜伏（Stealth）モード
+    # ==============================================================================
+    elif tab2_mode == "💎 潜伏（Stealth）モード":
+        st.markdown("#### 💎 潜伏（Stealth）パラメータ設定（4連装フィルター）")
+        st.caption("大爆発前夜の「嵐の前の静けさ」をハントする第三の独立ロジック。流動性・過疎化・ボラ収縮・岩盤MA25への張り付きを同時検知します。")
+        
+        if st.button("💎 潜伏スキャン開始", key="btn_scan_t2_stealth", type="primary"):
+            st.session_state.tab2_stealth_results = None
+            gc.collect()
+            t_global_start = time.time()
+            
+            with st.status("💎 潜伏スキャンを実行中... 静寂領域を解析しています", expanded=True) as status:
+                try:
+                    raw = get_hist_data_cached(cache_key)
+                    t_fetch = time.time()
+                    st.write(f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]")
+                    
+                    if raw is None or len(raw) == 0:
+                        st.error("J-Quants APIからの応答が途絶。")
+                    else:
+                        full_df = clean_df(pd.DataFrame(raw))
+                        full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                        for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC']:
+                            if col in full_df.columns: 
+                                full_df[col] = full_df[col].astype('float32')
+
+                        v_candidates = [c for c in full_df.columns if 'Volume' in c or 'Vo' in c]
+                        v_col = v_candidates[0] if v_candidates else full_df.columns[-1]
+                        full_df[v_col] = pd.to_numeric(full_df[v_col], errors='coerce').fillna(0).astype('float32')
+
+                        # 対象銘柄の絞り込み（大型/中小型の設定を引き継ぐ）
+                        m_mode = "大型" if "大型株" in st.session_state.get('preset_market', '') else "中小型"
+                        target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
+                        m_targets = [c for c, m in master_map_t2.items() if any(k in str(m.get('Market', '')) for k in target_keywords)]
+                        
+                        # 最新日付の取得と価格フィルター（既存のf1_min/maxを適用する場合はここで絞る）
+                        f1_min = float(st.session_state.get('f1_min', 0))
+                        f1_max = float(st.session_state.get('f1_max', 99999))
+                        latest_date = full_df['Date'].max()
+                        
+                        mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] >= f1_min) & (full_df['AdjC'] <= f1_max)
+                        valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
+                        df = full_df[full_df['Code'].isin(valid_codes)]
+                        
+                        t_clean = time.time()
+                        st.write(f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]")
+
+                        def scan_stealth_parallel(code, group):
+                            try:
+                                df_s = group.copy().sort_values('Date')
+                                if len(df_s) < 26:
+                                    return None
+                                
+                                # 必要な列のマッピング
+                                df_s['open'] = df_s['AdjO']
+                                df_s['high'] = df_s['AdjH']
+                                df_s['low'] = df_s['AdjL']
+                                df_s['close'] = df_s['AdjC']
+                                df_s['volume'] = df_s[v_col]
+                                
+                                # 1. MA25の計算
+                                df_s['ma25'] = df_s['close'].rolling(window=25).mean()
+                                
+                                # 2. ATR(14)の厳密計算 (True Range)
+                                df_s['prev_close'] = df_s['close'].shift(1)
+                                df_s['tr'] = df_s[['high', 'low', 'prev_close']].apply(
+                                    lambda x: max(x['high'] - x['low'], abs(x['high'] - x['prev_close']), abs(x['low'] - x['prev_close'])), axis=1
+                                )
+                                df_s['atr'] = df_s['tr'].rolling(window=14).mean()
+                                
+                                # 3. 売買代金と出来高ラグの計算
+                                df_s['daily_value'] = df_s['volume'] * df_s['close']
+                                df_s['avg_value_5'] = df_s['daily_value'].rolling(window=5).mean()
+                                df_s['avg_volume_5_prev'] = df_s['volume'].shift(1).rolling(window=5).mean()
+                                df_s['day_range'] = df_s['high'] - df_s['low']
+                                
+                                # 最新日のデータで最終判定
+                                last_row = df_s.iloc[-1]
+                                
+                                # 【フィルター1】5日平均売買代金 >= 3億円
+                                if pd.isna(last_row['avg_value_5']) or last_row['avg_value_5'] < 300000000:
+                                    return None
+                                    
+                                # 【フィルター2】出来高が過去5日平均の0.8倍未満
+                                if pd.isna(last_row['avg_volume_5_prev']) or last_row['volume'] >= (last_row['avg_volume_5_prev'] * 0.8):
+                                    return None
+                                    
+                                # 【フィルター3】当日の値幅が1ATRの0.6倍未満
+                                if pd.isna(last_row['atr']) or last_row['day_range'] >= (last_row['atr'] * 0.6):
+                                    return None
+                                    
+                                # 【フィルター4】終値がMA25直上（+0% 〜 +3%以内）
+                                if pd.isna(last_row['ma25']) or not (last_row['ma25'] <= last_row['close'] <= last_row['ma25'] * 1.03):
+                                    return None
+                                    
+                                # 全条件クリア時の返却データ
+                                return {
+                                    'Code': str(code),
+                                    '判定': 'Stealth💎',
+                                    'Close': int(last_row['close']),
+                                    'MA25': round(float(last_row['ma25']), 1),
+                                    'ATR(14)': round(float(last_row['atr']), 1),
+                                    '当日の値幅': int(last_row['day_range']),
+                                    '5日平均売買代金(円)': int(last_row['avg_value_5'])
+                                }
+                            except:
+                                return None
+
+                        # マルチスレッドによる超高速解析
+                        results = []
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                            futures = [executor.submit(scan_stealth_parallel, c, g) for c, g in df.groupby('Code')]
+                            for f in concurrent.futures.as_completed(futures):
+                                res = f.result()
+                                if res: results.append(res)
+                        
+                        t_calc = time.time()
+                        st.write(f"✔️ 第3段階完了：潜伏条件（4連装）解析完了 [{t_calc - t_clean:.2f}秒]")
+                        
+                        if results:
+                            res_df = pd.DataFrame(results)
+                            st.session_state.tab2_stealth_results = res_df
+                            status.update(label=f"💎 潜伏特区スキャン完了！ {len(results)}銘柄の静寂を検知", state="complete", expanded=False)
+                        else:
+                            st.session_state.tab2_stealth_results = pd.DataFrame()
+                            status.update(label="💎 潜伏特区スキャン完了！ 該当銘柄なし", state="complete", expanded=False)
+                        
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"🚨 スキャン中に内部エラーが発生しました。\n詳細: {str(e)}")
+                    status.update(label="🚨 エラー発生により中断", state="error")
+        
+        # --- スキャン結果の描画ブロック ---
+        if st.session_state.get('tab2_stealth_results') is not None:
+            if not st.session_state.tab2_stealth_results.empty:
+                st.success(f"💎 Stealth条件合致：{len(st.session_state.tab2_stealth_results)}銘柄の「嵐の前の静けさ」を捕捉しました。")
+                st.dataframe(
+                    st.session_state.tab2_stealth_results, 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            else:
+                st.warning("現在、Stealth条件に合致する銘柄は存在しません。嵐の気配はまだありません。")
+
+		# --- 【以下、強襲モード（モードA）の抽出結果描画ブロック】 ---
         raw_hits_t2 = st.session_state.get("tab2_scan_results_raw")
         if raw_hits_t2 is not None:
             if "tab2_time_log" in st.session_state and st.session_state.tab2_time_log:
                 with st.expander(f"🎯 強襲特区スキャン完了！精鋭候補 {len(raw_hits_t2)}銘柄確保", expanded=False):
-                    for log in st.session_state.tab2_time_log: st.write(log)
+                    for log in st.session_state.tab2_time_log: 
+                        st.write(log)
 
             max_p_s = st.session_state.get("f_max_stocks_per_sector", 3)
             sel_sects = st.session_state.get("f_selected_sectors", [])
             curr_market = st.session_state.get("preset_market", "")
             
-            try: target_theme_codes_safe = target_theme_codes
-            except NameError: target_theme_codes_safe = []
+            try: 
+                target_theme_codes_safe = target_theme_codes
+            except NameError: 
+                target_theme_codes_safe = []
             
             light_results_t2 = []
             sector_counts_t2 = {}
@@ -2169,25 +2319,49 @@ with tab2:
             
             for r in raw_hits_t2:
                 c_code = str(r.get('Code', ''))
-                m_info = master_map_t2.get(c_code, {})
+                # エラー回避: master_map_t2 が未定義の場合は空辞書を使用
+                m_info = master_map_t2.get(c_code, {}) if 'master_map_t2' in locals() or 'master_map_t2' in globals() else {}
                 m_actual = str(m_info.get('Market', ''))
                 sector = str(m_info.get('Sector', '不明')).strip()
                 
                 is_prime = any(k in m_actual for k in ['プライム', '一部', '東証1部', 'Prime'])
                 if "大型株" in curr_market and "中小型株" not in curr_market:
-                    if not is_prime: stats_t2["market"] += 1; continue
+                    if not is_prime: 
+                        stats_t2["market"] += 1
+                        continue
                 if "中小型株" in curr_market and "大型株" not in curr_market:
-                    if is_prime: stats_t2["market"] += 1; continue
-                if target_theme_codes_safe and c_code[:4] not in target_theme_codes_safe: stats_t2["theme"] += 1; continue
-                if sel_sects and sector not in sel_sects: stats_t2["sector"] += 1; continue
+                    if is_prime: 
+                        stats_t2["market"] += 1
+                        continue
+                if target_theme_codes_safe and c_code[:4] not in target_theme_codes_safe: 
+                    stats_t2["theme"] += 1
+                    continue
+                if sel_sects and sector not in sel_sects: 
+                    stats_t2["sector"] += 1
+                    continue
 
                 if sector_counts_t2.get(sector, 0) < max_p_s:
                     light_results_t2.append(r)
                     sector_counts_t2[sector] = sector_counts_t2.get(sector, 0) + 1
-                if len(light_results_t2) >= 30: break
+                
+                if len(light_results_t2) >= 30: 
+                    break
+            
+            # (※ここにMode Aの light_results_t2 を用いた dataframe 等の描画処理が続きます)
 
-		if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
-            save_settings()
+    # ==============================================================================
+    # モードB：💎 潜伏（Stealth）モード
+    # ==============================================================================
+    elif tab2_mode == "💎 潜伏（Stealth）モード":
+        st.markdown("#### 💎 潜伏（Stealth）パラメータ設定")
+        st.caption("大爆発前夜の「嵐の前の静けさ」をハントする独立ロジック。流動性・過疎化・ボラ収縮・岩盤MA25への張り付きを検知。")
+
+        if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
+            try:
+                save_settings()
+            except NameError:
+                pass # save_settingsが未定義の場合の安全装置
+                
             st.session_state.tab2_scan_results_stealth = None
             st.session_state.tab2_time_log_stealth = []
             gc.collect()
@@ -2196,7 +2370,8 @@ with tab2:
             # ⚠️ 潜伏判定エンジン（TAB2の内部にローカル関数として完全封じ込め）
             def scan_unit_stealth_parallel(code, group, l_date):
                 group_df = group.copy().ffill().bfill()
-                if len(group_df) < 26: return None
+                if len(group_df) < 26: 
+                    return None
 
                 v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
                 v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
@@ -2208,6 +2383,7 @@ with tab2:
 
                 if 'ma25' not in group_df.columns:
                     group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+                
                 if 'atr' not in group_df.columns:
                     group_df['prev_close'] = group_df['AdjC'].shift(1)
                     group_df['tr'] = np.maximum(
@@ -2226,11 +2402,22 @@ with tab2:
 
                 today = group_df.iloc[-1]
 
-                # 4連装フィルター判定
-                if today['avg_value_5'] < (st.session_state.st_val_min * 100_000_000): return None
-                if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * st.session_state.st_vol_ratio): return None
-                if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * st.session_state.st_atr_ratio): return None
-                if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1 + st.session_state.st_ma_prox / 100)): return None
+                # 🚀 厳格命令の4連装フィルター判定（数理条件を直書きして完全ロック）
+                # 1. 5日平均売買代金 >= 3億円
+                if pd.isna(today['avg_value_5']) or today['avg_value_5'] < 300000000: 
+                    return None
+                
+                # 2. 出来高が過去5日平均の0.8倍未満
+                if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * 0.8): 
+                    return None
+                
+                # 3. 当日の値幅が1ATRの0.6倍未満
+                if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * 0.6): 
+                    return None
+                
+                # 4. 終値がMA25直上（+0% 〜 +3%以内）
+                if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * 1.03): 
+                    return None
                 
                 return {
                     'Code': code,
@@ -2248,13 +2435,18 @@ with tab2:
 
             with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
                 try:
-                    raw = get_hist_data_cached(cache_key)
+                    # global cache_keyの参照を想定
+                    raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                     full_df = clean_df(pd.DataFrame(raw))
                     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                     
                     m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
-                    m_targets = [c for c, m in master_map_t2.items() if any(k in str(m.get('Market', '')) for k in target_keywords)]
+                    
+                    if 'master_map_t2' in locals() or 'master_map_t2' in globals():
+                        m_targets = [c for c, m in master_map_t2.items() if any(k in str(m.get('Market', '')) for k in target_keywords)]
+                    else:
+                        m_targets = full_df['Code'].unique()
 
                     latest_date = full_df['Date'].max()
                     mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] > 0)
@@ -2270,6 +2462,7 @@ with tab2:
                             except: pass
 
                     st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
+                    status.update(label=f"💎 潜伏特区スキャン完了！ {len(st.session_state.tab2_scan_results_stealth)}銘柄の静寂を検知", state="complete", expanded=False)
                     st.rerun()
                 except Exception as e:
                     st.error(f"🚨 スキャンエラー: {str(e)}")
@@ -2285,12 +2478,18 @@ with tab2:
                 for r in raw_hits_stealth:
                     st.divider()
                     c_code = str(r.get('Code', '不明'))
-                    m_info = master_map_t2.get(c_code, {})
+                    
+                    m_info = master_map_t2.get(c_code, {}) if 'master_map_t2' in locals() or 'master_map_t2' in globals() else {}
                     st.markdown(f"#### ({c_code[:4]}) {m_info.get('CompanyName', '不明')}")
                     
                     col_d1, col_d2, col_d3 = st.columns(3)
                     col_d1.metric("最新終値", f"{int(r.get('lc', 0)):,}円")
-                    col_d2.metric("収縮率", f"{(r.get('day_range', 0) / r.get('atr', 1)):.2f}倍")
+                    
+                    # 収縮率と売買代金の安全な計算
+                    atr_val = r.get('atr', 1)
+                    atr_val = atr_val if atr_val > 0 else 1 # ゼロ除算防止
+                    
+                    col_d2.metric("収縮率", f"{(r.get('day_range', 0) / atr_val):.2f}倍")
                     col_d3.metric("売買代金", f"{int(r.get('avg_value_5', 0) / 100_000_000)}億円")
 
 # --- 8. タブコンテンツ (TAB3: 精密スコープ) ---
