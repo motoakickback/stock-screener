@@ -48,6 +48,7 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            # 司令官の生体認証用JSハックは1文字も変えずに完全維持
             components.html(
                 """
                 <script>
@@ -96,27 +97,30 @@ def check_password():
                 height=0,
             )
             
-            # ▼▼▼【修正の要】on_change（即時確定）とon_clickを導入 ▼▼▼
-            st.text_input(
-                "Access Code", 
-                type="password", 
-                label_visibility="collapsed", 
-                placeholder="アクセスコード",
-                key="input_access_code",
-                on_change=login_attempt  # 指紋認証で文字が入った瞬間に「login_attempt」を自動実行
-            )
-            
-            submitted = st.button("認証 (ENTER)", use_container_width=True, on_click=login_attempt)
-            
-            # コールバック判定の結果をここで受け取る
-            if st.session_state.get("password_correct"):
-                st.rerun()
-            elif submitted:
-                st.error("🚨 認証失敗：コードが違います。")
+            # 🚨 【完全解決パッチ】st.formで包み、勝手なRerun（文字消え）を物理遮断
+            with st.form("login_form", clear_on_submit=False):
+                acc_code = st.text_input(
+                    "Access Code", 
+                    type="password", 
+                    label_visibility="collapsed", 
+                    placeholder="アクセスコード"
+                )
                 
+                # フォーム専用の送信ボタンに変更（JSは「認証」の文字を探すため正常に連携します）
+                submitted = st.form_submit_button("認証 (ENTER)", use_container_width=True)
+                
+                # ボタンが押された（JSがクリックした）瞬間に判定
+                if submitted:
+                    if acc_code in ALLOWED_PASSWORDS:
+                        st.session_state["password_correct"] = True
+                        st.session_state["current_user"] = acc_code
+                        st.rerun()
+                    elif acc_code != "":
+                        st.error("🚨 認証失敗：コードが違います。")
+                        
         return False
     return True
-    
+
 if not check_password(): st.stop()
 
 # --- 🚀 物理配線：19:00自動パージ用キャッシュキー生成（矛盾排除・完全統合版） ---
