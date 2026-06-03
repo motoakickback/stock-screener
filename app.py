@@ -48,6 +48,7 @@ def check_password():
         st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            # 💡 司令官のオリジナルDNA（無傷のオートフィル連携）を完全復旧
             components.html(
                 """
                 <script>
@@ -70,16 +71,12 @@ def check_password():
                         if (input.value.length > 0) {
                             loginTriggered = true; 
                             
-                            // 🚨 【強制認識ハック】指紋認証の文字をStreamlit(React)の奥底に直接叩き込む
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            nativeInputValueSetter.call(input, input.value);
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            
                             input.focus(); 
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
                             input.dispatchEvent(new Event('change', { bubbles: true }));
                             input.blur(); 
                             
-                            // 🚨 【司令官の直感を採用】早撃ちを防ぐため、待機時間を1秒から2.5秒(2500ms)に延長
+                            // 待ち時間は安定の1秒に戻します
                             setTimeout(() => {
                                 submitBtn.click();
                             }, 1000);
@@ -92,7 +89,7 @@ def check_password():
                     if (tryAutoLogin()) {
                         clearInterval(monitor);
                     }
-                }, 500);
+                }, 200);
                 doc.addEventListener('input', (e) => {
                     if (e.target.type === 'password') tryAutoLogin();
                 });
@@ -101,23 +98,27 @@ def check_password():
                 height=0,
             )
             
-            # 司令官の元の美しい形へ復旧（st.formは撤去）
-            st.text_input(
+            # 🚨 修正：二重更新（文字消え）の元凶だった「on_change」を完全撤去！
+            acc_code = st.text_input(
                 "Access Code", 
                 type="password", 
                 label_visibility="collapsed", 
                 placeholder="アクセスコード",
-                key="input_access_code",
-                on_change=login_attempt
+                key="input_access_code"
             )
             
-            submitted = st.button("認証 (ENTER)", use_container_width=True, on_click=login_attempt)
+            # 🚨 修正：同じく「on_click」も撤去。シンプルにボタンが押されたかどうかだけで判定する。
+            submitted = st.button("認証 (ENTER)", use_container_width=True)
             
-            if st.session_state.get("password_correct"):
-                st.rerun()
-            elif submitted:
-                st.error("🚨 認証失敗：コードが違います。")
-                
+            # ボタンが押された（JSがクリックした）瞬間に、ここで初めて1回だけ処理を走らせる
+            if submitted:
+                if acc_code in ALLOWED_PASSWORDS:
+                    st.session_state["password_correct"] = True
+                    st.session_state["current_user"] = acc_code
+                    st.rerun()
+                elif acc_code != "":
+                    st.error("🚨 認証失敗：コードが違います。")
+                    
         return False
     return True
 
