@@ -4108,7 +4108,7 @@ with tab6:
         st.info("部隊未展開。有効な銘柄コードがないか、保存されていません。")
         
 # --- 11. タブコンテンツ (TAB6: 戦績ダッシュボード) ---
-with tab6:
+with tab7:
     import datetime as dt_module
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
     st.caption("※ 記録の編集は下部の『🛠️ 戦績編集コンソール』で行ってください。")
