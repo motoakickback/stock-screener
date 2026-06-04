@@ -2831,7 +2831,7 @@ with tab4:
 				        api_code = c_str if len(c_str) >= 5 else c_str + "0"
 				        events = {"dividend": [], "earnings": []}
 				        
-				        # 1. API取得試行
+				        # 1. API (J-Quants) 取得試行
 				        data = get_single_data(api_code, 3)
 				        if data and isinstance(data.get("events"), dict):
 				            api_ev = data.get("events", {})
@@ -2840,13 +2840,12 @@ with tab4:
 				            if api_ev.get("dividend"): 
 				                events["dividend"].extend(api_ev["dividend"])
 				
-				        # 2. データ不足時のフォールバック (yfinance)
+				        # 2. データ不足時のフォールバック (yfinance - Bars)
 				        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
 				            try:
 				                import yfinance as yf
 				                tk = yf.Ticker(c_str + ".T")
 				                hist = tk.history(period="6mo") 
-				                
 				                if not hist.empty:
 				                    bars = []
 				                    for dt, row in hist.iterrows():
@@ -2861,46 +2860,31 @@ with tab4:
 				                        })
 				                    data = {"bars": bars}
 				            except Exception:
-				                pass # フォールバック失敗時はdata=Noneのまま進行
+				                pass
 				
-				        # 3. 決算イベントの補完取得（APIで取れなかった場合のみ実行）
+				        # 3. 決算イベントの補完取得 (yfinance - Earnings)
 				        if not events["earnings"]:
 				            try:
 				                import yfinance as yf
 				                tk_ev = yf.Ticker(c_str + ".T")
 				                info_ev = tk_ev.info
-				                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate')
+				                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
 				                if e_date:
+				                    if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
 				                    events["earnings"].append({"Code": api_code, "Date": str(e_date)})
 				            except Exception:
 				                pass
 				
-				        # 4. 財務情報取得と初期化
+				        # 4. 財務情報取得（関数呼び出し）
 				        f_data = get_fundamentals(c_str)
-				        # r_per, r_pbr等の処理をここから繋げてください
+				        # ※ここに司令官が必要なPER/PBR等の後処理ロジックを記述してください
 				        
 				        return data, events
 				
-				    except Exception as e:
-				        # 予期せぬエラー発生時は空を返してシステム停止を防ぐ
+				    except Exception:
+				        # 予期せぬエラーでもシステム停止を許さない最終防壁
 				        return None, {"dividend": [], "earnings": []}
-	                data = None
-
-                        if not events["earnings"]:
-                            try:
-                                import yfinance as yf
-                                tk_ev = yf.Ticker(c_str + ".T")
-                                info_ev = tk_ev.info
-                                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
-                                if e_date:
-                                    if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
-                                    events["earnings"].append({"Code": api_code, "Date": str(e_date)})
-                            except Exception:
-                                pass
-
-                        f_data = get_fundamentals(c_str)
-                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
-                        
+                       
                         if f_data:
                             if f_data.get('per'): r_per = f_data.get('per')
                             if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
