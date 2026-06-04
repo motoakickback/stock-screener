@@ -3781,7 +3781,7 @@ with tab5:
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
-            with st.spinner("データをプリロード中（高速化処理・精密ログ解析中）..."):
+            with st.spinner("データをプリロード中（メモリ極限圧縮＆完全クリーンアップ中）..."):
                 preloaded_data = {}
                 debug_logs = [] 
 
@@ -3789,88 +3789,79 @@ with tab5:
                     api_code = c if len(c) >= 5 else c + "0"
                     try: 
                         raw = get_single_data(api_code, 2)
-                        if not raw:
-                            debug_logs.append(f"[{c}] ❌ 通信応答が空です")
-                            continue
-
+                        if not raw: continue
                         bars_data = raw.get('bars') or raw.get('daily_quotes')
-                        if not bars_data:
-                            debug_logs.append(f"[{c}] ❌ 時系列データ(bars)が見つかりません")
-                            continue
+                        if not bars_data: continue
 
-                        temp_df = pd.DataFrame(bars_data)
-                        if temp_df.empty:
-                            continue
+                        df = pd.DataFrame(bars_data)
+                        if df.empty: continue
 
-                        # 🚨🚨 【真の元凶破壊】yfinance等の仕様変更による「多重階層（MultiIndex）」を強制フラット化
-                        # これが df['Close'] を2次元(DataFrame)にしてクラッシュさせていた元凶です。
-                        if isinstance(temp_df.columns, pd.MultiIndex):
-                            temp_df.columns = temp_df.columns.get_level_values(0)
-                        
-                        # さらに念押し：カラム名がタプル ('Close', '6614.T') になっている場合は1つ目だけを抽出
-                        temp_df.columns = [str(col[0]) if isinstance(col, (tuple, list)) else str(col) for col in temp_df.columns]
+                        # 1. マルチインデックスの破壊（yfinance対策）
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.get_level_values(0)
+                        df.columns = [str(col[0]) if isinstance(col, (tuple, list)) else str(col) for col in df.columns]
 
-                        # カラム名の正規化と統一（大文字小文字・空白の吸収）
-                        norm_cols = {}
-                        for col in temp_df.columns:
-                            l_col = col.lower().replace(" ", "").replace("_", "")
-                            norm_cols[col] = l_col
-                        temp_df = temp_df.rename(columns=norm_cols)
+                        # 2. カラム名の正規化とマッピング
+                        norm_cols = {col: str(col).lower().replace(" ", "").replace("_", "") for col in df.columns}
+                        df = df.rename(columns=norm_cols)
 
                         col_map = {
-                            'date': 'Date',
-                            'o': 'Open', 'open': 'Open',
-                            'h': 'High', 'high': 'High',
-                            'l': 'Low', 'low': 'Low',
-                            'c': 'Close', 'close': 'Close',
-                            'vo': 'Volume', 'volume': 'Volume',
-                            'adjo': 'AdjO', 'adjustmentopen': 'AdjO',
-                            'adjh': 'AdjH', 'adjustmenthigh': 'AdjH',
-                            'adjl': 'AdjL', 'adjustmentlow': 'AdjL',
-                            'adjc': 'AdjC', 'adjustmentclose': 'AdjC', 'adjclose': 'AdjC',
+                            'date': 'Date', 'o': 'Open', 'open': 'Open', 'h': 'High', 'high': 'High', 
+                            'l': 'Low', 'low': 'Low', 'c': 'Close', 'close': 'Close', 'vo': 'Volume', 'volume': 'Volume',
+                            'adjo': 'AdjO', 'adjustmentopen': 'AdjO', 'adjh': 'AdjH', 'adjustmenthigh': 'AdjH',
+                            'adjl': 'AdjL', 'adjustmentlow': 'AdjL', 'adjc': 'AdjC', 'adjustmentclose': 'AdjC', 'adjclose': 'AdjC',
                             'adjvo': 'AdjVo', 'adjustmentvolume': 'AdjVo'
                         }
-                        temp_df = temp_df.rename(columns=col_map)
-                        
-                        # 重複カラムを完全に排除
-                        temp_df = temp_df.loc[:, ~temp_df.columns.duplicated(keep='first')]
+                        df = df.rename(columns=col_map)
 
-                        if 'Close' not in temp_df.columns and 'AdjC' not in temp_df.columns:
+                        # 3. 重複カラムの完全排除
+                        df = df.loc[:, ~df.columns.duplicated(keep='first')]
+
+                        # 4. 🚨【最重要・メモリ保護】文字型を数値型(float32)に強制キャストし、計算エンジンの爆発を防ぐ！
+                        # float64ではなく、司令官の設計思想である float32 を厳守します。
+                        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjVo']
+                        for col in numeric_cols:
+                            if col in df.columns:
+                                df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
+
+                        if 'Close' not in df.columns and 'AdjC' not in df.columns:
                             debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません")
                             continue
 
-                        # 浄化処理 (clean_df)
-                        clean_data = clean_df(temp_df)
+                        # 5. 司令官の浄化処理を実行
+                        clean_data = clean_df(df)
                         clean_data = clean_data.loc[:, ~clean_data.columns.duplicated(keep='first')]
 
-                        # Adj系カラムが生成されていない場合のフォールバック補完
                         if 'AdjC' not in clean_data.columns:
                             if 'Close' in clean_data.columns:
                                 clean_data['AdjO'] = clean_data.get('Open', clean_data['Close'])
                                 clean_data['AdjH'] = clean_data.get('High', clean_data['Close'])
                                 clean_data['AdjL'] = clean_data.get('Low', clean_data['Close'])
                                 clean_data['AdjC'] = clean_data['Close']
-
+                        
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                         if not all(col in clean_data.columns for col in target_cols):
                             debug_logs.append(f"[{c}] ❌ 必須カラム {target_cols} が欠損しています")
                             continue
 
                         clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
+
+                        # 6. 🚨【最終防壁】クレンジング後も念のため float32 を再保証
+                        for col in target_cols:
+                            clean_data[col] = clean_data[col].astype('float32')
                         
-                        if len(clean_data) < 35:
+                        if len(clean_data) < 35: 
                             debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(clean_data)}日）")
                             continue
 
-                        # 計算エンジンへの投入（データは完全に1次元化されているため通過確実）
+                        # 7. 計算エンジンへ投入（float32の純粋な1次元データのみが到達）
                         processed_df = calc_vector_indicators(clean_data)
                         
-                        if processed_df is None or not isinstance(processed_df, pd.DataFrame):
+                        if processed_df is not None and isinstance(processed_df, pd.DataFrame):
+                            preloaded_data[c] = processed_df
+                        else:
                             debug_logs.append(f"[{c}] ❌ テクニカル計算エラー")
-                            continue
                             
-                        preloaded_data[c] = processed_df
-                        
                     except Exception as e: 
                         debug_logs.append(f"[{c}] ❌ 内部処理中に致命的エラー: {e}")
                         continue
