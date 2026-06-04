@@ -3692,12 +3692,11 @@ with tab5:
     tab4_defaults = {
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)",
         "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
-        "sim_push_r_val": st.session_state.get("push_r", 50.0),
+        "sim_push_r_val": 50.0,
         "sim_pass_req_val": 7, 
         "sim_rsi_lim_ambush_val": 45,
         "sim_rsi_lim_assault_val": 70, 
         "sim_time_risk_val": 5,
-        # 🚨 潜伏モード用の初期値を追加
         "sim_stealth_vol_val": 10,
         "sim_rsi_lim_stealth_val": 65
     }
@@ -3705,23 +3704,29 @@ with tab5:
     for k, v in tab4_defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-        elif isinstance(v, (int, float)) and st.session_state[k] == 0:
-            st.session_state[k] = v
 
     current_mode = st.session_state.bt_mode_sim_v2
     if "prev_mode_for_sync" not in st.session_state:
         st.session_state.prev_mode_for_sync = current_mode
 
+    # 🚨 兵站補給パッチ：モード切り替えを検知した瞬間、対象モードの固有デフォルト値を強制再装填する
     if st.session_state.prev_mode_for_sync != current_mode:
         if "待伏" in current_mode:
             st.session_state.sim_limit_d_val = 4
             st.session_state.sim_sell_d_val = 10
-        elif "潜伏" in current_mode: # 🚨 潜伏モード選択時の自動調整
+            st.session_state.sim_push_r_val = 50.0
+            st.session_state.sim_pass_req_val = 7
+            st.session_state.sim_rsi_lim_ambush_val = 45
+        elif "潜伏" in current_mode:
             st.session_state.sim_limit_d_val = 5
             st.session_state.sim_sell_d_val = 15
-        else:
+            st.session_state.sim_stealth_vol_val = 10
+            st.session_state.sim_rsi_lim_stealth_val = 65
+        else: # 強襲
             st.session_state.sim_limit_d_val = 3
             st.session_state.sim_sell_d_val = 5
+            st.session_state.sim_rsi_lim_assault_val = 70
+            st.session_state.sim_time_risk_val = 5
         st.session_state.prev_mode_for_sync = current_mode
         try: save_settings()
         except: pass
@@ -3746,7 +3751,6 @@ with tab5:
 
     with col_b1: 
         st.markdown("🔍 **検証戦術**")
-        # 🚨 潜伏モードを選択肢に追加！
         st.radio("戦術モード", [
             "🌐 【待伏】鉄の掟 (押し目狙撃)", 
             "⚡ 【強襲】GCブレイクアウト (順張り)", 
@@ -3758,32 +3762,32 @@ with tab5:
         
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※ 戦術切替時、買い・売り期限は各モードに最適化されます。")
+        st.info("※ 戦術切替時、買い・売り期限および各固有値は自動で最適デフォルト値に同期されます。")
         cp1, cp2, cp3, cp4 = st.columns(4)
         
-        cp1.number_input("🎯 利確目標(%)", step=1, key="sim_tp_val")
-        cp2.number_input("🛡️ 損切目安(%)", step=1, key="sim_sl_val")
-        cp3.number_input("⏳ 買い期限(日)", step=1, key="sim_limit_d_val")
-        cp4.number_input("⏳ 売り期限(日)", step=1, key="sim_sell_d_val")
+        # 🚨 各入力ボックスに value 引数を明示し、セッション値の揮発を完全に防御
+        cp1.number_input("🎯 利確目標(%)", min_value=1, value=int(st.session_state.get('sim_tp_val', 10)), key="sim_tp_val")
+        cp2.number_input("🛡️ 損切目安(%)", min_value=1, value=int(st.session_state.get('sim_sl_val', 8)), key="sim_sl_val")
+        cp3.number_input("⏳ 買い期限(日)", min_value=1, value=int(st.session_state.get('sim_limit_d_val', 4)), key="sim_limit_d_val")
+        cp4.number_input("⏳ 売り期限(日)", min_value=1, value=int(st.session_state.get('sim_sell_d_val', 10)), key="sim_sell_d_val")
         
         st.divider()
         if "待伏" in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
+            st.markdown("##### 🌐 【待伏}シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("📉 押し目待ち(%)", step=0.1, format="%.1f", key="sim_push_r_val")
-            ct2.number_input("掟クリア要求数", step=1, max_value=9, min_value=1, key="sim_pass_req_val")
-            ct3.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_ambush_val")
-        # 🚨 潜伏モード用の固有パラメーター設定UI
+            ct1.number_input("📉 押し目待ち(%)", min_value=0.0, max_value=100.0, value=float(st.session_state.get('sim_push_r_val', 50.0)), step=0.1, format="%.1f", key="sim_push_r_val")
+            ct2.number_input("掟クリア要求数", min_value=1, max_value=9, value=int(st.session_state.get('sim_pass_req_val', 7)), step=1, key="sim_pass_req_val")
+            ct3.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_ambush_val', 45)), step=5, key="sim_rsi_lim_ambush_val")
         elif "潜伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 💎 【潜伏】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("ボラティリティ収縮率上限(%)", step=1, key="sim_stealth_vol_val")
-            ct2.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_stealth_val")
+            ct1.number_input("ボラティリティ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
+            ct2.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI上限 (過熱感)", step=5, key="sim_rsi_lim_assault_val")
-            ct2.number_input("時間リスク上限（到達予想日数）", step=1, key="sim_time_risk_val")
+            ct1.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_assault_val', 70)), step=5, key="sim_rsi_lim_assault_val")
+            ct2.number_input("時間リスク上限（到達予想日数）", min_value=1, max_value=100, value=int(st.session_state.get('sim_time_risk_val', 5)), step=1, key="sim_time_risk_val")
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
