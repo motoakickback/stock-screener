@@ -3783,83 +3783,100 @@ with tab5:
             
             with st.spinner("データをプリロード中（高速化処理・精密ログ解析中）..."):
                 preloaded_data = {}
-                debug_logs = [] # 🛠️ 参謀用：なぜデータが弾かれたのかを記録するレコーダー
+                debug_logs = [] 
 
                 for c in t_codes:
                     api_code = c if len(c) >= 5 else c + "0"
                     try: 
                         raw = get_single_data(api_code, 2)
                         if not raw:
-                            debug_logs.append(f"[{c}] ❌ 通信応答が空（APIエラーまたは銘柄が存在しません）")
+                            debug_logs.append(f"[{c}] ❌ 通信応答が空です")
                             continue
 
                         bars_data = raw.get('bars') or raw.get('daily_quotes')
                         if not bars_data:
-                            debug_logs.append(f"[{c}] ❌ 応答内に時系列データ(bars)が見つかりません。")
+                            debug_logs.append(f"[{c}] ❌ 時系列データ(bars)が見つかりません")
                             continue
 
                         temp_df = pd.DataFrame(bars_data)
                         if temp_df.empty:
-                            debug_logs.append(f"[{c}] ❌ データフレームが空です。")
                             continue
 
-                        # 🛠️ 超重装甲パッチV3：重複カラムの排除と安全な1次元抽出（Series確約）
-                        safe_data = {}
-                        def get_col(candidates):
-                            for col_name in candidates:
-                                if col_name in temp_df.columns:
-                                    col_data = temp_df[col_name]
-                                    # 🚨 API側でカラム名が重複し、2次元化(DataFrame)している場合は最初の1列だけを強制抽出！
-                                    if isinstance(col_data, pd.DataFrame):
-                                        return col_data.iloc[:, 0]
-                                    return col_data
-                            return None
-                            
-                        # 最も精度の高い（期待される）カラム名から順に捜索・抽出する
-                        safe_data['Date'] = get_col(['Date', 'date'])
-                        safe_data['Open'] = get_col(['Open', 'O', 'open'])
-                        safe_data['High'] = get_col(['High', 'H', 'high'])
-                        safe_data['Low'] = get_col(['Low', 'L', 'low'])
-                        safe_data['Close'] = get_col(['Close', 'C', 'close'])
-                        safe_data['Volume'] = get_col(['Volume', 'Vo', 'volume'])
-                        safe_data['AdjO'] = get_col(['AdjO', 'AdjustmentOpen', 'adjo'])
-                        safe_data['AdjH'] = get_col(['AdjH', 'AdjustmentHigh', 'adjh'])
-                        safe_data['AdjL'] = get_col(['AdjL', 'AdjustmentLow', 'adjl'])
-                        safe_data['AdjC'] = get_col(['AdjC', 'AdjustmentClose', 'adjc'])
-                        safe_data['AdjVo'] = get_col(['AdjVo', 'AdjustmentVolume', 'adjvo'])
+                        # 🛠️ 超重装甲パッチV4：2次元化を物理破壊し、完全な1Dデータに浄化する
+                        # 1. カラム名を小文字・空白なしに正規化してマッピング
+                        norm_cols = {}
+                        for col in temp_df.columns:
+                            l_col = str(col).lower().replace(" ", "").replace("_", "")
+                            norm_cols[col] = l_col
+                        temp_df = temp_df.rename(columns=norm_cols)
+
+                        col_map = {
+                            'date': 'Date',
+                            'o': 'Open', 'open': 'Open',
+                            'h': 'High', 'high': 'High',
+                            'l': 'Low', 'low': 'Low',
+                            'c': 'Close', 'close': 'Close',
+                            'vo': 'Volume', 'volume': 'Volume',
+                            'adjo': 'AdjO', 'adjustmentopen': 'AdjO',
+                            'adjh': 'AdjH', 'adjustmenthigh': 'AdjH',
+                            'adjl': 'AdjL', 'adjustmentlow': 'AdjL',
+                            'adjc': 'AdjC', 'adjustmentclose': 'AdjC', 'adjclose': 'AdjC',
+                            'adjvo': 'AdjVo', 'adjustmentvolume': 'AdjVo'
+                        }
+                        temp_df = temp_df.rename(columns=col_map)
                         
-                        # 抽出した安全なデータだけで新しい母艦（DataFrame）を再構築
-                        rebuilt_df = pd.DataFrame({k: v for k, v in safe_data.items() if v is not None})
-                        
-                        # 安全装置：解読後も Close または AdjC が無ければスキップ
-                        if 'Close' not in rebuilt_df.columns and 'AdjC' not in rebuilt_df.columns:
-                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません。元のカラム: {list(temp_df.columns)}")
+                        # 2. マッピングによって生じた重複カラムを強制排除（最初の1列のみ残す）
+                        temp_df = temp_df.loc[:, ~temp_df.columns.duplicated(keep='first')]
+
+                        # 3. 最低限の株価カラムが存在するか確認
+                        if 'Close' not in temp_df.columns and 'AdjC' not in temp_df.columns:
+                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません")
                             continue
 
-                        # 浄化プロセスへ（重複がないため安全に通過可能）
-                        clean_data = clean_df(rebuilt_df)
+                        # 4. 浄化処理 (clean_df) 
+                        clean_data = clean_df(temp_df)
                         
-                        # 浄化後、AdjC が生成されなかった場合の最終補完
+                        # 5. 浄化処理後に再び重複カラムが発生した場合の防波堤
+                        clean_data = clean_data.loc[:, ~clean_data.columns.duplicated(keep='first')]
+
+                        # 6. Adj系カラムが生成されていない場合のフォールバック補完
                         if 'AdjC' not in clean_data.columns:
                             if 'Close' in clean_data.columns:
-                                clean_data = clean_data.rename(columns={'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'})
+                                clean_data['AdjO'] = clean_data.get('Open', clean_data['Close'])
+                                clean_data['AdjH'] = clean_data.get('High', clean_data['Close'])
+                                clean_data['AdjL'] = clean_data.get('Low', clean_data['Close'])
+                                clean_data['AdjC'] = clean_data['Close']
 
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                         if not all(col in clean_data.columns for col in target_cols):
-                            debug_logs.append(f"[{c}] ❌ 必須カラム {target_cols} が生成されませんでした。現在のカラム: {list(clean_data.columns)}")
+                            debug_logs.append(f"[{c}] ❌ 必須カラム {target_cols} が欠損しています")
                             continue
 
-                        clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
+                        # 7. 🚨 【究極の防壁】すべてのカラムを強制的に1次元(Series)化し、float型に変換
+                        flat_dict = {}
+                        for col in clean_data.columns:
+                            s = clean_data[col]
+                            if isinstance(s, pd.DataFrame):
+                                s = s.iloc[:, 0] # 万が一DataFrame化していても、強引に1列だけ引きちぎる
+                            
+                            # 日付・コード以外は数値(float)に強制変換し、1-d array エラーを完全に根絶
+                            if col not in ['Date', 'Code', 'code', 'Ticker', 'ticker']:
+                                s = pd.to_numeric(s, errors='coerce')
+                            flat_dict[col] = s
+                            
+                        final_df = pd.DataFrame(flat_dict)
+
+                        # 8. 最終クレンジングと計算エンジンへの投入
+                        final_df = final_df.dropna(subset=target_cols).reset_index(drop=True)
                         
-                        # 🚨 追加防波堤：MACD等が計算できないほど日数が少ない銘柄は、計算前にここで弾く
-                        if len(clean_data) < 35:
-                            debug_logs.append(f"[{c}] ❌ データ日数が不足しています（現在 {len(clean_data)}日 / 最低35日必要）")
+                        if len(final_df) < 35:
+                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(final_df)}日）")
                             continue
 
-                        processed_df = calc_vector_indicators(clean_data)
+                        processed_df = calc_vector_indicators(final_df)
                         
                         if processed_df is None or not isinstance(processed_df, pd.DataFrame):
-                            debug_logs.append(f"[{c}] ❌ calc_vector_indicators (テクニカル計算) でエラーが発生し、データが消失しました。")
+                            debug_logs.append(f"[{c}] ❌ テクニカル計算エラー")
                             continue
                             
                         preloaded_data[c] = processed_df
@@ -3867,6 +3884,7 @@ with tab5:
                     except Exception as e: 
                         debug_logs.append(f"[{c}] ❌ 内部処理中に致命的エラー: {e}")
                         continue
+            # ====================================================================
 
             # 🚨 物理修正箇所：データがゼロだった場合、「なぜゼロになったのか」を大々的に画面に表示する
             if not preloaded_data:
