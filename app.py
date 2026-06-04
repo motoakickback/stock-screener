@@ -522,17 +522,25 @@ def clean_df(df):
     
     return df.dropna(subset=['AdjC']).sort_values(sort_keys).reset_index(drop=True)
 
+# --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
     """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化）"""
     if df is None or df.empty or len(df) < 25:
         return df
 
+    # 🚨 モグラたたき終結パッチ：'Close' が 'AdjC' にリネームされている場合への追従
+    close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
+    
+    # 安全装置：どちらの列も存在しない場合は計算せずに返す
+    if close_col not in df.columns:
+        return df
+
     # 移動平均線 (float32で計算結果を保持)
-    df['SMA25'] = df['Close'].rolling(window=25).mean().astype('float32')
-    df['SMA75'] = df['Close'].rolling(window=75).mean().astype('float32')
+    df['SMA25'] = df[close_col].rolling(window=25).mean().astype('float32')
+    df['SMA75'] = df[close_col].rolling(window=75).mean().astype('float32')
 
     # RSIの完全ベクトル化計算 (中間変数を減らす)
-    delta = df['Close'].diff()
+    delta = df[close_col].diff()
     gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
     
@@ -542,6 +550,9 @@ def calc_vector_indicators(df):
 
     # メモリ圧迫の原因となる中間変数を即座に破棄
     del delta, gain, loss, rs
+    
+    # 🚨 もし元のコードにMACDなどの計算があった場合は、ここに追記してください
+    # (例: df['MACD'] = ... df[close_col] を使用して計算)
     
     return df
 
