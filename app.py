@@ -3802,11 +3802,18 @@ with tab5:
                         if temp_df.empty:
                             continue
 
-                        # 🛠️ 超重装甲パッチV4：2次元化を物理破壊し、完全な1Dデータに浄化する
-                        # 1. カラム名を小文字・空白なしに正規化してマッピング
+                        # 🚨🚨 【真の元凶破壊】yfinance等の仕様変更による「多重階層（MultiIndex）」を強制フラット化
+                        # これが df['Close'] を2次元(DataFrame)にしてクラッシュさせていた元凶です。
+                        if isinstance(temp_df.columns, pd.MultiIndex):
+                            temp_df.columns = temp_df.columns.get_level_values(0)
+                        
+                        # さらに念押し：カラム名がタプル ('Close', '6614.T') になっている場合は1つ目だけを抽出
+                        temp_df.columns = [str(col[0]) if isinstance(col, (tuple, list)) else str(col) for col in temp_df.columns]
+
+                        # カラム名の正規化と統一（大文字小文字・空白の吸収）
                         norm_cols = {}
                         for col in temp_df.columns:
-                            l_col = str(col).lower().replace(" ", "").replace("_", "")
+                            l_col = col.lower().replace(" ", "").replace("_", "")
                             norm_cols[col] = l_col
                         temp_df = temp_df.rename(columns=norm_cols)
 
@@ -3825,21 +3832,18 @@ with tab5:
                         }
                         temp_df = temp_df.rename(columns=col_map)
                         
-                        # 2. マッピングによって生じた重複カラムを強制排除（最初の1列のみ残す）
+                        # 重複カラムを完全に排除
                         temp_df = temp_df.loc[:, ~temp_df.columns.duplicated(keep='first')]
 
-                        # 3. 最低限の株価カラムが存在するか確認
                         if 'Close' not in temp_df.columns and 'AdjC' not in temp_df.columns:
                             debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません")
                             continue
 
-                        # 4. 浄化処理 (clean_df) 
+                        # 浄化処理 (clean_df)
                         clean_data = clean_df(temp_df)
-                        
-                        # 5. 浄化処理後に再び重複カラムが発生した場合の防波堤
                         clean_data = clean_data.loc[:, ~clean_data.columns.duplicated(keep='first')]
 
-                        # 6. Adj系カラムが生成されていない場合のフォールバック補完
+                        # Adj系カラムが生成されていない場合のフォールバック補完
                         if 'AdjC' not in clean_data.columns:
                             if 'Close' in clean_data.columns:
                                 clean_data['AdjO'] = clean_data.get('Open', clean_data['Close'])
@@ -3852,28 +3856,14 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ 必須カラム {target_cols} が欠損しています")
                             continue
 
-                        # 7. 🚨 【究極の防壁】すべてのカラムを強制的に1次元(Series)化し、float型に変換
-                        flat_dict = {}
-                        for col in clean_data.columns:
-                            s = clean_data[col]
-                            if isinstance(s, pd.DataFrame):
-                                s = s.iloc[:, 0] # 万が一DataFrame化していても、強引に1列だけ引きちぎる
-                            
-                            # 日付・コード以外は数値(float)に強制変換し、1-d array エラーを完全に根絶
-                            if col not in ['Date', 'Code', 'code', 'Ticker', 'ticker']:
-                                s = pd.to_numeric(s, errors='coerce')
-                            flat_dict[col] = s
-                            
-                        final_df = pd.DataFrame(flat_dict)
-
-                        # 8. 最終クレンジングと計算エンジンへの投入
-                        final_df = final_df.dropna(subset=target_cols).reset_index(drop=True)
+                        clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
                         
-                        if len(final_df) < 35:
-                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(final_df)}日）")
+                        if len(clean_data) < 35:
+                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(clean_data)}日）")
                             continue
 
-                        processed_df = calc_vector_indicators(final_df)
+                        # 計算エンジンへの投入（データは完全に1次元化されているため通過確実）
+                        processed_df = calc_vector_indicators(clean_data)
                         
                         if processed_df is None or not isinstance(processed_df, pd.DataFrame):
                             debug_logs.append(f"[{c}] ❌ テクニカル計算エラー")
