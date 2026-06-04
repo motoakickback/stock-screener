@@ -482,12 +482,23 @@ def clean_df(df):
             df = df.rename(columns={c: 'AdjustmentVolume'})
             break
 
-    p_map = {
-        'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
-        'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC',
-        'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'
-    }
+    # 🚨 真の元凶破壊パッチ：重複リネームによる2次元化(DataFrame化)を完全に防ぐ
+    # 調整後株価(Adjustment)がある場合はそれを優先し、なければ生の株価(Open等)を使う
+    if 'AdjustmentClose' in df.columns:
+        p_map = {
+            'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
+            'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC'
+        }
+    else:
+        p_map = {
+            'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC',
+            'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC' # API略称にも対応
+        }
+        
     df = df.rename(columns=p_map)
+
+    # 🛡️ 最終防壁：万が一、他の要因で重複列が発生していても「最初の1列」だけを残して2次元化を物理破壊
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
 
     keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
     df = df[[c for c in keep if c in df.columns]].copy()
@@ -497,6 +508,7 @@ def clean_df(df):
         
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
         if col in df.columns:
+            # 重複がないため、ここは確実に「1次元データ(Series)」として処理され、float32が適用される
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
             
     if 'Code' in df.columns:
