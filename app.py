@@ -3803,31 +3803,45 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ データフレームが空です。")
                             continue
 
-                        # 🛠️ 超重装甲パッチV2：J-Quantsの「O,H,L,C,Vo」の1文字暗号を完全に解読・統一
-                        inv_map = {}
-                        for col in temp_df.columns:
-                            lower_col = str(col).lower().replace(" ", "").replace("_", "")
-                            if lower_col == 'date': inv_map[col] = 'Date'
-                            elif lower_col in ['open', 'o']: inv_map[col] = 'Open'
-                            elif lower_col in ['high', 'h']: inv_map[col] = 'High'
-                            elif lower_col in ['low', 'l']: inv_map[col] = 'Low'
-                            elif lower_col in ['close', 'c', 'adjclose', 'adjustmentclose']: inv_map[col] = 'Close'
-                            elif lower_col in ['volume', 'vo']: inv_map[col] = 'Volume'
+                        # 🛠️ 超重装甲パッチV3：重複カラムの排除と安全な1次元抽出（Series確約）
+                        safe_data = {}
+                        def get_col(candidates):
+                            for col_name in candidates:
+                                if col_name in temp_df.columns:
+                                    col_data = temp_df[col_name]
+                                    # 🚨 API側でカラム名が重複し、2次元化(DataFrame)している場合は最初の1列だけを強制抽出！
+                                    if isinstance(col_data, pd.DataFrame):
+                                        return col_data.iloc[:, 0]
+                                    return col_data
+                            return None
                             
-                        if inv_map:
-                            temp_df.rename(columns=inv_map, inplace=True)
+                        # 最も精度の高い（期待される）カラム名から順に捜索・抽出する
+                        safe_data['Date'] = get_col(['Date', 'date'])
+                        safe_data['Open'] = get_col(['Open', 'O', 'open'])
+                        safe_data['High'] = get_col(['High', 'H', 'high'])
+                        safe_data['Low'] = get_col(['Low', 'L', 'low'])
+                        safe_data['Close'] = get_col(['Close', 'C', 'close'])
+                        safe_data['Volume'] = get_col(['Volume', 'Vo', 'volume'])
+                        safe_data['AdjO'] = get_col(['AdjO', 'AdjustmentOpen', 'adjo'])
+                        safe_data['AdjH'] = get_col(['AdjH', 'AdjustmentHigh', 'adjh'])
+                        safe_data['AdjL'] = get_col(['AdjL', 'AdjustmentLow', 'adjl'])
+                        safe_data['AdjC'] = get_col(['AdjC', 'AdjustmentClose', 'adjc'])
+                        safe_data['AdjVo'] = get_col(['AdjVo', 'AdjustmentVolume', 'adjvo'])
+                        
+                        # 抽出した安全なデータだけで新しい母艦（DataFrame）を再構築
+                        rebuilt_df = pd.DataFrame({k: v for k, v in safe_data.items() if v is not None})
                         
                         # 安全装置：解読後も Close または AdjC が無ければスキップ
-                        if 'Close' not in temp_df.columns and 'AdjC' not in temp_df.columns:
-                            debug_logs.append(f"[{c}] ❌ 株価カラム(CloseまたはAdjC)が存在しません。現在のカラム: {list(temp_df.columns)}")
+                        if 'Close' not in rebuilt_df.columns and 'AdjC' not in rebuilt_df.columns:
+                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません。元のカラム: {list(temp_df.columns)}")
                             continue
 
-                        clean_data = clean_df(temp_df)
+                        # 浄化プロセスへ（重複がないため安全に通過可能）
+                        clean_data = clean_df(rebuilt_df)
                         
+                        # 浄化後、AdjC が生成されなかった場合の最終補完
                         if 'AdjC' not in clean_data.columns:
-                            if 'AdjustmentClose' in clean_data.columns:
-                                clean_data = clean_data.rename(columns={'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC'})
-                            elif 'Close' in clean_data.columns:
+                            if 'Close' in clean_data.columns:
                                 clean_data = clean_data.rename(columns={'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'})
 
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
@@ -3837,16 +3851,17 @@ with tab5:
 
                         clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
                         
+                        # 🚨 追加防波堤：MACD等が計算できないほど日数が少ない銘柄は、計算前にここで弾く
+                        if len(clean_data) < 35:
+                            debug_logs.append(f"[{c}] ❌ データ日数が不足しています（現在 {len(clean_data)}日 / 最低35日必要）")
+                            continue
+
                         processed_df = calc_vector_indicators(clean_data)
                         
                         if processed_df is None or not isinstance(processed_df, pd.DataFrame):
                             debug_logs.append(f"[{c}] ❌ calc_vector_indicators (テクニカル計算) でエラーが発生し、データが消失しました。")
                             continue
                             
-                        if len(processed_df) < 35:
-                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(processed_df)}日 / 最低35日必要）")
-                            continue
-
                         preloaded_data[c] = processed_df
                         
                     except Exception as e: 
