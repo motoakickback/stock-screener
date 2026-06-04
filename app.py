@@ -2913,8 +2913,26 @@ with tab3:
                         l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                         ur_v = (h14 - l14)
                         
-                        rsi_v = float(t_latest.get('RSI', 50))
-                        atr_v = float(t_latest.get('ATR', lc * 0.05))
+                        # 🚨 修正: RSIを正しく取得。欠損時は計算するフォールバック
+                        if 'RSI' in df_chart_full.columns and pd.notna(t_latest['RSI']):
+                            rsi_v = float(t_latest['RSI'])
+                        else:
+                            try:
+                                delta = df_chart_full['AdjC'].diff()
+                                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                                rs = gain / loss
+                                rsi_series = 100 - (100 / (1 + rs))
+                                rsi_v = float(rsi_series.iloc[-1])
+                                df_chart_full['RSI'] = rsi_series # DataFrameにもセット
+                            except Exception:
+                                rsi_v = 50.0
+
+                        if 'ATR' in df_chart_full.columns and pd.notna(t_latest['ATR']):
+                            atr_v = float(t_latest['ATR'])
+                        else:
+                            atr_v = lc * 0.05
+                            
                         df_mini = df_chart_full.tail(260).copy()
                         
                         score = 0
@@ -3012,6 +3030,7 @@ with tab3:
 
                                 rank = "A級💎"
                                 bg_c = "#2e7d32"
+                                score = 10 # 💎 潜伏時のデフォルトスコア
 
                                 body_size = abs(c_val - o_val)
                                 day_range = h_val - l_val
@@ -3022,6 +3041,7 @@ with tab3:
                                     alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
                                     rank = "圏外💀"
                                     bg_c = "#616161"
+                                    score = 0
 
                                 high_3d = df_sub[h_col].iloc[-3:].max()
                                 entry_trigger = int(round(high_3d + 1))
@@ -3064,6 +3084,14 @@ with tab3:
                             elif n225_div_rate >= 5.0:
                                 score -= 3
                                 alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+
+                            # 🚨 修正: 待伏せモードでのRSI加点ロジック実装
+                            if rsi_v <= 20:
+                                score += 5
+                                alerts.append(f"🔥 【極度売られすぎ】RSI {rsi_v:.1f}%。強烈な反発エネルギーを内包。")
+                            elif rsi_v <= 30:
+                                score += 3
+                                alerts.append(f"⚡ 【売られすぎ】RSI {rsi_v:.1f}%。オシレーターが底値圏を示唆。")
 
                             base_push_r = st.session_state.push_r / 100.0
                             bt_val_standard = h14 - (ur_v * base_push_r)
@@ -3153,6 +3181,14 @@ with tab3:
                                 
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
 
+                            # 🚨 修正: 強襲モードでのRSI加減点ロジック実装
+                            if rsi_v >= 80:
+                                score -= 10
+                                alerts.append(f"⚠️ 【高値掴み警戒】RSI {rsi_v:.1f}%。過熱しすぎの兆候。")
+                            elif 50 <= rsi_v <= 70:
+                                score += 5
+                                alerts.append(f"🔥 【トレンド初動】RSI {rsi_v:.1f}%。モメンタム加速圏内。")
+
                             _macro_t3 = get_macro_weather()
                             if _macro_t3 and "nikkei" in _macro_t3:
                                 _df_m = _macro_t3["nikkei"]["df"]
@@ -3227,7 +3263,7 @@ with tab3:
                             'rsi': rsi_v,
                             'rank': rank,
                             'bg': bg_c,
-                            'score': score,
+                            'score': score, # 🚨 修正: 算出されたscoreを格納
                             'reach_val': reach_rate,
                             'gc_days': gc_days,
                             'df_chart': df_mini, 
@@ -3255,7 +3291,8 @@ with tab3:
                             'alerts': [f"⚠️ 演算エラー: {str(e)}"],
                             'error': True,
                             'df_chart': pd.DataFrame(),
-                            'stealth_data': {}
+                            'stealth_data': {},
+                            'score': 0 # 🚨 修正: エラー時もキーが存在するように
                         })
 
                 rank_order = {"S+": 5, "S": 4, "A": 3, "B": 2, "圏外": 0}
@@ -3294,28 +3331,33 @@ with tab3:
             n225_close_val = "取得不可"
             n225_div_rate_val = "計算不可"
             
+            # 🚨 修正: マクロ気象観測からの日経平均データ取得の確実化
             _macro_fallback = get_macro_weather()
             if _macro_fallback and "nikkei" in _macro_fallback:
                 _ni_fb = _macro_fallback["nikkei"]
-                _df_fb = _ni_fb["df"].copy()
-                _df_fb['MA25'] = _df_fb['Close'].rolling(window=25).mean()
-                _price_fb = _ni_fb["price"]
+                _price_fb = _ni_fb.get("price")
                 
-                n225_close_val = f"{int(_price_fb):,}円"
-                
-                if not _df_fb.empty and 'MA25' in _df_fb.columns and not pd.isna(_df_fb['MA25'].iloc[-1]):
-                    _ma25_fb = _df_fb['MA25'].iloc[-1]
-                    _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
-                    n225_div_rate_val = f"{_div_fb:+.2f}%"
+                if _price_fb is not None:
+                    n225_close_val = f"{int(_price_fb):,}円"
                     
-                    if _div_fb >= 5.0:
-                        st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
-                    elif _div_fb <= -5.0:
-                        st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
-                    else:
-                        st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
+                _df_fb = _ni_fb.get("df")
+                if _df_fb is not None and not _df_fb.empty:
+                    _df_fb_c = _df_fb.copy()
+                    _df_fb_c['MA25'] = _df_fb_c['Close'].rolling(window=25).mean()
+                    if 'MA25' in _df_fb_c.columns and not pd.isna(_df_fb_c['MA25'].iloc[-1]):
+                        _ma25_fb = _df_fb_c['MA25'].iloc[-1]
+                        if _price_fb is not None and _ma25_fb > 0:
+                            _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
+                            n225_div_rate_val = f"{_div_fb:+.2f}%"
+                        
+                            if _div_fb >= 5.0:
+                                st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
+                            elif _div_fb <= -5.0:
+                                st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
+                            else:
+                                st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
             else:
-                if n225_m_data and n225_m_data.get('close'):
+                if 'n225_m_data' in locals() and n225_m_data and n225_m_data.get('close'):
                     n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円"
                 if 'n225_div_rate' in locals() or 'n225_div_rate' in globals():
                     try: 
@@ -3328,22 +3370,10 @@ with tab3:
                             st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
                     except: pass
 
-            export_texts = []
-
             try:
                 current_date_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y/%m/%d %H:%M')
             except Exception:
-                current_date_str = "日時不明"
-
-            try:
-                n225_close_val = f"{int(_macro_t3['nikkei']['price']):,}円" if '_macro_t3' in locals() else "取得不可"
-            except Exception:
-                pass # 保持済み
-
-            try:
-                n225_div_rate_val = f"{n225_div_rate:+.2f}%" if 'n225_div_rate' in locals() else "取得不可"
-            except Exception:
-                pass # 保持済み
+                pass
 
             for vr in scope_results:
                 if vr.get('error'):
@@ -3399,6 +3429,7 @@ with tab3:
                     stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                     bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
+                # 🚨 修正: スコアが正しく埋め込まれるように vr.get('score') を使用
                 text_template = f"""【作戦参謀への分析依頼データ】
 ■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
@@ -3411,7 +3442,7 @@ with tab3:
 ■システム判定ステータス
 ・総合判定：{vr.get('rank')}
 ・点灯シグナル・アラート：{alerts_str}
-• テクニカルスコア：{vr.get('score')} pts
+• テクニカルスコア：{vr.get('score', 0)} pts
 ・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
 ・ファンダメンタルズ判定：{fund_status}
 
