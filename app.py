@@ -475,6 +475,10 @@ def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
     
+    # 🚨 補修：小文字の 'code' を強制的に大文字の 'Code' に統一
+    if 'code' in df.columns and 'Code' not in df.columns:
+        df = df.rename(columns={'code': 'Code'})
+
     # 🚨 出来高の欠損を防ぐ柔軟な抽出
     vol_candidates = ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo']
     for c in vol_candidates:
@@ -482,8 +486,7 @@ def clean_df(df):
             df = df.rename(columns={c: 'AdjustmentVolume'})
             break
 
-    # 🚨 真の元凶破壊パッチ：重複リネームによる2次元化(DataFrame化)を完全に防ぐ
-    # 調整後株価(Adjustment)がある場合はそれを優先し、なければ生の株価(Open等)を使う
+    # 🚨 重複リネームによる2次元化(DataFrame化)を完全に防ぐ
     if 'AdjustmentClose' in df.columns:
         p_map = {
             'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 
@@ -492,12 +495,12 @@ def clean_df(df):
     else:
         p_map = {
             'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC',
-            'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC' # API略称にも対応
+            'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC'
         }
         
     df = df.rename(columns=p_map)
 
-    # 🛡️ 最終防壁：万が一、他の要因で重複列が発生していても「最初の1列」だけを残して2次元化を物理破壊
+    # 🛡️ 万が一重複列が発生していても「最初の1列」だけを残す
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
 
     keep = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
@@ -508,13 +511,16 @@ def clean_df(df):
         
     for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
         if col in df.columns:
-            # 重複がないため、ここは確実に「1次元データ(Series)」として処理され、float32が適用される
+            # 1次元データ(Series)としてfloat32キャスト
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
             
     if 'Code' in df.columns:
         df['Code'] = df['Code'].astype('category')
         
-    return df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
+    # 🚨 最終防壁：データ内に 'Code' 列が存在しない場合でもエラーで落ちないように動的ソート
+    sort_keys = [k for k in ['Code', 'Date'] if k in df.columns]
+    
+    return df.dropna(subset=['AdjC']).sort_values(sort_keys).reset_index(drop=True)
 
 def calc_vector_indicators(df):
     """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化）"""
