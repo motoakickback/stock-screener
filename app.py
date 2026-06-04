@@ -2840,28 +2840,28 @@ with tab4:
                                 events["dividend"].extend(api_ev["dividend"])
 
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
-	            try:
-	                import yfinance as yf
-	                # '.T' は東証銘柄用（日本株限定なら必須）
-	                tk = yf.Ticker(c_str + ".T")
-	                # 取得期間を少し長めに設定してデータの厚みを確保
-	                hist = tk.history(period="6mo") 
-	                
-	                if not hist.empty:
-	                    bars = []
-	                    for dt, row in hist.iterrows():
-	                        # 🚨 修正：clean_df との命名規則を完全同期させる（AdjXで統一）
-	                        bars.append({
-	                            'Code': api_code, 
-	                            'Date': dt.strftime('%Y-%m-%d'),
-	                            'AdjO': float(row.get('Open', 0)), 
-	                            'AdjH': float(row.get('High', 0)),
-	                            'AdjL': float(row.get('Low', 0)), 
-	                            'AdjC': float(row.get('Close', 0)),
-	                            'AdjustmentVolume': float(row.get('Volume', 0)) # VolumeではなくAdjustmentVolumeで統一
-	                        })
-	                    data = {"bars": bars}
-	            except Exception as e:
+			            try:
+			                import yfinance as yf
+			                # '.T' は東証銘柄用（日本株限定なら必須）
+			                tk = yf.Ticker(c_str + ".T")
+			                # 取得期間を少し長めに設定してデータの厚みを確保
+			                hist = tk.history(period="6mo") 
+			                
+			                if not hist.empty:
+			                    bars = []
+			                    for dt, row in hist.iterrows():
+			                        # 🚨 修正：clean_df との命名規則を完全同期させる（AdjXで統一）
+			                        bars.append({
+			                            'Code': api_code, 
+			                            'Date': dt.strftime('%Y-%m-%d'),
+			                            'AdjO': float(row.get('Open', 0)), 
+			                            'AdjH': float(row.get('High', 0)),
+			                            'AdjL': float(row.get('Low', 0)), 
+			                            'AdjC': float(row.get('Close', 0)),
+			                            'AdjustmentVolume': float(row.get('Volume', 0)) # VolumeではなくAdjustmentVolumeで統一
+			                        })
+			                    data = {"bars": bars}
+			            except Exception as e:
 	                # 🚨 エラーログを仕込んでおくと「なぜyfinanceに落ちたか」が追跡可能になります
 	                # print(f"DEBUG: yfinance fallback failed for {c_str}: {e}")
 	                data = None
