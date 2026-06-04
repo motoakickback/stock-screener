@@ -3045,11 +3045,12 @@ with tab3:
                                     elif body_size <= (day_range * 0.10):
                                         alerts.append("🟢【極小十字線】煮詰まりの極致")
 
-                                # 枯渇ボーナス
-                                if len(df_sub) >= 6:
-                                    vol_5d_avg = df_sub['Volume'].iloc[-6:-1].mean()
-                                    curr_vol = s_latest['Volume']
-                                    if vol_5d_avg > 0 and curr_vol < (vol_5d_avg * 0.5):
+                                # 🚨 修正: 枯渇ボーナス (Volumeキーエラー対策の堅牢化)
+                                vol_col = 'Volume' if 'Volume' in df_sub.columns else ('volume' if 'volume' in df_sub.columns else None)
+                                if vol_col and len(df_sub) >= 6:
+                                    vol_5d_avg = df_sub[vol_col].iloc[-6:-1].mean()
+                                    curr_vol = s_latest[vol_col]
+                                    if pd.notna(vol_5d_avg) and vol_5d_avg > 0 and pd.notna(curr_vol) and curr_vol < (vol_5d_avg * 0.5):
                                         score += 3
                                         alerts.append("💎【売り枯れ】出来高が直近平均の50%未満へ急減（+3pts）")
 
