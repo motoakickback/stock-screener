@@ -3781,29 +3781,73 @@ with tab5:
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
-            with st.spinner("データをプリロード中（高速化処理）..."):
+            # ====================================================================
+            # 🚨 修正箇所：ここから「with st.spinner」のブロックを上書きしてください
+            # ====================================================================
+            with st.spinner("データをプリロード中（高速化処理・精密ログ解析中）..."):
                 preloaded_data = {}
+                debug_logs = [] # 🛠️ 参謀用：なぜデータが弾かれたのかを記録するレコーダー
+
                 for c in t_codes:
                     api_code = c if len(c) >= 5 else c + "0"
-                    raw = get_single_data(api_code, 2)
-                    if not raw or not raw.get('bars'): continue
-                    temp_df = pd.DataFrame(raw['bars'])
-                    if temp_df.empty: continue
                     try: 
+                        raw = get_single_data(api_code, 2)
+                        if not raw:
+                            debug_logs.append(f"[{c}] ❌ 通信応答が空（APIエラーまたは銘柄が存在しません）")
+                            continue
+
+                        # 🛠️ 自動修復1：J-Quants等の仕様差異（'bars' / 'daily_quotes'）を両方拾う
+                        bars_data = raw.get('bars') or raw.get('daily_quotes')
+                        if not bars_data:
+                            debug_logs.append(f"[{c}] ❌ 応答内に時系列データ(bars)が見つかりません。")
+                            continue
+
+                        temp_df = pd.DataFrame(bars_data)
+                        if temp_df.empty:
+                            debug_logs.append(f"[{c}] ❌ データフレームが空です。")
+                            continue
+
                         clean_data = clean_df(temp_df)
+                        
+                        # 🛠️ 自動修復2：カラム名が違う場合、強制的に規格(AdjO, AdjH...)に統一する
+                        if 'AdjC' not in clean_data.columns:
+                            if 'AdjustmentClose' in clean_data.columns:
+                                clean_data = clean_data.rename(columns={'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC'})
+                            elif 'Close' in clean_data.columns:
+                                clean_data = clean_data.rename(columns={'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC'})
+
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
-                        if not all(col in clean_data.columns for col in target_cols): continue
+                        if not all(col in clean_data.columns for col in target_cols):
+                            debug_logs.append(f"[{c}] ❌ 必須カラム {target_cols} が生成されませんでした。現在のカラム: {list(clean_data.columns)}")
+                            continue
+
                         clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
                         
                         processed_df = calc_vector_indicators(clean_data)
                         
-                        if processed_df is not None and isinstance(processed_df, pd.DataFrame) and len(processed_df) >= 35:
-                            preloaded_data[c] = processed_df
-                    except Exception: 
+                        if processed_df is None or not isinstance(processed_df, pd.DataFrame):
+                            debug_logs.append(f"[{c}] ❌ calc_vector_indicators (テクニカル計算) でエラーが発生し、データが消失しました。")
+                            continue
+                            
+                        if len(processed_df) < 35:
+                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(processed_df)}日 / 最低35日必要）")
+                            continue
+
+                        preloaded_data[c] = processed_df
+                        
+                    except Exception as e: 
+                        debug_logs.append(f"[{c}] ❌ 内部処理中に致命的エラー: {e}")
                         continue
 
+            # 🚨 物理修正箇所：データがゼロだった場合、「なぜゼロになったのか」を大々的に画面に表示する
             if not preloaded_data:
-                st.error("🚨 兵站エラー：解析可能なデータが取得できませんでした。該当銘柄のデータが存在しないか通信エラーです。")
+                st.error("🚨 兵站エラー：解析可能なデータが取得できませんでした。以下のデバッグレポートを確認してください。")
+                with st.expander("🛠️ 【参謀用デバッグレポート】 なぜデータが棄却されたのか？", expanded=True):
+                    if not debug_logs:
+                        st.warning("⚠️ 銘柄コード欄から有効なコードが抽出されていません。（入力形式を確認してください）")
+                    else:
+                        for log in debug_logs:
+                            st.info(log)
             else:
                 # 🚨 全体を try-except で囲み、エラー発生時の完全クラッシュを防ぐ防波堤
                 try:
