@@ -2937,7 +2937,7 @@ with tab3:
                             import pytz
                             from datetime import datetime
                             tz = pytz.timezone('Asia/Tokyo')
-                            today_d = datetime.now(tz).date()
+                            today_d = datetime.now(tz_jst).date() if 'tz_jst' in locals() else datetime.now(tz).date()
                             ev_data = raw_s.get("events", {})
                             
                             def parse_and_check(date_val, event_name, icon):
@@ -3283,7 +3283,10 @@ with tab3:
             try: return float(x) if not pd.isna(x) else None
             except Exception: return None
 
-        valid_results = [x for x in scope_results if not x.get('error') and x.get('r_val', 0) >= 3]
+        valid_results = [x for x in scope_results if not x.get('error')]
+        if not is_stealth:
+            valid_results = [x for x in valid_results if x.get('r_val', 0) >= 3]
+
         if valid_results:
             export_texts = []
             current_date_str = datetime.now().strftime("%Y/%m/%d") + " 大引け後"
@@ -3348,8 +3351,8 @@ with tab3:
                 
                 rank_str = str(vr.get('rank', ''))
                 
-                # 🚨 動的フィルター：待伏モード かつ S/A級「以外」ならスキップ（＝強襲・潜伏は全件通過する）
-                if is_ambush and not ("S" in rank_str or "A" in rank_str):
+                # 🚨 動的フィルター：待伏せ・強襲モードは S/A級「以外」ならスキップ（＝潜伏は全件通過する）
+                if not is_stealth and not ("S" in rank_str or "A" in rank_str):
                     continue
 
                 clean_alerts = []
@@ -3428,8 +3431,8 @@ with tab3:
             st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
             
             expander_title = "📋 【一括コピー】作戦参謀への分析依頼データ"
-            expander_title += "（S/A級限定抽出）" if is_ambush else "（全件抽出）"
-            expander_desc = "※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。" if is_ambush else "※右上のアイコンをクリックすることで、スキャン結果を全件一撃でコピーできます。"
+            expander_title += "（S/A級限定抽出）" if not is_stealth else "（全件抽出）"
+            expander_desc = "※右上のアイコンをクリックすることで、S級およびA級判定のみに自動トリアージされたスキャン結果を一撃でコピーできます。" if not is_stealth else "※右上のアイコンをクリックすることで、スキャン結果を全件一撃でコピーできます。"
             
             with st.expander(expander_title, expanded=True):
                 st.markdown(f"<p style='font-size:12px; color:#888; margin-bottom:0.5rem;'>{expander_desc}</p>", unsafe_allow_html=True)
@@ -3467,7 +3470,7 @@ with tab3:
             
             gc_badge = ""
             if r.get('gc_days', 0) > 0:
-                gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発発動 {r.get('gc_days')}日目</span>"
+                gc_badge = f"<span style='background-color: #1b5e20; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #81c784; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>⚡ GC発動 {r.get('gc_days')}日目</span>"
             elif "S+" in str(r.get('rank', '')):
                 gc_badge = f"<span style='background-color: #ff5252; color: #ffffff; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; margin-left: 10px; border: 1px solid #ff8a80; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'>🎯 明日GC見込(激熱)</span>"
             elif "圏外💀" in str(r.get('rank', '')) and any(x in "".join(r.get('alerts', [])) for x in ["絶対排除"]):
@@ -3590,7 +3593,6 @@ with tab3:
                     st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
-
                     
 # --- 9. タブコンテンツ (TAB4: 戦術シミュレータ) ---
 with tab4:
