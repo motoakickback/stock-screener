@@ -4033,9 +4033,14 @@ with tab5:
                             styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                             st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
                 
-                except Exception as e:
+                #except Exception as e:
                     # 🚨 解析・演算中に想定外のエラーが起きた場合の防波堤
-                    st.error(f"🚨 兵站エラー：データに異常があるか、シミュレーション演算中にエラーが発生しました。詳細: {e}")
+                    #st.error(f"🚨 兵站エラー：データに異常があるか、シミュレーション演算中にエラーが発生しました。詳細: {e}")
+
+                except Exception as e: 
+                        import traceback
+                        st.error(f"[{c}] 🚨 エラー発生座標特定ログ:\n\n" + traceback.format_exc())
+                        break # 画面がエラーで埋め尽くされるのを防ぐため、最初のエラーで処理を緊急停止します
 
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
