@@ -3796,7 +3796,6 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ 通信応答が空（APIエラーまたは銘柄が存在しません）")
                             continue
 
-                        # 🛠️ 自動修復1：J-Quants等の仕様差異（'bars' / 'daily_quotes'）を両方拾う
                         bars_data = raw.get('bars') or raw.get('daily_quotes')
                         if not bars_data:
                             debug_logs.append(f"[{c}] ❌ 応答内に時系列データ(bars)が見つかりません。")
@@ -3807,9 +3806,32 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ データフレームが空です。")
                             continue
 
+                        # 🛠️ 超重装甲パッチ：カラム名の大文字・小文字・表記揺れを強制的に統一する
+                        inv_map = {}
+                        for col in temp_df.columns:
+                            # 空白やアンダーバーを消し、全て小文字にしてから判定する
+                            lower_col = str(col).lower().replace(" ", "").replace("_", "")
+                            if lower_col == 'date': inv_map[col] = 'Date'
+                            elif lower_col == 'open': inv_map[col] = 'Open'
+                            elif lower_col == 'high': inv_map[col] = 'High'
+                            elif lower_col == 'low': inv_map[col] = 'Low'
+                            elif lower_col in ['close', 'adjclose', 'adjustmentclose']: inv_map[col] = 'Close'
+                            elif lower_col == 'volume': inv_map[col] = 'Volume'
+                            elif lower_col in ['adjustmentopen', 'adjopen']: inv_map[col] = 'AdjustmentOpen'
+                            elif lower_col in ['adjustmenthigh', 'adjhigh']: inv_map[col] = 'AdjustmentHigh'
+                            elif lower_col in ['adjustmentlow', 'adjlow']: inv_map[col] = 'AdjustmentLow'
+                            elif lower_col in ['adjustmentvolume', 'adjvolume']: inv_map[col] = 'AdjustmentVolume'
+                            
+                        if inv_map:
+                            temp_df.rename(columns=inv_map, inplace=True)
+                        
+                        # 安全装置：もし矯正しても Close が無ければ、株価データとして成立しないためスキップ
+                        if 'Close' not in temp_df.columns:
+                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close)が存在しません。現在のカラム: {list(temp_df.columns)}")
+                            continue
+
                         clean_data = clean_df(temp_df)
                         
-                        # 🛠️ 自動修復2：カラム名が違う場合、強制的に規格(AdjO, AdjH...)に統一する
                         if 'AdjC' not in clean_data.columns:
                             if 'AdjustmentClose' in clean_data.columns:
                                 clean_data = clean_data.rename(columns={'AdjustmentOpen': 'AdjO', 'AdjustmentHigh': 'AdjH', 'AdjustmentLow': 'AdjL', 'AdjustmentClose': 'AdjC'})
