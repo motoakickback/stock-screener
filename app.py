@@ -524,22 +524,37 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化）"""
+    """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化＋ATR兵装配備）"""
     if df is None or df.empty or len(df) < 25:
         return df
 
-    # 🚨 モグラたたき終結パッチ：'Close' が 'AdjC' にリネームされている場合への追従
+    # 動的な列名取得（すれ違い防止回路）
     close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
+    high_col = 'AdjH' if 'AdjH' in df.columns else 'High'
+    low_col = 'AdjL' if 'AdjL' in df.columns else 'Low'
     
-    # 安全装置：どちらの列も存在しない場合は計算せずに返す
     if close_col not in df.columns:
         return df
 
-    # 移動平均線 (float32で計算結果を保持)
+    # 1. 移動平均線 (float32で計算結果を保持)
     df['SMA25'] = df[close_col].rolling(window=25).mean().astype('float32')
     df['SMA75'] = df[close_col].rolling(window=75).mean().astype('float32')
 
-    # RSIの完全ベクトル化計算 (中間変数を減らす)
+    # 2. 🚨【新規配備】超高速ベクトル化ATR計算（バックテストの生命線）
+    if high_col in df.columns and low_col in df.columns:
+        c_prev = df[close_col].shift(1)
+        tr1 = df[high_col] - df[low_col]
+        tr2 = (df[high_col] - c_prev).abs()
+        tr3 = (df[low_col] - c_prev).abs()
+        
+        # 3つの中間の最大値を一撃で抽出し、14日平均をfloat32で保持
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        df['ATR'] = tr.rolling(window=14).mean().astype('float32')
+        del c_prev, tr1, tr2, tr3, tr
+    else:
+        df['ATR'] = 0.0
+
+    # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
     delta = df[close_col].diff()
     gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
@@ -550,9 +565,6 @@ def calc_vector_indicators(df):
 
     # メモリ圧迫の原因となる中間変数を即座に破棄
     del delta, gain, loss, rs
-    
-    # 🚨 もし元のコードにMACDなどの計算があった場合は、ここに追記してください
-    # (例: df['MACD'] = ... df[close_col] を使用して計算)
     
     return df
 
