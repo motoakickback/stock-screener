@@ -2831,7 +2831,7 @@ with tab4:
 				        api_code = c_str if len(c_str) >= 5 else c_str + "0"
 				        events = {"dividend": [], "earnings": []}
 				        
-				        # 1. API (J-Quants) 取得試行
+				        # 1. API取得試行
 				        data = get_single_data(api_code, 3)
 				        if data and isinstance(data.get("events"), dict):
 				            api_ev = data.get("events", {})
@@ -2840,12 +2840,13 @@ with tab4:
 				            if api_ev.get("dividend"): 
 				                events["dividend"].extend(api_ev["dividend"])
 				
-				        # 2. データ不足時のフォールバック (yfinance - Bars)
+				        # 2. データ不足時のフォールバック (yfinance)
 				        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
 				            try:
 				                import yfinance as yf
 				                tk = yf.Ticker(c_str + ".T")
 				                hist = tk.history(period="6mo") 
+				                
 				                if not hist.empty:
 				                    bars = []
 				                    for dt, row in hist.iterrows():
@@ -2862,7 +2863,7 @@ with tab4:
 				            except Exception:
 				                pass
 				
-				        # 3. 決算イベントの補完取得 (yfinance - Earnings)
+				        # 3. 決算イベントの補完取得
 				        if not events["earnings"]:
 				            try:
 				                import yfinance as yf
@@ -2875,9 +2876,9 @@ with tab4:
 				            except Exception:
 				                pass
 				
-				        # 4. 財務情報取得（関数呼び出し）
+				        # 4. 財務情報取得と初期化
 				        f_data = get_fundamentals(c_str)
-				        # ※ここに司令官が必要なPER/PBR等の後処理ロジックを記述してください
+				        # ※必要であればここにPER/PBR等の計算処理を追記
 				        
 				        return data, events
 				
