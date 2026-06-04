@@ -4039,8 +4039,8 @@ with tab5:
 
                 except Exception as e: 
                         import traceback
-                        st.error(f"[{c}] 🚨 エラー発生座標特定ログ:\n\n" + traceback.format_exc())
-                        break # 画面がエラーで埋め尽くされるのを防ぐため、最初のエラーで処理を緊急停止します
+                        st.error(f"🚨 エラー発生座標特定ログ:\n\n" + traceback.format_exc())
+                        st.stop() # breakの代わりに、確実にシステムを一時停止するコマンドを使用
 
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
