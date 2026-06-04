@@ -3781,9 +3781,6 @@ with tab5:
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
             
-            # ====================================================================
-            # 🚨 修正箇所：ここから「with st.spinner」のブロックを上書きしてください
-            # ====================================================================
             with st.spinner("データをプリロード中（高速化処理・精密ログ解析中）..."):
                 preloaded_data = {}
                 debug_logs = [] # 🛠️ 参謀用：なぜデータが弾かれたのかを記録するレコーダー
@@ -3806,28 +3803,23 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ データフレームが空です。")
                             continue
 
-                        # 🛠️ 超重装甲パッチ：カラム名の大文字・小文字・表記揺れを強制的に統一する
+                        # 🛠️ 超重装甲パッチV2：J-Quantsの「O,H,L,C,Vo」の1文字暗号を完全に解読・統一
                         inv_map = {}
                         for col in temp_df.columns:
-                            # 空白やアンダーバーを消し、全て小文字にしてから判定する
                             lower_col = str(col).lower().replace(" ", "").replace("_", "")
                             if lower_col == 'date': inv_map[col] = 'Date'
-                            elif lower_col == 'open': inv_map[col] = 'Open'
-                            elif lower_col == 'high': inv_map[col] = 'High'
-                            elif lower_col == 'low': inv_map[col] = 'Low'
-                            elif lower_col in ['close', 'adjclose', 'adjustmentclose']: inv_map[col] = 'Close'
-                            elif lower_col == 'volume': inv_map[col] = 'Volume'
-                            elif lower_col in ['adjustmentopen', 'adjopen']: inv_map[col] = 'AdjustmentOpen'
-                            elif lower_col in ['adjustmenthigh', 'adjhigh']: inv_map[col] = 'AdjustmentHigh'
-                            elif lower_col in ['adjustmentlow', 'adjlow']: inv_map[col] = 'AdjustmentLow'
-                            elif lower_col in ['adjustmentvolume', 'adjvolume']: inv_map[col] = 'AdjustmentVolume'
+                            elif lower_col in ['open', 'o']: inv_map[col] = 'Open'
+                            elif lower_col in ['high', 'h']: inv_map[col] = 'High'
+                            elif lower_col in ['low', 'l']: inv_map[col] = 'Low'
+                            elif lower_col in ['close', 'c', 'adjclose', 'adjustmentclose']: inv_map[col] = 'Close'
+                            elif lower_col in ['volume', 'vo']: inv_map[col] = 'Volume'
                             
                         if inv_map:
                             temp_df.rename(columns=inv_map, inplace=True)
                         
-                        # 安全装置：もし矯正しても Close が無ければ、株価データとして成立しないためスキップ
-                        if 'Close' not in temp_df.columns:
-                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close)が存在しません。現在のカラム: {list(temp_df.columns)}")
+                        # 安全装置：解読後も Close または AdjC が無ければスキップ
+                        if 'Close' not in temp_df.columns and 'AdjC' not in temp_df.columns:
+                            debug_logs.append(f"[{c}] ❌ 株価カラム(CloseまたはAdjC)が存在しません。現在のカラム: {list(temp_df.columns)}")
                             continue
 
                         clean_data = clean_df(temp_df)
