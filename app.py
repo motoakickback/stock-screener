@@ -3003,7 +3003,24 @@ with tab4:
                             except Exception:
                                 res_mcap_str = "-"
 
+                        # 🚨 修正：TAB4にも不沈艦フォールバック（fetch_parallel_t3）を接続
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
+                        
+                        if not bars or len(bars) < 20:
+                            f_data, _ = fetch_parallel_t3(target_key)
+                            if f_data and "bars" in f_data:
+                                bars = f_data["bars"]
+
+                        # 最終チェック
+                        if not bars or len(bars) < 20:
+                            scope_results.append({
+                                'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
+                                'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
+                                'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
+                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
+                                'events': curr_events, 'stealth_data': {}
+                            })
+                            continue
 
                         if st.session_state.get('f5_ipo', False):
                             try:
