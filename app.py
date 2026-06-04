@@ -2635,7 +2635,8 @@ with tab3:
 **【セットアップ基準】**
 - 🟢 **煮詰まり検知：** 当日の実体が値幅の10%以下の「極小十字線」
 - 💀 **防衛機構：** 前日終値から1ATR以上のギャップダウンで「強制撤退（圏外）」
-- 🎯 **自動ターゲット：** 過去3日高値突破でエントリー、防衛線はMA25を基準にリスク幅を自動算出（8%超過で警告）""")
+- 🎯 **自動ターゲット：** 過去3日高値突破でエントリー、防衛線はMA25を基準にリスク幅を自動算出（8%超過で警告）
+- 🌟 **潜伏スコア加点：** 極限の収縮(+5)、売り枯れ(+3)、MA25上昇(+5)でS級昇格を判定""")
         else:
             st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
 トレンド初動の电击戦。14日高値突破とGCを監視。
@@ -2668,6 +2669,7 @@ with tab3:
         import unicodedata
         import re
         import time
+        import numpy as np
         raw_all_text = watch_in + " " + daily_in
         all_text = unicodedata.normalize('NFKC', raw_all_text).upper()
         t_codes = list(dict.fromkeys([c for c in re.findall(r'(?<![A-Z0-9])[0-9]{3}[0-9A-Z][0-9]?(?![A-Z0-9])', all_text)]))
@@ -3030,18 +3032,41 @@ with tab3:
 
                                 rank = "A級💎"
                                 bg_c = "#2e7d32"
-                                score = 10 # 💎 潜伏時のデフォルトスコア
+                                score = 10 # 💎 潜伏時の基本スコア
 
                                 body_size = abs(c_val - o_val)
                                 day_range = h_val - l_val
-                                if day_range > 0 and body_size <= (day_range * 0.10):
-                                    alerts.append("🟢【極小十字線】煮詰まりの極致")
+                                
+                                # 🚨 追加: 潜伏スコア加点ロジック
+                                if day_range > 0:
+                                    if body_size <= (day_range * 0.05):
+                                        score += 5
+                                        alerts.append("🟢【極小十字線】極限の煮詰まりを検知（+5pts）")
+                                    elif body_size <= (day_range * 0.10):
+                                        alerts.append("🟢【極小十字線】煮詰まりの極致")
+
+                                # 枯渇ボーナス
+                                if len(df_sub) >= 6:
+                                    vol_5d_avg = df_sub['Volume'].iloc[-6:-1].mean()
+                                    curr_vol = s_latest['Volume']
+                                    if vol_5d_avg > 0 and curr_vol < (vol_5d_avg * 0.5):
+                                        score += 3
+                                        alerts.append("💎【売り枯れ】出来高が直近平均の50%未満へ急減（+3pts）")
+
+                                # トレンド同調ボーナス
+                                prev_ma25_val = s_prev['MA25']
+                                if pd.notna(ma25_val) and pd.notna(prev_ma25_val) and ma25_val > prev_ma25_val:
+                                    score += 5
+                                    alerts.append("🔥【上昇同調】MA25上向き。順張り方向の潜伏（+5pts）")
 
                                 if o_val <= (prev_c_val - atr14_val):
                                     alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
                                     rank = "圏外💀"
                                     bg_c = "#616161"
                                     score = 0
+                                elif score >= 18:
+                                    rank = "S級潜伏🔥"
+                                    bg_c = "#1b5e20"
 
                                 high_3d = df_sub[h_col].iloc[-3:].max()
                                 entry_trigger = int(round(high_3d + 1))
