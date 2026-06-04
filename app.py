@@ -2826,65 +2826,64 @@ with tab4:
                 st.write("📡 第1段階：並列データ収集（三重フォールバック）を実行中...")
                 
                 def fetch_parallel_t3(c):
-				    try:
-				        c_str = str(c).upper().strip()
-				        api_code = c_str if len(c_str) >= 5 else c_str + "0"
-				        events = {"dividend": [], "earnings": []}
-				        
-				        # 1. API取得試行
-				        data = get_single_data(api_code, 3)
-				        if data and isinstance(data.get("events"), dict):
-				            api_ev = data.get("events", {})
-				            if api_ev.get("earnings"): 
-				                events["earnings"].extend(api_ev["earnings"])
-				            if api_ev.get("dividend"): 
-				                events["dividend"].extend(api_ev["dividend"])
-				
-				        # 2. データ不足時のフォールバック (yfinance)
-				        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
-				            try:
-				                import yfinance as yf
-				                tk = yf.Ticker(c_str + ".T")
-				                hist = tk.history(period="6mo") 
-				                
-				                if not hist.empty:
-				                    bars = []
-				                    for dt, row in hist.iterrows():
-				                        bars.append({
-				                            'Code': api_code, 
-				                            'Date': dt.strftime('%Y-%m-%d'),
-				                            'AdjO': float(row.get('Open', 0)), 
-				                            'AdjH': float(row.get('High', 0)),
-				                            'AdjL': float(row.get('Low', 0)), 
-				                            'AdjC': float(row.get('Close', 0)),
-				                            'AdjustmentVolume': float(row.get('Volume', 0))
-				                        })
-				                    data = {"bars": bars}
-				            except Exception:
-				                pass
-				
-				        # 3. 決算イベントの補完取得
-				        if not events["earnings"]:
-				            try:
-				                import yfinance as yf
-				                tk_ev = yf.Ticker(c_str + ".T")
-				                info_ev = tk_ev.info
-				                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
-				                if e_date:
-				                    if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
-				                    events["earnings"].append({"Code": api_code, "Date": str(e_date)})
-				            except Exception:
-				                pass
-				
-				        # 4. 財務情報取得と初期化
-				        f_data = get_fundamentals(c_str)
-				        # ※必要であればここにPER/PBR等の計算処理を追記
-				        
-				        return data, events
-				
-				    except Exception:
-				        # 予期せぬエラーでもシステム停止を許さない最終防壁
-				        return None, {"dividend": [], "earnings": []}
+                    try:
+                        c_str = str(c).upper().strip()
+                        api_code = c_str if len(c_str) >= 5 else c_str + "0"
+                        events = {"dividend": [], "earnings": []}
+                        
+                        # 1. API取得試行
+                        data = get_single_data(api_code, 3)
+                        if data and isinstance(data.get("events"), dict):
+                            api_ev = data.get("events", {})
+                            if api_ev.get("earnings"): 
+                                events["earnings"].extend(api_ev["earnings"])
+                            if api_ev.get("dividend"): 
+                                events["dividend"].extend(api_ev["dividend"])
+                        
+                        # 2. データ不足時のフォールバック (yfinance)
+                        if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
+                            try:
+                                import yfinance as yf
+                                tk = yf.Ticker(c_str + ".T")
+                                hist = tk.history(period="6mo") 
+                                
+                                if not hist.empty:
+                                    bars = []
+                                    for dt, row in hist.iterrows():
+                                        bars.append({
+                                            'Code': api_code, 
+                                            'Date': dt.strftime('%Y-%m-%d'),
+                                            'AdjO': float(row.get('Open', 0)), 
+                                            'AdjH': float(row.get('High', 0)),
+                                            'AdjL': float(row.get('Low', 0)), 
+                                            'AdjC': float(row.get('Close', 0)),
+                                            'AdjustmentVolume': float(row.get('Volume', 0))
+                                        })
+                                    data = {"bars": bars}
+                            except Exception:
+                                pass # フォールバック失敗時はdata=Noneのまま進行
+                        
+                        # 3. 決算イベントの補完取得
+                        if not events["earnings"]:
+                            try:
+                                import yfinance as yf
+                                tk_ev = yf.Ticker(c_str + ".T")
+                                info_ev = tk_ev.info
+                                e_date = info_ev.get('earningsAnnouncement') or info_ev.get('nextEarningsDate') or info_ev.get('earningsTimestamp')
+                                if e_date:
+                                    if isinstance(e_date, list) and len(e_date) > 0: e_date = e_date[0]
+                                    events["earnings"].append({"Code": api_code, "Date": str(e_date)})
+                            except Exception:
+                                pass
+                        
+                        # 4. 財務情報取得と初期化
+                        f_data = get_fundamentals(c_str)
+                        
+                        return data, events
+
+                    except Exception:
+                        # 予期せぬエラーでもシステム停止を許さない最終防壁
+                        return None, {"dividend": [], "earnings": []}
                        
                         if f_data:
                             if f_data.get('per'): r_per = f_data.get('per')
