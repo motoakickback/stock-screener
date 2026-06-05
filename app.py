@@ -415,24 +415,6 @@ def render_macro_board():
         ni = data["nikkei"]
         df = ni["df"].copy()
         
-        # 🚨 防弾処理：yfinance仕様対応（Dateがインデックスに隠れている場合はカラムに引きずり出す）
-        if 'Date' not in df.columns:
-            df = df.reset_index()
-            # リセットしても 'index' という名前になることがあるためリネーム
-            if 'index' in df.columns and 'Date' not in df.columns:
-                df.rename(columns={'index': 'Date'}, inplace=True)
-                
-        # 終値カラムを安全に動的取得
-        close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
-        if not close_col:
-            st.warning("📡 気象レーダー受信中: データ構造異常")
-            return
-
-        # MA25計算
-        s = df[close_col]
-        if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
-        df['MA25'] = pd.to_numeric(s, errors='coerce').rolling(window=25).mean()
-        
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
         
@@ -441,7 +423,7 @@ def render_macro_board():
         with c1:
             st.markdown(f"""
                 <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni.get("date", "最新")})</div>
+                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni.get("date", "")})</div>
                     <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni.get("price", 0):,.0f} 円</div>
                     <div style="font-size: 16px; color: {color};">({sign}{ni.get("diff", 0):,.0f} / {sign}{ni.get("pct", 0):.2f}%)</div>
                 </div>
@@ -451,20 +433,22 @@ def render_macro_board():
             import plotly.graph_objects as go
             fig = go.Figure()
             
-            # X軸には確実に取得した日付データをセット
+            # 🚨 修正: yfinanceの仕様に合わせ、X軸には df.index を直接指定
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df[close_col], name='日経平均', mode='lines', 
+                x=df.index, y=df['Close'], name='日経平均', mode='lines', 
                 line=dict(color='#FFD700', width=2), 
                 hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
             ))
             
+            # MA25の計算と描画
+            df['MA25'] = df['Close'].rolling(window=25).mean()
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
+                x=df.index, y=df['MA25'], name='25日線', mode='lines', 
                 line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), 
                 hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
             ))
             
-            y_min, y_max = df[close_col].min(), df[close_col].max()
+            y_min, y_max = df['Close'].min(), df['Close'].max()
             
             fig.update_layout(
                 height=220, 
@@ -480,7 +464,7 @@ def render_macro_board():
                 ), 
                 xaxis=dict(
                     type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', 
-                    range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True
+                    range=[df.index.min(), df.index.max() + pd.Timedelta(hours=24)], fixedrange=True
                 )
             )
             
@@ -982,37 +966,43 @@ def get_fundamentals(code):
             data = r.json().get("statements", [])
             if not data: return None
             
-            # 配列の末尾（最新の決算データ）を取得
+            # 🚨 修正: 0ではなく[-1]で最新の決算を取得
             latest = data[-1]
             
-            # 基礎数値の安全な抽出
-            ni = latest.get("NetIncome")
-            eq = latest.get("Equity")
-            eps = latest.get("EarningsPerShare")
-            bps = latest.get("BookValuePerShare")
-            
-            # 辞書の構築
             res = {
-                "op": latest.get("OperatingProfit"), 
-                "cap": latest.get("MarketCapitalization"), 
-                "er": latest.get("EquityRatio"), 
-                "eps": float(eps) if eps is not None else 0.0, # PER計算用に追加
-                "bps": float(bps) if bps is not None else 0.0, # PBR計算用に追加
-                "roe": 0.0,
-                "per": None, # キャッシュ汚染を防ぐため、ここでは計算しない
-                "pbr": None  # キャッシュ汚染を防ぐため、ここでは計算しない
+                "op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), 
+                "er": latest.get("EquityRatio"), "roe": None, "per": None, "pbr": None
             }
             
-            # ROEの算出 (純利益 ÷ 自己資本)
-            if ni is not None and eq is not None and float(eq) != 0:
-                try: 
-                    res["roe"] = (float(ni) / float(eq)) * 100
-                except: 
-                    res["roe"] = 0.0
-                    
+            # ROEの計算
+            ni, eq = latest.get("NetIncome"), latest.get("Equity")
+            if ni is not None and eq is not None:
+                try: res["roe"] = (float(ni) / float(eq)) * 100
+                except: res["roe"] = 0.0
+
+            # 🚨 修正: PER/PBRをyfinanceを使って補完計算する防弾機構
+            try:
+                import yfinance as yf
+                tk = yf.Ticker(f"{code}.T")
+                info = tk.info
+                
+                # ① yfinanceの情報から直接取得を試みる
+                res["per"] = info.get("trailingPE", info.get("forwardPE"))
+                res["pbr"] = info.get("priceToBook")
+                
+                # ② 取れなければ、J-QuantsのEPS/BPSと最新株価から自力で割り算する
+                cur_price = info.get("currentPrice", info.get("regularMarketPrice"))
+                if res["per"] is None and cur_price:
+                    eps = latest.get("EarningsPerShare")
+                    if eps and float(eps) > 0: res["per"] = float(cur_price) / float(eps)
+                if res["pbr"] is None and cur_price:
+                    bps = latest.get("BookValuePerShare")
+                    if bps and float(bps) > 0: res["pbr"] = float(cur_price) / float(bps)
+            except:
+                pass # yfinanceが失敗しても最低限ROEなどの基本データは返す
+                
             return res
-    except: 
-        pass
+    except: pass
     return None
 
 # =========================================================
