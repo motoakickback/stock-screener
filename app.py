@@ -415,16 +415,22 @@ def render_macro_board():
         ni = data["nikkei"]
         df = ni["df"].copy()
         
-        # 🚨 モグラ駆逐：終値カラムを安全に動的取得（これがないとClose固定で自爆する）
+        # 🚨 防弾処理：yfinance仕様対応（Dateがインデックスに隠れている場合はカラムに引きずり出す）
+        if 'Date' not in df.columns:
+            df = df.reset_index()
+            # リセットしても 'index' という名前になることがあるためリネーム
+            if 'index' in df.columns and 'Date' not in df.columns:
+                df.rename(columns={'index': 'Date'}, inplace=True)
+                
+        # 終値カラムを安全に動的取得
         close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
         if not close_col:
             st.warning("📡 気象レーダー受信中: データ構造異常")
             return
 
-        # 安全なSeries抽出とMA25計算
+        # MA25計算
         s = df[close_col]
         if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
-        # 🚨 修正：ここを close_col に変更しました
         df['MA25'] = pd.to_numeric(s, errors='coerce').rolling(window=25).mean()
         
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
@@ -435,16 +441,17 @@ def render_macro_board():
         with c1:
             st.markdown(f"""
                 <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div>
-                    <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div>
-                    <div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div>
+                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni.get("date", "最新")})</div>
+                    <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni.get("price", 0):,.0f} 円</div>
+                    <div style="font-size: 16px; color: {color};">({sign}{ni.get("diff", 0):,.0f} / {sign}{ni.get("pct", 0):.2f}%)</div>
                 </div>
             """, unsafe_allow_html=True)
             
         with c2:
+            import plotly.graph_objects as go
             fig = go.Figure()
             
-            # 🚨 描画トレースも動的カラム(close_col)へ変更
+            # X軸には確実に取得した日付データをセット
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df[close_col], name='日経平均', mode='lines', 
                 line=dict(color='#FFD700', width=2), 
@@ -974,17 +981,38 @@ def get_fundamentals(code):
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if not data: return None
+            
+            # 配列の末尾（最新の決算データ）を取得
             latest = data[-1]
+            
+            # 基礎数値の安全な抽出
+            ni = latest.get("NetIncome")
+            eq = latest.get("Equity")
+            eps = latest.get("EarningsPerShare")
+            bps = latest.get("BookValuePerShare")
+            
+            # 辞書の構築
             res = {
-                "op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), 
-                "er": latest.get("EquityRatio"), "roe": None, "per": latest.get("PER"), "pbr": latest.get("PBR")
+                "op": latest.get("OperatingProfit"), 
+                "cap": latest.get("MarketCapitalization"), 
+                "er": latest.get("EquityRatio"), 
+                "eps": float(eps) if eps is not None else 0.0, # PER計算用に追加
+                "bps": float(bps) if bps is not None else 0.0, # PBR計算用に追加
+                "roe": 0.0,
+                "per": None, # キャッシュ汚染を防ぐため、ここでは計算しない
+                "pbr": None  # キャッシュ汚染を防ぐため、ここでは計算しない
             }
-            ni, eq = latest.get("NetIncome"), latest.get("Equity")
-            if ni is not None and eq is not None:
-                try: res["roe"] = (float(ni) / float(eq)) * 100
-                except: res["roe"] = 0.0
+            
+            # ROEの算出 (純利益 ÷ 自己資本)
+            if ni is not None and eq is not None and float(eq) != 0:
+                try: 
+                    res["roe"] = (float(ni) / float(eq)) * 100
+                except: 
+                    res["roe"] = 0.0
+                    
             return res
-    except: pass
+    except: 
+        pass
     return None
 
 # =========================================================
