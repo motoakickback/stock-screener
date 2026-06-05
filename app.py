@@ -974,7 +974,7 @@ def get_fundamentals(code):
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if not data: return None
-            latest = data[0]
+            latest = data[-1]
             res = {
                 "op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), 
                 "er": latest.get("EquityRatio"), "roe": None, "per": latest.get("PER"), "pbr": latest.get("PBR")
