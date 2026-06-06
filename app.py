@@ -3097,7 +3097,8 @@ with tab4:
 
                         # テクニカル演算
                         try:
-                            df_chart_full = calc_technicals(df_s.copy())
+                            # 🚨 物理結線：旧関数を廃止し、定義済みの超高速ベクトルインジケータエンジンへ完全結合
+                            df_chart_full = calc_vector_indicators(df_s.copy())
                         except Exception:
                             df_chart_full = df_s.copy()
                             
@@ -3125,17 +3126,18 @@ with tab4:
                                 rs = gain / loss
                                 rsi_series = 100 - (100 / (1 + rs))
                                 rsi_v = float(rsi_series.iloc[-1])
-                                df_chart_full['RSI'] = rsi_series # DataFrameにもセット
+                                df_chart_full['RSI'] = rsi_series 
                             except Exception:
                                 rsi_v = 50.0
 
+                        # 🚨 物理同期：共通エンジンから計算された純度100%のリアル14日ATRを確実に確保
                         if 'ATR' in df_chart_full.columns and pd.notna(t_latest['ATR']):
                             atr_v = float(t_latest['ATR'])
                         else:
                             atr_v = lc * 0.05
                             
                         df_mini = df_chart_full.tail(260).copy()
-                        
+                
                         score = 0
                         alerts = []
                         gc_days = 0
@@ -3167,7 +3169,7 @@ with tab4:
                                         d_obj = datetime.fromtimestamp(int(d_str[:10]), tz).date()
                                     else:
                                         d_obj = datetime.strptime(d_str[:10], "%Y-%m-%d").date()
-                                    
+                                     
                                     days_diff = (d_obj - today_d).days
                                     if 0 <= days_diff <= 14:
                                         msg = f"{icon} 【{event_name}接近】あと {days_diff} 日 ({d_obj.strftime('%m/%d')})"
@@ -3194,7 +3196,7 @@ with tab4:
                         # =========================================================================
                         if is_stealth:
                             df_sub = df_chart_full.copy()
-                            
+                        
                             if len(df_sub) < 25:
                                 rank = "圏外💀"
                                 bg_c = "#616161"
@@ -3207,17 +3209,6 @@ with tab4:
                                 h_col = 'AdjH'
                                 l_col = 'AdjL'
 
-                                df_sub['prev_C'] = df_sub[c_col].shift(1)
-                                df_sub['TR'] = np.maximum(
-                                    df_sub[h_col] - df_sub[l_col],
-                                    np.maximum(
-                                        abs(df_sub[h_col] - df_sub['prev_C']),
-                                        abs(df_sub[l_col] - df_sub['prev_C'])
-                                    )
-                                )
-                                df_sub['ATR14'] = df_sub['TR'].rolling(window=14).mean()
-                                df_sub['MA25'] = df_sub[c_col].rolling(window=25).mean()
-
                                 s_latest = df_sub.iloc[-1]
                                 s_prev = df_sub.iloc[-2]
 
@@ -3226,17 +3217,18 @@ with tab4:
                                 h_val = s_latest[h_col]
                                 l_val = s_latest[l_col]
                                 prev_c_val = s_prev[c_col]
-                                atr14_val = s_latest['ATR14']
-                                ma25_val = s_latest['MA25']
+                                
+                                # 🚨 物理同期：内部での二重計算を完全撤去し、上流の共通リアルATR(106円)をダイレクト結線！
+                                atr14_val = atr_v
+                                ma25_val = float(s_latest['SMA25']) if 'SMA25' in df_sub.columns else lc
 
                                 rank = "A級💎"
                                 bg_c = "#2e7d32"
-                                score = 10 # 💎 潜伏時の基本スコア
+                                score = 10 
 
                                 body_size = abs(c_val - o_val)
                                 day_range = h_val - l_val
                                 
-                                # 🚨 追加: 潜伏スコア加点ロジック
                                 if day_range > 0:
                                     if body_size <= (day_range * 0.05):
                                         score += 5
@@ -3244,8 +3236,7 @@ with tab4:
                                     elif body_size <= (day_range * 0.10):
                                         alerts.append("🟢【極小十字線】煮詰まりの極致")
 
-                                # 🚨 修正: 枯渇ボーナス (Volumeキーエラー対策の堅牢化)
-                                vol_col = 'Volume' if 'Volume' in df_sub.columns else ('volume' if 'volume' in df_sub.columns else None)
+                                vol_col = 'AdjustmentVolume' if 'AdjustmentVolume' in df_sub.columns else ('Volume' if 'Volume' in df_sub.columns else ('volume' if 'volume' in df_sub.columns else None))
                                 if vol_col and len(df_sub) >= 6:
                                     vol_5d_avg = df_sub[vol_col].iloc[-6:-1].mean()
                                     curr_vol = s_latest[vol_col]
@@ -3253,11 +3244,11 @@ with tab4:
                                         score += 3
                                         alerts.append("💎【売り枯れ】出来高が直近平均の50%未満へ急減（+3pts）")
 
-                                # トレンド同調ボーナス
-                                prev_ma25_val = s_prev['MA25']
-                                if pd.notna(ma25_val) and pd.notna(prev_ma25_val) and ma25_val > prev_ma25_val:
-                                    score += 5
-                                    alerts.append("🔥【上昇同調】MA25上向き。順張り方向の潜伏（+5pts）")
+                                if 'SMA25' in df_sub.columns:
+                                    prev_ma25_val = s_prev['SMA25']
+                                    if pd.notna(ma25_val) and pd.notna(prev_ma25_val) and ma25_val > prev_ma25_val:
+                                        score += 5
+                                        alerts.append("🔥【上昇同調】MA25上向き。順張り方向の潜伏（+5pts）")
 
                                 if o_val <= (prev_c_val - atr14_val):
                                     alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
