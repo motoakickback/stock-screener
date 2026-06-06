@@ -199,7 +199,6 @@ components.html(
 )
 
 # --- 2. 認証・通信設定（Connection Poolingの導入） ---
-render_macro_board()
 user_id = st.session_state.get("current_user", "UNKNOWN")
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
@@ -2025,6 +2024,7 @@ if _macro_fallback and "nikkei" in _macro_fallback:
                 """, unsafe_allow_html=True)
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
+render_macro_board()
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】広域レーダー", 
