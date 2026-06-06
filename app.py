@@ -199,7 +199,8 @@ components.html(
 )
 
 # --- 2. 認証・通信設定（Connection Poolingの導入） ---
-user_id = st.session_state["current_user"]
+render_macro_board()
+user_id = st.session_state.get("current_user", "UNKNOWN")
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
 # =========================================================
@@ -415,24 +416,19 @@ def render_macro_board():
         ni = data["nikkei"]
         df = ni["df"].copy()
         
-        # 🚨 防弾処理: インデックスに隠れた日付（Date）を取り出す
+        # 🚨 防弾処理: インデックスに隠れた日付（Date）を取り出し、クラッシュ原因のTZを消去
         if 'Date' not in df.columns:
             df = df.reset_index()
             if 'index' in df.columns and 'Date' not in df.columns:
                 df.rename(columns={'index': 'Date'}, inplace=True)
-                
-        # 🚨 最重要: Plotlyをクラッシュさせる「タイムゾーン情報」を強制消去する
         if pd.api.types.is_datetime64_any_dtype(df['Date']):
             df['Date'] = df['Date'].dt.tz_localize(None)
 
-        # 終値カラムを安全に取得
         close_col = next((c for c in ['AdjC', 'Close', 'close', 'Adj Close', 'C'] if c in df.columns), None)
         if not close_col:
-            st.warning("📡 気象レーダー受信中: データ構造異常")
             return
 
         df['MA25'] = df[close_col].rolling(window=25).mean()
-        
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
         
@@ -441,7 +437,7 @@ def render_macro_board():
         with c1:
             st.markdown(f"""
                 <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni.get("date", "")})</div>
+                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経: {ni.get("date", "")})</div>
                     <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni.get("price", 0):,.0f} 円</div>
                     <div style="font-size: 16px; color: {color};">({sign}{ni.get("diff", 0):,.0f} / {sign}{ni.get("pct", 0):.2f}%)</div>
                 </div>
@@ -451,44 +447,25 @@ def render_macro_board():
             import plotly.graph_objects as go
             fig = go.Figure()
             
-            # X軸には確実にTZ消去済みの Date カラムを指定
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df[close_col], name='日経平均', mode='lines', 
-                line=dict(color='#FFD700', width=2), 
-                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
+                line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
             ))
-            
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
-                line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), 
-                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+                line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
             ))
             
             y_min, y_max = df[close_col].min(), df[close_col].max()
-            
             fig.update_layout(
-                height=220, 
-                margin=dict(l=0, r=40, t=15, b=10), 
-                xaxis_rangeslider_visible=False, 
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                showlegend=False, 
-                hovermode="x unified", 
-                yaxis=dict(
-                    side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', 
-                    autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True
-                ), 
-                xaxis=dict(
-                    type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', 
-                    range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True
-                )
+                height=220, margin=dict(l=0, r=40, t=15, b=10), xaxis_rangeslider_visible=False, 
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, hovermode="x unified", 
+                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True), 
+                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
             )
-            
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
-    else:
-        st.warning("📡 外部気象レーダー応答なし")
 
 # --- 3. 共通関数 & 演算エンジン ---
 def clean_df(df):
@@ -975,29 +952,50 @@ def check_oversold_ultimate(df_sub):
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
 def get_fundamentals(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    url = f"{BASE_URL}/fins/statements?code={api_code}"
     
-    # 🚨 J-Quants V2 / V1 両対応のフォールバック・フェッチ
-    url_v2 = f"{BASE_URL}/fins/summary?code={api_code}"
-    url_v1 = f"{BASE_URL}/fins/statements?code={api_code}"
+    res = {"op": None, "cap": None, "er": None, "roe": None, "per": None, "pbr": None}
     
-    latest = None
     try:
-        r = api_session.get(url_v2, timeout=(3.0, 5.0))
+        time.sleep(0.1)
+        r = api_session.get(url, timeout=(3.0, 5.0))
         if r.status_code == 200:
-            data = r.json().get("summary", [])
-            if data: latest = data[-1]
-    except: pass
+            data = r.json().get("statements", [])
+            if data:
+                latest = data[-1]
+                
+                res["op"] = latest.get("OperatingProfit")
+                res["er"] = latest.get("EquityRatio")
+                
+                ni = latest.get("NetIncome")
+                eq = latest.get("Equity")
+                eps = latest.get("EarningsPerShare")
+                bps = latest.get("BookValuePerShare")
+                shares = latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock")
+                
+                # ROEの計算
+                if ni and eq and float(eq) != 0:
+                    res["roe"] = (float(ni) / float(eq)) * 100
 
-    # V2が失敗した場合、旧V1エンドポイントを試行
-    if not latest:
-        try:
-            r = api_session.get(url_v1, timeout=(3.0, 5.0))
-            if r.status_code == 200:
-                data = r.json().get("statements", [])
-                if data: latest = data[-1]
-        except: pass
+                # 🚨 yfinanceのinfoフリーズを回避し、最速で最新株価(1日分)だけを取得して自力でPER/PBR計算
+                try:
+                    import yfinance as yf
+                    tk = yf.Ticker(f"{code}.T")
+                    hist = tk.history(period="1d")
+                    if not hist.empty:
+                        cur_price = float(hist['Close'].iloc[-1])
+                        
+                        if eps and float(eps) > 0: res["per"] = cur_price / float(eps)
+                        if bps and float(bps) > 0: res["pbr"] = cur_price / float(bps)
+                        if shares and float(shares) > 0: res["cap"] = cur_price * float(shares)
+                except:
+                    pass
+                    
+                return res
+    except:
+        pass
         
-    if not latest: return None
+    return res
 
     # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
     op = latest.get("OPnumber", latest.get("OperatingProfit"))
