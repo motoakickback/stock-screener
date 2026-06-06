@@ -952,49 +952,23 @@ def check_oversold_ultimate(df_sub):
 def get_fundamentals(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
-    
-    res = {"op": None, "cap": None, "er": None, "roe": None, "per": None, "pbr": None}
-    
     try:
-        time.sleep(0.1)
-        r = api_session.get(url, timeout=(3.0, 5.0))
+        r = api_session.get(url, timeout=3.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
-            if data:
-                latest = data[-1]
-                
-                res["op"] = latest.get("OperatingProfit")
-                res["er"] = latest.get("EquityRatio")
-                
-                ni = latest.get("NetIncome")
-                eq = latest.get("Equity")
-                eps = latest.get("EarningsPerShare")
-                bps = latest.get("BookValuePerShare")
-                shares = latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock")
-                
-                # ROEの計算
-                if ni and eq and float(eq) != 0:
-                    res["roe"] = (float(ni) / float(eq)) * 100
-
-                # 🚨 yfinanceのinfoフリーズを回避し、最速で最新株価(1日分)だけを取得して自力でPER/PBR計算
-                try:
-                    import yfinance as yf
-                    tk = yf.Ticker(f"{code}.T")
-                    hist = tk.history(period="1d")
-                    if not hist.empty:
-                        cur_price = float(hist['Close'].iloc[-1])
-                        
-                        if eps and float(eps) > 0: res["per"] = cur_price / float(eps)
-                        if bps and float(bps) > 0: res["pbr"] = cur_price / float(bps)
-                        if shares and float(shares) > 0: res["cap"] = cur_price * float(shares)
-                except:
-                    pass
-                    
-                return res
-    except:
-        pass
-        
-    return res
+            if not data: return None
+            latest = data[0]
+            res = {
+                "op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), 
+                "er": latest.get("EquityRatio"), "roe": None, "per": latest.get("PER"), "pbr": latest.get("PBR")
+            }
+            ni, eq = latest.get("NetIncome"), latest.get("Equity")
+            if ni is not None and eq is not None:
+                try: res["roe"] = (float(ni) / float(eq)) * 100
+                except: res["roe"] = 0.0
+            return res
+    except: pass
+    return None
 
     # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
     op = latest.get("OPnumber", latest.get("OperatingProfit"))
@@ -2934,13 +2908,8 @@ with tab4:
                         
                         # 4. 財務情報取得と初期化
                         f_data = get_fundamentals(c_str)
+                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
-                        return data, events
-
-                    except Exception:
-                        # 予期せぬエラーでもシステム停止を許さない最終防壁
-                        return None, {"dividend": [], "earnings": []}
-                       
                         if f_data:
                             if f_data.get('per'): r_per = f_data.get('per')
                             if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
