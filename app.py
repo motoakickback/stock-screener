@@ -1138,9 +1138,11 @@ import random
 
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
+    # 🚨 必須UI：進捗バーとテキストの描画
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    # 260日分の対象日を算出
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -1151,8 +1153,8 @@ def get_hist_data_cached(key):
 
     dfs = []
     
-    # 🚨 APIの逆鱗（429制限）に触れないよう並列数を「3」へ最適化
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+    # 🚨 ボスのオリジナル陣形：最適解である「4部隊（max_workers=4）」へ完全復元
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
@@ -1165,14 +1167,16 @@ def get_hist_data_cached(key):
             
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 広域索敵レーダー稼働中: {i+1}/{len(dates)}日 完了 (蓄積個体: {len(dfs)}日分)")
+            status_text.text(f"📡 広域索敵レーダー稼働中: {i+1}/{len(dates)}日 完了")
 
+    # UI消去
     progress_bar.empty()
     status_text.empty()
 
     if not dfs:
         raise ValueError("🚨 兵站断絶: APIの制限等により、有効なデータが取得できませんでした")
 
+    # 🚨 メモリ防衛：結合前にキャッシュゴミをパージ
     gc.collect()
     full_df = pd.concat(dfs, ignore_index=True)
     del dfs
@@ -1185,12 +1189,8 @@ def get_hist_data_cached(key):
     return full_df
 
 def fetch_and_compress_single_day(dt):
-    """J-QuantsのAPI制限を回避する分散通信（ジッター）搭載版"""
-    # 🚨 スレッドの一斉突撃をバラけさせるためのミリ秒ランダム待機（Thundering Herd完全回避）
-    time.sleep(random.uniform(0.1, 0.6))
-    
-    # 🚨 リトライ回数を「5回」へ増強し、生き残る確率を最大化
-    for attempt in range(5):
+    # 🚨 オリジナルの通信ロジックへ復元
+    for attempt in range(3):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
             if r.status_code == 200:
@@ -1201,6 +1201,7 @@ def fetch_and_compress_single_day(dt):
                 temp_df = pd.DataFrame(data)
                 if temp_df.empty: return None
                 
+                # 1. カラム名の揺れを最速で大文字へ統一
                 if 'code' in temp_df.columns and 'Code' not in temp_df.columns:
                     temp_df.rename(columns={'code': 'Code'}, inplace=True)
                 
@@ -1216,15 +1217,15 @@ def fetch_and_compress_single_day(dt):
                     p_map = {'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC'}
                 temp_df.rename(columns=p_map, inplace=True)
                 
-                # ここで不純物カラムを完全焼却
+                # 2. 🚨 メモリ防衛：必要な7列だけに絞り込み、不要な列をこの瞬間に焼却する
                 keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                 existing_keeps = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing_keeps].copy()
                 
+                # 3. 🚨 データ型の極小化（float32化）で体積を半減させる
                 if 'Date' in temp_df.columns:
                     temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                     
-                # float32への極限圧縮（メモリ防衛の要）
                 for num_col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
                     if num_col in temp_df.columns:
                         temp_df[num_col] = pd.to_numeric(temp_df[num_col], errors='coerce').astype('float32')
@@ -1235,12 +1236,11 @@ def fetch_and_compress_single_day(dt):
                 return temp_df
                 
             elif r.status_code == 429:
-                # 🚨 レートリミット被弾時は、大口を刺激しないようランダムに冷却時間を分散（2秒〜5秒）し、次回も同調させない
-                sleep_time = random.uniform(2.0, 5.0) + (attempt * 1.0)
-                time.sleep(sleep_time)
+                # 🚨 レート制限に引っかかった時のオリジナル待機時間（ペナルティ処理）
+                time.sleep(5.0)
                 continue
         except:
-            time.sleep(random.uniform(1.0, 3.0))
+            time.sleep(1.0)
             continue
     return None
 
