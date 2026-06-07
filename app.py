@@ -1253,7 +1253,7 @@ def fetch_and_compress_single_day(dt):
                 
             elif r.status_code == 429:
                 last_error = "HTTP 429: レート制限（ペナルティ）"
-                time.sleep(2.0)
+                time.sleep(0.5)
                 continue
             else:
                 last_error = f"HTTP {r.status_code}: {r.text[:50]}"
