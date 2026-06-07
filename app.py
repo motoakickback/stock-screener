@@ -1142,7 +1142,6 @@ def get_hist_data_cached(key):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # 260日分の対象日を算出
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -1152,16 +1151,19 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
+    error_logs = [] # 🚨 新規配備：敵の妨害電波（エラー理由）を記録するブラックボックス
     
-    # 🚨 ボスのオリジナル陣形：最適解である「4部隊（max_workers=4）」へ完全復元
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             try:
                 res = f.result()
-                if res is not None and isinstance(res, pd.DataFrame) and not res.empty:
+                if isinstance(res, pd.DataFrame) and not res.empty:
                     dfs.append(res)
+                # 🚨 もしエラーコードを持った辞書が返ってきたらログに記録
+                elif isinstance(res, dict) and "error_code" in res:
+                    error_logs.append(f"HTTP {res['error_code']}: {res['msg']}")
             except:
                 pass
             
@@ -1174,9 +1176,13 @@ def get_hist_data_cached(key):
     status_text.empty()
 
     if not dfs:
-        raise ValueError("🚨 兵站断絶: APIの制限等により、有効なデータが取得できませんでした")
+        # 🚨 エラーログが記録されていれば、その理由をボスの画面に直接表示してシステム停止
+        if error_logs:
+            raise ValueError(f"🚨 兵站断絶: J-Quants APIから通信を完全に拒絶されています。\n理由: {error_logs[0]}")
+        else:
+            raise ValueError("🚨 兵站断絶: 有効なデータが取得できませんでした（土日のみ、またはネットワーク遮断）")
 
-    # 🚨 メモリ防衛：結合前にキャッシュゴミをパージ
+    # メモリ防衛
     gc.collect()
     full_df = pd.concat(dfs, ignore_index=True)
     del dfs
@@ -1189,10 +1195,7 @@ def get_hist_data_cached(key):
     return full_df
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 【核心：巡航ペースメーカー】
-    # 4部隊の突撃前に1秒のブレーキを踏む。これにより「11秒の強制気絶ペナルティ」を
-    # 完全に回避し、結果的に最も早く（ノンストップで）260日分を完走する。
-    time.sleep(1.0)
+    time.sleep(1.0) # 1秒の巡航ブレーキ
     
     for attempt in range(3):
         try:
@@ -1205,7 +1208,6 @@ def fetch_and_compress_single_day(dt):
                 temp_df = pd.DataFrame(data)
                 if temp_df.empty: return None
                 
-                # 1. カラム名の統一
                 if 'code' in temp_df.columns and 'Code' not in temp_df.columns:
                     temp_df.rename(columns={'code': 'Code'}, inplace=True)
                 
@@ -1221,12 +1223,10 @@ def fetch_and_compress_single_day(dt):
                     p_map = {'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC'}
                 temp_df.rename(columns=p_map, inplace=True)
                 
-                # 2. メモリ防衛：必要な7列のみ抽出
                 keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                 existing_keeps = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing_keeps].copy()
                 
-                # 3. データ型の極小化（float32化）でOOMを完全防衛
                 if 'Date' in temp_df.columns:
                     temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                     
@@ -1240,11 +1240,14 @@ def fetch_and_compress_single_day(dt):
                 return temp_df
                 
             elif r.status_code == 429:
-                # 万が一ペナルティを食らっても、次は無駄に待たず2秒で復帰を試みる
-                time.sleep(0.2)
+                time.sleep(0.5)
                 continue
-        except:
-            # ネットワーク瞬断時も1秒で即復帰
+            else:
+                # 🚨 【核心】200でも429でもない致命的エラー（401や403）を食らった場合、
+                # その生々しいエラー理由を上流（画面）へ報告するために辞書で返す
+                return {"error_code": r.status_code, "msg": r.text}
+                
+        except Exception as e:
             time.sleep(1.0)
             continue
     return None
