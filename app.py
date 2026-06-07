@@ -3599,7 +3599,9 @@ with tab4:
 
         valid_results = [x for x in scope_results if not x.get('error')]
         if not is_stealth:
-            valid_results = [x for x in valid_results if x.get('r_val', 0) >= 3]
+            # valid_results = [x for x in valid_results if x.get('r_val', 0) >= 3]
+			# 今回：一旦すべての銘柄を表示して、どのスコアで弾かれているかを確認する
+            valid_results = [x for x in valid_results]
 
         if valid_results:
             export_texts = []
