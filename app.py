@@ -32,70 +32,51 @@ st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide"
 
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
-import logging
-# 必要に応じて設定
-logging.basicConfig(filename='auth_debug.log', level=logging.INFO)
-def your_auth_function():
-    logging.info(f"認証試行開始: {datetime.now().strftime('%H:%M:%S.%f')}")
-	
-# 【新規追加】指紋認証等で値が変わった瞬間に、パスワードを強制確保する関数
-def login_attempt():
-    pw = st.session_state.get("input_access_code", "")
-    if pw in ALLOWED_PASSWORDS:
-        st.session_state["password_correct"] = True
-        st.session_state["current_user"] = pw
+import streamlit as st
+import streamlit.components.v1 as components
 
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-        st.session_state["current_user"] = "" 
-        
-    if not st.session_state["password_correct"]:
-        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            # 💡 司令官のオリジナルDNA（無傷のオートフィル連携）を完全復旧
+# 【重要】認証スクリプトを一度だけ注入するためのコンテナ
+if "js_injected" not in st.session_state:
+    st.session_state.js_injected = False
+
+def inject_auth_script():
+    if not st.session_state.js_injected:
+        # st.empty()を使って、このコンポーネントを一度だけDOMに配置する
+        # 再描画の影響を受けにくいようにします
+        container = st.empty()
+        with container:
             components.html(
                 """
                 <script>
                 const doc = window.parent.document;
-                let loginTriggered = false;
+                // windowレベルでフラグを管理し、再描画でリセットされないようにする
+                window.loginTriggered = window.loginTriggered || false;
 
                 function tryAutoLogin() {
-                    if (loginTriggered) return true;
+                    if (window.loginTriggered) return true;
                     
                     const input = doc.querySelector('input[type="password"]');
-                    const buttons = doc.querySelectorAll('button');
-                    let submitBtn = null;
-                    for (const btn of buttons) {
-                        if (btn.innerText && btn.innerText.includes("認証")) {
-                            submitBtn = btn;
-                            break;
-                        }
-                    }
-                    if (input && submitBtn) {
-                        if (input.value.length > 0) {
-                            loginTriggered = true; 
-                            
-                            input.focus(); 
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                            input.blur(); 
-                            
-                            // 待ち時間は安定の1秒に戻します
-                            setTimeout(() => {
-                                submitBtn.click();
-                            }, 300);
-                            return true;
-                        }
+                    const buttons = Array.from(doc.querySelectorAll('button')).filter(b => b.innerText.includes("認証"));
+                    
+                    if (input && input.value.length > 0 && buttons.length > 0) {
+                        window.loginTriggered = true; 
+                        input.blur(); // 入力を確定させる
+                        
+                        // 少し遅延を入れてからクリック
+                        setTimeout(() => {
+                            buttons[0].click();
+                        }, 300);
+                        return true;
                     }
                     return false;
                 }
+
+                // 監視開始
                 const monitor = setInterval(() => {
-                    if (tryAutoLogin()) {
-                        clearInterval(monitor);
-                    }
+                    if (tryAutoLogin()) clearInterval(monitor);
                 }, 200);
+
+                // 入力イベント検知
                 doc.addEventListener('input', (e) => {
                     if (e.target.type === 'password') tryAutoLogin();
                 });
@@ -103,20 +84,29 @@ def check_password():
                 """,
                 height=0,
             )
-            
-            # 🚨 修正：二重更新（文字消え）の元凶だった「on_change」を完全撤去！
+        st.session_state.js_injected = True
+
+def check_password():
+    # 認証スクリプトの注入（初回のみ）
+    inject_auth_script()
+    
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+        
+    if not st.session_state["password_correct"]:
+        st.markdown('<h1 style="text-align: center; color: #2e7d32; margin-top: 10vh;">🎯 戦術スコープ『鉄の掟』</h1>', unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
             acc_code = st.text_input(
-                "Access Code", 
-                type="password", 
+                "Access Code", type="password", 
                 label_visibility="collapsed", 
                 placeholder="アクセスコード",
                 key="input_access_code"
             )
             
-            # 🚨 修正：同じく「on_click」も撤去。シンプルにボタンが押されたかどうかだけで判定する。
             submitted = st.button("認証 (ENTER)", use_container_width=True)
             
-            # ボタンが押された（JSがクリックした）瞬間に、ここで初めて1回だけ処理を走らせる
             if submitted:
                 if acc_code in ALLOWED_PASSWORDS:
                     st.session_state["password_correct"] = True
@@ -124,7 +114,6 @@ def check_password():
                     st.rerun()
                 elif acc_code != "":
                     st.error("🚨 認証失敗：コードが違います。")
-                    
         return False
     return True
 
