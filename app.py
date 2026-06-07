@@ -2629,42 +2629,20 @@ with tab3:
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            if 'ma25' not in group_df.columns: 
-                group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-            
-            # 5%基準へ復元
+            # 5%基準
             group_df['atr'] = group_df['AdjC'] * 0.05
-
-            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-            group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
             group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
-
-            today = group_df.iloc[-1]
-
-            # 🚨 ここでどのフィルターが「None」を返しているかログに出す
-            if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
-                print(f"DEBUG: {code} - Failed: ValueMin") 
-                return None
             
-            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
-                print(f"DEBUG: {code} - Failed: VolRatio")
-                return None
+            # --- ここから下のフィルターを全てコメントアウトします ---
+            # フィルターを無視してデータを返すテスト
             
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]):
-                print(f"DEBUG: {code} - Failed: ATR(DayRange)")
-                return None
-            
-            if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)):
-                print(f"DEBUG: {code} - Failed: MA25Prox")
-                return None
+            # today = group_df.iloc[-1]
+            # if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
+            # ... (他のif文も全て除外)
 
             return {
-                'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
-                'atr': float(today['atr']), 'day_range': float(today['day_range']),
-                'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
-                'avg_vol_prev': float(today['avg_volume_5_prev']),
-                'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+                'Code': code, 
+                'T_Rank': 'Test', 'T_Color': '#ff0000', 'T_Desc': 'テスト抽出'
             }
 
         with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
