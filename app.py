@@ -2433,9 +2433,7 @@ with tab2:
                         # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
                         group_df = group.tail(30).copy().ffill().bfill()
                         
-                        v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
-                        v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
-
+                        v_col_name = v_col
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
                         if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]: return None
@@ -2639,7 +2637,7 @@ with tab3:
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
-            # 🚨 唯一の改修箇所：OOM回避・爆速化のため直近30行だけをコピーする
+            # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
             group_df = group.tail(30).copy().ffill().bfill()
             if len(group_df) < 26: return None
 
@@ -2651,11 +2649,11 @@ with tab3:
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            if 'ma25' not in group_df.columns: 
-                group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-            
-            # 🚨 ボスのコードの通り「5%基準」を完全維持
-            group_df['atr'] = group_df['AdjC'] * 0.05
+            if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+            if 'atr' not in group_df.columns:
+                group_df['prev_close'] = group_df['AdjC'].shift(1)
+                group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
+                group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
 
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
             group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
@@ -2664,7 +2662,6 @@ with tab3:
 
             today = group_df.iloc[-1]
 
-            # フィルター条件も一切変更なし
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
             if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
