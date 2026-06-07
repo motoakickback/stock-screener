@@ -2632,7 +2632,7 @@ with tab3:
             if 'ma25' not in group_df.columns: 
                 group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
             
-            # 🚨 司令：ATR計算を「終値の5%」へ即時復元
+            # 5%基準へ復元
             group_df['atr'] = group_df['AdjC'] * 0.05
 
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
