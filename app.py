@@ -2757,6 +2757,9 @@ with tab3:
 
             m_map = globals().get('master_map_t2', globals().get('master_map', {}))
             for r in raw_hits_stealth:
+				# 🚨 これをここに挿入。辞書の中身をぶちまけます
+                st.write(f"DEBUG: 辞書の中身 {r}")
+                
                 st.divider()
                 c_code = str(r.get('Code', '不明'))
                 m_info = m_map.get(c_code, {}) if m_map else {}
