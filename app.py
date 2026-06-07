@@ -2656,6 +2656,15 @@ with tab3:
                 full_df = clean_df(pd.DataFrame(raw))
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
 
+                # 🚨 ここでデータを強制的に表示して確認する
+                st.write("--- データソース診断 ---")
+                st.write(f"データ行数: {len(full_df)}")
+                st.write(f"カラム一覧: {full_df.columns.tolist()}")
+                st.write(full_df.head(5)) # 最初の5行を表示
+                if len(full_df) == 0:
+                    st.error("🚨 致命的エラー：データソースが空です。")
+                # ---------------------
+
                 m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                 target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
                 m_map = globals().get('master_map_t2', globals().get('master_map', {}))
