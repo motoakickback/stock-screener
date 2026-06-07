@@ -1189,8 +1189,12 @@ def get_hist_data_cached(key):
     return full_df
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 試行回数を少し増やし、小刻みにアタックする仕様
-    for attempt in range(5):
+    # 🚨 【核心：巡航ペースメーカー】
+    # 4部隊の突撃前に1秒のブレーキを踏む。これにより「11秒の強制気絶ペナルティ」を
+    # 完全に回避し、結果的に最も早く（ノンストップで）260日分を完走する。
+    time.sleep(1.0)
+    
+    for attempt in range(3):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
             if r.status_code == 200:
@@ -1222,7 +1226,7 @@ def fetch_and_compress_single_day(dt):
                 existing_keeps = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing_keeps].copy()
                 
-                # 3. データ型の極小化（float32化）
+                # 3. データ型の極小化（float32化）でOOMを完全防衛
                 if 'Date' in temp_df.columns:
                     temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                     
@@ -1236,12 +1240,11 @@ def fetch_and_compress_single_day(dt):
                 return temp_df
                 
             elif r.status_code == 429:
-                # 🚨【核心】5秒の長すぎる待機を撤廃。
-                # APIのシャッターが開く最短時間（1.5秒）だけ息継ぎをして即座に再突撃
-                time.sleep(1.5)
+                # 万が一ペナルティを食らっても、次は無駄に待たず2秒で復帰を試みる
+                time.sleep(2.0)
                 continue
         except:
-            # ネットワークエラー時も素早く復帰
+            # ネットワーク瞬断時も1秒で即復帰
             time.sleep(1.0)
             continue
     return None
