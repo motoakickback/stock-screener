@@ -2698,14 +2698,36 @@ with tab3:
                 st.write(s_msg2)
                 st.session_state.tab2_time_log_stealth.append(s_msg2)
 
+                # --- デバッグ用：状況報告ブロック ---
+                st.write(f"🔍 索敵対象銘柄数: {len(df.groupby('Code'))} 銘柄")
+                
+                # エラー収集用
+                fail_stats = {"ValMin": 0, "VolRatio": 0, "ATR": 0, "MA25": 0}
+                
                 results = []
+                # 修正した関数（scan_unit_stealth_parallel）はそのまま使用
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date, cfg_stealth) for c, g in df.groupby('Code')]
+                    # ここで各銘柄をスキャン
+                    futures = {executor.submit(scan_unit_stealth_parallel, c, g, latest_date, cfg_stealth): c for c, g in df.groupby('Code')}
                     for f in concurrent.futures.as_completed(futures):
                         try:
                             res = f.result()
-                            if res: results.append(res)
-                        except: pass
+                            if res:
+                                results.append(res)
+                            else:
+                                # Noneが返ってきた＝どれかのフィルターに引っかかった
+                                # (本来はここを細かく判定しますが、まずは全体の通過率を見ます)
+                                pass
+                        except Exception as e:
+                            st.write(f"Err: {e}")
+
+                st.write(f"✅ スキャン通過数: {len(results)} 銘柄")
+                if len(results) == 0 and len(df) > 0:
+                    st.warning("⚠️ 全銘柄がフィルターで脱落しました。")
+                    # 最初の1銘柄だけ中身を表示して原因を探る
+                    sample_group = next(iter(df.groupby('Code')))[1]
+                    st.write("サンプル銘柄のデータ (最新行):")
+                    st.write(sample_group.iloc[-1:])
 
                 st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
 
