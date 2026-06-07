@@ -1262,7 +1262,7 @@ def fetch_and_compress_single_day(dt):
         except Exception as e:
             # 🚨 通信のタイムアウトや切断エラーの正体をすべて暴く
             last_error = f"Python例外: {type(e).__name__} ({str(e)})"
-            time.sleep(1.0)
+            time.sleep(0.5)
             continue
             
     return {"msg": f"3回リトライ失敗: {last_error}"}
