@@ -2357,14 +2357,19 @@ with tab2:
                         vol_pct = (atr_v / lc * 100) if lc > 0 else 0
                         if vol_pct < cfg.get("f_vol_min", -1.0): return None
                         if rsi > cfg.get("rsi_lim", 70): return None
+
                         if len(group) < 25: return None
 
                         if cfg.get("f12_ex_overvalued"):
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
 
-                        group_df = group.copy().ffill().bfill()
-                        v_col_name = v_col
+                        # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
+                        group_df = group.tail(30).copy().ffill().bfill()
+                        
+                        v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
+                        v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
+
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
                         if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]: return None
@@ -2568,8 +2573,10 @@ with tab3:
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
-            group_df = group.copy().ffill().bfill()
-            if len(group_df) < 26: return None
+            if len(group) < 26: return None
+
+            # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
+            group_df = group.tail(30).copy().ffill().bfill()
 
             v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
             v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
@@ -2579,10 +2586,19 @@ with tab3:
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+            # --- 計算ロジック・フィルターはボスのコードから一切変更していません ---
+            if 'ma25' not in group_df.columns: 
+                group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+                
             if 'atr' not in group_df.columns:
                 group_df['prev_close'] = group_df['AdjC'].shift(1)
-                group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
+                group_df['tr'] = np.maximum(
+                    group_df['AdjH'] - group_df['AdjL'], 
+                    np.maximum(
+                        (group_df['AdjH'] - group_df['prev_close']).abs(), 
+                        (group_df['AdjL'] - group_df['prev_close']).abs()
+                    )
+                )
                 group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
 
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
