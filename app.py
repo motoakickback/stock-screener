@@ -1241,7 +1241,7 @@ def fetch_and_compress_single_day(dt):
                 
             elif r.status_code == 429:
                 # 万が一ペナルティを食らっても、次は無駄に待たず2秒で復帰を試みる
-                time.sleep(2.0)
+                time.sleep(1.0)
                 continue
         except:
             # ネットワーク瞬断時も1秒で即復帰
