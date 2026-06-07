@@ -2632,9 +2632,8 @@ with tab3:
             if 'ma25' not in group_df.columns: 
                 group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
             
-            # 5%基準の計算
+            # ATR計算
             group_df['atr'] = group_df['AdjC'] * 0.05
-
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
             group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
             group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
@@ -2642,12 +2641,12 @@ with tab3:
 
             today = group_df.iloc[-1]
 
-            # フィルター条件を通過できるかチェック
-            if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
-            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
-            if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
-
+            # 🚨 最終作戦：フィルターをすべて「ザル」にして強制通過させる
+            # これでヒットするなら、フィルターの各条件（cfg）の入力値が、現在の相場環境と乖離しすぎています
+            
+            # ここにチェックを通しても、return Noneしないようにしました
+            # 試しに通過させて、データを出力させます
+            
             return {
                 'Code': code, 
                 'lc': float(today['AdjC']), 
@@ -2657,9 +2656,9 @@ with tab3:
                 'avg_value_5': float(today['avg_value_5']), 
                 'curr_vol': float(today[v_col_name]),
                 'avg_vol_prev': float(today['avg_volume_5_prev']),
-                'T_Rank': 'Stealth💎', 
-                'T_Color': '#00bcd4', 
-                'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+                'T_Rank': 'ForceHit💎', 
+                'T_Color': '#ff0000', 
+                'T_Desc': 'デバッグによる強制抽出'
             }
 
         with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
