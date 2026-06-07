@@ -199,7 +199,7 @@ components.html(
 )
 
 # --- 2. 認証・通信設定（Connection Poolingの導入） ---
-user_id = st.session_state.get("current_user", "UNKNOWN")
+user_id = st.session_state["current_user"]
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
 # =========================================================
@@ -415,19 +415,18 @@ def render_macro_board():
         ni = data["nikkei"]
         df = ni["df"].copy()
         
-        # 🚨 防弾処理: インデックスに隠れた日付（Date）を取り出し、クラッシュ原因のTZを消去
-        if 'Date' not in df.columns:
-            df = df.reset_index()
-            if 'index' in df.columns and 'Date' not in df.columns:
-                df.rename(columns={'index': 'Date'}, inplace=True)
-        if pd.api.types.is_datetime64_any_dtype(df['Date']):
-            df['Date'] = df['Date'].dt.tz_localize(None)
-
-        close_col = next((c for c in ['AdjC', 'Close', 'close', 'Adj Close', 'C'] if c in df.columns), None)
+        # 🚨 モグラ駆逐：終値カラムを安全に動的取得（これがないとClose固定で自爆する）
+        close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
         if not close_col:
+            st.warning("📡 気象レーダー受信中: データ構造異常")
             return
 
-        df['MA25'] = df[close_col].rolling(window=25).mean()
+        # 安全なSeries抽出とMA25計算
+        s = df[close_col]
+        if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+        # 🚨 修正：ここを close_col に変更しました
+        df['MA25'] = pd.to_numeric(s, errors='coerce').rolling(window=25).mean()
+        
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
         
@@ -436,35 +435,53 @@ def render_macro_board():
         with c1:
             st.markdown(f"""
                 <div style="background: rgba(20, 20, 20, 0.6); padding: 1.2rem; border-radius: 8px; border-left: 4px solid {color}; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経: {ni.get("date", "")})</div>
-                    <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni.get("price", 0):,.0f} 円</div>
-                    <div style="font-size: 16px; color: {color};">({sign}{ni.get("diff", 0):,.0f} / {sign}{ni.get("pct", 0):.2f}%)</div>
+                    <div style="font-size: 14px; color: #aaa; margin-bottom: 8px;">🌪️ 戦場の天候 (日経平均: {ni["date"]})</div>
+                    <div style="font-size: 26px; font-weight: bold; color: {color}; margin-bottom: 4px;">{ni["price"]:,.0f} 円</div>
+                    <div style="font-size: 16px; color: {color};">({sign}{ni["diff"]:,.0f} / {sign}{ni["pct"]:.2f}%)</div>
                 </div>
             """, unsafe_allow_html=True)
             
         with c2:
-            import plotly.graph_objects as go
             fig = go.Figure()
             
+            # 🚨 描画トレースも動的カラム(close_col)へ変更
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df[close_col], name='日経平均', mode='lines', 
-                line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
+                line=dict(color='#FFD700', width=2), 
+                hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
             ))
+            
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
-                line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+                line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), 
+                hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
             ))
             
             y_min, y_max = df[close_col].min(), df[close_col].max()
+            
             fig.update_layout(
-                height=220, margin=dict(l=0, r=40, t=15, b=10), xaxis_rangeslider_visible=False, 
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, hovermode="x unified", 
-                yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True), 
-                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
+                height=220, 
+                margin=dict(l=0, r=40, t=15, b=10), 
+                xaxis_rangeslider_visible=False, 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                showlegend=False, 
+                hovermode="x unified", 
+                yaxis=dict(
+                    side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', 
+                    autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True
+                ), 
+                xaxis=dict(
+                    type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', 
+                    range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True
+                )
             )
+            
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+    else:
+        st.warning("📡 外部気象レーダー応答なし")
 
 # --- 3. 共通関数 & 演算エンジン ---
 def clean_df(df):
@@ -970,52 +987,6 @@ def get_fundamentals(code):
     except: pass
     return None
 
-    # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
-    op = latest.get("OPnumber", latest.get("OperatingProfit"))
-    np_val = latest.get("NPnumber", latest.get("NetIncome"))
-    eq = latest.get("Eqnumber", latest.get("Equity"))
-    eq_ratio = latest.get("EqARnumber", latest.get("EquityRatio"))
-    eps = latest.get("EPSnumber", latest.get("EarningsPerShare"))
-    bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
-    shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"))
-    
-    res = {
-        "op": op, "cap": latest.get("MarketCapitalization"), 
-        "er": eq_ratio, "roe": None, "per": None, "pbr": None
-    }
-    
-    # ROEの計算 (当期純利益 ÷ 自己資本)
-    if np_val is not None and eq is not None and float(eq) != 0:
-        res["roe"] = (float(np_val) / float(eq)) * 100
-    elif eps is not None and bps is not None and float(bps) != 0:
-        res["roe"] = (float(eps) / float(bps)) * 100
-
-    # 🚨 yfinanceで最新株価を取得し、PER / PBR / 時価総額をリアルタイム計算
-    try:
-        import yfinance as yf
-        tk = yf.Ticker(f"{code}.T")
-        info = tk.info
-        
-        # yfinanceから直接取れる場合はそれを優先
-        res["per"] = info.get("trailingPE", info.get("forwardPE"))
-        res["pbr"] = info.get("priceToBook")
-        res["cap"] = info.get("marketCap", res.get("cap"))
-        
-        cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
-        
-        # 直接取れなかった場合は、J-Quantsの財務情報と株価から自力で計算する
-        if cur_price:
-            if res["per"] is None and eps and float(eps) > 0:
-                res["per"] = float(cur_price) / float(eps)
-            if res["pbr"] is None and bps and float(bps) > 0:
-                res["pbr"] = float(cur_price) / float(bps)
-            if res["cap"] is None and shares and float(shares) > 0:
-                res["cap"] = float(cur_price) * float(shares)
-    except:
-        pass # yfinanceの通信が失敗しても、ROE等の基本データは死守して返す
-        
-    return res
-
 # =========================================================
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
 # =========================================================
@@ -1193,7 +1164,7 @@ def fetch_and_compress_single_day(dt):
                 # ... (以下、列名の整形ロジックは以前のものを維持)
                 return temp_df
             elif r.status_code == 429:
-                time.sleep(0.5)
+                time.sleep(5.0)
                 continue
         except:
             continue
@@ -1998,7 +1969,6 @@ if _macro_fallback and "nikkei" in _macro_fallback:
                 """, unsafe_allow_html=True)
 
 # --- 5. タブ構成（原本UI ＆ NameError物理根絶配置） ---
-render_macro_board()
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】広域レーダー", 
@@ -2908,8 +2878,13 @@ with tab4:
                         
                         # 4. 財務情報取得と初期化
                         f_data = get_fundamentals(c_str)
-                        r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
+                        return data, events
+
+                    except Exception:
+                        # 予期せぬエラーでもシステム停止を許さない最終防壁
+                        return None, {"dividend": [], "earnings": []}
+                       
                         if f_data:
                             if f_data.get('per'): r_per = f_data.get('per')
                             if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
