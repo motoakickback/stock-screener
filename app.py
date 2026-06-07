@@ -1136,11 +1136,9 @@ def get_nikkei_macro_status():
 # =========================================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    # 🚨 必須UI：進捗バーとテキストの描画
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # 260日分の対象日を算出
     base = datetime.now(pytz.timezone('Asia/Tokyo'))
     dates, days = [], 0
     while len(dates) < 260:
@@ -1150,54 +1148,106 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
+    errors = []
     
-    # スレッド数を「2」に制限し、過剰な負荷を防ぐ
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
+    # オリジナル4部隊で突撃
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
-        
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            res = f.result()
-            if isinstance(res, pd.DataFrame):
-                dfs.append(res)
+            try:
+                res = f.result()
+                if isinstance(res, pd.DataFrame):
+                    dfs.append(res)
+                elif isinstance(res, dict) and "error" in res:
+                    errors.append(res["error"])
+            except Exception as e:
+                pass
             
-            # 🚨 ライブ更新：進捗バーと件数表示
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 データ取得進捗: {i+1}/{len(dates)}日 完了")
-            
-            # 弾幕の合間に「0.5秒」の強制冷却インターバルを挿入
-            time.sleep(0.5)
+            status_text.text(f"📡 索敵中: {i+1}/{len(dates)}日完了")
 
-    # 🚨 完了後：画面にゴーストとして残らないよう完全に消去
     progress_bar.empty()
     status_text.empty()
 
     if not dfs:
-        raise ValueError("🚨 兵站断絶: データ取得失敗")
+        # 401/403エラーが出ていれば即座に表示
+        if any("401" in e or "403" in e for e in errors):
+            raise ValueError("🚨 認証エラー: APIトークンが期限切れ、またはアクセス権がありません。アプリをReboot（再起動）してください。")
+        raise ValueError(f"🚨 兵站断絶: データ取得失敗。直近エラー: {errors[0] if errors else '通信断絶'}")
 
     full_df = pd.concat(dfs, ignore_index=True)
-    gc.collect()
-    return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
+    full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+    full_df = full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
+    
+    return full_df
 
-# 🚨 呼び出される単体取得関数（キャッシュ外部定義）
 def fetch_and_compress_single_day(dt):
-    # 以前の fetch_and_compress ロジックをここに分離配置してください
-    # ※以前の「診断パッチ」内のfetch_and_compressの中身をそのままここに移植します
+    # 🚨 ペースメーカー：以前の安定挙動を守るため、無駄なランダム待機を捨て、1秒の巡航ブレーキのみ採用
+    time.sleep(1.0)
+    
     for attempt in range(3):
         try:
-            r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
+            r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
+            
+            # 🚨 認証エラーの捕捉
+            if r.status_code == 401 or r.status_code == 403:
+                return {"error": f"HTTP {r.status_code} (認証失敗)"}
+            
             if r.status_code == 200:
-                data = r.json().get("daily_quotes") or r.json().get("data") or []
-                if not data: return None
+                raw_json = r.json()
+                
+                # 🚨 探索：JSONの中にリスト形式のデータがあれば何でも拾う
+                data = None
+                if isinstance(raw_json, list): data = raw_json
+                elif isinstance(raw_json, dict):
+                    # daily_quotes, data, results を順に探索
+                    for key in ['daily_quotes', 'data', 'results', 'bars']:
+                        if key in raw_json and isinstance(raw_json[key], list):
+                            data = raw_json[key]
+                            break
+                
+                if not data: return {"error": f"JSONにデータなし: {str(raw_json)[:30]}"}
+                
                 temp_df = pd.DataFrame(data)
-                # ... (以下、列名の整形ロジックは以前のものを維持)
+                
+                # カラム正規化
+                cols = {c.lower(): c for c in temp_df.columns}
+                rename_map = {}
+                # コード・日付・4本値の正規化
+                map_dict = {'code':'Code', 'date':'Date', 'open':'AdjO', 'high':'AdjH', 'low':'AdjL', 'close':'AdjC'}
+                for k, v in map_dict.items():
+                    if k in cols: rename_map[cols[k]] = v
+                
+                # 出来高の正規化
+                for vol_k in ['adjustmentvolume', 'volume', 'vol']:
+                    if vol_k in cols: 
+                        rename_map[cols[vol_k]] = 'AdjustmentVolume'
+                        break
+                        
+                temp_df.rename(columns=rename_map, inplace=True)
+                
+                # 必須カラム保持とメモリ圧縮
+                keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
+                existing = [c for c in keep_cols if c in temp_df.columns]
+                temp_df = temp_df[existing].copy()
+                
+                # 型変換
+                temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
+                for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
+                    if col in temp_df.columns:
+                        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
+                
                 return temp_df
+            
             elif r.status_code == 429:
-                time.sleep(0.5)
-                continue
+                time.sleep(1.0) # 429の時だけ長めに待つ
+            else:
+                return {"error": f"HTTP {r.status_code}"}
         except:
+            time.sleep(0.5)
             continue
-    return None
+    return {"error": "3回リトライ失敗"}
 
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
