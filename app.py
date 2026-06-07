@@ -1151,51 +1151,52 @@ def get_hist_data_cached(key):
 
     dfs = []
     
-    # スレッド数を「2」に制限し、過剰な負荷とメモリの同時膨張を防ぐ
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
+    # 🚨 速度最優先：並列スレッド数を限界の「5」へ引き上げ、無駄な直列sleepを完全抹殺
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            res = f.result()
-            if res is not None and isinstance(res, pd.DataFrame) and not res.empty:
-                dfs.append(res)
+            try:
+                res = f.result()
+                if res is not None and isinstance(res, pd.DataFrame) and not res.empty:
+                    dfs.append(res)
+            except:
+                pass
             
             # 🚨 ライブ更新：進捗バーと件数表示
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 データ取得進捗: {i+1}/{len(dates)}日 完了 (蓄積サイズ: {len(dfs)}日分)")
+            status_text.text(f"📡 広域索敵レーダー稼働中: {i+1}/{len(dates)}日 完了 (蓄積個体: {len(dfs)}日分)")
             
-            # 弾幕の合間に「0.3秒」の強制冷却インターバルを挿入してサーバー負荷を軽減
-            time.sleep(0.3)
+            # 429（レート制限）の衝突を避けるためのミリ秒単位の微小インターバルのみ残す
+            time.sleep(0.01)
 
-    # 🚨 完了後：画面にゴーストとして残らないよう完全に消去
+    # 🚨 完了後：画面をクリーンにするためUI要素を消去
     progress_bar.empty()
     status_text.empty()
 
     if not dfs:
         raise ValueError("🚨 兵站断絶: 有効なヒストリカルデータが1日分も取得できませんでした")
 
-    # 🚨 メモリ防衛線：結合する直前に一度、無駄なキャッシュゴミを強制パージ
+    # 🚨 メモリ防衛：結合の直前にキャッシュゴミを完全パージ
     gc.collect()
 
-    # 先行して極限圧縮された小規模DataFrame群を一撃で結合（結合時のジャンプアップを最小化）
+    # 1/10以下に先行極限圧縮されたDataFrame群を一撃で結合（結合処理自体も劇的に高速化）
     full_df = pd.concat(dfs, ignore_index=True)
     
-    # 結合直後の残骸配列を即座にメモリから抹殺
+    # 残骸配列を即座にメモリから抹殺
     del dfs
     gc.collect()
 
-    # 最終的なクレンジングと、システムのインデックス再構築
+    # 最終的なコードの整形とソート
     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
     full_df = full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
     
-    # 最終防衛：呼び出し側（上流）へ引き渡す直前の完全クレンジング
     gc.collect()
     return full_df
 
-# 🚨 呼び出される単体取得関数（先行列破壊＆極限型キャスト仕様）
 def fetch_and_compress_single_day(dt):
-    """単一日データを取得したその瞬間に、不純物（不要カラム）を焼き払い、型を最小化してメモリを1/5に圧縮する"""
+    """J-Quantsから吸い上げた瞬間に、不要な30以上の列を即座に破棄し、価格データをfloat32へ極限ダウングレードする"""
     for attempt in range(3):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
@@ -1204,10 +1205,10 @@ def fetch_and_compress_single_day(dt):
                 data = raw_json.get("daily_quotes") or raw_json.get("data") or []
                 if not data: return None
                 
-                # 生データを即座に展開
                 temp_df = pd.DataFrame(data)
+                if temp_df.empty: return None
                 
-                # 1. カラム名のブレを最速で大文字へ統一
+                # 1. カラム名の揺れを最速で大文字へ統一
                 if 'code' in temp_df.columns and 'Code' not in temp_df.columns:
                     temp_df.rename(columns={'code': 'Code'}, inplace=True)
                 
@@ -1223,13 +1224,13 @@ def fetch_and_compress_single_day(dt):
                     p_map = {'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC'}
                 temp_df.rename(columns=p_map, inplace=True)
                 
-                # 🚨 メモリ防衛：計算（掟）に関係のない不純物カラム（未調整値、各種フラグ等）をこの時点で「完全焼却」
+                # 🚨 核心：計算に関係のない不純物カラム（未調整値、各種フラグ等）をこの瞬間に「完全焼却」
                 keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                 existing_keeps = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing_keeps].copy()
                 
-                # 2. 🚨 先行型キャスト（compress_memoryの思想をここに直結）
-                # float64 を float32 へ、int64 を int32 へ強制ダウングレードし、メモリ占有率を物理的に半減させる
+                # 2. 先行型キャスト
+                # float64 を float32 へ強制ダウングレードし、データフレーム自体の体積を半分にする
                 if 'Date' in temp_df.columns:
                     temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                     
@@ -1240,12 +1241,11 @@ def fetch_and_compress_single_day(dt):
                 if 'Code' in temp_df.columns:
                     temp_df['Code'] = temp_df['Code'].astype(str)
                 
-                # 3. 1日分の単体クレンジングが完了した時点でメモリをクリア
                 return temp_df
                 
             elif r.status_code == 429:
-                # レート制限（429）時は、大口を刺激しないよう5秒間冷却して再試行
-                time.sleep(5.0)
+                # 429検知時は大口を刺激しないよう4秒冷却してリトライ（別スレッドが自律退避）
+                time.sleep(4.0)
                 continue
         except:
             continue
