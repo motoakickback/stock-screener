@@ -1191,7 +1191,7 @@ def fetch_and_compress_single_day(dt):
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
             
             # 🚨 認証エラーの捕捉
-            if r.status_code == 401 or r.status_code == 403:
+            if r.status_code in [401, 403]:
                 return {"error": f"HTTP {r.status_code} (認証失敗)"}
             
             if r.status_code == 200:
@@ -1201,7 +1201,6 @@ def fetch_and_compress_single_day(dt):
                 data = None
                 if isinstance(raw_json, list): data = raw_json
                 elif isinstance(raw_json, dict):
-                    # daily_quotes, data, results, bars を順に探索
                     for key in ['daily_quotes', 'data', 'results', 'bars']:
                         if key in raw_json and isinstance(raw_json[key], list):
                             data = raw_json[key]
@@ -1210,43 +1209,45 @@ def fetch_and_compress_single_day(dt):
                 if not data: return {"error": f"JSONにデータなし: {str(raw_json)[:30]}"}
                 
                 temp_df = pd.DataFrame(data)
-                
-                # 🚨 修正核心部：カラム正規化（調整後データを「絶対優先」で取得する）
                 cols = {c.lower(): c for c in temp_df.columns}
-                rename_map = {}
                 
-                # 1. コードと日付
-                if 'code' in cols: rename_map[cols['code']] = 'Code'
-                if 'date' in cols: rename_map[cols['date']] = 'Date'
+                # ====================================================================
+                # 🚨 究極パッチ：J-Quants特有の「当日の調整後データ遅延(null)」を完全回避
+                # 調整後(Adjustment)を優先しつつ、nullの場合は生データで穴埋めする
+                # ====================================================================
+                if 'code' in cols: temp_df['Code'] = temp_df[cols['code']]
+                if 'date' in cols: temp_df['Date'] = temp_df[cols['date']]
                 
-                # 2. 株価カラム（Adjustment最優先）
-                if 'adjustmentclose' in cols:
-                    rename_map[cols['adjustmentopen']] = 'AdjO'
-                    rename_map[cols['adjustmenthigh']] = 'AdjH'
-                    rename_map[cols['adjustmentlow']] = 'AdjL'
-                    rename_map[cols['adjustmentclose']] = 'AdjC'
+                # 4本値のハイブリッド取得
+                for adj_k, raw_k, targ_k in [
+                    ('adjustmentopen', 'open', 'AdjO'), 
+                    ('adjustmenthigh', 'high', 'AdjH'), 
+                    ('adjustmentlow', 'low', 'AdjL'), 
+                    ('adjustmentclose', 'close', 'AdjC')
+                ]:
+                    if adj_k in cols and raw_k in cols:
+                        temp_df[targ_k] = temp_df[cols[adj_k]].fillna(temp_df[cols[raw_k]])
+                    elif adj_k in cols:
+                        temp_df[targ_k] = temp_df[cols[adj_k]]
+                    elif raw_k in cols:
+                        temp_df[targ_k] = temp_df[cols[raw_k]]
+                
+                # 出来高のハイブリッド取得
+                if 'adjustmentvolume' in cols and 'volume' in cols:
+                    temp_df['AdjustmentVolume'] = temp_df[cols['adjustmentvolume']].fillna(temp_df[cols['volume']])
                 else:
-                    # Adjustmentがない場合のみ生データを使用
-                    map_dict = {'open':'AdjO', 'high':'AdjH', 'low':'AdjL', 'close':'AdjC'}
-                    for k, v in map_dict.items():
-                        if k in cols: rename_map[cols[k]] = v
-                
-                # 3. 出来高の正規化（Adjustment優先）
-                if 'adjustmentvolume' in cols:
-                    rename_map[cols['adjustmentvolume']] = 'AdjustmentVolume'
-                elif 'volume' in cols:
-                    rename_map[cols['volume']] = 'AdjustmentVolume'
-                elif 'vol' in cols:
-                    rename_map[cols['vol']] = 'AdjustmentVolume'
-                
-                temp_df.rename(columns=rename_map, inplace=True)
+                    for vol_k in ['adjustmentvolume', 'volume', 'vol']:
+                        if vol_k in cols:
+                            temp_df['AdjustmentVolume'] = temp_df[cols[vol_k]]
+                            break
+                # ====================================================================
                 
                 # 必須カラム保持とメモリ圧縮
                 keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                 existing = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing].copy()
                 
-                # 型変換
+                # 型変換（OOM回避のためのfloat32キャスト）
                 temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                 for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
                     if col in temp_df.columns:
@@ -1261,6 +1262,7 @@ def fetch_and_compress_single_day(dt):
         except:
             time.sleep(0.5)
             continue
+            
     return {"error": "3回リトライ失敗"}
 
 def get_fast_indicators(prices):
