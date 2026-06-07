@@ -41,31 +41,41 @@ if "js_injected" not in st.session_state:
 
 def inject_auth_script():
     if not st.session_state.js_injected:
-        # st.empty()を使って、このコンポーネントを一度だけDOMに配置する
-        # 再描画の影響を受けにくいようにします
         container = st.empty()
         with container:
             components.html(
                 """
                 <script>
                 const doc = window.parent.document;
-                // windowレベルでフラグを管理し、再描画でリセットされないようにする
                 window.loginTriggered = window.loginTriggered || false;
 
                 function tryAutoLogin() {
                     if (window.loginTriggered) return true;
                     
                     const input = doc.querySelector('input[type="password"]');
-                    const buttons = Array.from(doc.querySelectorAll('button')).filter(b => b.innerText.includes("認証"));
                     
-                    if (input && input.value.length > 0 && buttons.length > 0) {
+                    // 値が入っており、かつ空でない場合
+                    if (input && input.value.length > 0) {
                         window.loginTriggered = true; 
-                        input.blur(); // 入力を確定させる
+                        input.blur();
                         
-                        // 少し遅延を入れてからクリック
-                        setTimeout(() => {
-                            buttons[0].click();
-                        }, 300);
+                        // 💡 重要：Enterキーイベントを強制的に発生させる
+                        const enterEvent = new KeyboardEvent('keydown', {
+                            bubbles: true,
+                            cancelable: true,
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13
+                        });
+                        input.dispatchEvent(enterEvent);
+                        
+                        // 念のため少し遅れてボタンクリックも併用（保険）
+                        const buttons = Array.from(doc.querySelectorAll('button')).filter(b => b.innerText.includes("認証"));
+                        if (buttons.length > 0) {
+                            setTimeout(() => { buttons[0].click(); }, 100);
+                        }
+                        
                         return true;
                     }
                     return false;
