@@ -2096,12 +2096,17 @@ with tab1:
                 st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg, l_date):
-                    if group.empty: return None
-                    c_vals = group['AdjC'].values
-                    h_vals = group['AdjH'].values
-                    l_vals = group['AdjL'].values
+                    # 🚨 OOM対策パッチ：計算に必要な直近30日分のみに絞り込み、メモリ爆発を完全に阻止
+                    group_df = group.tail(30)
+                    if group_df.empty: return None
+
+                    # 絞り込んだデータから値を抽出
+                    c_vals = group_df['AdjC'].values
+                    h_vals = group_df['AdjH'].values
+                    l_vals = group_df['AdjL'].values
                     lc = float(c_vals[-1])
 
+                    # 🚨 以降、以前のロジックを1文字も変えずに実行
                     if cfg["f6_risk"] and (str(code)[:4] in cfg["gigi_codes"]): return None
                     
                     # 安全な指標計算
@@ -2125,7 +2130,6 @@ with tab1:
 
                     rank, bg, t_score = ("S🔥", "#26a69a", 5.5) if dist_pct <= 2.0 else ("A⚡", "#ed6c02", 4.5)
                     
-                    # 🚨 必須キーを全て網羅して返す
                     return {
                         'Code': code, 'lc': lc, 'RSI': float(rsi), 
                         'target_buy': float(target_buy),
@@ -2600,7 +2604,7 @@ with tab3:
 
             today = group_df.iloc[-1]
 
-			# --- デバッグ用出力 ---
+            # --- デバッグ用出力 ---
             # フィルターを通る直前の数値を確認する
             if today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
                 # ここで弾かれた場合は件数として無視するが、もし1件も通過しないならここが原因
