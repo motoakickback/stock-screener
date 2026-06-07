@@ -1164,7 +1164,7 @@ def fetch_and_compress_single_day(dt):
                 # ... (以下、列名の整形ロジックは以前のものを維持)
                 return temp_df
             elif r.status_code == 429:
-                time.sleep(5.0)
+                time.sleep(0.5)
                 continue
         except:
             continue
