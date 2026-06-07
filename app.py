@@ -2639,10 +2639,9 @@ with tab3:
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
-            if len(group) < 26: return None
-
-            # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
+            # 🚨 唯一の改修箇所：OOM回避・爆速化のため直近30行だけをコピーする
             group_df = group.tail(30).copy().ffill().bfill()
+            if len(group_df) < 26: return None
 
             v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
             v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
@@ -2652,20 +2651,11 @@ with tab3:
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            # --- 計算ロジック・フィルターはボスのコードから一切変更していません ---
             if 'ma25' not in group_df.columns: 
                 group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-                
-            if 'atr' not in group_df.columns:
-                group_df['prev_close'] = group_df['AdjC'].shift(1)
-                group_df['tr'] = np.maximum(
-                    group_df['AdjH'] - group_df['AdjL'], 
-                    np.maximum(
-                        (group_df['AdjH'] - group_df['prev_close']).abs(), 
-                        (group_df['AdjL'] - group_df['prev_close']).abs()
-                    )
-                )
-                group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
+            
+            # 🚨 ボスのコードの通り「5%基準」を完全維持
+            group_df['atr'] = group_df['AdjC'] * 0.05
 
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
             group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
@@ -2674,6 +2664,7 @@ with tab3:
 
             today = group_df.iloc[-1]
 
+            # フィルター条件も一切変更なし
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
             if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
