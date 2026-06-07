@@ -1148,20 +1148,14 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
-    errors = []
     
-    # オリジナル4部隊で突撃
+    # 🚨 ボスの指示通り「4部隊」で突撃します
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            try:
-                res = f.result()
-                if isinstance(res, pd.DataFrame):
-                    dfs.append(res)
-                elif isinstance(res, dict) and "error" in res:
-                    errors.append(res["error"])
-            except Exception as e:
-                pass
+            res = f.result()
+            if isinstance(res, pd.DataFrame):
+                dfs.append(res)
             
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
@@ -1171,97 +1165,51 @@ def get_hist_data_cached(key):
     status_text.empty()
 
     if not dfs:
-        # 401/403エラーが出ていれば即座に表示
-        if any("401" in e or "403" in e for e in errors):
-            raise ValueError("🚨 認証エラー: APIトークンが期限切れ、またはアクセス権がありません。アプリをReboot（再起動）してください。")
-        raise ValueError(f"🚨 兵站断絶: データ取得失敗。直近エラー: {errors[0] if errors else '通信断絶'}")
+        raise ValueError("🚨 兵站断絶: データ取得失敗")
 
     full_df = pd.concat(dfs, ignore_index=True)
+    # コードの正規化
     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-    full_df = full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
     
-    return full_df
+    gc.collect()
+    # 🚨 ここでAdjCが存在することを確認してフィルタリング
+    return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 ペースメーカー：以前の安定挙動を守るため、無駄なランダム待機を捨て、1秒の巡航ブレーキのみ採用
+    # 🚨 巡航ブレーキ：1秒
     time.sleep(1.0)
     
     for attempt in range(3):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
-            
-            # 🚨 認証エラーの捕捉
-            if r.status_code in [401, 403]:
-                return {"error": f"HTTP {r.status_code} (認証失敗)"}
-            
             if r.status_code == 200:
                 raw_json = r.json()
-                
-                # 🚨 探索：JSONの中にリスト形式のデータがあれば何でも拾う
-                data = None
-                if isinstance(raw_json, list): data = raw_json
-                elif isinstance(raw_json, dict):
-                    for key in ['daily_quotes', 'data', 'results', 'bars']:
-                        if key in raw_json and isinstance(raw_json[key], list):
-                            data = raw_json[key]
-                            break
-                
-                if not data: return {"error": f"JSONにデータなし: {str(raw_json)[:30]}"}
+                data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
+                if not data: return None
                 
                 temp_df = pd.DataFrame(data)
-                cols = {c.lower(): c for c in temp_df.columns}
                 
-                # ====================================================================
-                # 🚨 究極パッチ：J-Quants特有の「当日の調整後データ遅延(null)」を完全回避
-                # 調整後(Adjustment)を優先しつつ、nullの場合は生データで穴埋めする
-                # ====================================================================
-                if 'code' in cols: temp_df['Code'] = temp_df[cols['code']]
-                if 'date' in cols: temp_df['Date'] = temp_df[cols['date']]
+                # 🚨 「ヒットしていた時の」シンプルで確実なマッピングに戻す
+                # 複雑なロジックを廃止し、APIが返すキーをそのままAdjCとして扱う
+                if 'AdjC' not in temp_df.columns:
+                    # 調整後終値がない場合、終値(Close)で代用
+                    if 'Close' in temp_df.columns: temp_df['AdjC'] = temp_df['Close']
+                    elif 'C' in temp_df.columns: temp_df['AdjC'] = temp_df['C']
                 
-                # 4本値のハイブリッド取得
-                for adj_k, raw_k, targ_k in [
-                    ('adjustmentopen', 'open', 'AdjO'), 
-                    ('adjustmenthigh', 'high', 'AdjH'), 
-                    ('adjustmentlow', 'low', 'AdjL'), 
-                    ('adjustmentclose', 'close', 'AdjC')
-                ]:
-                    if adj_k in cols and raw_k in cols:
-                        temp_df[targ_k] = temp_df[cols[adj_k]].fillna(temp_df[cols[raw_k]])
-                    elif adj_k in cols:
-                        temp_df[targ_k] = temp_df[cols[adj_k]]
-                    elif raw_k in cols:
-                        temp_df[targ_k] = temp_df[cols[raw_k]]
-                
-                # 出来高のハイブリッド取得
-                if 'adjustmentvolume' in cols and 'volume' in cols:
-                    temp_df['AdjustmentVolume'] = temp_df[cols['adjustmentvolume']].fillna(temp_df[cols['volume']])
-                else:
-                    for vol_k in ['adjustmentvolume', 'volume', 'vol']:
-                        if vol_k in cols:
-                            temp_df['AdjustmentVolume'] = temp_df[cols[vol_k]]
-                            break
-                # ====================================================================
-                
-                # 必須カラム保持とメモリ圧縮
-                keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
-                existing = [c for c in keep_cols if c in temp_df.columns]
-                temp_df = temp_df[existing].copy()
-                
-                # 型変換（OOM回避のためのfloat32キャスト）
-                temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
-                for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']:
-                    if col in temp_df.columns:
-                        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').astype('float32')
-                
-                return temp_df
+                if 'Code' not in temp_df.columns and 'code' in temp_df.columns:
+                    temp_df['Code'] = temp_df['code']
+                    
+                # 必須カラムだけを抽出して返す
+                return temp_df[['Code', 'Date', 'AdjC']].copy()
             
             elif r.status_code == 429:
                 time.sleep(1.0) # 429の時だけ長めに待つ
             else:
-                return {"error": f"HTTP {r.status_code}"}
+                return None
         except:
             time.sleep(0.5)
             continue
+    return None
             
     return {"error": "3回リトライ失敗"}
 
