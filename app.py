@@ -2644,19 +2644,19 @@ with tab3:
 
             # 🚨 ここでどのフィルターが「None」を返しているかログに出す
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
-                # print(f"DEBUG: {code} - Failed: ValueMin") 
+                print(f"DEBUG: {code} - Failed: ValueMin") 
                 return None
             
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
-                # print(f"DEBUG: {code} - Failed: VolRatio")
+                print(f"DEBUG: {code} - Failed: VolRatio")
                 return None
             
             if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]):
-                # print(f"DEBUG: {code} - Failed: ATR(DayRange)")
+                print(f"DEBUG: {code} - Failed: ATR(DayRange)")
                 return None
             
             if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)):
-                # print(f"DEBUG: {code} - Failed: MA25Prox")
+                print(f"DEBUG: {code} - Failed: MA25Prox")
                 return None
 
             return {
