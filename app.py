@@ -2662,6 +2662,17 @@ with tab3:
 
             today = group_df.iloc[-1]
 
+			# --- デバッグ用出力 ---
+            # フィルターを通る直前の数値を確認する
+            if today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
+                # ここで弾かれた場合は件数として無視するが、もし1件も通過しないならここが原因
+                pass 
+            else:
+                st.write(f"DEBUG: 銘柄 {code} は売買代金フィルター通過: {today['avg_value_5'] / 100_000_000:.1f}億円")
+                if today[v_col_name] < (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
+                    st.write(f"DEBUG: 銘柄 {code} は出来高フィルター通過: {today[v_col_name]} vs {today['avg_volume_5_prev'] * cfg['vol_ratio']:.1f}")
+            # --------------------
+
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
             if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
