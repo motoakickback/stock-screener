@@ -2618,51 +2618,42 @@ with tab3:
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
-            group_df = group.copy().ffill().bfill()
-            if len(group_df) < 26: return None
-
-            v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
-            v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
-
-            group_df['AdjC'] = group_df['AdjC'].astype(float)
-            group_df['AdjH'] = group_df['AdjH'].astype(float)
-            group_df['AdjL'] = group_df['AdjL'].astype(float)
-            group_df[v_col_name] = group_df[v_col_name].astype(float)
-
-            if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-            if 'atr' not in group_df.columns:
-                group_df['prev_close'] = group_df['AdjC'].shift(1)
-                group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
-                group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
-
-            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-            group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
-            group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
-
-            today = group_df.iloc[-1]
-
-            # 🚨 デバッグ：条件をわざと緩めてヒットするか確認する（一時的）
-            # 1. 売買代金チェック（そのまま）
-            if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
-            
-            # 2. 出来高条件：緩める（cfg["vol_ratio"] の代わりに 2.0 倍にする）
-            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * 2.0): return None
-            
-            # 3. ATR条件：ここが元凶。倍率を 0.6 から 3.0 に爆上げして、門番を無効化する
-            # リアルATRが小さいため、day_range が簡単に超えてしまっていたのを防ぐ
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * 3.0): return None
-            
-            # 4. MA乖離：緩める（10%までOKにする）
-            if pd.isna(today['ma25']) or today['AdjC'] < (today['ma25'] * 0.95) or today['AdjC'] > (today['ma25'] * 1.10): return None
-
-            return {
-                'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
-                'atr': float(today['atr']), 'day_range': float(today['day_range']),
-                'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
-                'avg_vol_prev': float(today['avg_volume_5_prev']),
-                'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
-            }
+		    group_df = group.copy().ffill().bfill()
+		    if len(group_df) < 26: return None
+		
+		    v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
+		    v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
+		
+		    group_df['AdjC'] = group_df['AdjC'].astype(float)
+		    group_df['AdjH'] = group_df['AdjH'].astype(float)
+		    group_df['AdjL'] = group_df['AdjL'].astype(float)
+		    group_df[v_col_name] = group_df[v_col_name].astype(float)
+		
+		    if 'ma25' not in group_df.columns: 
+		        group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+		    
+		    # 🚨 司令：ATR計算を「終値の5%」へ即時復元
+		    group_df['atr'] = group_df['AdjC'] * 0.05
+		
+		    group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
+		    group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
+		    group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
+		    group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
+		
+		    today = group_df.iloc[-1]
+		
+		    if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
+		    if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
+		    if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
+		    if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
+		
+		    return {
+		        'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
+		        'atr': float(today['atr']), 'day_range': float(today['day_range']),
+		        'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
+		        'avg_vol_prev': float(today['avg_volume_5_prev']),
+		        'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+		    }
 
         with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
             try:
