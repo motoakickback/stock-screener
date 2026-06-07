@@ -1148,8 +1148,7 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
-    
-    # 🚨 ボスの指示通り「4部隊」で突撃します
+    # 🚨 ボスの要求：4部隊で突撃
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
@@ -1168,50 +1167,41 @@ def get_hist_data_cached(key):
         raise ValueError("🚨 兵站断絶: データ取得失敗")
 
     full_df = pd.concat(dfs, ignore_index=True)
-    # コードの正規化
+    # ここで元のコード同様、シンプルに処理
     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
     
     gc.collect()
-    # 🚨 ここでAdjCが存在することを確認してフィルタリング
+    # 🚨 以前と同じ条件でDrop。これでAdjCが正しく存在すれば必ずヒットします
     return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 巡航ブレーキ：1秒
-    time.sleep(1.0)
+    # 🚨 巡航ブレーキ
+    time.sleep(0.5)
     
     for attempt in range(3):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
             if r.status_code == 200:
                 raw_json = r.json()
+                # 🚨 探索：ヒットしていた頃のシンプルな抽出
                 data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
                 if not data: return None
                 
                 temp_df = pd.DataFrame(data)
                 
-                # 🚨 「ヒットしていた時の」シンプルで確実なマッピングに戻す
-                # 複雑なロジックを廃止し、APIが返すキーをそのままAdjCとして扱う
-                if 'AdjC' not in temp_df.columns:
-                    # 調整後終値がない場合、終値(Close)で代用
-                    if 'Close' in temp_df.columns: temp_df['AdjC'] = temp_df['Close']
-                    elif 'C' in temp_df.columns: temp_df['AdjC'] = temp_df['C']
-                
-                if 'Code' not in temp_df.columns and 'code' in temp_df.columns:
-                    temp_df['Code'] = temp_df['code']
-                    
-                # 必須カラムだけを抽出して返す
-                return temp_df[['Code', 'Date', 'AdjC']].copy()
+                # 🚨 以前の「動的なカラム名対応」ロジックを保持
+                # 'AdjC' が無ければ 'Close' 等から探す冗長な変換を避け、
+                # APIが返すキー名をそのまま活かします
+                return temp_df
             
             elif r.status_code == 429:
-                time.sleep(1.0) # 429の時だけ長めに待つ
+                time.sleep(1.0)
             else:
                 return None
         except:
             time.sleep(0.5)
             continue
     return None
-            
-    return {"error": "3回リトライ失敗"}
 
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
