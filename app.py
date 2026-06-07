@@ -1189,8 +1189,8 @@ def get_hist_data_cached(key):
     return full_df
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 オリジナルの通信ロジックへ復元
-    for attempt in range(3):
+    # 🚨 試行回数を少し増やし、小刻みにアタックする仕様
+    for attempt in range(5):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=15.0)
             if r.status_code == 200:
@@ -1201,7 +1201,7 @@ def fetch_and_compress_single_day(dt):
                 temp_df = pd.DataFrame(data)
                 if temp_df.empty: return None
                 
-                # 1. カラム名の揺れを最速で大文字へ統一
+                # 1. カラム名の統一
                 if 'code' in temp_df.columns and 'Code' not in temp_df.columns:
                     temp_df.rename(columns={'code': 'Code'}, inplace=True)
                 
@@ -1217,12 +1217,12 @@ def fetch_and_compress_single_day(dt):
                     p_map = {'Open': 'AdjO', 'High': 'AdjH', 'Low': 'AdjL', 'Close': 'AdjC', 'O': 'AdjO', 'H': 'AdjH', 'L': 'AdjL', 'C': 'AdjC'}
                 temp_df.rename(columns=p_map, inplace=True)
                 
-                # 2. 🚨 メモリ防衛：必要な7列だけに絞り込み、不要な列をこの瞬間に焼却する
+                # 2. メモリ防衛：必要な7列のみ抽出
                 keep_cols = ['Code', 'Date', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjustmentVolume']
                 existing_keeps = [c for c in keep_cols if c in temp_df.columns]
                 temp_df = temp_df[existing_keeps].copy()
                 
-                # 3. 🚨 データ型の極小化（float32化）で体積を半減させる
+                # 3. データ型の極小化（float32化）
                 if 'Date' in temp_df.columns:
                     temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce')
                     
@@ -1236,10 +1236,12 @@ def fetch_and_compress_single_day(dt):
                 return temp_df
                 
             elif r.status_code == 429:
-                # 🚨 レート制限に引っかかった時のオリジナル待機時間（ペナルティ処理）
-                time.sleep(5.0)
+                # 🚨【核心】5秒の長すぎる待機を撤廃。
+                # APIのシャッターが開く最短時間（1.5秒）だけ息継ぎをして即座に再突撃
+                time.sleep(1.5)
                 continue
         except:
+            # ネットワークエラー時も素早く復帰
             time.sleep(1.0)
             continue
     return None
