@@ -1138,7 +1138,6 @@ import random
 
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    # 🚨 必須UI：進捗バーとテキストの描画
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -1151,7 +1150,7 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
-    error_logs = [] # 🚨 新規配備：敵の妨害電波（エラー理由）を記録するブラックボックス
+    error_logs = [] # 🚨 あらゆるエラーをここに吸い込む
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
@@ -1161,41 +1160,48 @@ def get_hist_data_cached(key):
                 res = f.result()
                 if isinstance(res, pd.DataFrame) and not res.empty:
                     dfs.append(res)
-                # 🚨 もしエラーコードを持った辞書が返ってきたらログに記録
-                elif isinstance(res, dict) and "error_code" in res:
-                    error_logs.append(f"HTTP {res['error_code']}: {res['msg']}")
-            except:
-                pass
+                # 🚨 エラー辞書が返ってきたら容赦なく記録
+                elif isinstance(res, dict) and "msg" in res:
+                    error_logs.append(f"[{futs[f]}] {res['msg']}")
+            except Exception as e:
+                error_logs.append(f"[{futs[f]}] スレッド崩壊: {str(e)}")
             
             p_val = (i + 1) / len(dates)
             progress_bar.progress(min(p_val, 1.0))
             status_text.text(f"📡 広域索敵レーダー稼働中: {i+1}/{len(dates)}日 完了")
 
-    # UI消去
     progress_bar.empty()
     status_text.empty()
 
+    # 🚨 もしデータが1件も取れなかった場合、吸い込んだエラーの「生の声」を画面に叩きつける
     if not dfs:
-        # 🚨 エラーログが記録されていれば、その理由をボスの画面に直接表示してシステム停止
         if error_logs:
-            raise ValueError(f"🚨 兵站断絶: J-Quants APIから通信を完全に拒絶されています。\n理由: {error_logs[0]}")
+            # 重複を排除して最大5件のエラーを表示
+            unique_errors = list(dict.fromkeys(error_logs))[:5]
+            err_msg = "\n".join(unique_errors)
+            raise ValueError(f"🚨 兵站断絶: 全通信が失敗しました。以下の詳細エラーを確認してください:\n{err_msg}")
         else:
-            raise ValueError("🚨 兵站断絶: 有効なデータが取得できませんでした（土日のみ、またはネットワーク遮断）")
+            raise ValueError("🚨 兵站断絶: 有効なデータが取得できませんでした（原因不明・すべてNone）")
 
-    # メモリ防衛
     gc.collect()
     full_df = pd.concat(dfs, ignore_index=True)
     del dfs
     gc.collect()
 
     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+    
+    # 🚨 念のためのフェイルセーフ（カラム消失チェック）
+    if 'AdjC' not in full_df.columns:
+        raise ValueError(f"🚨 データ破壊: カラム名がAPI側で変更された可能性があります。現在のカラム: {full_df.columns.tolist()}")
+        
     full_df = full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
     
     gc.collect()
     return full_df
 
 def fetch_and_compress_single_day(dt):
-    time.sleep(1.0) # 1秒の巡航ブレーキ
+    time.sleep(1.0) 
+    last_error = "Unknown Error"
     
     for attempt in range(3):
         try:
@@ -1203,10 +1209,16 @@ def fetch_and_compress_single_day(dt):
             if r.status_code == 200:
                 raw_json = r.json()
                 data = raw_json.get("daily_quotes") or raw_json.get("data") or []
-                if not data: return None
+                
+                # 🚨 成功したのにデータがない異常事態を捕捉
+                if not data:
+                    last_error = "HTTP 200 OK だが中身のデータ(daily_quotes)が空っぽです"
+                    return {"msg": last_error}
                 
                 temp_df = pd.DataFrame(data)
-                if temp_df.empty: return None
+                if temp_df.empty:
+                    last_error = "DataFrame化しましたが空です"
+                    return {"msg": last_error}
                 
                 if 'code' in temp_df.columns and 'Code' not in temp_df.columns:
                     temp_df.rename(columns={'code': 'Code'}, inplace=True)
@@ -1240,17 +1252,20 @@ def fetch_and_compress_single_day(dt):
                 return temp_df
                 
             elif r.status_code == 429:
-                time.sleep(0.5)
+                last_error = "HTTP 429: レート制限（ペナルティ）"
+                time.sleep(2.0)
                 continue
             else:
-                # 🚨 【核心】200でも429でもない致命的エラー（401や403）を食らった場合、
-                # その生々しいエラー理由を上流（画面）へ報告するために辞書で返す
-                return {"error_code": r.status_code, "msg": r.text}
+                last_error = f"HTTP {r.status_code}: {r.text[:50]}"
+                return {"msg": last_error}
                 
         except Exception as e:
+            # 🚨 通信のタイムアウトや切断エラーの正体をすべて暴く
+            last_error = f"Python例外: {type(e).__name__} ({str(e)})"
             time.sleep(1.0)
             continue
-    return None
+            
+    return {"msg": f"3回リトライ失敗: {last_error}"}
 
 def get_fast_indicators(prices):
     if len(prices) < 15: return 50.0, 0.0, 0.0, np.zeros(5)
