@@ -2586,10 +2586,8 @@ with tab2:
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
 # ==============================================================================
-    # モードB：💎 潜伏（Stealth）モード
-    # ==============================================================================
-
-
+# モードB：💎 潜伏（Stealth）モード
+# ==============================================================================
 # --- 7.5. タブコンテンツ (TAB3: 潜伏) ---
 with tab3:
     st.markdown('<h3 style="font-size: 24px;">💎 【潜伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
