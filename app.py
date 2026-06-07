@@ -32,6 +32,12 @@ st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide"
 
 ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
 
+import logging
+# 必要に応じて設定
+logging.basicConfig(filename='auth_debug.log', level=logging.INFO)
+def your_auth_function():
+    logging.info(f"認証試行開始: {datetime.now().strftime('%H:%M:%S.%f')}")
+	
 # 【新規追加】指紋認証等で値が変わった瞬間に、パスワードを強制確保する関数
 def login_attempt():
     pw = st.session_state.get("input_access_code", "")
