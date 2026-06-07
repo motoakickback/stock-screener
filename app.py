@@ -633,7 +633,7 @@ import numpy as np
 import streamlit as st
 
 # =========================================
-# 【TAB2内蔵用】潜伏（Stealth）ロジックコアエンジン
+# 【TAB3内蔵用】潜伏（Stealth）ロジックコアエンジン
 # =========================================
 def stealth_screener_core(ticker: str, df: pd.DataFrame) -> dict:
     # 警告回避および元データ汚染防止のための完全コピー
@@ -2047,11 +2047,29 @@ with tab1:
                 # コードの形式を統一
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                 
+                # ==========================================
+                # 🎯 開発参謀パッチ：潜伏モード時の波高自動ハッキング
+                # ==========================================
+                # 現在のタブ（モード）が「潜伏」かどうかを判定（変数名は環境に合わせてください）
+                # ※もしタブの判定がis_stealth等で定義されている場合は、そちらを使用してください
+                is_stealth_mode = st.session_state.get("t3_scope_mode", "") == "💎 【潜伏】 大爆発前夜ハント"  # ←ここをご自身のUI文言に合わせて調整
+
+                # 潜伏の時は下限を0.0に強制オーバーライド。それ以外はサイドバーの設定値を採用。
+                effective_min14 = 0.0 if is_stealth_mode else float(st.session_state.f9_min14)
+                
+                # 上限は「サイドバーの値」か「潜伏専用の最低限（1.3等）」の緩い方を採用
+                effective_max14 = max(float(st.session_state.f9_max14), 1.3) if is_stealth_mode else float(st.session_state.f9_max14)
+                # ==========================================
+
                 config_t1 = {
                     "f1_min": float(st.session_state.f1_min), "f1_max": float(st.session_state.f1_max),
                     "f2_m30": float(st.session_state.f2_m30), "f3_drop": float(st.session_state.f3_drop),
                     "push_r": float(st.session_state.push_r), "push_penalty": st.session_state.get('push_penalty', 0.0),
-                    "f9_min14": float(st.session_state.f9_min14), "f9_max14": float(st.session_state.f9_max14),
+                    
+                    # 🚨 修正：直接st.session_stateからではなく、ハッキング済みの変数を渡す
+                    "f9_min14": effective_min14, 
+                    "f9_max14": effective_max14, 
+                    
                     "limit_d": int(st.session_state.limit_d), "f12_ex_overvalued": st.session_state.f12_ex_overvalued,
                     "f5_ipo": st.session_state.f5_ipo, "f11_ex_wave3": st.session_state.f11_ex_wave3,
                     "f6_risk": st.session_state.f6_risk,
