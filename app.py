@@ -3246,93 +3246,73 @@ with tab4:
                         # =========================================================================
                         # 💎 潜伏（Stealth）モードの完全独立処理ブロック
                         # =========================================================================
+                        # 💎 潜伏（Stealth）モードのデバッグ仕様
                         if is_stealth:
                             df_sub = df_chart_full.copy()
-                        
+                            
                             if len(df_sub) < 25:
                                 rank = "圏外💀"
-                                bg_c = "#616161"
-                                alerts.append("⚠️ データ不足による潜伏解析不能")
-                                bt_val = lc
-                                reach_rate = 0
+                                alerts.append("⚠️ データ不足")
                             else:
-                                c_col = 'AdjC'
-                                o_col = 'AdjO'
-                                h_col = 'AdjH'
-                                l_col = 'AdjL'
-
-                                s_latest = df_sub.iloc[-1]
-                                s_prev = df_sub.iloc[-2]
-
-                                c_val = s_latest[c_col]
-                                o_val = s_latest[o_col]
-                                h_val = s_latest[h_col]
-                                l_val = s_latest[l_col]
-                                prev_c_val = s_prev[c_col]
+                                c_val = float(df_sub['AdjC'].iloc[-1])
+                                o_val = float(df_sub['AdjO'].iloc[-1])
+                                h_val = float(df_sub['AdjH'].iloc[-1])
+                                l_val = float(df_sub['AdjL'].iloc[-1])
+                                prev_c_val = float(df_sub['AdjC'].iloc[-2])
                                 
-                                # 🚨 物理同期：内部での二重計算を完全撤去し、上流の共通リアルATR(106円)をダイレクト結線！
-                                atr14_val = atr_v
-                                ma25_val = float(s_latest['SMA25']) if 'SMA25' in df_sub.columns else lc
+                                # リアルATRの確保
+                                atr14_val = float(t_latest['ATR']) if 'ATR' in t_latest else (lc * 0.05)
+                                ma25_val = float(t_latest['SMA25']) if 'SMA25' in t_latest else lc
 
-                                rank = "A級💎"
-                                bg_c = "#2e7d32"
-                                score = 10 
+                                score = 0
+                                # 🚨 デバッグ用：スコアの内訳を記録
+                                debug_log = []
 
                                 body_size = abs(c_val - o_val)
                                 day_range = h_val - l_val
-                                
                                 if day_range > 0:
-                                    if body_size <= (day_range * 0.05):
+                                    if body_size <= (day_range * 0.10): # 基準を少し緩和
                                         score += 5
-                                        alerts.append("🟢【極小十字線】極限の煮詰まりを検知（+5pts）")
-                                    elif body_size <= (day_range * 0.10):
-                                        alerts.append("🟢【極小十字線】煮詰まりの極致")
+                                        debug_log.append("十字線(+5)")
+                                    elif body_size <= (day_range * 0.20):
+                                        score += 2
+                                        debug_log.append("小陽線(+2)")
 
-                                vol_col = 'AdjustmentVolume' if 'AdjustmentVolume' in df_sub.columns else ('Volume' if 'Volume' in df_sub.columns else ('volume' if 'volume' in df_sub.columns else None))
-                                if vol_col and len(df_sub) >= 6:
-                                    vol_5d_avg = df_sub[vol_col].iloc[-6:-1].mean()
-                                    curr_vol = s_latest[vol_col]
-                                    if pd.notna(vol_5d_avg) and vol_5d_avg > 0 and pd.notna(curr_vol) and curr_vol < (vol_5d_avg * 0.5):
+                                vol_col = 'AdjustmentVolume'
+                                if vol_col in df_sub.columns and len(df_sub) >= 6:
+                                    avg_vol = df_sub[vol_col].iloc[-6:-1].mean()
+                                    if pd.notna(avg_vol) and avg_vol > 0 and df_sub[vol_col].iloc[-1] < (avg_vol * 0.7): # 基準緩和
                                         score += 3
-                                        alerts.append("💎【売り枯れ】出来高が直近平均の50%未満へ急減（+3pts）")
+                                        debug_log.append("売り枯れ(+3)")
 
-                                if 'SMA25' in df_sub.columns:
-                                    prev_ma25_val = s_prev['SMA25']
-                                    if pd.notna(ma25_val) and pd.notna(prev_ma25_val) and ma25_val > prev_ma25_val:
+                                # MA25の判定を緩和
+                                if 'SMA25' in t_latest and 'SMA25' in t_prev:
+                                    if t_latest['SMA25'] > t_prev['SMA25'] * 0.999: # 横ばいも許容
                                         score += 5
-                                        alerts.append("🔥【上昇同調】MA25上向き。順張り方向の潜伏（+5pts）")
+                                        debug_log.append("MA25維持(+5)")
 
-                                if o_val <= (prev_c_val - atr14_val):
-                                    alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
+                                # 🚨 スコア判定の緩和（18以上→12以上）
+                                if score >= 12:
+                                    rank = "A級潜伏💎"
+                                    bg_c = "#2e7d32"
+                                else:
                                     rank = "圏外💀"
                                     bg_c = "#616161"
-                                    score = 0
-                                elif score >= 18:
-                                    rank = "S級潜伏🔥"
-                                    bg_c = "#1b5e20"
+                                
+                                # 🚨 画面にデバッグ情報を表示
+                                alerts.append(f"🔍 DEBUG: Score={score} ({', '.join(debug_log)})")
 
-                                high_3d = df_sub[h_col].iloc[-3:].max()
+                                high_3d = df_sub['AdjH'].iloc[-3:].max()
                                 entry_trigger = int(round(high_3d + 1))
                                 stop_loss = int(round(ma25_val - (atr14_val * 0.5)))
                                 take_profit = int(round(entry_trigger + ((entry_trigger - stop_loss) * 2)))
-
-                                if entry_trigger > 0:
-                                    risk_pct = (entry_trigger - stop_loss) / entry_trigger
-                                else:
-                                    risk_pct = 1.0
-
-                                if risk_pct > 0.08:
-                                    alerts.append("⚠️ 【リスク超過】損切り幅が8%を超えています。ロットを縮小するか見送りを推奨")
-
-                                stealth_payload = {
-                                    "entry_trigger": entry_trigger,
-                                    "stop_loss": stop_loss,
-                                    "take_profit": take_profit,
-                                    "risk_pct": round(risk_pct * 100, 2)
-                                }
                                 
+                                stealth_payload = {
+                                    "entry_trigger": entry_trigger, "stop_loss": stop_loss,
+                                    "take_profit": take_profit, "risk_pct": 5.0 
+                                }
                                 bt_val = entry_trigger
-                                reach_rate = 100.0 if rank != "圏外💀" else 0.0
+                                reach_rate = 100.0
 
                         # =========================================================================
                         # 🌐 待伏（Ambush）モード処理ブロック
