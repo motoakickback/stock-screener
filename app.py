@@ -2642,10 +2642,19 @@ with tab3:
 
             today = group_df.iloc[-1]
 
+            # 🚨 デバッグ：条件をわざと緩めてヒットするか確認する（一時的）
+            # 1. 売買代金チェック（そのまま）
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
-            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
-            if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
+            
+            # 2. 出来高条件：緩める（cfg["vol_ratio"] の代わりに 2.0 倍にする）
+            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * 2.0): return None
+            
+            # 3. ATR条件：ここが元凶。倍率を 0.6 から 3.0 に爆上げして、門番を無効化する
+            # リアルATRが小さいため、day_range が簡単に超えてしまっていたのを防ぐ
+            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * 3.0): return None
+            
+            # 4. MA乖離：緩める（10%までOKにする）
+            if pd.isna(today['ma25']) or today['AdjC'] < (today['ma25'] * 0.95) or today['AdjC'] > (today['ma25'] * 1.10): return None
 
             return {
                 'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
