@@ -1201,7 +1201,7 @@ def fetch_and_compress_single_day(dt):
                 data = None
                 if isinstance(raw_json, list): data = raw_json
                 elif isinstance(raw_json, dict):
-                    # daily_quotes, data, results を順に探索
+                    # daily_quotes, data, results, bars を順に探索
                     for key in ['daily_quotes', 'data', 'results', 'bars']:
                         if key in raw_json and isinstance(raw_json[key], list):
                             data = raw_json[key]
@@ -1211,20 +1211,34 @@ def fetch_and_compress_single_day(dt):
                 
                 temp_df = pd.DataFrame(data)
                 
-                # カラム正規化
+                # 🚨 修正核心部：カラム正規化（調整後データを「絶対優先」で取得する）
                 cols = {c.lower(): c for c in temp_df.columns}
                 rename_map = {}
-                # コード・日付・4本値の正規化
-                map_dict = {'code':'Code', 'date':'Date', 'open':'AdjO', 'high':'AdjH', 'low':'AdjL', 'close':'AdjC'}
-                for k, v in map_dict.items():
-                    if k in cols: rename_map[cols[k]] = v
                 
-                # 出来高の正規化
-                for vol_k in ['adjustmentvolume', 'volume', 'vol']:
-                    if vol_k in cols: 
-                        rename_map[cols[vol_k]] = 'AdjustmentVolume'
-                        break
-                        
+                # 1. コードと日付
+                if 'code' in cols: rename_map[cols['code']] = 'Code'
+                if 'date' in cols: rename_map[cols['date']] = 'Date'
+                
+                # 2. 株価カラム（Adjustment最優先）
+                if 'adjustmentclose' in cols:
+                    rename_map[cols['adjustmentopen']] = 'AdjO'
+                    rename_map[cols['adjustmenthigh']] = 'AdjH'
+                    rename_map[cols['adjustmentlow']] = 'AdjL'
+                    rename_map[cols['adjustmentclose']] = 'AdjC'
+                else:
+                    # Adjustmentがない場合のみ生データを使用
+                    map_dict = {'open':'AdjO', 'high':'AdjH', 'low':'AdjL', 'close':'AdjC'}
+                    for k, v in map_dict.items():
+                        if k in cols: rename_map[cols[k]] = v
+                
+                # 3. 出来高の正規化（Adjustment優先）
+                if 'adjustmentvolume' in cols:
+                    rename_map[cols['adjustmentvolume']] = 'AdjustmentVolume'
+                elif 'volume' in cols:
+                    rename_map[cols['volume']] = 'AdjustmentVolume'
+                elif 'vol' in cols:
+                    rename_map[cols['vol']] = 'AdjustmentVolume'
+                
                 temp_df.rename(columns=rename_map, inplace=True)
                 
                 # 必須カラム保持とメモリ圧縮
