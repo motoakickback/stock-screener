@@ -525,7 +525,7 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化＋ATR兵装配備）"""
+    """完全ベクトル化されたテクニカル指標計算（極限メモリ圧縮＋Wilder式 標準ATR兵装配備）"""
     if df is None or df.empty or len(df) < 25:
         return df
 
@@ -538,22 +538,25 @@ def calc_vector_indicators(df):
         return df
 
     # 1. 移動平均線 (float32で計算結果を保持)
-    df['SMA25'] = df[close_col].rolling(window=25).mean().astype('float32')
-    df['SMA75'] = df[close_col].rolling(window=75).mean().astype('float32')
+    # ⚠️ システム全体で 'MA25' として参照されるため列名を統一
+    df['MA25'] = df[close_col].rolling(window=25).mean().astype('float32')
+    df['MA75'] = df[close_col].rolling(window=75).mean().astype('float32')
 
-    # 2. 🚨【新規配備】超高速ベクトル化ATR計算（バックテストの生命線）
+    # 2. 🚨【新規配備】超高速ベクトル化 標準ATR計算（Wilder式）
     if high_col in df.columns and low_col in df.columns:
         c_prev = df[close_col].shift(1)
         tr1 = df[high_col] - df[low_col]
         tr2 = (df[high_col] - c_prev).abs()
         tr3 = (df[low_col] - c_prev).abs()
         
-        # 3つの中間の最大値を一撃で抽出し、14日平均をfloat32で保持
+        # 3つの中間の最大値を一撃で抽出
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        df['ATR'] = tr.rolling(window=14).mean().astype('float32')
+        
+        # ★ Wilder式修正移動平均（MMA/SMMA）を適用し、列名を 'ATR_Standard' に設定
+        df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
         del c_prev, tr1, tr2, tr3, tr
     else:
-        df['ATR'] = 0.0
+        df['ATR_Standard'] = 0.0
 
     # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
     delta = df[close_col].diff()
@@ -1467,7 +1470,7 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 
 def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -> dict:
     """
-    【TAB3精密スコープ用】潜伏（Stealth）銘柄専用の分析パイプライン
+    【TAB3精密スコープ用】潜伏（Stealth）銘柄専用の分析パイプライン（Wilder式標準ATR換装済）
     """
     df_sub = df.copy()
     
@@ -1475,7 +1478,8 @@ def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -
         return {
             "rank": "圏外💀", 
             "alerts": ["⚠️ データ不足による解析不能"], 
-            "entry_trigger": 0, "stop_loss": 0, "take_profit": 0, "risk_pct": 0.0
+            "entry_trigger": 0, "stop_loss": 0, "take_profit": 0, 
+            "risk_pct": 0.0, "atr_val": 0.0
         }
 
     c_col = 'AdjC' if 'AdjC' in df_sub.columns else 'Close'
@@ -1483,57 +1487,72 @@ def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -
     h_col = 'AdjH' if 'AdjH' in df_sub.columns else 'High'
     l_col = 'AdjL' if 'AdjL' in df_sub.columns else 'Low'
 
-    # 【事前計算】ATR（14日）およびMA25の算出
+    # -------------------------------------------------------------
+    # 【事前計算】標準ATR（14日）およびMA25の算出
+    # -------------------------------------------------------------
     df_sub['prev_C'] = df_sub[c_col].shift(1)
-    df_sub['TR'] = np.maximum(
-        df_sub[h_col] - df_sub[l_col],
-        np.maximum(
-            abs(df_sub[h_col] - df_sub['prev_C']),
-            abs(df_sub[l_col] - df_sub['prev_C'])
-        )
-    )
-    df_sub['ATR14'] = df_sub['TR'].rolling(window=14).mean()
+    
+    # Pandasのベクトル演算でTrue Range (TR) を一撃算出
+    tr1 = df_sub[h_col] - df_sub[l_col]
+    tr2 = (df_sub[h_col] - df_sub['prev_C']).abs()
+    tr3 = (df_sub[l_col] - df_sub['prev_C']).abs()
+    df_sub['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    # 🚨【必須修正】SMAを廃止し、Wilder式修正移動平均（MMA/SMMA）を適用
+    df_sub['ATR_Standard'] = df_sub['TR'].ewm(alpha=1/14, adjust=False).mean()
     df_sub['MA25'] = df_sub[c_col].rolling(window=25).mean()
 
     latest = df_sub.iloc[-1]
     prev = df_sub.iloc[-2]
 
-    c_val = latest[c_col]
-    o_val = latest[o_col]
-    h_val = latest[h_col]
-    l_val = latest[l_col]
-    prev_c_val = prev[c_col]
-    atr14_val = latest['ATR14']
-    ma25_val = latest['MA25']
+    c_val = float(latest[c_col])
+    o_val = float(latest[o_col])
+    h_val = float(latest[h_col])
+    l_val = float(latest[l_col])
+    prev_c_val = float(prev[c_col])
+    
+    # 計算されたWilder式ATRを取得
+    atr14_val = float(latest['ATR_Standard'])
+    ma25_val = float(latest['MA25'])
 
     alerts = []
-    rank = "A級💎"
+    rank = "A級💎" # 初期判定
 
+    # -------------------------------------------------------------
     # 1. 潜伏特有のシグナル・アラート検知
+    # -------------------------------------------------------------
     body_size = abs(c_val - o_val)
     day_range = h_val - l_val
+    
     if day_range > 0 and body_size <= (day_range * 0.10):
-        alerts.append("🟢【極小十字線】煮詰まりの極致")
+        alerts.append("🟢【極小十字線】極限の煮詰まりを検知")
 
     if o_val <= (prev_c_val - atr14_val):
         alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
         rank = "圏外💀"
 
+    # -------------------------------------------------------------
     # 2. 潜伏専用トレードセットアップ（売買ライン）の自動算出
+    # -------------------------------------------------------------
     high_3d = df_sub[h_col].iloc[-3:].max()
     entry_trigger = int(round(high_3d + 1))
     stop_loss = int(round(ma25_val - (atr14_val * 0.5)))
     take_profit = int(round(entry_trigger + ((entry_trigger - stop_loss) * 2)))
 
+    # -------------------------------------------------------------
     # 3. 資金管理（リスク幅）の適格性ジャッジ
+    # -------------------------------------------------------------
     if entry_trigger > 0:
         risk_pct = (entry_trigger - stop_loss) / entry_trigger
     else:
         risk_pct = 1.0
 
     if risk_pct > 0.08:
-        alerts.append("⚠️ 【リスク超過】損切り幅が8%を超えています。ロットを縮小するか見送りを推奨")
+        alerts.append(f"⚠️ 【リスク超過】損切り幅が{risk_pct*100:.1f}%(8%超過)です。ロット縮小または見送り推奨")
 
+    # -------------------------------------------------------------
+    # 4. ペイロード（UI側への返却データ）
+    # -------------------------------------------------------------
     result_payload = {
         "code": code,
         "company_name": company_name,
@@ -1542,11 +1561,11 @@ def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -
         "alerts": alerts,
         "current_price": int(round(c_val)),
         "ma25": int(round(ma25_val)),
-        "atr14": round(atr14_val, 2),
         "entry_trigger": entry_trigger,
         "stop_loss": stop_loss,
         "take_profit": take_profit,
-        "risk_pct": round(risk_pct * 100, 2)
+        "risk_pct": round(risk_pct * 100, 2),
+        "atr_val": atr14_val  # 🚨【必須修正】UI側のエラーを防ぐため "atr_val" というキー名で返却
     }
 
     return result_payload
