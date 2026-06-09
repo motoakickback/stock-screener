@@ -525,11 +525,16 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """【大水源の浄化】完全ベクトル化されたテクニカル指標計算（100%実数ATR保証）"""
-    if df is None or df.empty:
+    """完全ベクトル化されたテクニカル指標計算（極限メモリ圧縮＋ハイブリッド型標準ATR兵装配備）"""
+    if df is None or df.empty or len(df) < 5:
+        # 🚨 究極のエラー回避：データが全く足りない場合は、仮に終値の5%をATRとする
+        if df is not None and not df.empty:
+            close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
+            if close_col in df.columns:
+                df['ATR_Standard'] = df[close_col] * 0.05
         return df
 
-    # 動的な列名取得
+    # 動的な列名取得（すれ違い防止回路）
     close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
     high_col = 'AdjH' if 'AdjH' in df.columns else 'High'
     low_col = 'AdjL' if 'AdjL' in df.columns else 'Low'
@@ -538,45 +543,49 @@ def calc_vector_indicators(df):
         return df
 
     # 1. 移動平均線 (float32で計算結果を保持)
-    df['MA25'] = df[close_col].rolling(window=25, min_periods=1).mean().astype('float32')
-    df['MA75'] = df[close_col].rolling(window=75, min_periods=1).mean().astype('float32')
+    df['MA25'] = df[close_col].rolling(window=25).mean().astype('float32')
+    df['MA75'] = df[close_col].rolling(window=75).mean().astype('float32')
 
     # ====================================================================
-    # 🎯 2. 【本丸】超高速ベクトル化 標準ATR計算（5%の亡霊を完全排除）
+    # 🚨 2.【新規配備】超高速ベクトル化 標準ATR計算（ハイブリッド型安全装置）
     # ====================================================================
-    if high_col in df.columns and low_col in df.columns and len(df) >= 2:
-        # Wilderの本来のTrue Range計算
-        prev_c = df[close_col].shift(1)
+    if high_col in df.columns and low_col in df.columns:
+        c_prev = df[close_col].shift(1)
         tr1 = df[high_col] - df[low_col]
-        tr2 = (df[high_col] - prev_c).abs()
-        tr3 = (df[low_col] - prev_c).abs()
+        tr2 = (df[high_col] - c_prev).abs()
+        tr3 = (df[low_col] - c_prev).abs()
         
-        # 3つのうちの最大値を取る
+        # True Rangeの算出
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         
-        # 14日EMA（Wilder式に近い平滑化）でATRを算出
-        df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False, min_periods=1).mean().astype('float32')
-        # 既存のロジックとの互換性のため、小文字の'atr'列も上書き更新しておく
-        df['atr'] = df['ATR_Standard']
+        # 🛡️ 第1防衛線：データが14日未満の場合は単純平均(SMA)、14日以上の場合はWilder式(MMA/SMMA)
+        if len(df) >= 14:
+            df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
+        else:
+            df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
+            
+        # 🛡️ 最終防衛線：S安/S高張り付き等でATRが0以下、またはNaNになった場合のみ、直近終値の5%をセット
+        fallback_atr = df[close_col] * 0.05
+        df['ATR_Standard'] = df['ATR_Standard'].fillna(fallback_atr)
+        df.loc[df['ATR_Standard'] <= 0, 'ATR_Standard'] = fallback_atr[df['ATR_Standard'] <= 0]
         
-        del prev_c, tr1, tr2, tr3, tr
+        del c_prev, tr1, tr2, tr3, tr
     else:
-        # データが1日分しかない等、どうしても計算不可能な場合の「究極のフェイルセーフ」
-        # ここで初めて、システムクラッシュを防ぐためだけに暫定値を入れる
+        # High/Low が無い場合の最終防衛線
         df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
-        df['atr'] = df['ATR_Standard']
     # ====================================================================
 
-    # 3. RSIの完全ベクトル化計算
-    if len(df) > 1:
-        delta = df[close_col].diff()
-        gain = delta.where(delta > 0, 0.0).rolling(window=14, min_periods=1).mean()
-        loss = (-delta.where(delta < 0, 0.0)).rolling(window=14, min_periods=1).mean()
-        rs = gain / loss.replace(0, 1e-10) 
-        df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
-        del delta, gain, loss, rs
-    else:
-        df['RSI'] = 50.0
+    # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
+    delta = df[close_col].diff()
+    gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
+    
+    # ゼロ除算回避とRSI算出
+    rs = gain / loss.replace(0, 1e-10) 
+    df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
+
+    # メモリ圧迫の原因となる中間変数を即座に破棄
+    del delta, gain, loss, rs
     
     return df
 
@@ -1369,9 +1378,9 @@ def get_ambush_triage_info(lc, buy_target, atr):
     買目標値と14日ATRを用いた精密位置判定（遅行指標一切不使用）
     """
     # 🚨 5%等の概算係数を排除。ATR実数値による絶対判定（0以下のクラッシュのみ回避）
-    if atr <= 0: 
-        atr = 1.0 
-        
+    if atr <= 0:
+        atr = 1.0
+
     # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
     if lc > (buy_target + atr):
         return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。", "#FFC107"
@@ -1389,48 +1398,45 @@ def get_ambush_triage_info(lc, buy_target, atr):
 # ==============================================================================
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """
-    🎯 TAB4：【照準】精密スコープ描画・演算エンジン
+    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（全行程・標準ATR実数値同期版）
     """
     if df is None or df.empty:
         return None
-    
-    # 🚨 ここが外れていたのが原因です。エンジン強制起動！
-    df = calc_vector_indicators(df)
-    
+        
+    # --- 🚨 ATRの保護と継承（再計算を排除して大元の実数を維持） ---
     current_p = float(df.iloc[-1]['AdjC'])
-    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(current_p * 0.05)
-    
+
+    # 大元のスキャナーが計算してくれた本物の実数ATRの列をそのまま読み込む
+    if 'ATR_Standard' in df.columns:
+        atr_val = float(df['ATR_Standard'].iloc[-1])
+    elif 'atr' in df.columns:
+        atr_val = float(df['atr'].iloc[-1])
+    elif 'ATR' in df.columns:
+        atr_val = float(df['ATR'].iloc[-1])
+    else:
+        atr_val = current_p * 0.05 # データが一切存在しない場合のみの最終防衛線
+        
+    # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
     is_fallback = False
     if atr_val > 0 and abs(atr_val - (current_p * 0.05)) < 0.001:
         is_fallback = True
 
+    # 乖離率計算
     p_high = df['AdjH'].max() if 'AdjH' in df.columns else current_p
     p_low = df['AdjL'].min() if 'AdjL' in df.columns else current_p
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
+    # 1ATR下・2ATR上の設定（実数値演算）
     stop_loss = int(round(bt_target - atr_val))
     take_profit = int(round(bt_target + (atr_val * 2)))
 
+    # ボラティリティ計算（実数：(ATR / 終値) * 100）
     real_vol_pct = (atr_val / current_p) * 100 if current_p > 0 else 0.0
 
+    # 既存ロジック呼び出し（ATR実数値を渡す）
     triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
 
-    if len(df) > 1:
-        diff = df['AdjC'].diff()
-        gain = diff.where(diff > 0, 0.0).rolling(window=14, min_periods=1).mean()
-        loss = -diff.where(diff < 0, 0.0).rolling(window=14, min_periods=1).mean()
-        rs = gain / loss.replace(0, 1e-10)
-        rsi = 100 - (100 / (1 + rs)).iloc[-1]
-    else:
-        rsi = float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0
-        
-    if pd.isna(rsi):
-        rsi = 50.0
-
-    risk_pct = 0.0
-    if bt_target > 0:
-        risk_pct = (bt_target - stop_loss) / bt_target
-
+    # アラート文字列の生成
     alerts = []
     if event_data:
         if "earnings" in event_data and event_data["earnings"]:
@@ -1438,9 +1444,14 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         if "dividend" in event_data and event_data["dividend"]:
             alerts.append("配当権利日")
             
+    risk_pct = 0.0
+    if bt_target > 0:
+        risk_pct = (bt_target - stop_loss) / bt_target
+        
     if risk_pct > 0.08:
         alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
 
+    # 🚨 フォールバック発動時の警告追加
     if is_fallback:
         alerts.append("⚠️ データ不足・概算5%適用")
 
@@ -1453,6 +1464,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標", f"{int(bt_target):,} 円")
     
+    # 🚨 UIの表示：フォールバック時は警告アイコンを表示し、それ以外は実数を堂々と表示
     atr_label = "⚠️ 1ATR(概算)" if is_fallback else "🌪️ 1ATR(実数)"
     col3.metric(atr_label, f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
@@ -1466,14 +1478,6 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    return {
-        'code': code, 'name': company_name, 'lc': current_p, 'h14': p_high, 'l14': p_low,
-        'atr_val': atr_val, 'bt_target': bt_target, 'stop_loss': stop_loss,       
-        'take_profit': take_profit, 'risk_pct': risk_pct, 'rsi': rsi,
-        'triage_status': triage_status, 'rank': triage_status.split('】')[0].replace('【', ''),
-        'score': 0, 'alerts_str': alerts_str
-    }
-    
     # 結果辞書の構築
     vr = {
         'code': code,
@@ -1483,12 +1487,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'l14': p_low,
         'atr_val': atr_val,
         'bt_target': bt_target,
-        'stop_loss': stop_loss,       
-        'take_profit': take_profit,   
-        'risk_pct': risk_pct,         
-        'rsi': rsi,
+        'stop_loss': stop_loss,
+        'take_profit': take_profit,
+        'risk_pct': risk_pct,
+        'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
         'triage_status': triage_status,
-        'rank': triage_status.split('】')[0].replace('【', ''),
+        'rank': triage_status.split('】').replace('【', ''),
         'score': 0,
         'alerts_str': alerts_str
     }
@@ -2174,27 +2178,27 @@ with tab1:
                 st.write("⚙️ 第3段階：並列演算・物理抽出エンジン稼働中...")
 
                 def scan_unit_t1_parallel(code, group, cfg, v_avg, l_date):
-                    group_df = group.tail(30).copy()
+                    group_df = group.tail(30).copy().ffill().bfill()
                     if group_df.empty: return None
 
                     # 🚨 エンジン強制起動！
                     group_df = calc_vector_indicators(group_df)
                     
                     c_vals = group_df['AdjC'].values
-                    h_vals = group_df['AdjH'].values
-                    l_vals = group_df['AdjL'].values
                     lc = float(c_vals[-1])
                     
+                    # 🚨 実数ATRの確実な取得
                     real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(lc * 0.05)
-
+                    
                     if cfg["f6_risk"] and (str(code)[:4] in cfg.get("gigi_codes", [])): return None
                     
-                    rsi, _dummy_atr, _, _ = get_fast_indicators(c_vals)
+                    rsi = float(group_df['RSI'].iloc[-1]) if 'RSI' in group_df.columns else 50.0
                     vol_pct = (real_atr / lc * 100) if lc > 0 else 0
                     if vol_pct < cfg["f_vol_min"]: return None
                     
-                    h14 = float(h_vals[-14:].max()) if len(h_vals) >= 14 else float(h_vals.max())
-                    l14 = float(l_vals[-14:].min()) if len(l_vals) >= 14 else float(l_vals.min())
+                    h_vals, l_vals = group_df['AdjH'].values, group_df['AdjL'].values
+                    h14 = float(h_vals[-14:].max())
+                    l14 = float(l_vals[-14:].min())
                     if l14 <= 0 or h14 <= l14: return None
                     
                     wh = h14 / l14
@@ -2202,13 +2206,14 @@ with tab1:
                     
                     base_push = (h14 - l14) * (cfg["push_r"] / 100.0)
                     target_buy = h14 - base_push
-                    target_buy = target_buy * (1.0 - cfg["push_penalty"]) 
+                    target_buy = target_buy * (1.0 - cfg.get("push_penalty", 0.0))
                     
                     dist_pct = ((lc / target_buy) - 1) * 100 if target_buy > 0 else 0
                     if dist_pct < -cfg["sl_c"]: return None
 
                     rank, bg, t_score = ("S🔥", "#26a69a", 5.5) if dist_pct <= 2.0 else ("A⚡", "#ed6c02", 4.5)
                     
+                    # 🚨 実数ATRを辞書に格納してUIへ引き渡す
                     return {
                         'Code': code, 'lc': lc, 'RSI': float(rsi), 
                         'target_buy': float(target_buy),
@@ -2216,8 +2221,7 @@ with tab1:
                         'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 
                         'score': 4, 'high_4d': float(h14), 'low_14d': float(l14), 
                         'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
-                        'ATR_Standard': real_atr,  
-                        'atr': real_atr            
+                        'ATR_Standard': real_atr, 'atr': real_atr
                     }
 
                 results = []
@@ -2434,7 +2438,7 @@ with tab2:
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = float(c_vals[-1])
-
+                        
                         if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
                         if cfg.get("f5_ipo"):
                             first_date = group['Date'].min()
@@ -2445,19 +2449,10 @@ with tab2:
                         # 🚨 エンジン強制起動！
                         group_df = group.tail(30).copy().ffill().bfill()
                         group_df = calc_vector_indicators(group_df)
-    
+                        
+                        # 🚨 実数ATRとRSIの確実な取得
                         real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(lc * 0.05)
-
-                        rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
-                        vol_pct = (real_atr / lc * 100) if lc > 0 else 0
-                        if vol_pct < cfg.get("f_vol_min", -1.0): return None
-                        if rsi > cfg.get("rsi_lim", 70): return None
-
-                        if len(group) < 25: return None
-
-                        if cfg.get("f12_ex_overvalued"):
-                            f_data = get_fundamentals(c_str)
-                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        rsi = float(group_df['RSI'].iloc[-1]) if 'RSI' in group_df.columns else 50.0
 
                         v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group_df.columns), 'Volume')
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
@@ -2475,26 +2470,24 @@ with tab2:
 
                         group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
                         group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
-                        c_range = group_df['candle_range'].iloc[-1]
-                        b_range = group_df['body_range'].iloc[-1]
-
-                        if c_range > 0:
-                            if (b_range / c_range) < cfg["body_ratio"]: return None
-                        elif c_range < 0:
-                            return None
+                        if group_df['candle_range'].iloc[-1] > 0:
+                            body_ratio = group_df['body_range'].iloc[-1] / group_df['candle_range'].iloc[-1]
+                            if body_ratio < cfg.get("body_ratio_min", 0.7): return None
 
                         t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
                         gc_days = 0 
+                        
                         h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
                         h14 = float(h_vals[-14:].max())
+                        vol_pct = (real_atr / lc * 100) if lc > 0 else 0
 
+                        # 🚨 実数ATRを辞書に格納してUIへ引き渡す
                         return {
-                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                            'Code': code, 'lc': float(lc), 'RSI': rsi, 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
                             'GC_Days': gc_days, 'h14': h14, 
-                            'ATR_Standard': real_atr,
-                            'atr': real_atr,
-                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
+                            'ATR_Standard': real_atr, 'atr': real_atr, 
+                            'avg_vol': int(v_avg), 'vol_pct': vol_pct,
                             'T_Desc': t_desc
                         }
 
@@ -2663,55 +2656,48 @@ with tab3:
             "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox)
         }
 
-        def scan_unit_stealth_parallel(code, group, l_date, cfg):
-            # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
-            group_df = group.tail(30).copy().ffill().bfill()
-            if len(group_df) < 26: return None
+    def scan_unit_stealth_parallel(code, group, l_date, cfg):
+        group_df = group.copy().ffill().bfill()
+        if len(group_df) < 26: return None
 
-            v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
-            v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
+        # 🚨 エンジン強制起動！
+        group_df = calc_vector_indicators(group_df)
 
-            group_df['AdjC'] = group_df['AdjC'].astype(float)
-            group_df['AdjH'] = group_df['AdjH'].astype(float)
-            group_df['AdjL'] = group_df['AdjL'].astype(float)
-            group_df[v_col_name] = group_df[v_col_name].astype(float)
+        v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
+        v_col_name = v_candidates if v_candidates else group_df.columns[-1]
 
-            if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-            if 'atr' not in group_df.columns:
-                group_df['prev_close'] = group_df['AdjC'].shift(1)
-                group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
-                group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
+        group_df['AdjC'] = group_df['AdjC'].astype(float)
+        group_df['AdjH'] = group_df['AdjH'].astype(float)
+        group_df['AdjL'] = group_df['AdjL'].astype(float)
+        group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-            group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
-            group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
+        if 'ma25' not in group_df.columns:
+            group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+        
+        # 🚨 実数ATRの確実な取得と適用
+        real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(group_df['AdjC'].iloc[-1] * 0.05)
+        group_df['atr'] = real_atr
 
-            today = group_df.iloc[-1]
+        group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
+        group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
+        group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
+        group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
 
-            # --- デバッグ用出力 ---
-            # フィルターを通る直前の数値を確認する
-            if today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
-                # ここで弾かれた場合は件数として無視するが、もし1件も通過しないならここが原因
-                pass 
-            else:
-                st.write(f"DEBUG: 銘柄 {code} は売買代金フィルター通過: {today['avg_value_5'] / 100_000_000:.1f}億円")
-                if today[v_col_name] < (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
-                    st.write(f"DEBUG: 銘柄 {code} は出来高フィルター通過: {today[v_col_name]} vs {today['avg_volume_5_prev'] * cfg['vol_ratio']:.1f}")
-            # --------------------
+        today = group_df.iloc[-1]
 
-            if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
-            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
-            if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
-
-            return {
-                'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
-                'atr': float(today['atr']), 'day_range': float(today['day_range']),
-                'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
-                'avg_vol_prev': float(today['avg_volume_5_prev']),
-                'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
-            }
+        if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
+        if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
+        if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
+        if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
+        
+        # 🚨 実数ATRを辞書に格納してUIへ引き渡す
+        return {
+            'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
+            'ATR_Standard': real_atr, 'atr': real_atr, 'day_range': float(today['day_range']),
+            'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
+            'avg_vol_prev': float(today['avg_volume_5_prev']),
+            'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+        }
 
         with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
             try:
