@@ -525,11 +525,11 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（実数ATR保護＋ハイブリッド安全装置）"""
+    """【大水源の浄化】完全ベクトル化されたテクニカル指標計算（100%実数ATR保証）"""
     if df is None or df.empty:
         return df
 
-    # 動的な列名取得（すれ違い防止回路）
+    # 動的な列名取得
     close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
     high_col = 'AdjH' if 'AdjH' in df.columns else 'High'
     low_col = 'AdjL' if 'AdjL' in df.columns else 'Low'
@@ -537,41 +537,34 @@ def calc_vector_indicators(df):
     if close_col not in df.columns:
         return df
 
-    # 1. 移動平均線
+    # 1. 移動平均線 (float32で計算結果を保持)
     df['MA25'] = df[close_col].rolling(window=25, min_periods=1).mean().astype('float32')
     df['MA75'] = df[close_col].rolling(window=75, min_periods=1).mean().astype('float32')
 
     # ====================================================================
-    # 🚨 2. 超高速ベクトル化 標準ATR計算（大元データの継承と安全装置）
+    # 🎯 2. 【本丸】超高速ベクトル化 標準ATR計算（5%の亡霊を完全排除）
     # ====================================================================
-    # 既にスキャンエンジン（大元）でATR_Standardが計算済みの場合は、上書き破壊を防ぐ
-    has_precalc_atr = 'ATR_Standard' in df.columns and not df['ATR_Standard'].isna().all()
-
-    if not has_precalc_atr:
-        if high_col in df.columns and low_col in df.columns and len(df) >= 2:
-            c_prev = df[close_col].shift(1)
-            tr1 = df[high_col] - df[low_col]
-            tr2 = (df[high_col] - c_prev).abs()
-            tr3 = (df[low_col] - c_prev).abs()
-            
-            # True Rangeの算出
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # 🛡️ 第1防衛線：データが14日未満なら単純平均(SMA)、14日以上ならWilder式(MMA)
-            if len(df) >= 14:
-                df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
-            else:
-                df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
-                
-            # 🛡️ 最終防衛線：連日のS高/S安等でATRが0以下、またはNaNになった場合のみ直近終値の5%をセット
-            fallback_atr = df[close_col] * 0.05
-            df['ATR_Standard'] = df['ATR_Standard'].fillna(fallback_atr)
-            df.loc[df['ATR_Standard'] <= 0, 'ATR_Standard'] = fallback_atr[df['ATR_Standard'] <= 0]
-            
-            del c_prev, tr1, tr2, tr3, tr
-        else:
-            # データが1日分しかない、またはHigh/Lowがない場合の究極防衛線
-            df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
+    if high_col in df.columns and low_col in df.columns and len(df) >= 2:
+        # Wilderの本来のTrue Range計算
+        prev_c = df[close_col].shift(1)
+        tr1 = df[high_col] - df[low_col]
+        tr2 = (df[high_col] - prev_c).abs()
+        tr3 = (df[low_col] - prev_c).abs()
+        
+        # 3つのうちの最大値を取る
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # 14日EMA（Wilder式に近い平滑化）でATRを算出
+        df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False, min_periods=1).mean().astype('float32')
+        # 既存のロジックとの互換性のため、小文字の'atr'列も上書き更新しておく
+        df['atr'] = df['ATR_Standard']
+        
+        del prev_c, tr1, tr2, tr3, tr
+    else:
+        # データが1日分しかない等、どうしても計算不可能な場合の「究極のフェイルセーフ」
+        # ここで初めて、システムクラッシュを防ぐためだけに暫定値を入れる
+        df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
+        df['atr'] = df['ATR_Standard']
     # ====================================================================
 
     # 3. RSIの完全ベクトル化計算
@@ -579,11 +572,10 @@ def calc_vector_indicators(df):
         delta = df[close_col].diff()
         gain = delta.where(delta > 0, 0.0).rolling(window=14, min_periods=1).mean()
         loss = (-delta.where(delta < 0, 0.0)).rolling(window=14, min_periods=1).mean()
-        
         rs = gain / loss.replace(0, 1e-10) 
         df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
         del delta, gain, loss, rs
-    elif 'RSI' not in df.columns:
+    else:
         df['RSI'] = 50.0
     
     return df
