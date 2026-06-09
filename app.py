@@ -525,8 +525,13 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（極限メモリ圧縮＋Wilder式 標準ATR兵装配備）"""
-    if df is None or df.empty or len(df) < 25:
+    """完全ベクトル化されたテクニカル指標計算（極限メモリ圧縮＋ハイブリッド型標準ATR兵装配備）"""
+    if df is None or df.empty or len(df) < 5:
+        # 🚨 究極のエラー回避：データが全く足りない場合は、仮に終値の5%をATRとする
+        if df is not None and not df.empty:
+            close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
+            if close_col in df.columns:
+                df['ATR_Standard'] = df[close_col] * 0.05
         return df
 
     # 動的な列名取得（すれ違い防止回路）
@@ -538,25 +543,37 @@ def calc_vector_indicators(df):
         return df
 
     # 1. 移動平均線 (float32で計算結果を保持)
-    # ⚠️ システム全体で 'MA25' として参照されるため列名を統一
     df['MA25'] = df[close_col].rolling(window=25).mean().astype('float32')
     df['MA75'] = df[close_col].rolling(window=75).mean().astype('float32')
 
-    # 2. 🚨【新規配備】超高速ベクトル化 標準ATR計算（Wilder式）
+    # ====================================================================
+    # 🚨 2.【新規配備】超高速ベクトル化 標準ATR計算（ハイブリッド型安全装置）
+    # ====================================================================
     if high_col in df.columns and low_col in df.columns:
         c_prev = df[close_col].shift(1)
         tr1 = df[high_col] - df[low_col]
         tr2 = (df[high_col] - c_prev).abs()
         tr3 = (df[low_col] - c_prev).abs()
         
-        # 3つの中間の最大値を一撃で抽出
+        # True Rangeの算出
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         
-        # ★ Wilder式修正移動平均（MMA/SMMA）を適用し、列名を 'ATR_Standard' に設定
-        df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
+        # 🛡️ 第1防衛線：データが14日未満の場合は単純平均(SMA)、14日以上の場合はWilder式(MMA/SMMA)
+        if len(df) >= 14:
+            df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
+        else:
+            df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
+            
+        # 🛡️ 最終防衛線：S安/S高張り付き等でATRが0以下、またはNaNになった場合のみ、直近終値の5%をセット
+        fallback_atr = df[close_col] * 0.05
+        df['ATR_Standard'] = df['ATR_Standard'].fillna(fallback_atr)
+        df.loc[df['ATR_Standard'] <= 0, 'ATR_Standard'] = fallback_atr[df['ATR_Standard'] <= 0]
+        
         del c_prev, tr1, tr2, tr3, tr
     else:
-        df['ATR_Standard'] = 0.0
+        # High/Low が無い場合の最終防衛線
+        df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
+    # ====================================================================
 
     # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
     delta = df[close_col].diff()
@@ -1354,17 +1371,25 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 # ==============================================================================
 # 🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
 # ==============================================================================
-def get_ambush_triage_info(current_p, bt_target, atr_val):
+def get_ambush_triage_info(lc, buy_target, atr):
+    """
+    買目標値と14日ATRを用いた精密位置判定（遅行指標一切不使用）
+    """
     # 🚨 5%等の概算係数を排除。ATR実数値による絶対判定
-    if atr_val <= 0: atr_val = 1.0
+    if atr <= 0: 
+        atr = 1.0 # ゼロ除算等のクラッシュ回避
+        
+    # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
+    if lc > (buy_target + atr):
+        return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。", "#FFC107"
     
-    # 判定幅を標準ATRの実数に強制同期
-    if current_p > (bt_target + atr_val):
-        return "🟡【未達・監視】", "#FFC107"
-    elif (bt_target - atr_val) <= current_p <= (bt_target + atr_val):
-        return "🟢【迎撃圏内】", "#4CAF50"
+    # 条件B：目標値±1ATRの範囲内（迎撃準備）
+    elif (buy_target - atr) <= lc <= (buy_target + atr):
+        return "🟢【迎撃圏内】目標地点に到達。反転シグナル（ローソク足等）に注視し狙撃準備。", "#4CAF50"
+    
+    # 条件C：目標値 - 1ATRより低い（底割れ）
     else:
-        return "💀【防衛決壊】", "#F44336"
+        return "💀【底割れ・撤退】サポートライン完全崩壊。待ち伏せ失敗。", "#F44336"
 
 # ==============================================================================
 # 🎯 2. 精密スコープ ロジック演算・描画エンジン（完全展開版）
@@ -1376,13 +1401,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
     
-    # --- 🚨 ATR計算の強制換装：Wilder式へ統合 ---
-    # ここで必ず最新の標準ATRを再計算させ、列を更新する
+    # --- 🚨 ATR計算の強制換装：Wilder式ハイブリッドへ統合 ---
     df = calc_vector_indicators(df)
     
     # 既存の 'ATR' ではなく、新規配備の 'ATR_Standard' を優先取得
-    # 物理的に列が存在しない場合は安全圏として算出値を利用
-    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(df['ATR'].iloc[-1])
+    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(df['ATR'].iloc[-1] if 'ATR' in df.columns else df['AdjC'].iloc[-1] * 0.05)
     current_p = float(df.iloc[-1]['AdjC'])
     
     # 乖離率計算
@@ -1395,21 +1418,50 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     take_profit = int(round(bt_target + (atr_val * 2)))
 
     # ボラティリティ計算（実数：(ATR / 終値) * 100）
-    # 🚨 完全実数同期のためのATRボラティリティ算出
-    # 5.0%という固定係数を完全に排除し、現在のATRと終値からリアルタイムで計算します
     real_vol_pct = (atr_val / current_p) * 100 if current_p > 0 else 0.0
 
+    # 既存ロジック呼び出し（ATR実数値を渡す）
+    triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
+
+    # 基礎指標計算（RSIは遅行指標ではないオシレーターとして維持）
+    diff = df['AdjC'].diff()
+    gain = diff.where(diff > 0, 0.0).rolling(window=14).mean()
+    loss = -diff.where(diff < 0, 0.0).rolling(window=14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs)).iloc[-1]
+    if pd.isna(rsi):
+        rsi = 50.0
+
+    # リスク超過の計算
+    risk_pct = 0.0
+    if bt_target > 0:
+        risk_pct = (bt_target - stop_loss) / bt_target
+
+    # アラート文字列の生成（イベント検知・リスク超過エラー回避版）
+    alerts = []
+    if event_data:
+        if "earnings" in event_data and event_data["earnings"]:
+            alerts.append("決算接近")
+        if "dividend" in event_data and event_data["dividend"]:
+            alerts.append("配当権利日")
+            
+    if risk_pct > 0.08:
+        alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
+
+    alerts_str = " / ".join(alerts) if alerts else "特になし"
+
+    import streamlit as st
     st.markdown(f"### 🎯 [{code}] {company_name}")
     
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標", f"{int(bt_target):,} 円")
     
-    # 🚨 ここで実数を表示させます。5.0%という数値は消滅します
-    col3.metric("🌪️ 1ATR (14日)", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
+    # 🚨 修正：5.0%固定の亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
+    col3.metric("🌪️ 1ATR", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
-    col4.metric("🛡️ 防衛線(LC)", f"{stop_loss:,} 円")
-    col5.metric("📈 利確目標(TP)", f"{take_profit:,} 円")
+    col4.metric("🛡️ LC", f"{stop_loss:,} 円")
+    col5.metric("📈 TP", f"{take_profit:,} 円")
     
     st.markdown(
         f"<div style='padding: 12px; border-radius: 5px; border: 2px solid {triage_color}; "
@@ -1418,7 +1470,26 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    return {'code': code, 'atr_val': atr_val}
+    # 結果辞書の構築（エクスポート・上位処理用）
+    vr = {
+        'code': code,
+        'name': company_name,
+        'lc': current_p,
+        'h14': p_high,
+        'l14': p_low,
+        'atr_val': atr_val,
+        'bt_target': bt_target,
+        'stop_loss': stop_loss,       
+        'take_profit': take_profit,   
+        'risk_pct': risk_pct,         
+        'rsi': rsi,
+        'triage_status': triage_status,
+        'rank': triage_status.split('】')[0].replace('【', ''),
+        'score': 0,
+        'alerts_str': alerts_str
+    }
+    
+    return vr
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
