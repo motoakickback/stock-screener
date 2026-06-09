@@ -1379,92 +1379,39 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
     
-    # 1. 絶対価格データの取得（スイングハイ・スイングロウ）
+    # --- 🚨 ATR計算の強制換装：Wilder式へ統合 ---
+    df = calc_vector_indicators(df)
+    
+    # 既存の 'ATR' ではなく、新規配備の 'ATR_Standard' を優先取得
+    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(df['ATR'].iloc[-1])
+    current_p = float(df.iloc[-1]['AdjC'])
+    
+    # 乖離率計算
     p_high = df['AdjH'].max()
     p_low = df['AdjL'].min()
-    current_p = df.iloc[-1]['AdjC']
-    
-    # 2. 🚨 ボラティリティ（14日標準ATR：Wilder式）の完全算出
-    df_atr = df.copy()
-    df_atr['PrevClose'] = df_atr['AdjC'].shift(1).fillna(df_atr['AdjC'])
-    df_atr['tr0'] = abs(df_atr['AdjH'] - df_atr['AdjL'])
-    df_atr['tr1'] = abs(df_atr['AdjH'] - df_atr['PrevClose'])
-    df_atr['tr2'] = abs(df_atr['AdjL'] - df_atr['PrevClose'])
-    df_atr['tr'] = df_atr[['tr0', 'tr1', 'tr2']].max(axis=1)
-    
-    # ★修正：SMAを廃止し、Wilder式修正移動平均（MMA/SMMA）を適用
-    if len(df_atr) >= 14:
-        atr_val = float(df_atr['tr'].ewm(alpha=1/14, adjust=False).mean().iloc[-1])
-    else:
-        atr_val = float(df_atr['tr'].mean())
-        
-    if pd.isna(atr_val) or atr_val == 0:
-        atr_val = 1.0 # ゼロ除算等の回避
-    
-    # 3. 買目標値の算出（スイングハイからのフィボナッチ50%押し基準）
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
-    # ==============================================================
-    # 🚨【新規結線】標準ATRを用いたTP/LCセットアップとリスク評価
-    # ==============================================================
-    # エントリートリガーを買目標値（bt_target）に設定
-    entry_trigger = int(round(bt_target))
-    stop_loss = int(round(entry_trigger - atr_val))         # 買トリガーから1ATR下
-    take_profit = int(round(entry_trigger + (atr_val * 2))) # 買トリガーから2ATR上
+    # 1ATR下・2ATR上の設定
+    stop_loss = int(round(bt_target - atr_val))
+    take_profit = int(round(bt_target + (atr_val * 2)))
 
-    # 資金管理（リスク幅）の計算
-    risk_pct = 0.0
-    if entry_trigger > 0:
-        risk_pct = (entry_trigger - stop_loss) / entry_trigger
-    # ==============================================================
+    # ボラティリティ計算（実数）
+    real_vol_pct = (atr_val / current_p) * 100 if current_p > 0 else 0.0
 
-    # 4. 新・待伏せトリアージの実行（MACD関連変数は完全消去済）
+    # 既存ロジック呼び出し
     triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
-    
-    # 5. 基礎指標計算（RSIは遅行指標ではないオシレーターとして維持）
-    diff = df['AdjC'].diff()
-    gain = diff.where(diff > 0, 0.0).rolling(window=14).mean()
-    loss = -diff.where(diff < 0, 0.0).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs)).iloc[-1]
-    if pd.isna(rsi):
-        rsi = 50.0
 
-    # 6. アラート文字列の生成（イベント検知・リスク超過エラー回避版）
-    alerts = []
-    if event_data:
-        if "earnings" in event_data and event_data["earnings"]:
-            alerts.append("決算接近")
-        if "dividend" in event_data and event_data["dividend"]:
-            alerts.append("配当権利日")
-            
-    # ★新規：損切り幅が8%を超えている場合の警告
-    if risk_pct > 0.08:
-        alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
-
-    alerts_str = " / ".join(alerts) if alerts else "特になし"
-
-    # ==============================================================
-    # 🚨【新規結線】実態ボラティリティ（パーセンテージ）の正確な算出
-    # ==============================================================
-    if current_p > 0:
-        real_vol_pct = (atr_val / current_p) * 100
-    else:
-        real_vol_pct = 0.0
-
-    # --- 🚨 UI内包描画ブロック（実態価格とTP/LCを画面に投影） ---
-    import streamlit as st
     st.markdown(f"### 🎯 [{code}] {company_name}")
     
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("最新終値", f"{int(current_p):,} 円")
-    col2.metric("買目標(トリガー)", f"{int(bt_target):,} 円")
+    col2.metric("買目標", f"{int(bt_target):,} 円")
     
-    # 🚨 修正：亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
+    # 🚨 ここで実数を表示させる
     col3.metric("🌪️ 1ATR", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
-    col4.metric("🛡️ 防衛線(LC)", f"{stop_loss:,} 円")
-    col5.metric("📈 利確目標(TP)", f"{take_profit:,} 円")
+    col4.metric("🛡️ LC", f"{stop_loss:,} 円")
+    col5.metric("📈 TP", f"{take_profit:,} 円")
     
     st.markdown(
         f"<div style='padding: 12px; border-radius: 5px; border: 2px solid {triage_color}; "
@@ -1473,26 +1420,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 7. 結果辞書の構築（エクスポート・上位処理用）
-    vr = {
-        'code': code,
-        'name': company_name,
-        'lc': current_p,
-        'h14': p_high,
-        'l14': p_low,
-        'atr_val': atr_val,
-        'bt_target': bt_target,
-        'stop_loss': stop_loss,       # 追加
-        'take_profit': take_profit,   # 追加
-        'risk_pct': risk_pct,         # 追加
-        'rsi': rsi,
-        'triage_status': triage_status,
-        'rank': triage_status.split('】')[0].replace('【', ''),
-        'score': 0,
-        'alerts_str': alerts_str
-    }
-    
-    return vr
+    return {'code': code, 'atr_val': atr_val}
 
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
