@@ -1395,10 +1395,9 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     take_profit = int(round(bt_target + (atr_val * 2)))
 
     # ボラティリティ計算（実数：(ATR / 終値) * 100）
+    # 🚨 完全実数同期のためのATRボラティリティ算出
+    # 5.0%という固定係数を完全に排除し、現在のATRと終値からリアルタイムで計算します
     real_vol_pct = (atr_val / current_p) * 100 if current_p > 0 else 0.0
-
-    # 既存ロジック呼び出し（ATR実数値を渡す）
-    triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
 
     st.markdown(f"### 🎯 [{code}] {company_name}")
     
@@ -1406,11 +1405,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標", f"{int(bt_target):,} 円")
     
-    # 🚨 修正：5.0%固定の亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
+    # 🚨 ここで実数を表示させます。5.0%という数値は消滅します
     col3.metric("🌪️ 1ATR (14日)", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
-    col4.metric("🛡️ LC", f"{stop_loss:,} 円")
-    col5.metric("📈 TP", f"{take_profit:,} 円")
+    col4.metric("🛡️ 防衛線(LC)", f"{stop_loss:,} 円")
+    col5.metric("📈 利確目標(TP)", f"{take_profit:,} 円")
     
     st.markdown(
         f"<div style='padding: 12px; border-radius: 5px; border: 2px solid {triage_color}; "
