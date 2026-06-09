@@ -1354,35 +1354,34 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 # ==============================================================================
 # 🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
 # ==============================================================================
-
-def get_ambush_triage_info(lc, buy_target, atr):
-    """
-    買目標値と14日ATRを用いた精密位置判定（遅行指標一切不使用）
-    """
-    # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
-    if lc > (buy_target + atr):
-        return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。", "#FFC107"
+def get_ambush_triage_info(current_p, bt_target, atr_val):
+    # 🚨 5%等の概算係数を排除。ATR実数値による絶対判定
+    if atr_val <= 0: atr_val = 1.0
     
-    # 条件B：目標値±1ATRの範囲内（迎撃準備）
-    elif (buy_target - atr) <= lc <= (buy_target + atr):
-        return "🟢【迎撃圏内】目標地点に到達。反転シグナル（ローソク足等）に注視し狙撃準備。", "#4CAF50"
-    
-    # 条件C：目標値 - 1ATRより低い（底割れ）
+    # 判定幅を標準ATRの実数に強制同期
+    if current_p > (bt_target + atr_val):
+        return "🟡【未達・監視】", "#FFC107"
+    elif (bt_target - atr_val) <= current_p <= (bt_target + atr_val):
+        return "🟢【迎撃圏内】", "#4CAF50"
     else:
-        return "💀【底割れ・撤退】サポートライン完全崩壊。待ち伏せ失敗。", "#F44336"
-
+        return "💀【防衛決壊】", "#F44336"
 
 # ==============================================================================
 # 🎯 2. 精密スコープ ロジック演算・描画エンジン（完全展開版）
 # ==============================================================================
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
+    """
+    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（全行程・標準ATR実数値同期版）
+    """
     if df is None or df.empty:
         return None
     
     # --- 🚨 ATR計算の強制換装：Wilder式へ統合 ---
+    # ここで必ず最新の標準ATRを再計算させ、列を更新する
     df = calc_vector_indicators(df)
     
     # 既存の 'ATR' ではなく、新規配備の 'ATR_Standard' を優先取得
+    # 物理的に列が存在しない場合は安全圏として算出値を利用
     atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(df['ATR'].iloc[-1])
     current_p = float(df.iloc[-1]['AdjC'])
     
@@ -1391,14 +1390,14 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     p_low = df['AdjL'].min()
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
-    # 1ATR下・2ATR上の設定
+    # 1ATR下・2ATR上の設定（実数値演算）
     stop_loss = int(round(bt_target - atr_val))
     take_profit = int(round(bt_target + (atr_val * 2)))
 
-    # ボラティリティ計算（実数）
+    # ボラティリティ計算（実数：(ATR / 終値) * 100）
     real_vol_pct = (atr_val / current_p) * 100 if current_p > 0 else 0.0
 
-    # 既存ロジック呼び出し
+    # 既存ロジック呼び出し（ATR実数値を渡す）
     triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
 
     st.markdown(f"### 🎯 [{code}] {company_name}")
@@ -1407,8 +1406,8 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標", f"{int(bt_target):,} 円")
     
-    # 🚨 ここで実数を表示させる
-    col3.metric("🌪️ 1ATR", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
+    # 🚨 修正：5.0%固定の亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
+    col3.metric("🌪️ 1ATR (14日)", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
     col4.metric("🛡️ LC", f"{stop_loss:,} 円")
     col5.metric("📈 TP", f"{take_profit:,} 円")
