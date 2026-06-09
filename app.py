@@ -3677,7 +3677,7 @@ with tab4:
                 # tactics_mode = "待伏" # または "強襲", "潜伏" など現在のモードを取得
                 # market_cap_str = vr.get('market_cap', 'N/A') # 時価総額の取得（必要に応じて億単位などでフォーマット）
 
-text_template = f"""■銘柄基本情報
+                text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
 ■マクロ環境（地合い）
@@ -3699,9 +3699,9 @@ text_template = f"""■銘柄基本情報
 ・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
 ・システム算出 買目標値：{bt_target_str}"""
 
-export_texts.append(text_template)
+                export_texts.append(text_template)
             
-            final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
+                final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
             
             st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
             
