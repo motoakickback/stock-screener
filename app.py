@@ -1375,7 +1375,6 @@ def get_ambush_triage_info(lc, buy_target, atr):
 # ==============================================================================
 # 🎯 2. 精密スコープ ロジック演算・描画エンジン（完全展開版）
 # ==============================================================================
-
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
@@ -1385,7 +1384,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     p_low = df['AdjL'].min()
     current_p = df.iloc[-1]['AdjC']
     
-    # 2. ボラティリティ（14日ATR）の完全算出
+    # 2. 🚨 ボラティリティ（14日標準ATR：Wilder式）の完全算出
     df_atr = df.copy()
     df_atr['PrevClose'] = df_atr['AdjC'].shift(1).fillna(df_atr['AdjC'])
     df_atr['tr0'] = abs(df_atr['AdjH'] - df_atr['AdjL'])
@@ -1393,11 +1392,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     df_atr['tr2'] = abs(df_atr['AdjL'] - df_atr['PrevClose'])
     df_atr['tr'] = df_atr[['tr0', 'tr1', 'tr2']].max(axis=1)
     
-    # データ数が14日未満の場合のエラー回避用フォールバック
+    # ★修正：SMAを廃止し、Wilder式修正移動平均（MMA/SMMA）を適用
     if len(df_atr) >= 14:
-        atr_val = df_atr['tr'].rolling(window=14).mean().iloc[-1]
+        atr_val = float(df_atr['tr'].ewm(alpha=1/14, adjust=False).mean().iloc[-1])
     else:
-        atr_val = df_atr['tr'].mean()
+        atr_val = float(df_atr['tr'].mean())
         
     if pd.isna(atr_val) or atr_val == 0:
         atr_val = 1.0 # ゼロ除算等の回避
@@ -1405,6 +1404,20 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     # 3. 買目標値の算出（スイングハイからのフィボナッチ50%押し基準）
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
+    # ==============================================================
+    # 🚨【新規結線】標準ATRを用いたTP/LCセットアップとリスク評価
+    # ==============================================================
+    # エントリートリガーを買目標値（bt_target）に設定
+    entry_trigger = int(round(bt_target))
+    stop_loss = int(round(entry_trigger - atr_val))         # 買トリガーから1ATR下
+    take_profit = int(round(entry_trigger + (atr_val * 2))) # 買トリガーから2ATR上
+
+    # 資金管理（リスク幅）の計算
+    risk_pct = 0.0
+    if entry_trigger > 0:
+        risk_pct = (entry_trigger - stop_loss) / entry_trigger
+    # ==============================================================
+
     # 4. 新・待伏せトリアージの実行（MACD関連変数は完全消去済）
     triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
     
@@ -1417,22 +1430,31 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if pd.isna(rsi):
         rsi = 50.0
 
-    # 6. アラート文字列の生成（イベント検知・エラー回避版）
+    # 6. アラート文字列の生成（イベント検知・リスク超過エラー回避版）
     alerts = []
     if event_data:
         if "earnings" in event_data and event_data["earnings"]:
             alerts.append("決算接近")
         if "dividend" in event_data and event_data["dividend"]:
             alerts.append("配当権利日")
+            
+    # ★新規：損切り幅が8%を超えている場合の警告
+    if risk_pct > 0.08:
+        alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
+
     alerts_str = " / ".join(alerts) if alerts else "特になし"
 
-    # --- UI内包描画ブロック ---
+    # --- 🚨 UI内包描画ブロック（実態価格とTP/LCを画面に投影） ---
+    import streamlit as st
     st.markdown(f"### 🎯 [{code}] {company_name}")
     
-    col1, col2, col3 = st.columns(3)
+    # 3列から5列に拡張し、ATR、LC、TPを一目で確認できるように改修
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("最新終値", f"{int(current_p):,} 円")
-    col2.metric("システム買目標値", f"{int(bt_target):,} 円")
-    col3.metric("1ATR (14日)", f"{int(atr_val):,} 円")
+    col2.metric("買目標(トリガー)", f"{int(bt_target):,} 円")
+    col3.metric("🎯 標準1ATR", f"{int(atr_val):,} 円")
+    col4.metric("🛡️ 防衛線(LC)", f"{stop_loss:,} 円")
+    col5.metric("📈 利確目標(TP)", f"{take_profit:,} 円")
     
     st.markdown(
         f"<div style='padding: 12px; border-radius: 5px; border: 2px solid {triage_color}; "
@@ -1450,6 +1472,9 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'l14': p_low,
         'atr_val': atr_val,
         'bt_target': bt_target,
+        'stop_loss': stop_loss,       # 追加
+        'take_profit': take_profit,   # 追加
+        'risk_pct': risk_pct,         # 追加
         'rsi': rsi,
         'triage_status': triage_status,
         'rank': triage_status.split('】')[0].replace('【', ''),
