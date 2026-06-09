@@ -1504,29 +1504,6 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     
     return vr
     
-    # 🚨【完全修復】を追加し、リストに対するreplaceのクラッシュバグを根絶
-    triage_rank_str = triage_status.split('】').replace('【', '')
-    
-    vr = {
-        'code': code,
-        'name': company_name,
-        'lc': current_p,
-        'h14': p_high,
-        'l14': p_low,
-        'atr_val': atr_val,
-        'bt_target': bt_target,
-        'stop_loss': stop_loss,
-        'take_profit': take_profit,
-        'risk_pct': risk_pct,
-        'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
-        'triage_status': triage_status,
-        'rank': triage_rank_str, 
-        'score': 0,
-        'alerts_str': alerts_str
-    }
-    
-    return vr
-
 def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", gc_days=0):
     tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
     is_assault_mode = "狙撃優先" in tactics
