@@ -3677,7 +3677,7 @@ with tab4:
                 # tactics_mode = "待伏" # または "強襲", "潜伏" など現在のモードを取得
                 # market_cap_str = vr.get('market_cap', 'N/A') # 時価総額の取得（必要に応じて億単位などでフォーマット）
 
-                text_template = f"""■銘柄基本情報
+text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
 ■マクロ環境（地合い）
