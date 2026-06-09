@@ -1444,15 +1444,25 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
 
     alerts_str = " / ".join(alerts) if alerts else "特になし"
 
+    # ==============================================================
+    # 🚨【新規結線】実態ボラティリティ（パーセンテージ）の正確な算出
+    # ==============================================================
+    if current_p > 0:
+        real_vol_pct = (atr_val / current_p) * 100
+    else:
+        real_vol_pct = 0.0
+
     # --- 🚨 UI内包描画ブロック（実態価格とTP/LCを画面に投影） ---
     import streamlit as st
     st.markdown(f"### 🎯 [{code}] {company_name}")
     
-    # 3列から5列に拡張し、ATR、LC、TPを一目で確認できるように改修
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標(トリガー)", f"{int(bt_target):,} 円")
-    col3.metric("🎯 標準1ATR", f"{int(atr_val):,} 円")
+    
+    # 🚨 修正：亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
+    col3.metric("🌪️ 1ATR", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
+    
     col4.metric("🛡️ 防衛線(LC)", f"{stop_loss:,} 円")
     col5.metric("📈 利確目標(TP)", f"{take_profit:,} 円")
     
