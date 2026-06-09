@@ -2284,7 +2284,7 @@ with tab1:
 
             sab_codes = " ".join([str(r.get('Code', ''))[:4] for r in light_results if str(r.get('triage_rank', '')).startswith(('S', 'A', 'B'))])
             if sab_codes:
-                st.info("📋 以下のコードをコピーして、照準（TAB3）にペースト可能だ。")
+                st.info("📋 以下のコードをコピーして、照準（TAB4）にペースト可能だ。")
                 st.code(sab_codes, language="text")
         
             # 描画ループ：すべての辞書アクセスを安全化
