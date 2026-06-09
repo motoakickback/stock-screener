@@ -525,8 +525,8 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（メモリ消費最小化＋ATR兵装配備）"""
-    if df is None or df.empty or len(df) < 25:
+    """完全ベクトル化されたテクニカル指標計算（14日Wilder式・実数ATR完全換装版）"""
+    if df is None or df.empty or len(df) < 2:
         return df
 
     # 動的な列名取得（すれ違い防止回路）
@@ -538,35 +538,48 @@ def calc_vector_indicators(df):
         return df
 
     # 1. 移動平均線 (float32で計算結果を保持)
-    df['SMA25'] = df[close_col].rolling(window=25).mean().astype('float32')
-    df['SMA75'] = df[close_col].rolling(window=75).mean().astype('float32')
+    df['SMA25'] = df[close_col].rolling(window=25, min_periods=1).mean().astype('float32')
+    df['SMA75'] = df[close_col].rolling(window=75, min_periods=1).mean().astype('float32')
 
-    # 2. 🚨【新規配備】超高速ベクトル化ATR計算（バックテストの生命線）
+    # ====================================================================
+    # 🎯 2. 【完全浄化】14日Wilder式 実数ATR計算（ハイブリッド安全装置）
+    # ====================================================================
     if high_col in df.columns and low_col in df.columns:
         c_prev = df[close_col].shift(1)
         tr1 = df[high_col] - df[low_col]
         tr2 = (df[high_col] - c_prev).abs()
         tr3 = (df[low_col] - c_prev).abs()
         
-        # 3つの中間の最大値を一撃で抽出し、14日平均をfloat32で保持
+        # True Rangeの算出
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        df['ATR'] = tr.rolling(window=14).mean().astype('float32')
+        
+        # 🛡️ Wilder式ATR（RMA: 修正移動平均 = alpha 1/14 の指数平滑）
+        if len(df) >= 14:
+            df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False, min_periods=1).mean().astype('float32')
+        else:
+            # 14日未満の場合は単純平均で代用
+            df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
+        
         del c_prev, tr1, tr2, tr3, tr
     else:
-        df['ATR'] = 0.0
+        # 究極のフェイルセーフ（High/Lowが存在しない等の異常時のみ）
+        df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
+        
+    # 互換性のため、小文字の 'atr' 列にも同じ実数値をセット
+    df['atr'] = df['ATR_Standard']
+    df['ATR'] = df['ATR_Standard']
+    # ====================================================================
 
-    # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
+    # 3. RSIの完全ベクトル化計算
     delta = df[close_col].diff()
-    gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
+    gain = delta.where(delta > 0, 0.0).rolling(window=14, min_periods=1).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14, min_periods=1).mean()
     
     # ゼロ除算回避とRSI算出
     rs = gain / loss.replace(0, 1e-10) 
     df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
 
-    # メモリ圧迫の原因となる中間変数を即座に破棄
     del delta, gain, loss, rs
-    
     return df
 
 def check_event_mines(code, event_data=None):
@@ -628,96 +641,6 @@ def check_event_mines(code, event_data=None):
             
     return alerts
 
-import pandas as pd
-import numpy as np
-import streamlit as st
-
-# =========================================
-# 【TAB3内蔵用】潜伏（Stealth）ロジックコアエンジン
-# =========================================
-def stealth_screener_core(ticker: str, df: pd.DataFrame) -> dict:
-    # 警告回避および元データ汚染防止のための完全コピー
-    df = df.copy()
-
-    # 🚨 モグラ駆逐：動的カラム取得で「列名すれ違い」を完全封殺
-    # 浄化後の 'AdjC'/'AdjustmentVolume' と、念のための生データ 'close'/'volume' 両方に対応
-    close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
-    vol_col = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in df.columns), None)
-    open_col = next((c for c in ['AdjO', 'Open', 'open', 'O', 'o'] if c in df.columns), None)
-    high_col = next((c for c in ['AdjH', 'High', 'high', 'H', 'h'] if c in df.columns), None)
-    low_col = next((c for c in ['AdjL', 'Low', 'low', 'L', 'l'] if c in df.columns), None)
-
-    # 必須データ欠損時の緊急回避（計算不能な銘柄は即・損切り判断）
-    if not all([close_col, vol_col, open_col, high_col, low_col]):
-        return None
-
-    # 1. 5日平均売買代金フィルター（最低限の流動性の死守）
-    df['daily_value'] = df[vol_col] * df[close_col]
-    df['avg_value_5'] = df['daily_value'].rolling(window=5).mean()
-    
-    # 2. 出来高の完全過疎化（大衆の関心が完全に消えている静寂の検知）
-    df['avg_volume_5_prev'] = df[vol_col].shift(1).rolling(window=5).mean()
-    
-    # 3. ボラティリティ（値幅）の極限収縮
-    df['day_range'] = df[high_col] - df[low_col]
-    
-    # 4. 岩盤サポート（MA25）直上への「完全張り付き」
-    cond1 = df['avg_value_5'] >= 300000000
-    cond2 = df[vol_col] < (df['avg_volume_5_prev'] * 0.8)
-    cond3 = df['day_range'] < (df['atr'] * 0.6)
-    # MA25の列名も念のため確認
-    ma_col = 'ma25' if 'ma25' in df.columns else 'MA25'
-    cond4 = (df[ma_col] <= df[close_col]) & (df[close_col] <= df[ma_col] * 1.03)
-    
-    # フラグ立て
-    df['is_stealth'] = cond1 & cond2 & cond3 & cond4
-    
-    today = df.iloc[-1]
-    
-    # 当日がStealth条件を突破している場合のみ、出力を生成
-    if today['is_stealth']:
-        return {
-            '総合判定': 'Stealth💎',
-            '銘柄コード': ticker,
-            '終値': round(float(today[close_col]), 1),
-            'MA25': round(float(today[ma_col]), 1),
-            '1ATR': round(float(today['atr']), 2),
-            '当日の値幅': round(float(today['day_range']), 1),
-            '5日平均売買代金': int(today['avg_value_5'])
-        }
-    
-    return None
-
-# =========================================
-# 【TAB2内蔵用】Streamlit UI実行ブロック
-# =========================================
-def run_tab2_stealth_mode(market_data_dict: dict):
-    st.markdown("### 💎 潜伏（Stealth）大爆発前夜ハントモード")
-    st.info("【4連装・潜伏仕様フィルター】 5日平均売買代金3億円以上 / 出来高激減(0.8倍未満) / 値幅極限収縮(0.6ATR未満) / MA25直上(+3%以内)")
-    
-    if st.button("🚀 潜伏（Stealth）索敵開始", key="btn_stealth_scan_tab2"):
-        with st.spinner("📡 潜伏ロジックによる市場データの全件解析を実行中..."):
-            stealth_targets = []
-            
-            for ticker, df in market_data_dict.items():
-                if len(df) < 6:
-                    continue
-                # 安全装置：必須インジケーターの存在確認
-                if 'ma25' not in df.columns or 'atr' not in df.columns:
-                    continue
-                    
-                result = stealth_screener_core(ticker, df)
-                if result is not None:
-                    stealth_targets.append(result)
-            
-            if not stealth_targets:
-                st.warning("⚠️ 現在、Stealth条件を完全に満たす銘柄は検知されませんでした。")
-            else:
-                result_df = pd.DataFrame(stealth_targets)
-                result_df['5日平均売買代金'] = result_df['5日平均売買代金'].apply(lambda x: f"¥{x:,}")
-                st.success(f"🎯 【大爆発前夜】 Stealth（潜伏）銘柄を {len(result_df)} 件検知しました！")
-                st.dataframe(result_df, use_container_width=True)
-	
 def detect_sakata_patterns(df):
     """
     酒田五法のフォーメーションを検知する防弾仕様の精密レーダー。
@@ -2373,6 +2296,7 @@ with tab2:
                     st.session_state.tab2_time_log.append(msg2)
 
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
+                        import pandas as pd
                         c_str = str(code)[:4]
                         c_vals = group['AdjC'].values
                         lc = float(c_vals[-1])
@@ -2384,8 +2308,21 @@ with tab2:
                         if cfg.get("f11_ex_wave3"):
                             if lc > (float(c_vals.min()) * 3.0): return None
 
-                        rsi, atr_v, _, hist = get_fast_indicators(c_vals)
-                        vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        # 🚨 エンジン強制起動！（実数ATRの生成）
+                        group_df = group.tail(30).copy().ffill().bfill()
+                        group_df = calc_vector_indicators(group_df)
+                        
+                        # 🚨 浄化された実数ATRの取得
+                        if 'ATR_Standard' in group_df.columns and pd.notna(group_df['ATR_Standard'].iloc[-1]):
+                            real_atr = float(group_df['ATR_Standard'].iloc[-1])
+                        else:
+                            real_atr = float(lc * 0.05)
+
+                        rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
+                        
+                        # 🚨 実数ATRを用いた正確なボラティリティ計算
+                        vol_pct = (real_atr / lc * 100) if lc > 0 else 0
+                        
                         if vol_pct < cfg.get("f_vol_min", -1.0): return None
                         if rsi > cfg.get("rsi_lim", 70): return None
 
@@ -2395,22 +2332,21 @@ with tab2:
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
 
-                        # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
-                        group_df = group.tail(30).copy().ffill().bfill()
+                        v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group_df.columns), 'Volume')
+                        if v_col_name not in group_df.columns: return None
                         
-                        v_col_name = v_col
                         group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-                        if group_df['avg_value_5'].iloc[-1] < cfg["val_min_raw"]: return None
+                        if group_df['avg_value_5'].iloc[-1] < cfg.get("val_min_raw", 0): return None
 
                         group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20, min_periods=1).max()
                         rec_high = group_df['recent_high'].iloc[-1]
-                        if pd.isna(rec_high) or lc < (rec_high * cfg["high_prox_ratio"]): return None
+                        if pd.isna(rec_high) or lc < (rec_high * cfg.get("high_prox_ratio", 1.0)): return None
 
                         group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
                         avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
                         curr_vol = group_df[v_col_name].iloc[-1]
-                        if pd.isna(avg_vol_5) or avg_vol_5 <= 0 or curr_vol <= (avg_vol_5 * cfg["vol_spike"]): return None
+                        if pd.isna(avg_vol_5) or avg_vol_5 <= 0 or curr_vol <= (avg_vol_5 * cfg.get("vol_spike", 1.0)): return None
 
                         group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
                         group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
@@ -2418,7 +2354,7 @@ with tab2:
                         b_range = group_df['body_range'].iloc[-1]
 
                         if c_range > 0:
-                            if (b_range / c_range) < cfg["body_ratio"]: return None
+                            if (b_range / c_range) < cfg.get("body_ratio", 0): return None
                         elif c_range < 0:
                             return None
 
@@ -2426,12 +2362,13 @@ with tab2:
                         gc_days = 0 
                         h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
                         h14 = float(h_vals[-14:].max())
-                        atr = float(h14 * 0.03)
 
                         return {
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                            'GC_Days': gc_days, 'h14': h14, 'atr': atr, 
+                            'GC_Days': gc_days, 'h14': h14, 
+                            'ATR_Standard': real_atr,  # 🚨 TAB4マトリクス用
+                            'atr': real_atr,           # 🚨 TAB4マトリクス互換用
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
                             'T_Desc': t_desc
                         }
@@ -2602,9 +2539,13 @@ with tab3:
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
+            import pandas as pd
             # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
             group_df = group.tail(30).copy().ffill().bfill()
             if len(group_df) < 26: return None
+
+            # 🚨 【完全浄化】大元の計算エンジンを強制起動し、純度100%のWilder式実数ATRを付与
+            group_df = calc_vector_indicators(group_df)
 
             v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
             v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
@@ -2614,11 +2555,13 @@ with tab3:
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-            if 'ma25' not in group_df.columns: group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-            if 'atr' not in group_df.columns:
-                group_df['prev_close'] = group_df['AdjC'].shift(1)
-                group_df['tr'] = np.maximum(group_df['AdjH'] - group_df['AdjL'], np.maximum((group_df['AdjH'] - group_df['prev_close']).abs(), (group_df['AdjL'] - group_df['prev_close']).abs()))
-                group_df['atr'] = group_df['tr'].rolling(window=14, min_periods=1).mean()
+            # ma25の互換性維持（calc_vector_indicatorsが生成するSMA25を使用）
+            if 'SMA25' in group_df.columns:
+                group_df['ma25'] = group_df['SMA25']
+            elif 'ma25' not in group_df.columns: 
+                group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+            
+            # 🚨 以前ここにあった自前の単純平均ATR計算（tr.rolling...）は完全に撤去しました
 
             group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
             group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
@@ -2627,12 +2570,19 @@ with tab3:
 
             today = group_df.iloc[-1]
 
+            # 🚨 浄化された実数ATRの抽出
+            if 'ATR_Standard' in today and pd.notna(today['ATR_Standard']):
+                real_atr = float(today['ATR_Standard'])
+            else:
+                real_atr = float(today['AdjC'] * 0.05)
+
             # --- デバッグ用出力 ---
             # フィルターを通る直前の数値を確認する
             if today['avg_value_5'] < (cfg["val_min"] * 100_000_000):
                 # ここで弾かれた場合は件数として無視するが、もし1件も通過しないならここが原因
                 pass 
             else:
+                import streamlit as st
                 st.write(f"DEBUG: 銘柄 {code} は売買代金フィルター通過: {today['avg_value_5'] / 100_000_000:.1f}億円")
                 if today[v_col_name] < (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
                     st.write(f"DEBUG: 銘柄 {code} は出来高フィルター通過: {today[v_col_name]} vs {today['avg_volume_5_prev'] * cfg['vol_ratio']:.1f}")
@@ -2640,12 +2590,16 @@ with tab3:
 
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
+            
+            # 🚨 修正：判定にも「実数ATR」を厳格に適用
+            if pd.isna(real_atr) or real_atr <= 0 or today['day_range'] >= (real_atr * cfg["atr_ratio"]): return None
             if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
 
             return {
                 'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
-                'atr': float(today['atr']), 'day_range': float(today['day_range']),
+                'ATR_Standard': real_atr,  # 🚨 TAB4マトリクス用（絶対必須）
+                'atr': real_atr,           # 🚨 TAB4マトリクス互換用
+                'day_range': float(today['day_range']),
                 'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
                 'avg_vol_prev': float(today['avg_volume_5_prev']),
                 'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
