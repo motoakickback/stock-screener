@@ -3673,10 +3673,33 @@ with tab4:
                     stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                     bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
-                # ※テンプレート代入前に、以下の変数を取得・フォーマットしておく必要があります
-                # tactics_mode = "待伏" # または "強襲", "潜伏" など現在のモードを取得
-                # market_cap_str = vr.get('market_cap', 'N/A') # 時価総額の取得（必要に応じて億単位などでフォーマット）
+                # ==========================================
+                # 🚨 テンプレート展開前の変数定義ブロック（ループ内に格納）
+                # ==========================================
+                
+                # 1. 戦術モードの取得
+                tactics_mode = "判定不能"
+                if st.session_state.get("current_tab") == "待伏":
+                    tactics_mode = "待伏"
+                elif st.session_state.get("current_tab") == "強襲":
+                    tactics_mode = "強襲"
+                elif st.session_state.get("current_tab") == "潜伏":
+                    tactics_mode = "潜伏"
 
+                # 2. 時価総額の取得とフォーマット
+                raw_cap = vr.get('cap') 
+                if raw_cap and pd.notna(raw_cap):
+                    try:
+                        # APIの時価総額が円単位の場合、億単位に変換してカンマ区切り
+                        market_cap_str = f"{int(float(raw_cap) / 100000000):,}億円"
+                    except:
+                        market_cap_str = "データ不正"
+                else:
+                    market_cap_str = "N/A"
+
+                # ==========================================
+                # 📝 既存の出力テンプレート
+                # ==========================================
                 text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
@@ -3701,7 +3724,8 @@ with tab4:
 
                 export_texts.append(text_template)
             
-                final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
+            # 👇 ループの外（for と同じ階層）で全テキストを結合
+            final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
             
             st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
             
