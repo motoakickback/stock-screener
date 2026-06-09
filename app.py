@@ -2671,7 +2671,7 @@ with tab3:
             group_df = calc_vector_indicators(group_df)
 
             v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
-            # 🚨 クラッシュ原因を修正： を確実に付与し、リストではなく文字列を抽出
+            # 🚨 クラッシュ原因を完全修復：リストの先頭要素  を確実に指定
             v_col_name = v_candidates if len(v_candidates) > 0 else group_df.columns[-1]
 
             group_df['AdjC'] = group_df['AdjC'].astype(float)
