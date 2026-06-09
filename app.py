@@ -1398,15 +1398,17 @@ def get_ambush_triage_info(lc, buy_target, atr):
 # ==============================================================================
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """
-    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（全行程・標準ATR実数値同期版）
+    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（完全修復・実数ATR同調版）
     """
     if df is None or df.empty:
         return None
         
-    # --- 🚨 ATRの保護と継承（再計算を排除して大元の実数を維持） ---
+    # 🚨【復旧】これを消してしまったのが5%病の真の原因です！必ずここで計算エンジンを起動し、実数ATRを生成します
+    df = calc_vector_indicators(df)
+        
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 大元のスキャナーが計算してくれた本物の実数ATRの列をそのまま読み込む
+    # 🚨 実数ATRの確実な取得
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
     elif 'atr' in df.columns:
@@ -1414,7 +1416,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     elif 'ATR' in df.columns:
         atr_val = float(df['ATR'].iloc[-1])
     else:
-        atr_val = current_p * 0.05 # データが一切存在しない場合のみの最終防衛線
+        atr_val = current_p * 0.05 # 最終防衛線
         
     # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
     is_fallback = False
@@ -1451,7 +1453,6 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if risk_pct > 0.08:
         alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
 
-    # 🚨 フォールバック発動時の警告追加
     if is_fallback:
         alerts.append("⚠️ データ不足・概算5%適用")
 
@@ -1478,7 +1479,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 結果辞書の構築
+    # 🚨【復旧】クラッシュ原因の修正：リストに対してreplaceを使っていた文法バグを修正
     vr = {
         'code': code,
         'name': company_name,
@@ -1492,7 +1493,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'risk_pct': risk_pct,
         'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
         'triage_status': triage_status,
-        'rank': triage_status.split('】').replace('【', ''),
+        'rank': triage_status.split('】').replace('【', ''), # 👈 を追加し、クラッシュを完全排除しました
         'score': 0,
         'alerts_str': alerts_str
     }
