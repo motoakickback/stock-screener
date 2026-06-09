@@ -670,6 +670,9 @@ def stealth_screener_core(ticker: str, df: pd.DataFrame) -> dict:
     if not all([close_col, vol_col, open_col, high_col, low_col]):
         return None
 
+    # 🚨 新規配備：計算済みの「本物の実数ATR」の列名を安全に特定
+    atr_col = 'ATR_Standard' if 'ATR_Standard' in df.columns else ('atr' if 'atr' in df.columns else 'ATR')
+
     # 1. 5日平均売買代金フィルター（最低限の流動性の死守）
     df['daily_value'] = df[vol_col] * df[close_col]
     df['avg_value_5'] = df['daily_value'].rolling(window=5).mean()
@@ -683,7 +686,13 @@ def stealth_screener_core(ticker: str, df: pd.DataFrame) -> dict:
     # 4. 岩盤サポート（MA25）直上への「完全張り付き」
     cond1 = df['avg_value_5'] >= 300000000
     cond2 = df[vol_col] < (df['avg_volume_5_prev'] * 0.8)
-    cond3 = df['day_range'] < (df['atr'] * 0.6)
+    
+    # 🚨 修正：スキャン判定にも「実数ATR」を正確に適用
+    if atr_col in df.columns:
+        cond3 = df['day_range'] < (df[atr_col] * 0.6)
+    else:
+        cond3 = df['day_range'] < (df[close_col] * 0.05 * 0.6) # 最終防衛線
+        
     # MA25の列名も念のため確認
     ma_col = 'ma25' if 'ma25' in df.columns else 'MA25'
     cond4 = (df[ma_col] <= df[close_col]) & (df[close_col] <= df[ma_col] * 1.03)
@@ -695,12 +704,18 @@ def stealth_screener_core(ticker: str, df: pd.DataFrame) -> dict:
     
     # 当日がStealth条件を突破している場合のみ、出力を生成
     if today['is_stealth']:
+        # 🚨 UIへ渡すための実数ATRをここで確実に抽出
+        real_atr = float(today[atr_col]) if atr_col in today and pd.notna(today[atr_col]) else float(today[close_col]) * 0.05
+
         return {
             '総合判定': 'Stealth💎',
             '銘柄コード': ticker,
+            'Code': ticker, # 念のためUI連携用キーを追加
             '終値': round(float(today[close_col]), 1),
             'MA25': round(float(today[ma_col]), 1),
-            '1ATR': round(float(today['atr']), 2),
+            '1ATR': round(real_atr, 2), # 既存の画面表示用
+            'ATR_Standard': real_atr,   # 🚨【超重要】マトリクスUIが拾うための専用キー
+            'atr': real_atr,            # 🚨【超重要】マトリクスUIが拾うための互換キー
             '当日の値幅': round(float(today['day_range']), 1),
             '5日平均売買代金': int(today['avg_value_5'])
         }
@@ -1400,18 +1415,18 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
     
-    # --- 🚨 ATRの保護と継承 ---
-    # 先に計算エンジンを通して不足指標を補う（既存のATR_Standardは保護される）
-    df = calc_vector_indicators(df)
+    # --- 🚨 ATRの保護と継承（修正版：再計算を排除して大元の実数を維持） ---
     current_p = float(df.iloc[-1]['AdjC'])
     
-    # ATR値の確実な取得（保護された実数ATRを優先）
+    # 大元のスキャナーが計算してくれた本物の実数ATRの列をそのまま読み込む
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
+    elif 'atr' in df.columns:
+        atr_val = float(df['atr'].iloc[-1])
     elif 'ATR' in df.columns:
         atr_val = float(df['ATR'].iloc[-1])
     else:
-        atr_val = float(current_p * 0.05)
+        atr_val = current_p * 0.05 # データが一切存在しない場合のみの最終防衛線
         
     # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
     is_fallback = False
@@ -2193,18 +2208,30 @@ with tab1:
                     group_df = group.tail(30)
                     if group_df.empty: return None
 
+                    # 🚨 【最重要パッチ】スキャンエンジン大元が計算した「本物の実数ATR」を取得する
+                    atr_col = 'ATR_Standard' if 'ATR_Standard' in group_df.columns else ('atr' if 'atr' in group_df.columns else 'ATR')
+                    
                     # 絞り込んだデータから値を抽出
                     c_vals = group_df['AdjC'].values
                     h_vals = group_df['AdjH'].values
                     l_vals = group_df['AdjL'].values
                     lc = float(c_vals[-1])
+                    
+                    # 実数ATRの確定（欠損時は最終防衛線として5%）
+                    import pandas as pd # 念のためのインポート
+                    if atr_col in group_df.columns and pd.notna(group_df[atr_col].iloc[-1]):
+                        real_atr = float(group_df[atr_col].iloc[-1])
+                    else:
+                        real_atr = float(lc * 0.05)
 
-                    # 🚨 以降、以前のロジックを1文字も変えずに実行
+                    # 🚨 以降、以前のロジックをベースに「実数」を適用
                     if cfg["f6_risk"] and (str(code)[:4] in cfg["gigi_codes"]): return None
                     
-                    # 安全な指標計算
-                    rsi, atr_v, _, _ = get_fast_indicators(c_vals)
-                    vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                    # 安全な指標計算（RSIのみ取得し、簡易ATRの利用を破棄）
+                    rsi, _dummy_atr, _, _ = get_fast_indicators(c_vals)
+                    
+                    # 🚨 修正：ボラティリティ判定も簡易版ではなく「本物の実数ATR(real_atr)」で厳格に判定する
+                    vol_pct = (real_atr / lc * 100) if lc > 0 else 0
                     if vol_pct < cfg["f_vol_min"]: return None
                     
                     h14 = float(h_vals[-14:].max()) if len(h_vals) >= 14 else float(h_vals.max())
@@ -2229,7 +2256,9 @@ with tab1:
                         'reach_rate': float((target_buy / lc) * 100) if lc > 0 else 0,
                         'triage_rank': rank, 'triage_bg': bg, 't_score': t_score, 
                         'score': 4, 'high_4d': float(h14), 'low_14d': float(l14), 
-                        'avg_vol': int(v_avg), 'vol_pct': float(vol_pct)
+                        'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
+                        'ATR_Standard': real_atr,  # 🚨【超重要】マトリクスUIが拾うための専用キー
+                        'atr': real_atr            # 🚨【超重要】マトリクスUIが拾うための互換キー
                     }
 
                 results = []
@@ -2447,6 +2476,14 @@ with tab2:
                         c_vals = group['AdjC'].values
                         lc = float(c_vals[-1])
 
+                        # 🚨 【最重要パッチ】大元が計算した「本物の実数ATR」を取得する
+                        import pandas as pd
+                        atr_col = 'ATR_Standard' if 'ATR_Standard' in group.columns else ('atr' if 'atr' in group.columns else 'ATR')
+                        if atr_col in group.columns and pd.notna(group[atr_col].iloc[-1]):
+                            real_atr = float(group[atr_col].iloc[-1])
+                        else:
+                            real_atr = float(lc * 0.05)
+
                         if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
                         if cfg.get("f5_ipo"):
                             first_date = group['Date'].min()
@@ -2454,8 +2491,9 @@ with tab2:
                         if cfg.get("f11_ex_wave3"):
                             if lc > (float(c_vals.min()) * 3.0): return None
 
-                        rsi, atr_v, _, hist = get_fast_indicators(c_vals)
-                        vol_pct = (atr_v / lc * 100) if lc > 0 else 0
+                        # 🚨 修正：簡易ATRではなく「本物の実数ATR(real_atr)」を使用
+                        rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
+                        vol_pct = (real_atr / lc * 100) if lc > 0 else 0
                         if vol_pct < cfg.get("f_vol_min", -1.0): return None
                         if rsi > cfg.get("rsi_lim", 70): return None
 
@@ -2496,16 +2534,20 @@ with tab2:
                         gc_days = 0 
                         h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
                         h14 = float(h_vals[-14:].max())
-                        atr = float(h14 * 0.03)
+
+                        # 🚨 諸悪の根源 atr = float(h14 * 0.03) を完全に削除しました
 
                         return {
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                            'GC_Days': gc_days, 'h14': h14, 'atr': atr, 
+                            'GC_Days': gc_days, 'h14': h14, 
+                            'ATR_Standard': real_atr, # 🚨 追加：マトリクスUIが拾うための専用キー
+                            'atr': real_atr,          # 🚨 修正：完全な実数ATRに換装
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
                             'T_Desc': t_desc
                         }
 
+                    # ここから下は並列処理の実行ブロック（変更なし）
                     results = []
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                         futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
@@ -3951,8 +3993,13 @@ with tab4:
                 </div></div>""", unsafe_allow_html=True)
 
             with sc_right:
-                c_target = safe_int(r['bt_val'])
-                rec_tps = [2.0, 3.0] if any(mark in r['rank'] for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
+                c_target = safe_int(r.get('bt_val', 0))
+                
+                # 🚨【最重要】スキャンエンジンから『本物のATR』を優先して引っぱる！
+                atr_v_val = float(r.get('ATR_Standard', r.get('atr', 0)))
+                atr_v_val = int(atr_v_val)
+
+                rec_tps = [2.0, 3.0] if any(mark in r.get('rank', '') for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
                 
                 html_matrix = f"<div style='background:rgba(255,255,255,0.05); padding:1.2rem; border-radius:8px; border-left:5px solid #FFD700; min-height: 125px;'><div style='font-size:14px; color:#aaa; margin-bottom:12px; border-bottom:1px solid #444; padding-bottom:4px;'>📊 動的ATRマトリクス (基準:{c_target:,}円)</div><div style='display:flex; gap:30px;'><div style='flex:1;'><div style='color:#26a69a; border-bottom:2px solid #26a69a; margin-bottom:8px;'>【利確目安】</div>"
                 
