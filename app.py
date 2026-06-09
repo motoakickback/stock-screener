@@ -1398,17 +1398,17 @@ def get_ambush_triage_info(lc, buy_target, atr):
 # ==============================================================================
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """
-    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（完全修復・実数ATR同調版）
+    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（真・実数ATR同調版）
     """
     if df is None or df.empty:
         return None
         
-    # 🚨【絶対厳守】ここで calc_vector_indicators(df) を呼んではいけません！
-    # 渡されるdfは1行だけの場合があり、再計算するとデータ不足で5%に破壊されます。
+    # 🚨【真実の復旧】渡される df には十分な履歴があります！ここで必ず計算エンジンを起動し実数ATRを生成します！
+    df = calc_vector_indicators(df)
         
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 🚨 実数ATRの確実な取得（大元から渡された実数をそのまま使う）
+    # 🚨 実数ATRの確実な取得
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
     elif 'atr' in df.columns:
@@ -1479,7 +1479,10 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 🚨 クラッシュ原因の修正：を確実に付与し、リストエラーを根絶
+    # 🚨【完全修復】クラッシュ原因の文字列操作を安全な2ステップに分割してエラーを根絶
+    triage_parts = triage_status.split('】')
+    triage_rank_str = triage_parts.replace('【', '') if len(triage_parts) > 0 else "不明"
+    
     vr = {
         'code': code,
         'name': company_name,
@@ -1493,7 +1496,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'risk_pct': risk_pct,
         'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
         'triage_status': triage_status,
-        'rank': triage_status.split('】').replace('【', ''), # 👈 を確実に付与
+        'rank': triage_rank_str, 
         'score': 0,
         'alerts_str': alerts_str
     }
