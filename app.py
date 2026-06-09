@@ -1409,6 +1409,8 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     
     # --- 🚨 ATRの保護と継承（修正版：再計算を排除して大元の実数を維持） ---
     current_p = float(df.iloc[-1]['AdjC'])
+
+	atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(current_p * 0.05)
     
     # 大元のスキャナーが計算してくれた本物の実数ATRの列をそのまま読み込む
     if 'ATR_Standard' in df.columns:
@@ -3987,8 +3989,16 @@ with tab4:
             with sc_right:
                 c_target = safe_int(r.get('bt_val', 0))
                 
-                # 🚨【最重要】スキャンエンジンから『本物のATR』を優先して引っぱる！
-                atr_v_val = float(r.get('ATR_Standard', r.get('atr', 0)))
+                # 🚨 辞書にデータがない、または万が一「0」が渡ってきた場合も確実に弾く完全安全版
+                current_p_for_matrix = float(r.get('lc', 0))
+                
+                # まず実数ATRの取得を試みる
+                atr_v_val = float(r.get('ATR_Standard') or r.get('atr') or 0)
+                
+                # 値が0以下（異常値）なら、強制的にフェイルセーフ（現在値×5%）を発動
+                if atr_v_val <= 0:
+                    atr_v_val = current_p_for_matrix * 0.05
+                    
                 atr_v_val = int(atr_v_val)
 
                 rec_tps = [2.0, 3.0] if any(mark in r.get('rank', '') for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
