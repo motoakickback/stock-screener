@@ -2663,7 +2663,7 @@ with tab3:
             "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox)
         }
 
-    def scan_unit_stealth_parallel(code, group, l_date, cfg):
+        def scan_unit_stealth_parallel(code, group, l_date, cfg):
             group_df = group.copy().ffill().bfill()
             if len(group_df) < 26: return None
 
