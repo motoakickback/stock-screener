@@ -1403,12 +1403,12 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
         
-    # 🚨 実数ATRを生成するためのエンジン起動
-    df = calc_vector_indicators(df)
+    # 🚨【絶対厳守】ここで calc_vector_indicators(df) を呼んではいけません！
+    # 渡されるdfは1行だけの場合があり、再計算するとデータ不足で5%に破壊されます。
         
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 🚨 実数ATRの確実な取得
+    # 🚨 実数ATRの確実な取得（大元から渡された実数をそのまま使う）
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
     elif 'atr' in df.columns:
@@ -1479,7 +1479,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 🚨 クラッシュ原因の修正：を追加し、リストからの文字置換エラーを完全排除しました
+    # 🚨 クラッシュ原因の修正：を確実に付与し、リストエラーを根絶
     vr = {
         'code': code,
         'name': company_name,
@@ -1493,7 +1493,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'risk_pct': risk_pct,
         'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
         'triage_status': triage_status,
-        'rank': triage_status.split('】').replace('【', ''), # 👈 ここを修正しました
+        'rank': triage_status.split('】').replace('【', ''), # 👈 を確実に付与
         'score': 0,
         'alerts_str': alerts_str
     }
