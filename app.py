@@ -882,73 +882,79 @@ def get_fundamentals(code):
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     res = None
     
+    # 後半の計算で確実に参照するため、スコープのトップで変数を初期化
+    eps = None
+    bps = None
+    shares = None
+    
     try:
         r = api_session.get(url, timeout=3.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
-            if not data:
-                return None
-            
-            # 💡 J-Quants APIは昇順でデータが返るため、末尾[-1]が最新の決算データとなります
-            latest = data[-1]
-            
-            # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
-            op = latest.get("OPnumber", latest.get("OperatingProfit"))
-            np_val = latest.get("NPnumber", latest.get("NetIncome"))
-            eq = latest.get("Eqnumber", latest.get("Equity"))
-            eq_ratio = latest.get("EqARnumber", latest.get("EquityRatio"))
-            eps = latest.get("EPSnumber", latest.get("EarningsPerShare"))
-            bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
-            # 💡 発行済株式数もV1/V2両対応で取得
-            shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfPeriod"))
-            
-            # 💡 吸収した変数をres辞書へ正確にセット
-            res = {
-                "op": op,
-                "er": eq_ratio,
-                "shares": shares,
-                "roe": None,
-                "per": latest.get("PER"),
-                "pbr": latest.get("PBR"),
-                "cap": latest.get("MarketCapitalization")
-            }
-            
-            # ROEの計算 (当期純利益 ÷ 自己資本)
-            if np_val is not None and eq is not None and float(eq) != 0:
-                res["roe"] = (float(np_val) / float(eq)) * 100
-            elif eps is not None and bps is not None and float(bps) != 0:
-                res["roe"] = (float(eps) / float(bps)) * 100
+            if data:
+                # 💡 J-Quants APIは昇順データのため、末尾[-1]が最新の決算データとなります
+                latest = data[-1]
+                
+                # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
+                op = latest.get("OPnumber", latest.get("OperatingProfit"))
+                np_val = latest.get("NPnumber", latest.get("NetIncome"))
+                eq = latest.get("Eqnumber", latest.get("Equity"))
+                eq_ratio = latest.get("EqARnumber", latest.get("EquityRatio"))
+                eps = latest.get("EPSnumber", latest.get("EarningsPerShare"))
+                bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
+                shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfPeriod"))
+                
+                # ベースとなる辞書を生成
+                res = {
+                    "op": op,
+                    "er": eq_ratio,
+                    "shares": shares,
+                    "roe": None,
+                    "per": latest.get("PER"),
+                    "pbr": latest.get("PBR"),
+                    "cap": latest.get("MarketCapitalization")
+                }
+                
+                # ROEの計算 (当期純利益 ÷ 自己資本)
+                if np_val is not None and eq is not None and float(eq) != 0:
+                    res["roe"] = (float(np_val) / float(eq)) * 100
+                elif eps is not None and bps is not None and float(bps) != 0:
+                    res["roe"] = (float(eps) / float(bps)) * 100
     except:
         pass
 
-    # 🚨 yfinanceで最新株価を取得し、PER / PBR / 時価総額をリアルタイム計算
-    if res is not None:
-        try:
-            import yfinance as yf
-            tk = yf.Ticker(f"{code}.T")
-            info = tk.info
-            
-            # yfinanceから直接取れる場合はそれを優先
-            res["per"] = info.get("trailingPE", info.get("forwardPE")) or res.get("per")
-            res["pbr"] = info.get("priceToBook") or res.get("pbr")
-            res["cap"] = info.get("marketCap", res.get("cap"))
-            
-            cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
-            
-            # 直接取れなかった場合は、J-Quantsの財務情報と株価から自力で計算する
-            if cur_price:
-                if res.get("per") is None and eps and float(eps) > 0:
-                    res["per"] = float(cur_price) / float(eps)
-                if res.get("pbr") is None and bps and float(bps) > 0:
-                    res["pbr"] = float(cur_price) / float(bps)
-                if res.get("cap") is None and shares and float(shares) > 0:
-                    res["cap"] = float(cur_price) * float(shares)
-        except:
-            pass # yfinanceの通信が失敗しても、J-Quants側の基本データは死守して返す
+    # 🚨 通信エラー等でベースが作れなかった場合でもフォールバックの枠を死守
+    if res is None:
+        res = {"op": None, "er": None, "shares": None, "roe": None, "per": None, "pbr": None, "cap": None}
+
+    # 🚨 yfinance（Yahooファイナンス）に突入し、時価総額をリアルタイム計算・補完
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(f"{code}.T")
+        info = tk.info
         
-        return res
+        # yfinanceから直接取れる場合はそれを最優先で上書き
+        if info.get("trailingPE") or info.get("forwardPE"):
+            res["per"] = info.get("trailingPE", info.get("forwardPE"))
+        if info.get("priceToBook"):
+            res["pbr"] = info.get("priceToBook")
+        if info.get("marketCap"):
+            res["cap"] = info.get("marketCap")
         
-    return None
+        cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
+        
+        # 直接データが引けなかった場合は、J-Quantsの財務情報と株価から自力で掛け算を行う
+        if cur_price:
+            if res.get("per") is None and eps and float(eps) > 0:
+                res["per"] = float(cur_price) / float(eps)
+            if res.get("pbr") is None and bps and float(bps) > 0:
+                res["pbr"] = float(cur_price) / float(bps)
+            if res.get("cap") is None and shares and float(shares) > 0:
+                res["cap"] = float(cur_price) * float(shares)
+    except:
+        pass # 通信障害時も前段のJ-Quantsデータを死守して返す
+        
+    return res
 
 # =========================================================
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
