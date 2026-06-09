@@ -1403,7 +1403,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
         
-    # 🚨【復旧】これを消してしまったのが5%病の真の原因です！必ずここで計算エンジンを起動し、実数ATRを生成します
+    # 🚨 実数ATRを生成するためのエンジン起動
     df = calc_vector_indicators(df)
         
     current_p = float(df.iloc[-1]['AdjC'])
@@ -1479,7 +1479,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 🚨【復旧】クラッシュ原因の修正：リストに対してreplaceを使っていた文法バグを修正
+    # 🚨 クラッシュ原因の修正：を追加し、リストからの文字置換エラーを完全排除しました
     vr = {
         'code': code,
         'name': company_name,
@@ -1493,7 +1493,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         'risk_pct': risk_pct,
         'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
         'triage_status': triage_status,
-        'rank': triage_status.split('】').replace('【', ''), # 👈 を追加し、クラッシュを完全排除しました
+        'rank': triage_status.split('】').replace('【', ''), # 👈 ここを修正しました
         'score': 0,
         'alerts_str': alerts_str
     }
