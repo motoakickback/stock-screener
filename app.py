@@ -880,69 +880,75 @@ def check_oversold_ultimate(df_sub):
 def get_fundamentals(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
+    res = None
+    
     try:
         r = api_session.get(url, timeout=3.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
-            if not data: return None
-            latest = data[0]
+            if not data:
+                return None
+            
+            # 💡 J-Quants APIは昇順でデータが返るため、末尾[-1]が最新の決算データとなります
+            latest = data[-1]
+            
+            # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
+            op = latest.get("OPnumber", latest.get("OperatingProfit"))
+            np_val = latest.get("NPnumber", latest.get("NetIncome"))
+            eq = latest.get("Eqnumber", latest.get("Equity"))
+            eq_ratio = latest.get("EqARnumber", latest.get("EquityRatio"))
+            eps = latest.get("EPSnumber", latest.get("EarningsPerShare"))
+            bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
+            # 💡 発行済株式数もV1/V2両対応で取得
+            shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfPeriod"))
+            
+            # 💡 吸収した変数をres辞書へ正確にセット
             res = {
-                "op": latest.get("OperatingProfit"), "cap": latest.get("MarketCapitalization"), 
-                "er": latest.get("EquityRatio"), "roe": None, "per": latest.get("PER"), "pbr": latest.get("PBR")
+                "op": op,
+                "er": eq_ratio,
+                "shares": shares,
+                "roe": None,
+                "per": latest.get("PER"),
+                "pbr": latest.get("PBR"),
+                "cap": latest.get("MarketCapitalization")
             }
-            ni, eq = latest.get("NetIncome"), latest.get("Equity")
-            if ni is not None and eq is not None:
-                try: res["roe"] = (float(ni) / float(eq)) * 100
-                except: res["roe"] = 0.0
-            return res
-    except: pass
-    return None
-
-    # 🚨 V2とV1のフィールド名（キー名）の揺れを両方とも吸収
-    op = latest.get("OPnumber", latest.get("OperatingProfit"))
-    np_val = latest.get("NPnumber", latest.get("NetIncome"))
-    eq = latest.get("Eqnumber", latest.get("Equity"))
-    eq_ratio = latest.get("EqARnumber", latest.get("EquityRatio"))
-    eps = latest.get("EPSnumber", latest.get("EarningsPerShare"))
-    bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
-    shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"))
-    
-    res = {
-        "op": op, "cap": latest.get("MarketCapitalization"), 
-        "er": eq_ratio, "roe": None, "per": None, "pbr": None
-    }
-    
-    # ROEの計算 (当期純利益 ÷ 自己資本)
-    if np_val is not None and eq is not None and float(eq) != 0:
-        res["roe"] = (float(np_val) / float(eq)) * 100
-    elif eps is not None and bps is not None and float(bps) != 0:
-        res["roe"] = (float(eps) / float(bps)) * 100
+            
+            # ROEの計算 (当期純利益 ÷ 自己資本)
+            if np_val is not None and eq is not None and float(eq) != 0:
+                res["roe"] = (float(np_val) / float(eq)) * 100
+            elif eps is not None and bps is not None and float(bps) != 0:
+                res["roe"] = (float(eps) / float(bps)) * 100
+    except:
+        pass
 
     # 🚨 yfinanceで最新株価を取得し、PER / PBR / 時価総額をリアルタイム計算
-    try:
-        import yfinance as yf
-        tk = yf.Ticker(f"{code}.T")
-        info = tk.info
+    if res is not None:
+        try:
+            import yfinance as yf
+            tk = yf.Ticker(f"{code}.T")
+            info = tk.info
+            
+            # yfinanceから直接取れる場合はそれを優先
+            res["per"] = info.get("trailingPE", info.get("forwardPE")) or res.get("per")
+            res["pbr"] = info.get("priceToBook") or res.get("pbr")
+            res["cap"] = info.get("marketCap", res.get("cap"))
+            
+            cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
+            
+            # 直接取れなかった場合は、J-Quantsの財務情報と株価から自力で計算する
+            if cur_price:
+                if res.get("per") is None and eps and float(eps) > 0:
+                    res["per"] = float(cur_price) / float(eps)
+                if res.get("pbr") is None and bps and float(bps) > 0:
+                    res["pbr"] = float(cur_price) / float(bps)
+                if res.get("cap") is None and shares and float(shares) > 0:
+                    res["cap"] = float(cur_price) * float(shares)
+        except:
+            pass # yfinanceの通信が失敗しても、J-Quants側の基本データは死守して返す
         
-        # yfinanceから直接取れる場合はそれを優先
-        res["per"] = info.get("trailingPE", info.get("forwardPE"))
-        res["pbr"] = info.get("priceToBook")
-        res["cap"] = info.get("marketCap", res.get("cap"))
+        return res
         
-        cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
-        
-        # 直接取れなかった場合は、J-Quantsの財務情報と株価から自力で計算する
-        if cur_price:
-            if res["per"] is None and eps and float(eps) > 0:
-                res["per"] = float(cur_price) / float(eps)
-            if res["pbr"] is None and bps and float(bps) > 0:
-                res["pbr"] = float(cur_price) / float(bps)
-            if res["cap"] is None and shares and float(shares) > 0:
-                res["cap"] = float(cur_price) * float(shares)
-    except:
-        pass # yfinanceの通信が失敗しても、ROE等の基本データは死守して返す
-        
-    return res
+    return None
 
 # =========================================================
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
@@ -3677,28 +3683,31 @@ with tab4:
                 # 🚨 テンプレート展開前の変数定義ブロック（ループ内に格納）
                 # ==========================================
                 
-                # 1. 戦術モードの取得
-                tactics_mode = "判定不能"
-                if st.session_state.get("current_tab") == "待伏":
-                    tactics_mode = "待伏"
-                elif st.session_state.get("current_tab") == "強襲":
-                    tactics_mode = "強襲"
-                elif st.session_state.get("current_tab") == "潜伏":
-                    tactics_mode = "潜伏"
-
-                # 2. 時価総額の取得とフォーマット
-                raw_cap = vr.get('cap') 
-                if raw_cap and pd.notna(raw_cap):
+                # 💡 時価総額の動的計算（J-Quants仕様：発行済株式数 × 最新終値）
+                v_shares = safe_float(vr.get('shares'))
+                v_lc = safe_float(vr.get('lc'))
+                if v_shares and v_lc:
                     try:
-                        # APIの時価総額が円単位の場合、億単位に変換してカンマ区切り
-                        market_cap_str = f"{int(float(raw_cap) / 100000000):,}億円"
+                        market_cap_val = v_shares * v_lc
+                        market_cap_str = f"{int(market_cap_val / 100000000):,}億円"
                     except:
                         market_cap_str = "データ不正"
                 else:
                     market_cap_str = "N/A"
 
+                # 💡 総合判定ランクの整形・統一（各モードのテキスト・絵文字を自動融合）
+                raw_rank = str(vr.get('rank', ''))
+                display_rank = raw_rank
+                if "待伏" not in display_rank and "潜伏" not in display_rank and "強襲" not in display_rank:
+                    if is_ambush:
+                        display_rank = f"{raw_rank}待伏💎"
+                    elif is_stealth:
+                        display_rank = f"{raw_rank}潜伏💎"
+                    else:
+                        display_rank = f"{raw_rank}強襲🔥"
+
                 # ==========================================
-                # 📝 既存の出力テンプレート
+                # 📝 出力テンプレート（戦術モード行パージ ＆ 判定・時価総額結合版）
                 # ==========================================
                 text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
@@ -3707,8 +3716,7 @@ with tab4:
 ・日経平均終値：{n225_close_val}
 ・日経平均MA25乖離率：{n225_div_rate_val}
 ■システム判定ステータス
-・戦術モード：{tactics_mode}
-・総合判定：{vr.get('rank')}
+・総合判定：{display_rank}
 ・点灯シグナル・アラート：{alerts_str}
 • テクニカルスコア：{vr.get('score', 0)} pts
 ・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
