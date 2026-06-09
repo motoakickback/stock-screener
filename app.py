@@ -525,13 +525,8 @@ def clean_df(df):
 
 # --- 3. 共通関数 & 演算エンジン ---
 def calc_vector_indicators(df):
-    """完全ベクトル化されたテクニカル指標計算（極限メモリ圧縮＋ハイブリッド型標準ATR兵装配備）"""
-    if df is None or df.empty or len(df) < 5:
-        # 🚨 究極のエラー回避：データが全く足りない場合は、仮に終値の5%をATRとする
-        if df is not None and not df.empty:
-            close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
-            if close_col in df.columns:
-                df['ATR_Standard'] = df[close_col] * 0.05
+    """完全ベクトル化されたテクニカル指標計算（実数ATR保護＋ハイブリッド安全装置）"""
+    if df is None or df.empty:
         return df
 
     # 動的な列名取得（すれ違い防止回路）
@@ -542,50 +537,54 @@ def calc_vector_indicators(df):
     if close_col not in df.columns:
         return df
 
-    # 1. 移動平均線 (float32で計算結果を保持)
-    df['MA25'] = df[close_col].rolling(window=25).mean().astype('float32')
-    df['MA75'] = df[close_col].rolling(window=75).mean().astype('float32')
+    # 1. 移動平均線
+    df['MA25'] = df[close_col].rolling(window=25, min_periods=1).mean().astype('float32')
+    df['MA75'] = df[close_col].rolling(window=75, min_periods=1).mean().astype('float32')
 
     # ====================================================================
-    # 🚨 2.【新規配備】超高速ベクトル化 標準ATR計算（ハイブリッド型安全装置）
+    # 🚨 2. 超高速ベクトル化 標準ATR計算（大元データの継承と安全装置）
     # ====================================================================
-    if high_col in df.columns and low_col in df.columns:
-        c_prev = df[close_col].shift(1)
-        tr1 = df[high_col] - df[low_col]
-        tr2 = (df[high_col] - c_prev).abs()
-        tr3 = (df[low_col] - c_prev).abs()
-        
-        # True Rangeの算出
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        
-        # 🛡️ 第1防衛線：データが14日未満の場合は単純平均(SMA)、14日以上の場合はWilder式(MMA/SMMA)
-        if len(df) >= 14:
-            df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
-        else:
-            df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
+    # 既にスキャンエンジン（大元）でATR_Standardが計算済みの場合は、上書き破壊を防ぐ
+    has_precalc_atr = 'ATR_Standard' in df.columns and not df['ATR_Standard'].isna().all()
+
+    if not has_precalc_atr:
+        if high_col in df.columns and low_col in df.columns and len(df) >= 2:
+            c_prev = df[close_col].shift(1)
+            tr1 = df[high_col] - df[low_col]
+            tr2 = (df[high_col] - c_prev).abs()
+            tr3 = (df[low_col] - c_prev).abs()
             
-        # 🛡️ 最終防衛線：S安/S高張り付き等でATRが0以下、またはNaNになった場合のみ、直近終値の5%をセット
-        fallback_atr = df[close_col] * 0.05
-        df['ATR_Standard'] = df['ATR_Standard'].fillna(fallback_atr)
-        df.loc[df['ATR_Standard'] <= 0, 'ATR_Standard'] = fallback_atr[df['ATR_Standard'] <= 0]
-        
-        del c_prev, tr1, tr2, tr3, tr
-    else:
-        # High/Low が無い場合の最終防衛線
-        df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
+            # True Rangeの算出
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # 🛡️ 第1防衛線：データが14日未満なら単純平均(SMA)、14日以上ならWilder式(MMA)
+            if len(df) >= 14:
+                df['ATR_Standard'] = tr.ewm(alpha=1/14, adjust=False).mean().astype('float32')
+            else:
+                df['ATR_Standard'] = tr.rolling(window=len(df), min_periods=1).mean().astype('float32')
+                
+            # 🛡️ 最終防衛線：連日のS高/S安等でATRが0以下、またはNaNになった場合のみ直近終値の5%をセット
+            fallback_atr = df[close_col] * 0.05
+            df['ATR_Standard'] = df['ATR_Standard'].fillna(fallback_atr)
+            df.loc[df['ATR_Standard'] <= 0, 'ATR_Standard'] = fallback_atr[df['ATR_Standard'] <= 0]
+            
+            del c_prev, tr1, tr2, tr3, tr
+        else:
+            # データが1日分しかない、またはHigh/Lowがない場合の究極防衛線
+            df['ATR_Standard'] = (df[close_col] * 0.05).astype('float32')
     # ====================================================================
 
-    # 3. RSIの完全ベクトル化計算 (中間変数を減らす)
-    delta = df[close_col].diff()
-    gain = delta.where(delta > 0, 0.0).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0.0)).rolling(window=14).mean()
-    
-    # ゼロ除算回避とRSI算出
-    rs = gain / loss.replace(0, 1e-10) 
-    df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
-
-    # メモリ圧迫の原因となる中間変数を即座に破棄
-    del delta, gain, loss, rs
+    # 3. RSIの完全ベクトル化計算
+    if len(df) > 1:
+        delta = df[close_col].diff()
+        gain = delta.where(delta > 0, 0.0).rolling(window=14, min_periods=1).mean()
+        loss = (-delta.where(delta < 0, 0.0)).rolling(window=14, min_periods=1).mean()
+        
+        rs = gain / loss.replace(0, 1e-10) 
+        df['RSI'] = (100 - (100 / (1 + rs))).astype('float32')
+        del delta, gain, loss, rs
+    elif 'RSI' not in df.columns:
+        df['RSI'] = 50.0
     
     return df
 
@@ -1375,9 +1374,9 @@ def get_ambush_triage_info(lc, buy_target, atr):
     """
     買目標値と14日ATRを用いた精密位置判定（遅行指標一切不使用）
     """
-    # 🚨 5%等の概算係数を排除。ATR実数値による絶対判定
+    # 🚨 5%等の概算係数を排除。ATR実数値による絶対判定（0以下のクラッシュのみ回避）
     if atr <= 0: 
-        atr = 1.0 # ゼロ除算等のクラッシュ回避
+        atr = 1.0 
         
     # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
     if lc > (buy_target + atr):
@@ -1401,16 +1400,27 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
     
-    # --- 🚨 ATR計算の強制換装：Wilder式ハイブリッドへ統合 ---
+    # --- 🚨 ATRの保護と継承 ---
+    # 先に計算エンジンを通して不足指標を補う（既存のATR_Standardは保護される）
     df = calc_vector_indicators(df)
-    
-    # 既存の 'ATR' ではなく、新規配備の 'ATR_Standard' を優先取得
-    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(df['ATR'].iloc[-1] if 'ATR' in df.columns else df['AdjC'].iloc[-1] * 0.05)
     current_p = float(df.iloc[-1]['AdjC'])
     
+    # ATR値の確実な取得（保護された実数ATRを優先）
+    if 'ATR_Standard' in df.columns:
+        atr_val = float(df['ATR_Standard'].iloc[-1])
+    elif 'ATR' in df.columns:
+        atr_val = float(df['ATR'].iloc[-1])
+    else:
+        atr_val = float(current_p * 0.05)
+        
+    # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
+    is_fallback = False
+    if atr_val > 0 and abs(atr_val - (current_p * 0.05)) < 0.001:
+        is_fallback = True
+
     # 乖離率計算
-    p_high = df['AdjH'].max()
-    p_low = df['AdjL'].min()
+    p_high = df['AdjH'].max() if 'AdjH' in df.columns else current_p
+    p_low = df['AdjL'].min() if 'AdjL' in df.columns else current_p
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
     # 1ATR下・2ATR上の設定（実数値演算）
@@ -1423,12 +1433,16 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     # 既存ロジック呼び出し（ATR実数値を渡す）
     triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
 
-    # 基礎指標計算（RSIは遅行指標ではないオシレーターとして維持）
-    diff = df['AdjC'].diff()
-    gain = diff.where(diff > 0, 0.0).rolling(window=14).mean()
-    loss = -diff.where(diff < 0, 0.0).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs)).iloc[-1]
+    # 基礎指標計算
+    if len(df) > 1:
+        diff = df['AdjC'].diff()
+        gain = diff.where(diff > 0, 0.0).rolling(window=14, min_periods=1).mean()
+        loss = -diff.where(diff < 0, 0.0).rolling(window=14, min_periods=1).mean()
+        rs = gain / loss.replace(0, 1e-10)
+        rsi = 100 - (100 / (1 + rs)).iloc[-1]
+    else:
+        rsi = float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0
+        
     if pd.isna(rsi):
         rsi = 50.0
 
@@ -1437,7 +1451,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if bt_target > 0:
         risk_pct = (bt_target - stop_loss) / bt_target
 
-    # アラート文字列の生成（イベント検知・リスク超過エラー回避版）
+    # アラート文字列の生成
     alerts = []
     if event_data:
         if "earnings" in event_data and event_data["earnings"]:
@@ -1448,6 +1462,10 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if risk_pct > 0.08:
         alerts.append(f"⚠️ リスク超過(損切り{risk_pct*100:.1f}%)")
 
+    # 🚨 フォールバック発動時の警告追加
+    if is_fallback:
+        alerts.append("⚠️ データ不足・概算5%適用")
+
     alerts_str = " / ".join(alerts) if alerts else "特になし"
 
     import streamlit as st
@@ -1457,8 +1475,9 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     col1.metric("最新終値", f"{int(current_p):,} 円")
     col2.metric("買目標", f"{int(bt_target):,} 円")
     
-    # 🚨 修正：5.0%固定の亡霊をパージし、実数から算出したリアルなボラティリティ(%)を表示
-    col3.metric("🌪️ 1ATR", f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
+    # 🚨 UIの表示：フォールバック時は警告アイコンを表示し、それ以外は実数を堂々と表示
+    atr_label = "⚠️ 1ATR(概算)" if is_fallback else "🌪️ 1ATR(実数)"
+    col3.metric(atr_label, f"{int(atr_val):,} 円", f"ボラ: {real_vol_pct:.1f}%", delta_color="off")
     
     col4.metric("🛡️ LC", f"{stop_loss:,} 円")
     col5.metric("📈 TP", f"{take_profit:,} 円")
@@ -1470,7 +1489,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 結果辞書の構築（エクスポート・上位処理用）
+    # 結果辞書の構築
     vr = {
         'code': code,
         'name': company_name,
