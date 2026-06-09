@@ -1403,21 +1403,23 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
         
-    # 🚨【復旧】TAB4に渡されるデータには十分な履歴があります！
-    # ここで計算エンジンを起動しなければ、ATR_Standard列は永遠に作られません。
-    df = calc_vector_indicators(df)
-        
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 🚨 実数ATRの確実な取得
-    if 'ATR_Standard' in df.columns:
+    # 🚨【真の完全修復】大元が計算した実数ATRの「上書き破壊」を防止する
+    # dfにすでにATRが含まれているか確認し、含まれていない場合のみ計算エンジンを起動する
+    if 'ATR_Standard' in df.columns and pd.notna(df['ATR_Standard'].iloc[-1]):
         atr_val = float(df['ATR_Standard'].iloc[-1])
-    elif 'atr' in df.columns:
+    elif 'atr' in df.columns and pd.notna(df['atr'].iloc[-1]):
         atr_val = float(df['atr'].iloc[-1])
-    elif 'ATR' in df.columns:
+    elif 'ATR' in df.columns and pd.notna(df['ATR'].iloc[-1]):
         atr_val = float(df['ATR'].iloc[-1])
     else:
-        atr_val = current_p * 0.05 # 最終防衛線
+        # 既存データがない場合のみ履歴から計算する（無駄な再計算による5%上書きを防止）
+        df_calc = calc_vector_indicators(df.copy())
+        if 'ATR_Standard' in df_calc.columns and pd.notna(df_calc['ATR_Standard'].iloc[-1]):
+            atr_val = float(df_calc['ATR_Standard'].iloc[-1])
+        else:
+            atr_val = current_p * 0.05 # 最終防衛線
         
     # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
     is_fallback = False
@@ -1480,7 +1482,7 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 🚨【完全修復】リスト分割後の1つ目の要素  を確実に指定してクラッシュを回避
+    # 🚨【完全修復】リストのインデックス  を確実に指定してクラッシュを回避
     triage_parts = triage_status.split('】')
     triage_rank_str = triage_parts.replace('【', '') if len(triage_parts) > 0 else "不明"
     
@@ -2662,48 +2664,48 @@ with tab3:
         }
 
     def scan_unit_stealth_parallel(code, group, l_date, cfg):
-        group_df = group.copy().ffill().bfill()
-        if len(group_df) < 26: return None
+            group_df = group.copy().ffill().bfill()
+            if len(group_df) < 26: return None
 
-        # 🚨 エンジン強制起動！
-        group_df = calc_vector_indicators(group_df)
+            # 🚨 エンジン強制起動！
+            group_df = calc_vector_indicators(group_df)
 
-        v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
-        # 🚨 クラッシュ原因を修正：を追加し、リスト化バグを完全に排除
-        v_col_name = v_candidates if v_candidates else group_df.columns[-1]
+            v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
+            # 🚨 クラッシュ原因を修正： を確実に付与し、リストではなく文字列を抽出
+            v_col_name = v_candidates if len(v_candidates) > 0 else group_df.columns[-1]
 
-        group_df['AdjC'] = group_df['AdjC'].astype(float)
-        group_df['AdjH'] = group_df['AdjH'].astype(float)
-        group_df['AdjL'] = group_df['AdjL'].astype(float)
-        group_df[v_col_name] = group_df[v_col_name].astype(float)
+            group_df['AdjC'] = group_df['AdjC'].astype(float)
+            group_df['AdjH'] = group_df['AdjH'].astype(float)
+            group_df['AdjL'] = group_df['AdjL'].astype(float)
+            group_df[v_col_name] = group_df[v_col_name].astype(float)
 
-        if 'ma25' not in group_df.columns:
-            group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
+            if 'ma25' not in group_df.columns:
+                group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
             
-        # 🚨 実数ATRの確実な取得と適用
-        real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(group_df['AdjC'].iloc[-1] * 0.05)
-        group_df['atr'] = real_atr
+            # 🚨 実数ATRの確実な取得と適用
+            real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(group_df['AdjC'].iloc[-1] * 0.05)
+            group_df['atr'] = real_atr
 
-        group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-        group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-        group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
-        group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
+            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
+            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
+            group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
+            group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
 
-        today = group_df.iloc[-1]
+            today = group_df.iloc[-1]
 
-        if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
-        if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-        if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
-        if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
+            if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
+            if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
+            if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
+            if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
             
-        # 🚨 実数ATRを辞書に格納してUIへ引き渡す
-        return {
-            'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
-            'ATR_Standard': real_atr, 'atr': real_atr, 'day_range': float(today['day_range']),
-            'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
-            'avg_vol_prev': float(today['avg_volume_5_prev']),
-            'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
-        }
+            # 🚨 実数ATRを辞書に格納してUIへ引き渡す
+            return {
+                'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
+                'ATR_Standard': real_atr, 'atr': real_atr, 'day_range': float(today['day_range']),
+                'avg_value_5': float(today['avg_value_5']), 'curr_vol': float(today[v_col_name]),
+                'avg_vol_prev': float(today['avg_volume_5_prev']),
+                'T_Rank': 'Stealth💎', 'T_Color': '#00bcd4', 'T_Desc': '大爆発前夜(嵐の前の静けさ)'
+            }
 
         with st.status("🚀 潜伏スキャンを実行中...", expanded=True) as status:
             try:
