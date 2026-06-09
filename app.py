@@ -3673,33 +3673,33 @@ with tab4:
                     stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                     bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
-                # 🚨 修正: スコアが正しく埋め込まれるように vr.get('score') を使用
-                text_template = f"""【作戦参謀への分析依頼データ】
-■銘柄基本情報
+                # ※テンプレート代入前に、以下の変数を取得・フォーマットしておく必要があります
+                # tactics_mode = "待伏" # または "強襲", "潜伏" など現在のモードを取得
+                # market_cap_str = vr.get('market_cap', 'N/A') # 時価総額の取得（必要に応じて億単位などでフォーマット）
+
+                text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
-
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
 ・日経平均MA25乖離率：{n225_div_rate_val}
-
 ■システム判定ステータス
+・戦術モード：{tactics_mode}
 ・総合判定：{vr.get('rank')}
 ・点灯シグナル・アラート：{alerts_str}
 • テクニカルスコア：{vr.get('score', 0)} pts
 ・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
-・ファンダメンタルズ判定：{fund_status}
-
+・ファンダメンタルズ判定：{fund_status} / 時価総額：{market_cap_str}
 ■絶対価格データ（確値）
 ・最新終値：{int(vr.get('lc', 0)):,}円
 ・MA25（25日移動平均線）：{ma25_str}
 ・直近高値（スイングハイ）：{int(vr.get('h14', 0)):,}円
 ・起点安値（スイングロウ）：{int(vr.get('l14', 0)):,}円
-
 ■ボラティリティ・ターゲットデータ
 ・1ATR（14日）：{int(safe_float(vr.get('atr_val', 0)) or 0):,}円
 ・システム算出 買目標値：{bt_target_str}"""
-                export_texts.append(text_template)
+
+export_texts.append(text_template)
             
             final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
             
