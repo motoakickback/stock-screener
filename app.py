@@ -2090,7 +2090,7 @@ with tab1:
         t_global_start = time.time()
         
         with st.status("🚀 索敵スキャンを実行中...", expanded=True) as status:
-            st.write("📡 第1段階：280日分のデータを取得・解析中...")
+            st.write("📡 第1段階：260日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
 
             if full_df is not None and not full_df.empty:
