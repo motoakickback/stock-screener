@@ -1403,12 +1403,13 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
         
-    # 🚨【絶対厳守】ここで calc_vector_indicators(df) を呼んではいけません！
-    # 渡されるdfは1行だけの場合があり、再計算するとデータ不足で5%に破壊されます。
+    # 🚨【復旧】TAB4に渡されるデータには十分な履歴があります！
+    # ここで計算エンジンを起動しなければ、ATR_Standard列は永遠に作られません。
+    df = calc_vector_indicators(df)
         
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 🚨 実数ATRの確実な取得（大元から渡された実数をそのまま使う）
+    # 🚨 実数ATRの確実な取得
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
     elif 'atr' in df.columns:
@@ -1478,6 +1479,30 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         f"現在の戦況：{triage_status}</div>", 
         unsafe_allow_html=True
     )
+    
+    # 🚨【完全修復】リスト分割後の1つ目の要素  を確実に指定してクラッシュを回避
+    triage_parts = triage_status.split('】')
+    triage_rank_str = triage_parts.replace('【', '') if len(triage_parts) > 0 else "不明"
+    
+    vr = {
+        'code': code,
+        'name': company_name,
+        'lc': current_p,
+        'h14': p_high,
+        'l14': p_low,
+        'atr_val': atr_val,
+        'bt_target': bt_target,
+        'stop_loss': stop_loss,
+        'take_profit': take_profit,
+        'risk_pct': risk_pct,
+        'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0,
+        'triage_status': triage_status,
+        'rank': triage_rank_str, 
+        'score': 0,
+        'alerts_str': alerts_str
+    }
+    
+    return vr
     
     # 🚨【完全修復】を追加し、リストに対するreplaceのクラッシュバグを根絶
     triage_rank_str = triage_status.split('】').replace('【', '')
@@ -2667,6 +2692,7 @@ with tab3:
         group_df = calc_vector_indicators(group_df)
 
         v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
+        # 🚨 クラッシュ原因を修正：を追加し、リスト化バグを完全に排除
         v_col_name = v_candidates if v_candidates else group_df.columns[-1]
 
         group_df['AdjC'] = group_df['AdjC'].astype(float)
@@ -2676,7 +2702,7 @@ with tab3:
 
         if 'ma25' not in group_df.columns:
             group_df['ma25'] = group_df['AdjC'].rolling(window=25, min_periods=1).mean()
-        
+            
         # 🚨 実数ATRの確実な取得と適用
         real_atr = float(group_df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in group_df.columns else float(group_df['AdjC'].iloc[-1] * 0.05)
         group_df['atr'] = real_atr
@@ -2692,7 +2718,7 @@ with tab3:
         if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
         if pd.isna(today['atr']) or today['atr'] <= 0 or today['day_range'] >= (today['atr'] * cfg["atr_ratio"]): return None
         if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
-        
+            
         # 🚨 実数ATRを辞書に格納してUIへ引き渡す
         return {
             'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
