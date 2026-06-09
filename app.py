@@ -1407,21 +1407,11 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     if df is None or df.empty:
         return None
     
-    # --- 🚨 ATRの保護と継承（修正版：再計算を排除して大元の実数を維持） ---
     current_p = float(df.iloc[-1]['AdjC'])
 
-	atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(current_p * 0.05)
+    # 🚨 大水源で計算済みの実数ATRをそのまま受け取る（インデントはスペース4個で統一）
+    atr_val = float(df['ATR_Standard'].iloc[-1]) if 'ATR_Standard' in df.columns else float(current_p * 0.05)
     
-    # 大元のスキャナーが計算してくれた本物の実数ATRの列をそのまま読み込む
-    if 'ATR_Standard' in df.columns:
-        atr_val = float(df['ATR_Standard'].iloc[-1])
-    elif 'atr' in df.columns:
-        atr_val = float(df['atr'].iloc[-1])
-    elif 'ATR' in df.columns:
-        atr_val = float(df['ATR'].iloc[-1])
-    else:
-        atr_val = current_p * 0.05 # データが一切存在しない場合のみの最終防衛線
-        
     # 🚨 安全装置が発動したかどうかの判定（5%の亡霊の可視化）
     is_fallback = False
     if atr_val > 0 and abs(atr_val - (current_p * 0.05)) < 0.001:
