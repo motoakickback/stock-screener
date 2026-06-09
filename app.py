@@ -1398,17 +1398,17 @@ def get_ambush_triage_info(lc, buy_target, atr):
 # ==============================================================================
 def render_tab3_scope_logic(df, code, company_name, event_data=None):
     """
-    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（真・実数ATR同調版）
+    🎯 TAB4：【照準】精密スコープ描画・演算エンジン（真・実数ATR同調・クラッシュ回避版）
     """
     if df is None or df.empty:
         return None
         
-    # 🚨【真実の復旧】渡される df には十分な履歴があります！ここで必ず計算エンジンを起動し実数ATRを生成します！
-    df = calc_vector_indicators(df)
+    # 🚨【絶対厳守】ここで calc_vector_indicators(df) を呼んではいけません！
+    # 渡されるdfは1行だけの場合があり、再計算するとデータ不足で5%に破壊されます。
         
     current_p = float(df.iloc[-1]['AdjC'])
 
-    # 🚨 実数ATRの確実な取得
+    # 🚨 実数ATRの確実な取得（大元から渡された実数をそのまま使う）
     if 'ATR_Standard' in df.columns:
         atr_val = float(df['ATR_Standard'].iloc[-1])
     elif 'atr' in df.columns:
@@ -1479,9 +1479,8 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
         unsafe_allow_html=True
     )
     
-    # 🚨【完全修復】クラッシュ原因の文字列操作を安全な2ステップに分割してエラーを根絶
-    triage_parts = triage_status.split('】')
-    triage_rank_str = triage_parts.replace('【', '') if len(triage_parts) > 0 else "不明"
+    # 🚨【完全修復】を追加し、リストに対するreplaceのクラッシュバグを根絶
+    triage_rank_str = triage_status.split('】').replace('【', '')
     
     vr = {
         'code': code,
