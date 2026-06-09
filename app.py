@@ -3683,19 +3683,21 @@ with tab4:
                 # 🚨 テンプレート展開前の変数定義ブロック（ループ内に格納）
                 # ==========================================
                 
-                # 💡 時価総額の動的計算（J-Quants仕様：発行済株式数 × 最新終値）
-                v_shares = safe_float(vr.get('shares'))
-                v_lc = safe_float(vr.get('lc'))
-                if v_shares and v_lc:
-                    try:
-                        market_cap_val = v_shares * v_lc
-                        market_cap_str = f"{int(market_cap_val / 100000000):,}億円"
-                    except:
-                        market_cap_str = "データ不正"
-                else:
+                # 💡 1. 時価総額の動的取得（関数からダイレクトに強制抽出）
+                # vrの中にデータが無くても、get_fundamentalsを直接叩いて確実に引っぱり出します
+                market_cap_str = "N/A"
+                try:
+                    f_data = get_fundamentals(vr.get('code'))
+                    if f_data and f_data.get('cap'):
+                        raw_cap = float(f_data.get('cap'))
+                        if raw_cap > 1000000: # 円単位で返ってきた場合は億円に変換
+                            market_cap_str = f"{int(raw_cap / 100000000):,}億円"
+                        else:
+                            market_cap_str = f"{int(raw_cap):,}億円"
+                except Exception:
                     market_cap_str = "N/A"
 
-                # 💡 総合判定ランクの整形・統一（各モードのテキスト・絵文字を自動融合）
+                # 💡 2. 総合判定ランクの整形・統一（各モードのテキスト・絵文字を自動融合）
                 raw_rank = str(vr.get('rank', ''))
                 display_rank = raw_rank
                 if "待伏" not in display_rank and "潜伏" not in display_rank and "強襲" not in display_rank:
