@@ -887,6 +887,13 @@ def get_fundamentals(code):
     bps = None
     shares = None
     
+    # 🛡️ 内部防衛関数：空文字("")やNoneを安全に弾く
+    def safe_float(val):
+        try:
+            return float(val) if val not in [None, ""] else None
+        except (ValueError, TypeError):
+            return None
+
     try:
         r = api_session.get(url, timeout=3.0)
         if r.status_code == 200:
@@ -904,7 +911,7 @@ def get_fundamentals(code):
                 bps = latest.get("BPSnumber", latest.get("BookValuePerShare"))
                 shares = latest.get("ShOutFYnumber", latest.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfPeriod"))
                 
-                # ベースとなる辞書を生成
+                # ベースとなる辞書を生成（ここでの "roe": None は正しい型枠です）
                 res = {
                     "op": op,
                     "er": eq_ratio,
@@ -915,11 +922,17 @@ def get_fundamentals(code):
                     "cap": latest.get("MarketCapitalization")
                 }
                 
+                # 爆発しないように安全な数値に変換
+                f_np = safe_float(np_val)
+                f_eq = safe_float(eq)
+                f_eps = safe_float(eps)
+                f_bps = safe_float(bps)
+                
                 # ROEの計算 (当期純利益 ÷ 自己資本)
-                if np_val is not None and eq is not None and float(eq) != 0:
-                    res["roe"] = (float(np_val) / float(eq)) * 100
-                elif eps is not None and bps is not None and float(bps) != 0:
-                    res["roe"] = (float(eps) / float(bps)) * 100
+                if f_np is not None and f_eq is not None and f_eq != 0:
+                    res["roe"] = (f_np / f_eq) * 100
+                elif f_eps is not None and f_bps is not None and f_bps != 0:
+                    res["roe"] = (f_eps / f_bps) * 100
     except:
         pass
 
@@ -927,7 +940,7 @@ def get_fundamentals(code):
     if res is None:
         res = {"op": None, "er": None, "shares": None, "roe": None, "per": None, "pbr": None, "cap": None}
 
-    # 🚨 yfinance（Yahooファイナンス）に突入し、時価総額をリアルタイム計算・補完
+    # 🚨 yfinance（Yahooファイナンス）に突入し、時価総額・ROE等をリアルタイム計算・補完
     try:
         import yfinance as yf
         tk = yf.Ticker(f"{code}.T")
@@ -940,17 +953,25 @@ def get_fundamentals(code):
             res["pbr"] = info.get("priceToBook")
         if info.get("marketCap"):
             res["cap"] = info.get("marketCap")
+            
+        # 🎯 【追加】yfinanceの強力なROE補完ロジック（小数をパーセンテージに変換）
+        if info.get("returnOnEquity"):
+            res["roe"] = info.get("returnOnEquity") * 100
         
         cur_price = info.get("currentPrice", info.get("regularMarketPrice", info.get("previousClose")))
         
         # 直接データが引けなかった場合は、J-Quantsの財務情報と株価から自力で掛け算を行う
         if cur_price:
-            if res.get("per") is None and eps and float(eps) > 0:
-                res["per"] = float(cur_price) / float(eps)
-            if res.get("pbr") is None and bps and float(bps) > 0:
-                res["pbr"] = float(cur_price) / float(bps)
-            if res.get("cap") is None and shares and float(shares) > 0:
-                res["cap"] = float(cur_price) * float(shares)
+            f_eps = safe_float(eps)
+            f_bps = safe_float(bps)
+            f_shares = safe_float(shares)
+            
+            if res.get("per") is None and f_eps and f_eps > 0:
+                res["per"] = float(cur_price) / f_eps
+            if res.get("pbr") is None and f_bps and f_bps > 0:
+                res["pbr"] = float(cur_price) / f_bps
+            if res.get("cap") is None and f_shares and f_shares > 0:
+                res["cap"] = float(cur_price) * f_shares
     except:
         pass # 通信障害時も前段のJ-Quantsデータを死守して返す
         
@@ -1970,7 +1991,7 @@ with tab1:
         t_global_start = time.time()
         
         with st.status("🚀 索敵スキャンを実行中...", expanded=True) as status:
-            st.write("📡 第1段階：280日分のデータを取得・解析中...")
+            st.write("📡 第1段階：260日分のデータを取得・解析中...")
             full_df = get_hist_data_cached(cache_key)
 
             if full_df is not None and not full_df.empty:
