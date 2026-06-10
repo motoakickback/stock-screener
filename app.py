@@ -2551,11 +2551,11 @@ with tab3:
 
     col_s1, col_s2 = st.columns(2)
     st_val_min = col_s1.number_input("最低売買代金 (億円)", value=3.0, step=0.5, key="st_val_min")
-    st_vol_ratio = col_s2.number_input("出来高過疎化 (倍未満)", value=0.8, step=0.1, key="st_vol_ratio")
+    st_vol_ratio = col_s2.number_input("出来高過疎化 (倍未満)", value=1.0, step=0.1, key="st_vol_ratio")
 
     col_s3, col_s4 = st.columns(2)
-    st_atr_ratio = col_s3.number_input("値幅収縮率 (ATR倍未満)", value=0.6, step=0.1, key="st_atr_ratio")
-    st_ma_prox = col_s4.number_input("MA25上方乖離限界 (%)", value=3.0, step=0.5, key="st_ma_prox")
+    st_atr_ratio = col_s3.number_input("値幅収縮率 (ATR倍未満)", value=1.0, step=0.1, key="st_atr_ratio")
+    st_ma_prox = col_s4.number_input("MA25上方乖離限界 (%)", value=5.0, step=0.5, key="st_ma_prox")
 
     if st.button("🚀 潜伏索敵開始", key="btn_scan_t2_stealth", type="primary"):
         try: save_settings()
