@@ -3128,11 +3128,8 @@ with tab4:
                             })
                             continue
 
-                        # テクニカル演算
-                        try:
-                            df_chart_full = calc_technicals(df_s.copy())
-                        except Exception:
-                            df_chart_full = df_s.copy()
+                        # 🚨 修正：旧関数名をパージし、真のエンジンを直結（エラー隠蔽のtry-exceptも破壊）
+                        df_chart_full = calc_vector_indicators(df_s.copy())
                             
                         t_latest = df_chart_full.iloc[-1]
                         t_prev = df_chart_full.iloc[-2]
@@ -3162,8 +3159,11 @@ with tab4:
                             except Exception:
                                 rsi_v = 50.0
 
-                        if 'ATR' in df_chart_full.columns and pd.notna(t_latest['ATR']):
-                            atr_v = float(t_latest['ATR'])
+                        # 🚨 修正：実数ATRを『ATR_Standard』から確実に抽出
+                        if 'ATR_Standard' in df_chart_full.columns and pd.notna(t_latest['ATR_Standard']):
+                            atr_v = float(t_latest['ATR_Standard'])
+                        elif 'atr' in df_chart_full.columns and pd.notna(t_latest['atr']):
+                            atr_v = float(t_latest['atr'])
                         else:
                             atr_v = lc * 0.05
                             
@@ -3240,16 +3240,8 @@ with tab4:
                                 h_col = 'AdjH'
                                 l_col = 'AdjL'
 
-                                df_sub['prev_C'] = df_sub[c_col].shift(1)
-                                df_sub['TR'] = np.maximum(
-                                    df_sub[h_col] - df_sub[l_col],
-                                    np.maximum(
-                                        abs(df_sub[h_col] - df_sub['prev_C']),
-                                        abs(df_sub[l_col] - df_sub['prev_C'])
-                                    )
-                                )
-                                df_sub['ATR14'] = df_sub['TR'].rolling(window=14).mean()
-                                df_sub['MA25'] = df_sub[c_col].rolling(window=25).mean()
+                                # 🚨 修正：密造回路（単純平均の自前計算）を完全撤去。大水源の実数ATRをそのまま使う
+                                df_sub['MA25'] = df_sub[c_col].rolling(window=25, min_periods=1).mean()
 
                                 s_latest = df_sub.iloc[-1]
                                 s_prev = df_sub.iloc[-2]
@@ -3259,7 +3251,13 @@ with tab4:
                                 h_val = s_latest[h_col]
                                 l_val = s_latest[l_col]
                                 prev_c_val = s_prev[c_col]
-                                atr14_val = s_latest['ATR14']
+                                
+                                # 大水源から流れてきたATR_Standardをそのまま使用
+                                if 'ATR_Standard' in s_latest and pd.notna(s_latest['ATR_Standard']):
+                                    atr14_val = float(s_latest['ATR_Standard'])
+                                else:
+                                    atr14_val = float(c_val * 0.05)
+                                    
                                 ma25_val = s_latest['MA25']
 
                                 rank = "A級💎"
