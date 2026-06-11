@@ -390,40 +390,41 @@ def fetch_current_prices_fast(codes):
     base = datetime.now(tz_jst)
     f_d, t_d = (base - timedelta(days=7)).strftime('%Y%m%d'), base.strftime('%Y%m%d')
     def fetch_single(code):
-            clean_code = str(code).replace('.0', '').strip()
-            
-            # 🌟 1. まずはyfinanceで日中の最新価格の取得を試みる
-            try:
-                import yfinance as yf
-                tk = yf.Ticker(f"{clean_code}.T")
-                df_today = tk.history(period="1d")
-                if not df_today.empty:
-                    current_price = df_today['Close'].iloc[-1]
-                    if pd.notna(current_price):
-                        return code, float(current_price)
-            except:
-                pass # 取得失敗時は下のJ-Quantsロジックへ流す
+        clean_code = str(code).replace('.0', '').strip()
+        
+        # 🌟 追加：yfinanceで日中の最新価格を取得
+        try:
+            import yfinance as yf
+            tk = yf.Ticker(f"{clean_code}.T")
+            df_today = tk.history(period="1d")
+            if not df_today.empty:
+                current_price = df_today['Close'].iloc[-1]
+                if pd.notna(current_price):
+                    return code, float(current_price)
+        except:
+            pass
 
-            # 🛡️ 2. 保険としてのJ-Quants API（元の正しい5桁ロジック）
-            api_code = clean_code if len(clean_code) >= 5 else clean_code + "0"
-            url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-            try:
-                r = api_session.get(url, timeout=3.0)
-                if r.status_code == 200:
-                    data = r.json().get("daily_quotes") or r.json().get("data") or []
-                    if data:
-                        latest = sorted(data, key=lambda x: x['Date'])[-1]
-                        val = latest.get("Close") or latest.get("C") or latest.get("AdjC")
-                        if val is not None: return code, float(val)
-            except: pass
-            return code, None
+        # 既存：取得できなかった場合のJ-Quants（5桁・大引け後用）
+        api_code = clean_code if len(clean_code) >= 5 else clean_code + "0"
+        url = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
+        try:
+            r = api_session.get(url, timeout=3.0)
+            if r.status_code == 200:
+                data = r.json().get("daily_quotes") or r.json().get("data") or []
+                if data:
+                    latest = sorted(data, key=lambda x: x['Date'])[-1]
+                    val = latest.get("Close") or latest.get("C") or latest.get("AdjC")
+                    if val is not None: return code, float(val)
+        except: pass
+        return code, None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futs = {executor.submit(fetch_single, c): c for c in codes}
-            for f in concurrent.futures.as_completed(futs):
-                c_code, price = f.result()
-                if price is not None: results[c_code] = price
-        return results
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futs = {executor.submit(fetch_single, c): c for c in codes}
+        for f in concurrent.futures.as_completed(futs):
+            c_code, price = f.result()
+            if price is not None: results[c_code] = price
+
+    return results
 
 # --- 🌪️ 2. マクロ気象・司令部通信（実戦配線） ---
 weather = get_macro_weather()
