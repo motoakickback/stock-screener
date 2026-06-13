@@ -2610,9 +2610,6 @@ with tab2:
                 m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
-    # ==============================================================================
-    # モードB：💎 潜伏（Stealth）モード
-    # ==============================================================================
 # --- 7.5. タブコンテンツ (TAB3: 潜伏) ---
 with tab3:
     st.markdown('<h3 style="font-size: 24px;">💎 【潜伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
@@ -2686,10 +2683,8 @@ with tab3:
                 # ここで弾かれた場合は件数として無視するが、もし1件も通過しないならここが原因
                 pass 
             else:
-                import streamlit as st
-                st.write(f"DEBUG: 銘柄 {code} は売買代金フィルター通過: {today['avg_value_5'] / 100_000_000:.1f}億円")
-                if today[v_col_name] < (today['avg_volume_5_prev'] * cfg["vol_ratio"]):
-                    st.write(f"DEBUG: 銘柄 {code} は出来高フィルター通過: {today[v_col_name]} vs {today['avg_volume_5_prev'] * cfg['vol_ratio']:.1f}")
+                # pass # 本番運用時はデバッグ出力を抑制（必要に応じてコメントアウト解除してください）
+                pass
             # --------------------
 
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
@@ -2714,59 +2709,77 @@ with tab3:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                 t_fetch = time.time()
                 
-                # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
-                acquired_days = full_df['Date'].nunique()
-                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
-                # ▲▲▲ ここまで ▲▲▲
-                
-                st.write(msg1)
-                st.session_state.tab3_time_log.append(msg1) 
+                if raw is None or len(raw) == 0:
+                    st.error("J-Quants APIからの応答が途絶。")
+                else:
+                    full_df = clean_df(pd.DataFrame(raw))
+                    full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
 
-                full_df = clean_df(pd.DataFrame(raw))
-                full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                    # ====================================================================
+                    # 🛡️ 開発参謀パッチ：スマートIPO（データ不足）銘柄の完全排除 (TAB3)
+                    # ====================================================================
+                    if st.session_state.get("f5_ipo", False):
+                        counts = full_df['Code'].value_counts()
+                        if not counts.empty:
+                            max_days = counts.max()
+                            threshold = int(max_days * 0.8)
+                            valid_ipo_codes = counts[counts >= threshold].index
+                            full_df = full_df[full_df['Code'].isin(valid_ipo_codes)]
+                            st.write(f"🛡️ IPOフィルター稼働：データ生存期間 {threshold} 日未満の銘柄を排除しました（生存: {len(valid_ipo_codes)}/{len(counts)} 銘柄）")
+                    # ====================================================================
 
-                m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
-                target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
-                m_map = globals().get('master_map_t2', globals().get('master_map', {}))
-                m_targets = [c for c, m in m_map.items() if any(k in str(m.get('Market', '')) for k in target_keywords)] if m_map else full_df['Code'].unique()
+                    # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
+                    acquired_days = full_df['Date'].nunique()
+                    msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
+                    # ▲▲▲ ここまで ▲▲▲
+                    
+                    st.write(msg1)
+                    st.session_state.tab3_time_log = st.session_state.get('tab3_time_log', [])
+                    st.session_state.tab3_time_log.append(msg1) 
 
-                # 🚨 防弾パッチ：日付型の強制統一と、コピーの明示で警告を回避
-                full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
-                latest_date = full_df['Date'].max()
-                
-                # 抽出ロジック（高速・確実）
-                mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] > 0)
-                valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
-                
-                # copy() を追加し、後続の編集で警告が出ないように確定
-                df = full_df[full_df['Code'].isin(valid_codes)].copy()
-                t_clean = time.time()
-                s_msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
-                st.write(s_msg2)
-                st.session_state.tab2_time_log_stealth.append(s_msg2)
+                    m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
+                    target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
+                    m_map = globals().get('master_map_t2', globals().get('master_map', {}))
+                    m_targets = [c for c, m in m_map.items() if any(k in str(m.get('Market', '')) for k in target_keywords)] if m_map else full_df['Code'].unique()
 
-                results = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date, cfg_stealth) for c, g in df.groupby('Code')]
-                    for f in concurrent.futures.as_completed(futures):
-                        try:
-                            res = f.result()
-                            if res: results.append(res)
-                        except: pass
+                    # 🚨 防弾パッチ：日付型の強制統一と、コピーの明示で警告を回避
+                    full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
+                    latest_date = full_df['Date'].max()
+                    
+                    # 抽出ロジック（高速・確実）
+                    mask = (full_df['Date'] == latest_date) & (full_df['AdjC'] > 0)
+                    valid_codes = set(full_df[mask]['Code']).intersection(set(m_targets))
+                    
+                    # copy() を追加し、後続の編集で警告が出ないように確定
+                    df = full_df[full_df['Code'].isin(valid_codes)].copy()
+                    t_clean = time.time()
+                    s_msg2 = f"✔️ 第2段階完了：ターゲット抽出 [{t_clean - t_fetch:.2f}秒]"
+                    st.write(s_msg2)
+                    st.session_state.tab2_time_log_stealth.append(s_msg2)
 
-                st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
+                    results = []
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date, cfg_stealth) for c, g in df.groupby('Code')]
+                        for f in concurrent.futures.as_completed(futures):
+                            try:
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
 
-                t_calc = time.time()
-                s_msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
-                st.write(s_msg3)
-                st.session_state.tab2_time_log_stealth.append(s_msg3)
+                    st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
 
-                s_msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
-                st.write(s_msg4)
-                st.session_state.tab2_time_log_stealth.append(s_msg4)
+                    t_calc = time.time()
+                    s_msg3 = f"✔️ 第3段階完了：並列演算・抽出完了 [{t_calc - t_clean:.2f}秒]"
+                    st.write(s_msg3)
+                    st.session_state.tab2_time_log_stealth.append(s_msg3)
 
-                status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab2_scan_results_stealth)} 銘柄確保）", state="complete", expanded=False)
-                st.rerun()
+                    s_msg4 = f"⏱️ 物理総計索敵時間: {t_calc - t_global_start:.2f}秒"
+                    st.write(s_msg4)
+                    st.session_state.tab2_time_log_stealth.append(s_msg4)
+
+                    status.update(label=f"🎯 索敵完了！（候補 {len(st.session_state.tab2_scan_results_stealth)} 銘柄確保）", state="complete", expanded=False)
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"🚨 スキャンエラー: {str(e)}")
                 status.update(label="🚨 エラー発生", state="error")
@@ -2830,7 +2843,6 @@ with tab3:
 
                 col_d2.metric("値幅収縮率 (値幅/ATR)", f"{contraction:.2f}倍")
                 col_d3.metric("5日平均売買代金", f"{int(r.get('avg_value_5', 0) / 100_000_000)}億円")
-
 
 # --- 8. タブコンテンツ (TAB4: 精密スコープ) ---
 with tab4:
