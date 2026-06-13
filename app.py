@@ -2434,9 +2434,7 @@ with tab2:
 
                         if len(group) < 25: return None
 
-                        if cfg.get("f12_ex_overvalued"):
-                            f_data = get_fundamentals(c_str)
-                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        # ▼▼▼ ココにあったファンダメンタルズ取得(get_fundamentals)を撤去し、下部へ移動 ▼▼▼
 
                         v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group_df.columns), 'Volume')
                         if v_col_name not in group_df.columns: return None
@@ -2463,6 +2461,16 @@ with tab2:
                             if (b_range / c_range) < cfg.get("body_ratio", 0): return None
                         elif c_range < 0:
                             return None
+
+                        # ==========================================================
+                        # 🚀 開発参謀パッチ：重いファンダメンタルズ通信を「最終審査」に配置
+                        # 軽いテクニカル審査を全て通過したエリート銘柄にだけ通信を行うことで、
+                        # 112秒かかっていた演算時間を数秒レベルまで圧縮します
+                        # ==========================================================
+                        if cfg.get("f12_ex_overvalued"):
+                            f_data = get_fundamentals(c_str)
+                            if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                        # ==========================================================
 
                         t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
                         gc_days = 0 
