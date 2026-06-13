@@ -1324,22 +1324,47 @@ def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
 # 🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
 # ==============================================================================
 
-def get_ambush_triage_info(lc, buy_target, atr):
+def get_ambush_triage_info(lc, buy_target, atr, df_chart=None):
     """
-    買目標値と14日ATRを用いた精密位置判定（遅行指標一切不使用）
+    買目標値と14日ATRを用いた精密位置判定 ＋ 酒田五法（底打ちサイン）のハイブリッドレーダー
     """
+    # 1. 酒田五法の底打ちサイン検知（防弾仕様）
+    has_bottom_signal = False
+    sakata_msg = ""
+    
+    if df_chart is not None and not df_chart.empty:
+        try:
+            sakata_s = detect_sakata_patterns(df_chart)
+            # 待伏せ（逆張り）に有効な「底打ちシグナル」のキーワード群
+            bottom_keywords = ["陰の極み", "たくり", "二重底", "売三空", "赤三兵"]
+            
+            # 発報されたシグナルの中から、底打ちサインだけを抽出
+            detected_bottoms = [p['label'] for p in sakata_s if any(k in p['label'] for k in bottom_keywords)]
+            
+            if detected_bottoms:
+                has_bottom_signal = True
+                sakata_msg = f" 🌟【底打サイン点灯】{'/'.join(detected_bottoms)}"
+        except Exception:
+            pass
+
+    # 2. トリアージ判定（位置 ＋ シグナルの融合）
+    
     # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
     if lc > (buy_target + atr):
-        return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。", "#FFC107"
+        return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。" + sakata_msg, "#FFC107"
     
     # 条件B：目標値±1ATRの範囲内（迎撃準備）
     elif (buy_target - atr) <= lc <= (buy_target + atr):
-        return "🟢【迎撃圏内】目標地点に到達。反転シグナル（ローソク足等）に注視し狙撃準備。", "#4CAF50"
+        if has_bottom_signal:
+            # 🎯 ストライクゾーン ＋ 酒田底打ちサイン ＝ S級激熱狙撃！
+            return f"🔥【迎撃・S級】目標到達＆反転サイン確認！即時狙撃推奨！{sakata_msg}", "#E91E63" # ピンク/赤系で強調
+        else:
+            return "🟢【迎撃圏内】目標地点に到達。反転シグナル（ローソク足等）に注視し狙撃準備。", "#4CAF50"
     
     # 条件C：目標値 - 1ATRより低い（底割れ）
     else:
+        # 底割れしている場合は、罠の可能性があるため酒田サインが出ても撤退を優先
         return "💀【底割れ・撤退】サポートライン完全崩壊。待ち伏せ失敗。", "#F44336"
-
 
 # ==============================================================================
 # 🎯 2. 精密スコープ ロジック演算・描画エンジン（完全展開版）
@@ -1374,8 +1399,8 @@ def render_tab3_scope_logic(df, code, company_name, event_data=None):
     # 3. 買目標値の算出（スイングハイからのフィボナッチ50%押し基準）
     bt_target = p_high - ((p_high - p_low) * 0.5)
     
-    # 4. 新・待伏せトリアージの実行（MACD関連変数は完全消去済）
-    triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val)
+    # 4. 新・待伏せトリアージの実行（酒田シグナル検知・直結版）
+    triage_status, triage_color = get_ambush_triage_info(current_p, bt_target, atr_val, df)
     
     # 5. 基礎指標計算（RSIは遅行指標ではないオシレーターとして維持）
     diff = df['AdjC'].diff()
