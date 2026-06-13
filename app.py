@@ -2026,9 +2026,13 @@ with tab1:
 
             if full_df is not None and not full_df.empty:
                 t_fetch = time.time()
-                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+                
+                # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
+                acquired_days = full_df['Date'].nunique()
+                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
+                
                 st.write(msg1)
-                st.session_state.tab1_time_log.append(msg1)
+                st.session_state.tab1_time_log.append(msg1) 
 
                 # コードの形式を統一
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
@@ -2305,9 +2309,14 @@ with tab2:
             try:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                 t_fetch = time.time()
-                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
+                
+                # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
+                acquired_days = full_df['Date'].nunique()
+                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
+                # ▲▲▲ ここまで ▲▲▲
+                
                 st.write(msg1)
-                st.session_state.tab2_time_log.append(msg1)
+                st.session_state.tab2_time_log.append(msg1) # ※TAB2なら tab2_time_log
 
                 if raw is None or len(raw) == 0:
                     st.error("J-Quants APIからの応答が途絶。")
@@ -2688,9 +2697,14 @@ with tab3:
             try:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                 t_fetch = time.time()
-                s_msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒]"
-                st.write(s_msg1)
-                st.session_state.tab2_time_log_stealth.append(s_msg1)
+                
+                # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
+                acquired_days = full_df['Date'].nunique()
+                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
+                # ▲▲▲ ここまで ▲▲▲
+                
+                st.write(msg1)
+                st.session_state.tab3_time_log.append(msg1) 
 
                 full_df = clean_df(pd.DataFrame(raw))
                 full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
