@@ -2309,14 +2309,6 @@ with tab2:
             try:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in locals() or 'cache_key' in globals() else []
                 t_fetch = time.time()
-                
-                # ▼▼▼ 開発参謀パッチ：取得できた「実際の日数」をカウント ▼▼▼
-                acquired_days = full_df['Date'].nunique()
-                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
-                # ▲▲▲ ここまで ▲▲▲
-                
-                st.write(msg1)
-                st.session_state.tab2_time_log.append(msg1) # ※TAB2なら tab2_time_log
 
                 if raw is None or len(raw) == 0:
                     st.error("J-Quants APIからの応答が途絶。")
@@ -2325,6 +2317,23 @@ with tab2:
                     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                     for col in ['AdjC', 'AdjH', 'AdjL']:
                         if col in full_df.columns: full_df[col] = full_df[col].astype('float32')
+
+                    # ====================================================================
+                    # 🛡️ 開発参謀パッチ：スマートIPO（データ不足）銘柄の完全排除 (TAB2)
+                    # ====================================================================
+                    # サイドバーのスイッチがONの場合、全データ（full_df）から銘柄ごとに営業日数をカウントし、
+                    # 最大取得日数の80%（祝日考慮のスマート判定）未満の銘柄を物理的に削除する
+                    if st.session_state.get("f5_ipo", False):
+                        counts = full_df['Code'].value_counts()
+                        if not counts.empty:
+                            max_days = counts.max()
+                            threshold = int(max_days * 0.8) # 最大日数の8割を合格ラインとする
+                            
+                            valid_ipo_codes = counts[counts >= threshold].index
+                            full_df = full_df[full_df['Code'].isin(valid_ipo_codes)]
+                            
+                            st.write(f"🛡️ IPOフィルター稼働：データ生存期間 {threshold} 日未満の銘柄を排除しました（生存: {len(valid_ipo_codes)}/{len(counts)} 銘柄）")
+                    # ====================================================================
 
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
@@ -2342,7 +2351,7 @@ with tab2:
                         "val_min_raw": float(trading_val_min) * 100_000_000,            
                         "high_prox_ratio": 1.0 - (float(p_high_prox) / 100.0),          
                         "vol_spike": float(p_vol_spike),                                
-                        "body_ratio": float(p_body_ratio) / 100.0                       
+                        "body_ratio": float(p_body_ratio) / 100.0                        
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
@@ -2351,9 +2360,18 @@ with tab2:
                     m_map = globals().get('master_map_t2', globals().get('master_map', {}))
                     m_targets = [c for c, m in m_map.items() if any(k in str(m.get('Market', '')) for k in target_keywords)] if m_map else full_df['Code'].unique()
 
-                    # 🚨 防弾パッチ：日付型の統一、必須カラム確認、設定値の不整合修正
+                # 🚨 防弾パッチ：日付型の統一とインデント構造の維持
                 full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
                 
+                # ====================================================================
+                # 📊 開発参謀パッチ：取得できた「実際の日数」を可視化表示 (TAB2)
+                # ====================================================================
+                acquired_days = full_df['Date'].nunique()
+                msg1 = f"✔️ 第1段階完了：兵站確保 [{t_fetch - t_global_start:.2f}秒] 📊 取得成功データ: {acquired_days}日分"
+                st.write(msg1)
+                st.session_state.tab2_time_log.append(msg1)
+                # ====================================================================
+
                 # 必須カラムチェック（これが欠けている場合は即時終了）
                 if not all(col in full_df.columns for col in ['Date', 'AdjC', 'Code']):
                     debug_logs.append("⚠️ TAB2フィルターエラー：必須株価データ(Date, AdjC, Code)が欠損")
@@ -2592,11 +2610,9 @@ with tab2:
                 m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 防衛線</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 トリガー</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
-# ==============================================================================
+    # ==============================================================================
     # モードB：💎 潜伏（Stealth）モード
     # ==============================================================================
-
-
 # --- 7.5. タブコンテンツ (TAB3: 潜伏) ---
 with tab3:
     st.markdown('<h3 style="font-size: 24px;">💎 【潜伏】2026式・マクロ連動スキャン</h3>', unsafe_allow_html=True)
