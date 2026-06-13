@@ -719,9 +719,9 @@ def detect_sakata_patterns(df):
         if all(c[i] < o[i] for i in range(-3, 0)) and all(c[i] < c[i-1] for i in range(-2, 0)):
             patterns.append({"date": d[-1], "label": "【酒田・黒三兵】", "text": "🔴 【酒田・黒三兵】高値圏での崩壊合図。暴落の狼煙。即時撤退。", "color": "#ef5350", "type": "bear"})
         
-        gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
-        if all(g > 0 for g in gaps) and c[-1] > c[-4]:
-            patterns.append({"date": d[-1], "label": "【酒田・買三空】", "text": "🔴 【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
+        # 厳格検知：3回連続で「当日の高値」が「前日の安値」を下回る（完全な下落窓）
+        if all(h[i] < l[i-1] for i in range(-3, 0)):
+            patterns.append({"date": d[-1], "label": "【酒田・売三空】", "text": "🟢 【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#26a69a", "type": "bull"})
 
     if is_low_zone:
         if check_oversold_ultimate(df):
@@ -729,9 +729,9 @@ def detect_sakata_patterns(df):
         if all(c[i] > o[i] for i in range(-3, 0)) and all(c[i] > c[i-1] for i in range(-2, 0)):
             patterns.append({"date": d[-1], "label": "【酒田・赤三兵】", "text": "🟢 【酒田・赤三兵】安値圏からの狼煙。底打ち反転。追撃準備。", "color": "#26a69a", "type": "bull"})
             
-        gaps = [o[i] - c[i-1] if o[i] > c[i-1] else c[i-1] - o[i] for i in range(-3, 0)]
-        if all(g > 0 for g in gaps) and c[-1] < c[-4]:
-            patterns.append({"date": d[-1], "label": "【酒田・売三空】", "text": "🟢 【酒田・売り三空】三度の窓。売り枯れの極み。反転狙撃好機。", "color": "#26a69a", "type": "bull"})
+        # 厳格検知：3回連続で「当日の安値」が「前日の高値」を上回る（完全な上昇窓）
+        if all(l[i] > h[i-1] for i in range(-3, 0)):
+            patterns.append({"date": d[-1], "label": "【酒田・買三空】", "text": "🔴 【酒田・買い三空】最終噴出。過熱の極致。利確の急所。", "color": "#ef5350", "type": "bear"})
 
     if check_double_bottom(df.tail(31)) and is_low_zone:
         patterns.append({"date": d[-1], "label": "【酒田・二重底】", "text": "🟢 【酒田・二重底】底堅い反転波形を確認。底打ちの最終局面。狙撃準備。", "color": "#26a69a", "type": "bull"})
