@@ -1125,9 +1125,8 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
-    # 🚨 開発参謀パッチ：Lightプラン専用クルーズ制御
-    # 4部隊の並列突撃を解き、単縦陣（1部隊）で確実に行軍させます
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as exe:
+    # 🚨 開発参謀パッチ：3部隊による「限界突破」並列突撃に変更
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()
@@ -1151,24 +1150,19 @@ def get_hist_data_cached(key):
     return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 Lightプラン専用ブレーキ（1.05秒に1回＝約57回/分 に抑えて制限を絶対回避）
-    time.sleep(1.05)
-    
-    for attempt in range(4): # リトライ回数を少し余裕を持たせる
+    # 🚨 無条件の「巡航ブレーキ」を撤廃（待機ゼロで突撃）
+    for attempt in range(4):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
             if r.status_code == 200:
                 raw_json = r.json()
                 data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
                 if not data: return None
-                
-                temp_df = pd.DataFrame(data)
-                return temp_df
+                return pd.DataFrame(data)
             
             elif r.status_code == 429:
-                # 🚨 万が一制限に触れた場合は、回復のため長めに待機
-                print(f"⚠️ J-Quants 制限到達 (429) - 待機中... [{dt}]")
-                time.sleep(10.0)
+                # 🚨 オートブレーキ機構：壁に激突（制限到達）した時だけ5秒間息を潜める
+                time.sleep(5.0)
             else:
                 return None
         except:
