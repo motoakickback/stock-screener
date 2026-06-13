@@ -545,16 +545,6 @@ def calc_vector_indicators(df):
     if df is None or df.empty or len(df) < 2:
         return df
 
-    # ====================================================================
-    # 🚨 追加防衛線：IPO（データ不足）銘柄の強制除外ロジック
-    # ====================================================================
-    # サイドバーのIPO除外スイッチがON、かつデータ（営業日）が200日未満の場合は
-    # 空のデータフレームを返却し、一切のテクニカル計算を行わずに後続処理でドロップさせる
-    if st.session_state.get("f5_ipo", False) and len(df) < 200:
-        import pandas as pd
-        return pd.DataFrame() 
-    # ====================================================================
-
     # 動的な列名取得（すれ違い防止回路）
     close_col = 'AdjC' if 'AdjC' in df.columns else 'Close'
     high_col = 'AdjH' if 'AdjH' in df.columns else 'High'
