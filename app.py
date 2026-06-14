@@ -2330,18 +2330,18 @@ with tab2:
     p_body_ratio = col_t2_6.number_input("ローソク足実体比率 (%)", value=float(st.session_state.get('tab2_body_ratio', 70.0)), step=5.0, format="%.1f", key="tab2_body_ratio")
 
     # ==========================================================
-        # 🎯 開発参謀パッチ：新・強襲プレフィルター（感度調整UIパネル）
-        # ※必ずスキャン実行ボタン（st.button）の「外側・上部」に配置します
-        # ==========================================================
-        with st.expander("⚙️ ブレイク前夜レーダー：スキャン感度調整", expanded=False):
-            st.markdown("<div style='font-size: 0.85em; color: #a0a0a0; margin-bottom: 10px;'>※ 上流の網を広げ、後段の「鉄の掟（TAB4）」で厳格に裁くための緩めの初期値です。</div>", unsafe_allow_html=True)
-            c_s1, c_s2, c_s3 = st.columns(3)
-            with c_s1:
-                ui_reach_min = st.number_input("📉 高値までの距離(下限) %", value=-5.0, step=0.5, format="%.1f", help="直近高値から何%下まで許容するか") / 100.0
-            with c_s2:
-                ui_reach_max = st.number_input("📈 高値ブレイク許容(上限) %", value=2.0, step=0.5, format="%.1f", help="直近高値を何%上抜けまで許容するか") / 100.0
-            with c_s3:
-                ui_atr_ratio = st.number_input("🗜️ 収縮率 (実体≦1ATRのX倍)", value=0.8, step=0.1, format="%.1f", help="値が大きいほど緩い判定になります")
+    # 🎯 開発参謀パッチ：新・強襲プレフィルター（感度調整UIパネル）
+    # ※必ずスキャン実行ボタン（st.button）の「外側・上部」に配置します
+    # ==========================================================
+    with st.expander("⚙️ ブレイク前夜レーダー：スキャン感度調整", expanded=False):
+        st.markdown("<div style='font-size: 0.85em; color: #a0a0a0; margin-bottom: 10px;'>※ 上流の網を広げ、後段の「鉄の掟（TAB4）」で厳格に裁くための緩めの初期値です。</div>", unsafe_allow_html=True)
+        c_s1, c_s2, c_s3 = st.columns(3)
+        with c_s1:
+            ui_reach_min = st.number_input("📉 高値までの距離(下限) %", value=-5.0, step=0.5, format="%.1f", help="直近高値から何%下まで許容するか") / 100.0
+        with c_s2:
+            ui_reach_max = st.number_input("📈 高値ブレイク許容(上限) %", value=2.0, step=0.5, format="%.1f", help="直近高値を何%上抜けまで許容するか") / 100.0
+        with c_s3:
+            ui_atr_ratio = st.number_input("🗜️ 収縮率 (実体≦1ATRのX倍)", value=0.8, step=0.1, format="%.1f", help="値が大きいほど緩い判定になります")
 
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
         try: save_settings() 
