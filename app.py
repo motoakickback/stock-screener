@@ -2375,7 +2375,9 @@ with tab2:
                     rsi_penalty = st.session_state.get('rsi_penalty', 0)
                     effective_rsi_limit = float(rsi_lim) - rsi_penalty
 
-                    # 🚨 古い変数への依存を排除し、新センサーの変数を注入
+                    # =========================================================================
+                    # 🚀 兵站結線：UIパラメータをスキャン用辞書(config_t2)へ完全同期・注入
+                    # =========================================================================
                     config_t2 = {
                         "f1_min": float(st.session_state.get("f1_min", 0)), "f1_max": float(st.session_state.get("f1_max", 99999)),
                         "f2_m30": 999.0, "f3_drop": -999.0,        
@@ -2385,12 +2387,15 @@ with tab2:
                         "gigi_codes": [c.strip() for c in str(st.session_state.get("gigi_input", "")).split(",") if c.strip()],
                         "f12_ex_overvalued": st.session_state.get("f12_ex_overvalued", False),
                         "tactics": st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)"),
-                        "f_vol_min": -1.0, "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
+                        "f_vol_min": float(st.session_state.get("f_vol_min", 0.5)), # 🎯 ここを修正！サイドバーと直結
+                        "sl_c": float(st.session_state.get("bt_sl_c", 8.0)),
                         "val_min_raw": float(trading_val_min) * 100_000_000,
                         "ui_reach_min": ui_reach_min,
                         "ui_reach_max": ui_reach_max,
                         "ui_atr_ratio": ui_atr_ratio
                     }
+
+                    m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
 
                     m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
