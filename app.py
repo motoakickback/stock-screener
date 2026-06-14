@@ -2081,7 +2081,7 @@ with tab1:
         st.markdown("<b style='color: #4da6ff; font-size: 0.9em;'>① 基本足切り境界条件</b>", unsafe_allow_html=True)
         col_t1_1, col_t1_2, col_t1_3 = st.columns(3)
         with col_t1_1:
-            rsi_lim = st.number_input("📉 RSI上限（足切り）", value=int(st.session_state.get('tab1_rsi_limit', 50)), step=5, key="tab1_rsi_limit")
+            rsi_lim = st.number_input("📉 RSI上限（足切り）", value=int(st.session_state.get('tab1_rsi_limit', 65)), step=5, key="tab1_rsi_limit")
         with col_t1_2:
             vol_lim = st.number_input("📊 最低出来高（5日平均）", value=int(st.session_state.get('tab1_vol_limit', 50000)), step=5000, key="tab1_vol_limit")
         with col_t1_3:
