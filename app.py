@@ -189,6 +189,20 @@ components.html(
     btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
     btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
     btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+
+    // 🎯 開発参謀パッチ：ステルス（ホバー透過）機能の追加
+    btn.style.opacity = '0.15'; // 普段は透明度15%で背景を透過させ、邪魔にならないようにする
+    btn.style.transition = 'opacity 0.3s ease'; // ふわっと表示させるアニメーション
+
+    // カーソルが近付いた（乗った）らハッキリ見えるようにする
+    btn.onmouseenter = function() {
+        this.style.opacity = '1.0';
+    };
+    // カーソルが離れたら再び気配を消す
+    btn.onmouseleave = function() {
+        this.style.opacity = '0.15';
+    };
+
     btn.onclick = function() {
         window.parent.scrollTo({top: 0, behavior: 'smooth'});
         const containers = parentDoc.querySelectorAll('div, main, section');
