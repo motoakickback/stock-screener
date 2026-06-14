@@ -2396,8 +2396,6 @@ with tab2:
                     }
 
                     m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
-
-                    m_mode = "大型" if "大型株" in st.session_state.get("preset_market", "") else "中小型"
                     target_keywords = ['プライム','一部'] if m_mode=="大型" else ['スタンダード','グロース','新興','JASDAQ']
 
                     m_map = globals().get('master_map_t2', globals().get('master_map', {}))
