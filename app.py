@@ -2319,10 +2319,9 @@ with tab2:
 
     # =========================================================================
     # ⚙️ 新・強襲スナイパーコンソール：パラメータ一括統合パネル
-    # 古い順張り指標をパージし、「ブレイク前夜」ハントに必要な設定のみを一箇所に集約
     # =========================================================================
     with st.expander("⚙️ 強襲レーダー：ブレイク前夜スキャン設定", expanded=True):
-        st.markdown("<div style='font-size: 0.85em; color: #a0a0a0; margin-bottom: 15px;'>上流の索敵網を設定します。ここで広く捕獲し、後段の「鉄の掟（TAB4）」で精密トリアージを行います。</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 0.85em; color: #a0a0a0; margin-bottom: 15px;'>上流の索敵網を設定します。ここで広く捕獲し、後段の「鉄の掟（TAB4）」で精密トリアージを行います。<br><b style='color:#ff4b4b;'>※危険銘柄（IPO・赤字・仕手等）のパージは、左側サイドバーの「共通フィルター」が自動適用されます。</b></div>", unsafe_allow_html=True)
         
         # --- 第1列：基本流動性・過熱度チェック ---
         st.markdown("<b style='color: #4da6ff; font-size: 0.9em;'>① 基本足切り境界条件</b>", unsafe_allow_html=True)
@@ -2346,20 +2345,9 @@ with tab2:
         with c_s3:
             ui_atr_ratio = st.number_input("🗜️ エネルギー収縮率 (実体≦X倍ATR)", value=0.8, step=0.1, format="%.1f", help="ローソク足の実体が14日ATRの何倍以下で煮詰まっているか")
 
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-
-        # --- 第3列：ディフェンスフィルター（除外・防衛スイッチ） ---
-        st.markdown("<b style='color: #ff4b4b; font-size: 0.9em;'>③ 危険個体・自動パージフィルター</b>", unsafe_allow_html=True)
-        c_f1, c_f2, c_f3 = st.columns(3)
-        with c_f1:
-            ui_f6_risk = st.checkbox("🛡️ 仕手・仕込み・危険銘柄の自動除外", value=True)
-            ui_f5_ipo = st.checkbox("👶 IPO直後（上場1年未満）の除外", value=True)
-        with c_f2:
-            ui_f11_ex_wave3 = st.checkbox("🌊 既に3倍以上暴騰した大波の除外", value=True)
-        with c_f3:
-            ui_f12_ex_overvalued = st.checkbox("💀 経常赤字・業績致命傷の除外", value=True)
-
+    # =========================================================================
     # 🚀 兵站結線：UIパラメータをスキャン用辞書(config_t2)へ完全同期・注入
+    # =========================================================================
     config_t2 = {
         "f_vol_min": float(ui_f_vol_min),
         "rsi_lim": int(ui_rsi_lim),
@@ -2367,10 +2355,11 @@ with tab2:
         "ui_reach_min": float(ui_reach_min),
         "ui_reach_max": float(ui_reach_max),
         "ui_atr_ratio": float(ui_atr_ratio),
-        "f6_risk": bool(ui_f6_risk),
-        "f5_ipo": bool(ui_f5_ipo),
-        "f11_ex_wave3": bool(ui_f11_ex_wave3),
-        "f12_ex_overvalued": bool(ui_f12_ex_overvalued),
+        # 🚨 サイドバーの共通設定（セッションステート）を直接参照するよう配線を修正
+        "f6_risk": st.session_state.get("f6_risk", False),
+        "f5_ipo": st.session_state.get("f5_ipo", False),
+        "f11_ex_wave3": st.session_state.get("f11_ex_wave3", False),
+        "f12_ex_overvalued": st.session_state.get("f12_ex_overvalued", False),
         "gigi_codes": [c.strip() for c in str(st.session_state.get("gigi_input", "")).split(",") if c.strip()],
         "sl_c": float(st.session_state.get("bt_sl_c", 8.0))
     }
