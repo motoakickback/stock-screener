@@ -2329,6 +2329,20 @@ with tab2:
     p_vol_spike = col_t2_5.number_input("出来高急増スパイク (倍)", value=float(st.session_state.get('tab2_vol_spike', 1.5)), step=0.1, format="%.1f", key="tab2_vol_spike")
     p_body_ratio = col_t2_6.number_input("ローソク足実体比率 (%)", value=float(st.session_state.get('tab2_body_ratio', 70.0)), step=5.0, format="%.1f", key="tab2_body_ratio")
 
+    # ==========================================================
+        # 🎯 開発参謀パッチ：新・強襲プレフィルター（感度調整UIパネル）
+        # ※必ずスキャン実行ボタン（st.button）の「外側・上部」に配置します
+        # ==========================================================
+        with st.expander("⚙️ ブレイク前夜レーダー：スキャン感度調整", expanded=False):
+            st.markdown("<div style='font-size: 0.85em; color: #a0a0a0; margin-bottom: 10px;'>※ 上流の網を広げ、後段の「鉄の掟（TAB4）」で厳格に裁くための緩めの初期値です。</div>", unsafe_allow_html=True)
+            c_s1, c_s2, c_s3 = st.columns(3)
+            with c_s1:
+                ui_reach_min = st.number_input("📉 高値までの距離(下限) %", value=-5.0, step=0.5, format="%.1f", help="直近高値から何%下まで許容するか") / 100.0
+            with c_s2:
+                ui_reach_max = st.number_input("📈 高値ブレイク許容(上限) %", value=2.0, step=0.5, format="%.1f", help="直近高値を何%上抜けまで許容するか") / 100.0
+            with c_s3:
+                ui_atr_ratio = st.number_input("🗜️ 収縮率 (実体≦1ATRのX倍)", value=0.8, step=0.1, format="%.1f", help="値が大きいほど緩い判定になります")
+
     if st.button("🚀 強襲開始", key="btn_scan_t2_macro_physical_lock", type="primary"):
         try: save_settings() 
         except NameError: pass
@@ -2434,18 +2448,31 @@ with tab2:
                     st.write(msg2)
                     st.session_state.tab2_time_log.append(msg2)
 
+                    # ==========================================================
+                    # 🚀 UIで設定したパラメータを並列スレッド(cfg)へ安全に注入
+                    # ==========================================================
+                    config_t2["ui_reach_min"] = ui_reach_min
+                    config_t2["ui_reach_max"] = ui_reach_max
+                    config_t2["ui_atr_ratio"] = ui_atr_ratio
+
                     def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
                         import pandas as pd
                         c_str = str(code)[:4]
+                        
+                        # 終値の取得
                         c_vals = group['AdjC'].values
                         lc = float(c_vals[-1])
 
+                        # 🚨 共通・基本フィルター（リスク・IPO・急騰波除外）
                         if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
                         if cfg.get("f5_ipo"):
                             first_date = group['Date'].min()
                             if (l_date - first_date).days < 350: return None
                         if cfg.get("f11_ex_wave3"):
                             if lc > (float(c_vals.min()) * 3.0): return None
+
+                        # データ不足は足切り
+                        if len(group) < 25: return None
 
                         # 🚨 エンジン強制起動！（実数ATRの生成）
                         group_df = group.tail(30).copy().ffill().bfill()
@@ -2459,16 +2486,12 @@ with tab2:
 
                         rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
                         
-                        # 🚨 実数ATRを用いた正確なボラティリティ計算
+                        # ボラティリティ下限・RSI過熱フィルター
                         vol_pct = (real_atr / lc * 100) if lc > 0 else 0
-                        
                         if vol_pct < cfg.get("f_vol_min", -1.0): return None
                         if rsi > cfg.get("rsi_lim", 70): return None
 
-                        if len(group) < 25: return None
-
-                        # ▼▼▼ ココにあったファンダメンタルズ取得(get_fundamentals)を撤去し、下部へ移動 ▼▼▼
-
+                        # 🚨 流動性（売買代金）フィルター
                         v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group_df.columns), 'Volume')
                         if v_col_name not in group_df.columns: return None
                         
@@ -2476,46 +2499,54 @@ with tab2:
                         group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
                         if group_df['avg_value_5'].iloc[-1] < cfg.get("val_min_raw", 0): return None
 
-                        group_df['recent_high'] = group_df['AdjH'].shift(1).rolling(window=20, min_periods=1).max()
-                        rec_high = group_df['recent_high'].iloc[-1]
-                        if pd.isna(rec_high) or lc < (rec_high * cfg.get("high_prox_ratio", 1.0)): return None
+                        # ==========================================================
+                        # 🎯 新・強襲プレフィルター：ブレイク前夜（スレッドセーフ仕様）
+                        # ==========================================================
+                        h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
+                        l_vals = group_df['AdjL'].values if 'AdjL' in group_df.columns else c_vals
+                        
+                        # 直近14日高値(h14)と安値(l14)の取得
+                        h14 = float(h_vals[-14:].max())
+                        l14 = float(l_vals[-14:].min())
 
-                        group_df['avg_volume_5'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
-                        avg_vol_5 = group_df['avg_volume_5'].iloc[-1]
-                        curr_vol = group_df[v_col_name].iloc[-1]
-                        if pd.isna(avg_vol_5) or avg_vol_5 <= 0 or curr_vol <= (avg_vol_5 * cfg.get("vol_spike", 1.0)): return None
+                        # 【条件1：抵抗線への接近判定（UI連動）】
+                        reach_min = cfg.get("ui_reach_min", -0.05)
+                        reach_max = cfg.get("ui_reach_max", 0.02)
+                        reach_rate = ((lc - h14) / h14) if h14 > 0 else 0
+                        
+                        if not (reach_min <= reach_rate <= reach_max):
+                            return None
 
-                        group_df['candle_range'] = group_df['AdjH'] - group_df['AdjL']
-                        group_df['body_range'] = group_df['AdjC'] - group_df['AdjL']
-                        c_range = group_df['candle_range'].iloc[-1]
-                        b_range = group_df['body_range'].iloc[-1]
-
-                        if c_range > 0:
-                            if (b_range / c_range) < cfg.get("body_ratio", 0): return None
-                        elif c_range < 0:
+                        # 【条件2：ボラティリティの収縮判定（UI連動）】
+                        atr_ratio = cfg.get("ui_atr_ratio", 0.8)
+                        if 'AdjO' in group_df.columns:
+                            o_val = group_df['AdjO'].iloc[-1]
+                        elif 'Open' in group_df.columns:
+                            o_val = group_df['Open'].iloc[-1]
+                        else:
+                            o_val = group_df['AdjC'].iloc[-2] if len(group_df) > 1 else lc
+                            
+                        body_range = abs(lc - float(o_val))
+                        if body_range > (real_atr * atr_ratio):
                             return None
 
                         # ==========================================================
-                        # 🚀 開発参謀パッチ：重いファンダメンタルズ通信を「最終審査」に配置
-                        # 軽いテクニカル審査を全て通過したエリート銘柄にだけ通信を行うことで、
-                        # 112秒かかっていた演算時間を数秒レベルまで圧縮します
+                        # 🚀 重いファンダメンタルズ通信を「最終審査」に配置
                         # ==========================================================
                         if cfg.get("f12_ex_overvalued"):
                             f_data = get_fundamentals(c_str)
                             if f_data and (f_data.get("op", 0) or 0) < 0: return None
-                        # ==========================================================
 
-                        t_rank, t_color, t_score, t_desc = "S+🎯", "#ff5252", 100, "鉄壁5連装条件クリア"
+                        # 判定ステータス
+                        t_rank, t_color, t_score, t_desc = "S級⚡", "#ffd700", 80, "ブレイク前夜（収縮検知）"
                         gc_days = 0 
-                        h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
-                        h14 = float(h_vals[-14:].max())
 
                         return {
                             'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
                             'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                            'GC_Days': gc_days, 'h14': h14, 
-                            'ATR_Standard': real_atr,  # 🚨 TAB4マトリクス用
-                            'atr': real_atr,           # 🚨 TAB4マトリクス互換用
+                            'GC_Days': gc_days, 'h14': h14, 'l14': l14, 
+                            'ATR_Standard': real_atr,
+                            'atr': real_atr,
                             'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
                             'T_Desc': t_desc
                         }
