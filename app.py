@@ -173,22 +173,41 @@ if st.session_state.get("last_sys_cache_key") != current_sys_cache_key:
     force_load_saved_settings()
 # =========================================================
 
-# --- 🚁 司令部へ帰還ボタン ---
+# --- 🚁 司令部へ帰還ボタン（ステルス仕様） ---
 components.html(
     """
+    <style>
+        #sniper-return-btn {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            z-index: 2147483647;
+            background-color: #1e1e1e;
+            color: #26a69a;
+            border: 1px solid #26a69a;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+            /* 普段は透明度を下げて視界の邪魔にならないようにする */
+            opacity: 0.2;
+            transition: opacity 0.3s ease;
+        }
+        /* カーソルが近づいた時だけくっきり表示 */
+        #sniper-return-btn:hover {
+            opacity: 1.0;
+        }
+    </style>
     <script>
     const parentDoc = window.parent.document;
     const oldBtn = parentDoc.getElementById('sniper-return-btn');
     if (oldBtn) { oldBtn.remove(); }
+    
     const btn = parentDoc.createElement('button');
     btn.id = 'sniper-return-btn';
     btn.innerHTML = '🚁 司令部へ帰還';
-    btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
-    btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#26a69a';
-    btn.style.border = '1px solid #26a69a'; btn.style.padding = '12px 20px';
-    btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
-    btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
-    btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+    
     btn.onclick = function() {
         window.parent.scrollTo({top: 0, behavior: 'smooth'});
         const containers = parentDoc.querySelectorAll('div, main, section');
