@@ -1226,89 +1226,122 @@ def get_triage_info(macd_hist, macd_hist_prev, rsi, lc=0, bt=0, mode="待伏", g
             
     return "C👁️", "#616161", 1, macd_t
 
-def get_assault_triage_info(gc_days, lc, rsi_v, df_chart, is_strict=False):
+def get_assault_triage_info(gc_days, lc, h14, l14, atr, df_chart, sl_limit_pct=8.0, is_strict=False):
+    """
+    【強襲モード専用】狙撃手仕様トリアージ判定エンジン
+    勝率70%・RR1:2を厳守し、高値掴みの遅行性欠陥をパージした完全改修版。
+    """
+    # データ整合性チェック
     if df_chart is None or df_chart.empty:
-        return "圏外 💀", "#424242", 0, ""
+        return "圏外 💀", "#424242", 0, "<div>データ不足による判定不可</div>"
 
-    has_top_trap = False
+    msg_html = ""
+    score = 0
+    rejection_reasons = []
+
+    # ==============================================================================
+    # 1. 資金管理・リスクリワード算出 (RR 1:2)
+    # ==============================================================================
+    ep = float(h14)  # エントリー価格：直近高値（ブレイクポイント）
+    sl = float(l14)  # 損切りライン：起点安値
+    risk = ep - sl
+
+    # 異常値の除外（リスク0以下は算出不能として即時パージ）
+    if risk <= 0:
+        return "圏外 💀", "#424242", 0, "<div>⚠️ リスク算出不可（スイングハイ・ロウのデータ異常）</div>"
+
+    tp2 = ep + (risk * 2.0)  # 利確目標(TP2)：リスク1に対してリターン2
+    sl_pct = (risk / ep) * 100.0 if ep > 0 else 100.0
+
+    # ==============================================================================
+    # 2. 絶対遵守ルール（鉄の掟）による厳格な棄却フィルタリング
+    # ==============================================================================
+
+    # ① 【GCタイミングの厳格化】
+    # 発生当日(0)または明日確定見込み(-1以下)のみ許可。1日以上経過は全て「遅行性」として棄却。
+    if gc_days > 0:
+        rejection_reasons.append(f"GCタイミング遅延（発生から {gc_days} 日経過）")
+
+    # ② 【ボラティリティ未発散フィルター】
+    # 現在の価格から起点安値までの上昇幅が1ATRを超過している場合は、既に発散済み（高値掴み）として棄却。
+    rise_width = float(lc) - sl
+    if rise_width > float(atr):
+        rejection_reasons.append(f"ボラティリティ発散済（上昇幅 {rise_width:,.1f}円 ＞ 1ATR {atr:,.1f}円）")
+
+    # ③ 【SL最大損失率の制限】
+    # 算出されたSLが許容限度（デフォルト8.0%）を超える場合は、資金管理ルール違反として強制棄却。
+    if sl_pct > sl_limit_pct:
+        rejection_reasons.append(f"資金管理ルール違反（SL幅 -{sl_pct:.1f}% ＞ 許容限度 -{sl_limit_pct:.1f}%）")
+
+    # ④ 【酒田五法・危険シグナルの除外】
+    # 天井圏や警戒を示すシグナルが1つでも点灯していれば即座に無効化。
     try:
-        sakata_s = detect_sakata_patterns(df_chart)
-        sakata_texts = "".join([p.get('text', '') for p in sakata_s])
-        if any(x in sakata_texts for x in ["三山", "三尊", "二重天井", "買い三空", "二重頂", "三尊天井"]):
-            has_top_trap = True
-    except Exception:
-        pass
+        sakata_patterns = detect_sakata_patterns(df_chart)
+        danger_keywords = ['三山', '三尊', '黒三兵', '三空', '天井', '警戒', '下落', '包み線', 'はらみ線', '三羽烏']
+        danger_signals = [p for p in sakata_patterns if any(k in p for k in danger_keywords)]
+        if danger_signals:
+            rejection_reasons.append(f"危険シグナル点灯（{', '.join(danger_signals)}）")
+    except Exception as e:
+        # レーダー異常時はいかなる場合もクラッシュを許さず、安全側に倒して圏外とする。
+        rejection_reasons.append("酒田五法レーダー解析エラー（安全装置作動）")
 
-    if has_top_trap:
-        return "圏外 💀", "#424242", 0, "天井地雷検知(排除)"
-
-    tactics = st.session_state.get("sidebar_tactics", "⚖️ バランス (掟達成率 ＞ 到達度)")
-    is_assault_mode = "狙撃優先" in tactics
-    
-    row = df_chart.iloc[-1]
-    ma5, ma25 = 0.0, 0.0
-    
-    for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
-        if k in row and pd.notna(row[k]):
-            ma5 = float(row[k])
-            break
-            
-    for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
-        if k in row and pd.notna(row[k]):
-            ma25 = float(row[k])
-            break
-
-    if gc_days > 0 and ma5 > 0 and ma25 > 0 and (ma5 < ma25):
-        gc_days = 0
-
-    if gc_days <= 0:
-        if len(df_chart) >= 2 and ma5 > 0 and ma25 > 0:
-            prev_row = df_chart.iloc[-2]
-            prev_ma5 = 0.0
-            
-            for k in ['MA5', 'ma5', 'MA_5', 'ma_5', 'SMA5', 'sma5']:
-                if k in prev_row and pd.notna(prev_row[k]):
-                    prev_ma5 = float(prev_row[k])
-                    break
-            
-            dist_pct = ((ma5 / ma25) - 1) * 100
-            
-            is_pre_gc = (
-                (ma5 < ma25) and                         
-                (lc > ma5) and (lc > ma25) and           
-                (-2.0 <= dist_pct < 0.0) and             
-                (ma5 > prev_ma5)                         
-            )
-            
-            if is_pre_gc:
-                return "S+🎯", "#ff5252", 95, "明日GC見込(激熱)"
-                
-        return "圏外 💀", "#424242", 0, ""
-
-    score = 50 
-
-    if ma25 > 0:
-        if lc >= ma25 * 0.95: score += 10
-        if lc >= ma25: score += 10
-    
-    if is_assault_mode:
-        if 50 <= rsi_v <= 75: score += 15
+    # ==============================================================================
+    # 3. 判定結果のステータス割り当てとUI出力生成
+    # ==============================================================================
+    if rejection_reasons:
+        # 1つでも棄却条件に抵触した場合は強制的に「圏外💀」
+        status = "圏外 💀"
+        color = "#424242"
+        score = 0
+        
+        # 棄却理由のリストHTML生成
+        reasons_li = "".join([f"<li style='margin-bottom: 3px;'>{r}</li>" for r in rejection_reasons])
+        
+        msg_html = f"""
+        <div style='background-color: #2a1e1e; padding: 10px; border-radius: 5px; border-left: 4px solid #ff4b4b; font-size: 0.9em; margin-top: 5px;'>
+            <b style='color: #ff4b4b;'>🛡️ 強襲シグナル強制棄却（スナイパールール抵触）</b>
+            <ul style='color: #e0e0e0; margin-top: 5px; margin-bottom: 0; padding-left: 20px;'>
+                {reasons_li}
+            </ul>
+        </div>
+        """
     else:
-        if 50 <= rsi_v <= 65: score += 10
-        elif rsi_v > 70: score -= 20
+        # 全てのフィルタを通過（狙撃条件クリア）
+        status = "S級⚡ (強襲)" if gc_days == 0 else "A級🔥 (狙撃待機)"
+        color = "#ffd700" if gc_days == 0 else "#ff8c00"
+        score = 80 if gc_days == 0 else 65
 
-    score -= (gc_days - 1) * 5
+        msg_html = f"""
+        <div style='background-color: #1e2a1e; padding: 10px; border-radius: 5px; border-left: 4px solid #00ff00; margin-bottom: 10px; font-size: 0.9em;'>
+            <b style='color: #00ff00;'>🎯 強襲スナイパー・ロックオン</b><br>
+            <span style='color: #e0e0e0;'>
+            ・GCステータス: {'本日発生 (0日目)' if gc_days == 0 else '明日確定水準 (-1日目)'}<br>
+            ・ボラティリティ: 未発散（上昇幅 {rise_width:,.1f}円 ≦ 1ATR {atr:,.1f}円）
+            </span>
+        </div>
+        <div style='background-color: #1c1c28; padding: 10px; border-radius: 5px; border-left: 4px solid #4da6ff; font-size: 0.9em;'>
+            <b style='color: #4da6ff;'>📐 資金管理・リスクリワード (RR 1:2)</b>
+            <table style='width: 100%; text-align: left; margin-top: 8px; border-collapse: collapse;'>
+                <tr style='border-bottom: 1px solid #333;'>
+                    <th style='padding: 4px; color: #a0a0a0;'>エントリー (EP)</th>
+                    <td style='padding: 4px; color: #ffffff; text-align: right;'><b>{ep:,.0f} 円</b></td>
+                    <td style='padding: 4px; color: #a0a0a0; font-size: 0.85em;'>(高値ブレイク)</td>
+                </tr>
+                <tr style='border-bottom: 1px solid #333;'>
+                    <th style='padding: 4px; color: #a0a0a0;'>損切ライン (SL)</th>
+                    <td style='padding: 4px; color: #ff4b4b; text-align: right;'><b>{sl:,.0f} 円</b></td>
+                    <td style='padding: 4px; color: #ff4b4b; font-size: 0.85em;'>(-{sl_pct:.1f}%)</td>
+                </tr>
+                <tr>
+                    <th style='padding: 4px; color: #a0a0a0;'>利確目標 (TP2)</th>
+                    <td style='padding: 4px; color: #00ff00; text-align: right;'><b>{tp2:,.0f} 円</b></td>
+                    <td style='padding: 4px; color: #00ff00; font-size: 0.85em;'>(+{sl_pct*2:.1f}%)</td>
+                </tr>
+            </table>
+        </div>
+        """
 
-    if score >= (85 if is_strict else 80): 
-        rank, bg = "S🔥", "#26a69a"
-    elif score >= (65 if is_strict else 60): 
-        rank, bg = "A⚡", "#ed6c02"
-    elif score >= (45 if is_strict else 40): 
-        rank, bg = "B📈", "#0288d1"
-    else: 
-        rank, bg = "C 💀", "#424242"
-
-    return rank, bg, score, f"GC {gc_days}日目"
+    return status, color, score, msg_html
 
 # ==============================================================================
 # 🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
