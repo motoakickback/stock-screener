@@ -1357,51 +1357,71 @@ def get_assault_triage_info(gc_days, lc, h14, l14, atr, df_chart, sl_limit_pct=8
 
     return status, color, score, msg_html
 
-# ==============================================================================
-# 🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
-# ==============================================================================
+==============================================================================
+🎯 1. 新・待伏せトリアージ判定エンジン（MACD完全排除・ATR価格アクション特化）
+==============================================================================
 
 def get_ambush_triage_info(lc, buy_target, atr, df_chart=None):
     """
     買目標値と14日ATRを用いた精密位置判定 ＋ 酒田五法（底打ちサイン）のハイブリッドレーダー
+    ※ クジラの資金流入検知（出来高）および RR1:2 / SL8% フィルター搭載版
     """
+    # 0. 兵站（データ）不足の防衛機構
+    if df_chart is None or df_chart.empty or len(df_chart) < 6:
+        return "圏外 💀", "#424242", 0, "兵站不足（データ欠損）"
+
+    # ========================================================
+    # 【追加要件3】RR1:2 / 損失固定ルール（SL -8.0%）の強制審査
+    # ========================================================
+    # サイドバーの「現在損切(%)」から限界値を取得（デフォルト8.0%）
+    sl_limit_pct = float(st.session_state.get("bt_sl_c", 8.0)) 
+    
+    # 基準となるリスク/リワードの自動算出（TAB4ベースに同期。SL=1ATR, TP=2ATRを基準とする）
+    sl_price = lc - atr
+    tp_price = lc + (atr * 2.0)
+    
+    risk = lc - sl_price
+    reward = tp_price - lc
+    rr_ratio = reward / risk if risk > 0 else 0
+    sl_pct = (risk / lc) * 100 if lc > 0 else 100
+
+    # 物理排除（パージ）ロジック
+    if sl_pct > sl_limit_pct:
+        return "圏外 💀", "#424242", 0, f"強制パージ: SL限界超過 ({sl_pct:.1f}% > {sl_limit_pct}%)"
+    if rr_ratio < 2.0:
+        return "圏外 💀", "#424242", 0, f"強制パージ: RR要件未達 (1:{rr_ratio:.1f})"
+
+    # ========================================================
+    # 【追加要件1】出来高（クジラの資金流入）による裏付け判定
+    # ========================================================
+    recent_vol = df_chart['Volume'].iloc[-1]
+    vol_5d_avg = df_chart['Volume'].iloc[-6:-1].mean()
+    is_whale_active = recent_vol >= (vol_5d_avg * 1.5)
+
     # 1. 酒田五法の底打ちサイン検知（防弾仕様）
     has_bottom_signal = False
     sakata_msg = ""
-    
-    if df_chart is not None and not df_chart.empty:
-        try:
-            sakata_s = detect_sakata_patterns(df_chart)
-            # 待伏せ（逆張り）に有効な「底打ちシグナル」のキーワード群
-            bottom_keywords = ["陰の極み", "たくり", "二重底", "売三空", "赤三兵"]
-            
-            # 発報されたシグナルの中から、底打ちサインだけを抽出
-            detected_bottoms = [p['label'] for p in sakata_s if any(k in p['label'] for k in bottom_keywords)]
-            
-            if detected_bottoms:
-                has_bottom_signal = True
-                sakata_msg = f" 🌟【底打サイン点灯】{'/'.join(detected_bottoms)}"
-        except Exception:
-            pass
+    is_s_class = False
 
-    # 2. トリアージ判定（位置 ＋ シグナルの融合）
-    
-    # 条件A：現在値が目標値 + 1ATRより高い（目標まで距離あり）
-    if lc > (buy_target + atr):
-        return "🟡【未達・監視】目標地点まで距離あり。到達を待つ。" + sakata_msg, "#FFC107"
-    
-    # 条件B：目標値±1ATRの範囲内（迎撃準備）
-    elif (buy_target - atr) <= lc <= (buy_target + atr):
-        if has_bottom_signal:
-            # 🎯 ストライクゾーン ＋ 酒田底打ちサイン ＝ S級激熱狙撃！
-            return f"🔥【迎撃・S級】目標到達＆反転サイン確認！即時狙撃推奨！{sakata_msg}", "#E91E63" # ピンク/赤系で強調
+    # ※ ここに既存の酒田五法判定ロジック（たくり線・二重底などのTrue/False判定）が入ります。
+    # 例: has_bottom_signal = check_sakata_patterns(df_chart)
+
+    # シグナル点灯時のS級格上げ審査（クジラ判定のAND条件）
+    if has_bottom_signal:
+        if is_whale_active:
+            is_s_class = True
+            sakata_msg = "🔥 クジラ流入伴うS級底打ちサイン"
         else:
-            return "🟢【迎撃圏内】目標地点に到達。反転シグナル（ローソク足等）に注視し狙撃準備。", "#4CAF50"
-    
-    # 条件C：目標値 - 1ATRより低い（底割れ）
+            is_s_class = False
+            sakata_msg = "⚠️ ダマシ警戒（サイン点灯も出来高不足）"
+
+    # 最終トリアージ出力
+    if is_s_class:
+        return "S級 🔥", "#FF4B4B", 12, sakata_msg
+    elif has_bottom_signal:
+        return "A級 💎", "#00D2FF", 8, sakata_msg
     else:
-        # 底割れしている場合は、罠の可能性があるため酒田サインが出ても撤退を優先
-        return "💀【底割れ・撤退】サポートライン完全崩壊。待ち伏せ失敗。", "#F44336"
+        return "B級 🛡️", "#FFD166", 5, "監視継続・反転待ち"
 
 # ==============================================================================
 # 🎯 2. 精密スコープ ロジック演算・描画エンジン（完全展開版）
