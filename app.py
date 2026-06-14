@@ -2245,9 +2245,14 @@ with tab1:
 
                             real_atr = float(atr_val) if atr_val > 0 else float(lc * 0.05)
                             
-                            # 3. 波高（ボラ率）審査
+                            # 3. 波高（1年間高値安値の比率）審査
                             vol_pct = (real_atr / lc * 100) if lc > 0 else 0
-                            if not (cfg.get("f9_min14", 0.0) <= (real_atr / lc) <= cfg.get("f9_max14", 999.0)): return None
+                            max_y = float(np.max(c_vals[-250:])) if len(c_vals) >= 250 else float(np.max(c_vals))
+                            min_y = float(np.min(c_vals[-250:])) if len(c_vals) >= 250 else float(np.min(c_vals))
+                            wave_ratio = (max_y / min_y) if min_y > 0 else 1.0
+                            if not (cfg.get("f9_min14", 0.0) <= wave_ratio <= cfg.get("f9_max14", 999.0)): return None
+                            
+                            # ボラティリティ下限審査
                             if vol_pct < cfg.get("f_vol_min", -1.0): return None
 
                             # 💰 5日平均売買代金流動性チェック
