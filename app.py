@@ -173,56 +173,32 @@ if st.session_state.get("last_sys_cache_key") != current_sys_cache_key:
     force_load_saved_settings()
 # =========================================================
 
-# --- 🚁 司令部へ帰還ボタン（強制表示・右上配置仕様） ---
+# --- 🚁 司令部へ帰還ボタン ---
 components.html(
     """
-    <style>
-        #sniper-return-btn {
-            position: fixed !important;
-            top: 60px !important;    /* 画面右上ヘッダー付近へ移動 */
-            right: 20px !important;
-            z-index: 2147483647 !important;
-            background-color: #1e1e1e !important;
-            color: #26a69a !important;
-            border: 2px solid #26a69a !important;
-            padding: 10px 15px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            font-weight: bold !important;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5) !important;
-            /* 普段はステルス（不透明度0.2） */
-            opacity: 0.2 !important;
-            transition: opacity 0.3s ease !important;
-            display: block !important;
-        }
-        /* マウスホバーで完全表示 */
-        #sniper-return-btn:hover {
-            opacity: 1.0 !important;
-        }
-    </style>
-    <button id="sniper-return-btn">🚁 司令部へ帰還</button>
     <script>
-    (function() {
-        const parentDoc = window.parent.document;
-        // 既存の旧ボタンを確実に全削除
-        const existingBtns = parentDoc.querySelectorAll('#sniper-return-btn');
-        existingBtns.forEach(btn => btn.remove());
-        
-        const btn = parentDoc.getElementById('sniper-return-btn');
-        
-        // ボタンのクリックアクション
-        btn.onclick = function() {
-            window.parent.scrollTo({top: 0, behavior: 'smooth'});
-            const containers = parentDoc.querySelectorAll('div, main, section');
-            containers.forEach(container => {
-                if (container.scrollHeight > container.clientHeight) {
-                    container.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            });
-        };
-        // ボタンを親ドキュメントのbodyへ移動（iframeの壁を越える）
-        parentDoc.body.appendChild(btn);
-    })();
+    const parentDoc = window.parent.document;
+    const oldBtn = parentDoc.getElementById('sniper-return-btn');
+    if (oldBtn) { oldBtn.remove(); }
+    const btn = parentDoc.createElement('button');
+    btn.id = 'sniper-return-btn';
+    btn.innerHTML = '🚁 司令部へ帰還';
+    btn.style.position = 'fixed'; btn.style.bottom = '100px'; btn.style.right = '30px';
+    btn.style.backgroundColor = '#1e1e1e'; btn.style.color = '#26a69a';
+    btn.style.border = '1px solid #26a69a'; btn.style.padding = '12px 20px';
+    btn.style.borderRadius = '8px'; btn.style.cursor = 'pointer';
+    btn.style.fontWeight = 'bold'; btn.style.zIndex = '2147483647';
+    btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.5)';
+    btn.onclick = function() {
+        window.parent.scrollTo({top: 0, behavior: 'smooth'});
+        const containers = parentDoc.querySelectorAll('div, main, section');
+        for (let i = 0; i < containers.length; i++) {
+            if (containers[i].scrollHeight > containers[i].clientHeight) {
+                containers[i].scrollTo({top: 0, behavior: 'smooth'});
+            }
+        }
+    };
+    parentDoc.body.appendChild(btn);
     </script>
     """, height=0, width=0
 )
