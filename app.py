@@ -173,41 +173,40 @@ if st.session_state.get("last_sys_cache_key") != current_sys_cache_key:
     force_load_saved_settings()
 # =========================================================
 
-# --- 🚁 司令部へ帰還ボタン（ステルス仕様） ---
+# --- 🚁 司令部へ帰還ボタン（強制浮上ステルス仕様） ---
 components.html(
     """
     <style>
         #sniper-return-btn {
-            position: fixed;
-            bottom: 100px;
-            right: 30px;
-            z-index: 2147483647;
-            background-color: #1e1e1e;
-            color: #26a69a;
-            border: 1px solid #26a69a;
-            padding: 12px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
-            /* 普段は透明度を下げて視界の邪魔にならないようにする */
-            opacity: 0.2;
-            transition: opacity 0.3s ease;
+            position: fixed !important;
+            bottom: 100px !important;
+            right: 30px !important;
+            z-index: 2147483647 !important;
+            background-color: #1e1e1e !important;
+            color: #26a69a !important;
+            border: 2px solid #26a69a !important;
+            padding: 12px 20px !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8) !important;
+            /* ステルス状態 */
+            opacity: 0.1 !important;
+            transition: opacity 0.3s ease !important;
+            visibility: visible !important;
+            display: block !important;
         }
-        /* カーソルが近づいた時だけくっきり表示 */
+        /* ホバーで強制浮上 */
         #sniper-return-btn:hover {
-            opacity: 1.0;
+            opacity: 1.0 !important;
         }
     </style>
+    <button id="sniper-return-btn">🚁 司令部へ帰還</button>
     <script>
     const parentDoc = window.parent.document;
-    const oldBtn = parentDoc.getElementById('sniper-return-btn');
-    if (oldBtn) { oldBtn.remove(); }
+    const btn = parentDoc.getElementById('sniper-return-btn');
     
-    const btn = parentDoc.createElement('button');
-    btn.id = 'sniper-return-btn';
-    btn.innerHTML = '🚁 司令部へ帰還';
-    
+    // スクリプト側でのクリックイベントバインド
     btn.onclick = function() {
         window.parent.scrollTo({top: 0, behavior: 'smooth'});
         const containers = parentDoc.querySelectorAll('div, main, section');
@@ -217,9 +216,8 @@ components.html(
             }
         }
     };
-    parentDoc.body.appendChild(btn);
     </script>
-    """, height=0, width=0
+    """, height=100, width=200
 )
 
 # --- 2. 認証・通信設定（Connection Poolingの導入） ---
