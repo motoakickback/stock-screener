@@ -2444,118 +2444,122 @@ with tab2:
                         st.session_state.tab2_time_log.append(msg2)
 
                         def scan_unit_t2_parallel(code, group, cfg, v_avg, l_date):
-                            import pandas as pd
-                            c_str = str(code)[:4]
+                        import numpy as np
+                        c_str = str(code)[:4]
+                        
+                        # 終値の取得（軽量NumPy配列化）
+                        c_vals = group['AdjC'].values
+                        if len(c_vals) < 25: return None
+                        lc = float(c_vals[-1])
+
+                        # 🚨 共通・基本フィルター（リスク・急騰波除外）
+                        if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
+                        if cfg.get("f11_ex_wave3"):
+                            if lc > (float(np.min(c_vals)) * 3.0): return None
+
+                        # RSIの取得
+                        try:
+                            rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
+                        except:
+                            rsi = 50.0
+
+                        if rsi > cfg.get("rsi_lim", 70): return None
+
+                        # ==========================================================
+                        # 🚀 開発参謀パッチ：超軽量・OOM回避型 ATR算出エンジン（Pandas非依存）
+                        # ==========================================================
+                        h_vals = group['AdjH'].values if 'AdjH' in group.columns else c_vals
+                        l_vals = group['AdjL'].values if 'AdjL' in group.columns else c_vals
+
+                        # 直近20日分のデータを配列で切り出し（Wilder式ATRの準備）
+                        prev_c = c_vals[-21:-1]
+                        curr_h = h_vals[-20:]
+                        curr_l = l_vals[-20:]
+                        
+                        # True Range(TR)のNumPy高速ベクトル演算
+                        tr1 = curr_h - curr_l
+                        tr2 = np.abs(curr_h - prev_c)
+                        tr3 = np.abs(curr_l - prev_c)
+                        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+
+                        # Wilder式 平滑化（14日ATRを数ミリ秒で算出）
+                        atr_val = np.mean(tr[:14])
+                        for i in range(14, len(tr)):
+                            atr_val = (atr_val * 13 + tr[i]) / 14
+                        real_atr = float(atr_val) if atr_val > 0 else float(lc * 0.05)
+
+                        # ボラティリティ下限フィルター
+                        vol_pct = (real_atr / lc * 100) if lc > 0 else 0
+                        if vol_pct < cfg.get("f_vol_min", -1.0): return None
+
+                        # 🚨 流動性（売買代金）フィルター（超軽量版）
+                        v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group.columns), 'Volume')
+                        if v_col_name not in group.columns: return None
+                        
+                        v_vals = group[v_col_name].values
+                        daily_values = c_vals[-5:] * v_vals[-5:]
+                        avg_value_5 = float(np.mean(daily_values))
+                        if avg_value_5 < cfg.get("val_min_raw", 0): return None
+
+                        # ==========================================================
+                        # 🎯 新・強襲プレフィルター：ブレイク前夜（スレッドセーフ仕様）
+                        # ==========================================================
+                        # 直近14日高値(h14)と安値(l14)の取得
+                        h14 = float(np.max(curr_h[-14:]))
+                        l14 = float(np.min(curr_l[-14:]))
+
+                        # 【条件1：抵抗線への接近判定（UI連動）】
+                        reach_min = cfg.get("ui_reach_min", -0.05)
+                        reach_max = cfg.get("ui_reach_max", 0.02)
+                        reach_rate = ((lc - h14) / h14) if h14 > 0 else 0
+                        
+                        if not (reach_min <= reach_rate <= reach_max):
+                            return None
+
+                        # 【条件2：ボラティリティの収縮判定（UI連動）】
+                        atr_ratio = cfg.get("ui_atr_ratio", 0.8)
+                        if 'AdjO' in group.columns:
+                            o_val = group['AdjO'].values[-1]
+                        elif 'Open' in group.columns:
+                            o_val = group['Open'].values[-1]
+                        else:
+                            o_val = c_vals[-2]
                             
-                            # 終値の取得
-                            c_vals = group['AdjC'].values
-                            lc = float(c_vals[-1])
+                        body_range = abs(lc - float(o_val))
+                        if body_range > (real_atr * atr_ratio):
+                            return None
 
-                            # 🚨 共通・基本フィルター（リスク・急騰波除外）
-                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
-                            if cfg.get("f11_ex_wave3"):
-                                if lc > (float(c_vals.min()) * 3.0): return None
-
-                            # データ不足は足切り
-                            if len(group) < 25: return None
-
-                            # 🚨 エンジン強制起動！（実数ATRの生成）
-                            group_df = group.tail(30).copy().ffill().bfill()
+                        # ==========================================================
+                        # 🚀 重いファンダメンタルズ通信を「最終審査」に配置
+                        # ==========================================================
+                        if cfg.get("f12_ex_overvalued"):
                             try:
-                                group_df = calc_vector_indicators(group_df)
-                            except:
-                                pass # 関数がない場合は後続でエラー回避する
-                            
-                            # 🚨 浄化された実数ATRの取得
-                            if 'ATR_Standard' in group_df.columns and pd.notna(group_df['ATR_Standard'].iloc[-1]):
-                                real_atr = float(group_df['ATR_Standard'].iloc[-1])
-                            elif 'atr' in group_df.columns and pd.notna(group_df['atr'].iloc[-1]):
-                                real_atr = float(group_df['atr'].iloc[-1])
-                            else:
-                                real_atr = float(lc * 0.05)
+                                f_data = get_fundamentals(c_str)
+                                if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                            except: pass
 
-                            # RSIの取得
+                        # 判定ステータス
+                        t_rank, t_color, t_score, t_desc = "S級⚡", "#ffd700", 80, "ブレイク前夜（収縮検知）"
+
+                        return {
+                            'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
+                            'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
+                            'GC_Days': 0, 'h14': h14, 'l14': l14, 
+                            'ATR_Standard': real_atr,
+                            'atr': real_atr,
+                            'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
+                            'T_Desc': t_desc
+                        }
+
+                    results = []
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
+                        for f in concurrent.futures.as_completed(futures):
                             try:
-                                rsi, _dummy_atr, _, hist = get_fast_indicators(c_vals)
-                            except:
-                                rsi = 50.0
-
-                            # ボラティリティ下限・RSI過熱フィルター
-                            vol_pct = (real_atr / lc * 100) if lc > 0 else 0
-                            if vol_pct < cfg.get("f_vol_min", -1.0): return None
-                            if rsi > cfg.get("rsi_lim", 70): return None
-
-                            # 🚨 流動性（売買代金）フィルター
-                            v_col_name = next((c for c in ['AdjustmentVolume', 'Volume', 'volume', 'Vol', 'Vo'] if c in group_df.columns), 'Volume')
-                            if v_col_name not in group_df.columns: return None
-                            
-                            group_df['daily_value'] = group_df[v_col_name] * group_df['AdjC']
-                            group_df['avg_value_5'] = group_df['daily_value'].rolling(window=5, min_periods=1).mean()
-                            if group_df['avg_value_5'].iloc[-1] < cfg.get("val_min_raw", 0): return None
-
-                            # ==========================================================
-                            # 🎯 新・強襲プレフィルター：ブレイク前夜（スレッドセーフ仕様）
-                            # ==========================================================
-                            h_vals = group_df['AdjH'].values if 'AdjH' in group_df.columns else c_vals
-                            l_vals = group_df['AdjL'].values if 'AdjL' in group_df.columns else c_vals
-                            
-                            # 直近14日高値(h14)と安値(l14)の取得
-                            h14 = float(h_vals[-14:].max())
-                            l14 = float(l_vals[-14:].min())
-
-                            # 【条件1：抵抗線への接近判定（UI連動）】
-                            reach_min = cfg.get("ui_reach_min", -0.05)
-                            reach_max = cfg.get("ui_reach_max", 0.02)
-                            reach_rate = ((lc - h14) / h14) if h14 > 0 else 0
-                            
-                            if not (reach_min <= reach_rate <= reach_max):
-                                return None
-
-                            # 【条件2：ボラティリティの収縮判定（UI連動）】
-                            atr_ratio = cfg.get("ui_atr_ratio", 0.8)
-                            if 'AdjO' in group_df.columns:
-                                o_val = group_df['AdjO'].iloc[-1]
-                            elif 'Open' in group_df.columns:
-                                o_val = group_df['Open'].iloc[-1]
-                            else:
-                                o_val = group_df['AdjC'].iloc[-2] if len(group_df) > 1 else lc
-                                
-                            body_range = abs(lc - float(o_val))
-                            if body_range > (real_atr * atr_ratio):
-                                return None
-
-                            # ==========================================================
-                            # 🚀 重いファンダメンタルズ通信を「最終審査」に配置
-                            # ==========================================================
-                            if cfg.get("f12_ex_overvalued"):
-                                try:
-                                    f_data = get_fundamentals(c_str)
-                                    if f_data and (f_data.get("op", 0) or 0) < 0: return None
-                                except: pass
-
-                            # 判定ステータス
-                            t_rank, t_color, t_score, t_desc = "S級⚡", "#ffd700", 80, "ブレイク前夜（収縮検知）"
-                            gc_days = 0 
-
-                            return {
-                                'Code': code, 'lc': float(lc), 'RSI': float(rsi), 
-                                'T_Rank': t_rank, 'T_Color': t_color, 'T_Score': t_score, 
-                                'GC_Days': gc_days, 'h14': h14, 'l14': l14, 
-                                'ATR_Standard': real_atr,
-                                'atr': real_atr,
-                                'avg_vol': int(v_avg), 'vol_pct': float(vol_pct),
-                                'T_Desc': t_desc
-                            }
-
-                        results = []
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
-                            for f in concurrent.futures.as_completed(futures):
-                                try:
-                                    res = f.result()
-                                    if res: results.append(res)
-                                except: pass
+                                res = f.result()
+                                if res: results.append(res)
+                            except: pass
 
                         sorted_raw = sorted(results, key=lambda x: (-x.get('T_Score', 0), x.get('GC_Days', 0)))
                         st.session_state.tab2_scan_results_raw = sorted_raw[:300]
