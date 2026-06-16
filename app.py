@@ -2342,13 +2342,13 @@ with tab1:
                                 'T_Desc': "迎撃圏内（待伏ロックオン）"
                             }
 
-                        # 🚨 開発参謀パッチ：OOM回避のためのチャンク処理エンジンを呼び出す
-                        grouped_data = list(df.groupby('Code'))
+                        # 🚨 修正：チャンク処理エンジンへ「(code, group)のリスト」として正確に渡す
+                        grouped_list = [(name, group) for name, group in df.groupby('Code')]
                         results = execute_chunked_scan(
-                            grouped_data, 
+                            grouped_list, 
                             scan_unit_t1_parallel, 
                             config_t1, 
-                            avg_vols_series,  # ※関数内で .get(c, 0) するよう引数として渡す
+                            avg_vols_series, 
                             latest_date, 
                             max_workers=3, 
                             chunk_size=200
@@ -2687,13 +2687,13 @@ with tab2:
                                 'T_Desc': "ブレイク前夜（収縮検知）"
                             }
 
-                        # 🚨 開発参謀パッチ：OOM回避のためのチャンク処理エンジンを呼び出す
-                        grouped_data = list(df.groupby('Code'))
+                        # 🚨 修正：同じくチャンク処理エンジンへ正確な形式で渡す
+                        grouped_list = [(name, group) for name, group in df.groupby('Code')]
                         results = execute_chunked_scan(
-                            grouped_data, 
+                            grouped_list, 
                             scan_unit_t2_parallel, 
                             config_t2, 
-                            avg_vols_series,  # ※関数内で .get(c, 0) するよう引数として渡す
+                            avg_vols_series, 
                             latest_date, 
                             max_workers=3, 
                             chunk_size=200
