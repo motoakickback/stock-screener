@@ -502,6 +502,39 @@ def render_macro_board():
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
 # --- 3. 共通関数 & 演算エンジン ---
+def execute_chunked_scan(codes_or_groups, process_func, *args, max_workers=3, chunk_size=200):
+    """
+    OOM（メモリ枯渇）を回避するためのマイクロバッチ実行エンジン。
+    引数のリストをchunk_sizeごとに分割し、1チャンク終わるごとに強制GCを発動する。
+    """
+    all_results = []
+    
+    # codes_or_groups は [code1, code2...] または [(code, group), ...] のリストを想定
+    for i in range(0, len(codes_or_groups), chunk_size):
+        chunk = codes_or_groups[i:i + chunk_size]
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            if isinstance(chunk[0], tuple): # (code, group) の場合 (TAB2, TAB3など)
+                futs = [executor.submit(process_func, c, g, *args) for c, g in chunk]
+            else: # code 単体の場合
+                futs = [executor.submit(process_func, c, *args) for c in chunk]
+                
+            for f in concurrent.futures.as_completed(futs):
+                try:
+                    res = f.result()
+                    if res:
+                        if isinstance(res, list):
+                            all_results.extend(res)
+                        else:
+                            all_results.append(res)
+                except Exception:
+                    pass
+                    
+        # 🚨 チャンクごとに役目を終えた一時メモリを強制焼却（ガベージコレクション）
+        gc.collect()
+        
+    return all_results
+    
 def clean_df(df):
     if df is None or df.empty: 
         return pd.DataFrame()
@@ -2309,15 +2342,17 @@ with tab1:
                                 'T_Desc': "迎撃圏内（待伏ロックオン）"
                             }
 
-                        results = []
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
-                            for f in concurrent.futures.as_completed(futures):
-                                try:
-                                    res = f.result()
-                                    if res: results.append(res)
-                                except: pass
+                        # 🚨 開発参謀パッチ：OOM回避のためのチャンク処理エンジンを呼び出す
+                        grouped_data = list(df.groupby('Code'))
+                        results = execute_chunked_scan(
+                            grouped_data, 
+                            scan_unit_t1_parallel, 
+                            config_t1, 
+                            avg_vols_series,  # ※関数内で .get(c, 0) するよう引数として渡す
+                            latest_date, 
+                            max_workers=3, 
+                            chunk_size=200
+                        )
 
                         sorted_raw = sorted(results, key=lambda x: -x.get('T_Score', 0))
                         st.session_state.tab1_scan_results_raw = sorted_raw[:300]
@@ -2652,15 +2687,17 @@ with tab2:
                                 'T_Desc': "ブレイク前夜（収縮検知）"
                             }
 
-                        results = []
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
-                            for f in concurrent.futures.as_completed(futures):
-                                try:
-                                    res = f.result()
-                                    if res: results.append(res)
-                                except: pass
+                        # 🚨 開発参謀パッチ：OOM回避のためのチャンク処理エンジンを呼び出す
+                        grouped_data = list(df.groupby('Code'))
+                        results = execute_chunked_scan(
+                            grouped_data, 
+                            scan_unit_t2_parallel, 
+                            config_t2, 
+                            avg_vols_series,  # ※関数内で .get(c, 0) するよう引数として渡す
+                            latest_date, 
+                            max_workers=3, 
+                            chunk_size=200
+                        )
 
                         sorted_raw = sorted(results, key=lambda x: (-x.get('T_Score', 0), x.get('GC_Days', 0)))
                         st.session_state.tab2_scan_results_raw = sorted_raw[:300]
@@ -2928,14 +2965,16 @@ with tab3:
                     st.write(s_msg2)
                     st.session_state.tab2_time_log_stealth.append(s_msg2)
 
-                    results = []
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        futures = [executor.submit(scan_unit_stealth_parallel, c, g, latest_date, cfg_stealth) for c, g in df.groupby('Code')]
-                        for f in concurrent.futures.as_completed(futures):
-                            try:
-                                res = f.result()
-                                if res: results.append(res)
-                            except: pass
+                    # 🚨 開発参謀パッチ：OOM回避のためのチャンク処理エンジンを呼び出す
+                    grouped_data = list(df.groupby('Code'))
+                    results = execute_chunked_scan(
+                        grouped_data, 
+                        scan_unit_stealth_parallel, 
+                        latest_date, 
+                        cfg_stealth, 
+                        max_workers=3, 
+                        chunk_size=200
+                    )
 
                     st.session_state.tab2_scan_results_stealth = sorted(results, key=lambda x: -x.get('avg_value_5', 0))[:300]
 
