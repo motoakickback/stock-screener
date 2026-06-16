@@ -2248,9 +2248,13 @@ with tab1:
                             lc = float(c_vals[-1])
 
                             # 全軍共通・基本除外ルール
-                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
+                            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
+                                # print(f"DEBUG: {code} 棄却-ルールf6") # コンソールに出力
+                                return None
                             if cfg.get("f11_ex_wave3"):
-                                if lc > (float(np.min(c_vals)) * 3.0): return None
+                                if lc > (float(np.min(c_vals)) * 3.0): 
+                                    # print(f"DEBUG: {code} 棄却-波3超過")
+                                    return None
 
                             try:
                                 rsi, _, _, _ = get_fast_indicators(c_vals)
