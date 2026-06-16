@@ -2346,17 +2346,15 @@ with tab1:
                                 'T_Desc': "迎撃圏内（待伏ロックオン）"
                             }
 
-                        # 🚨 修正：チャンク処理エンジンへ「(code, group)のリスト」として正確に渡す
-                        grouped_list = [(name, group) for name, group in df.groupby('Code')]
-                        results = execute_chunked_scan(
-                            grouped_list, 
-                            scan_unit_t1_parallel, 
-                            config_t1, 
-                            avg_vols_series, 
-                            latest_date, 
-                            max_workers=3, 
-                            chunk_size=200
-                        )
+                        results = []
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                            # 以前の正常な呼び出し形式に戻します
+                            futures = [executor.submit(scan_unit_t1_parallel, c, g, config_t1, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
+                            for f in concurrent.futures.as_completed(futures):
+                                try:
+                                    res = f.result()
+                                    if res: results.append(res)
+                                except: pass
 
                         sorted_raw = sorted(results, key=lambda x: -x.get('T_Score', 0))
                         st.session_state.tab1_scan_results_raw = sorted_raw[:300]
@@ -2691,17 +2689,15 @@ with tab2:
                                 'T_Desc': "ブレイク前夜（収縮検知）"
                             }
 
-                        # 🚨 修正：同じくチャンク処理エンジンへ正確な形式で渡す
-                        grouped_list = [(name, group) for name, group in df.groupby('Code')]
-                        results = execute_chunked_scan(
-                            grouped_list, 
-                            scan_unit_t2_parallel, 
-                            config_t2, 
-                            avg_vols_series, 
-                            latest_date, 
-                            max_workers=3, 
-                            chunk_size=200
-                        )
+                        results = []
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                            # 以前の正常な呼び出し形式に戻します
+                            futures = [executor.submit(scan_unit_t2_parallel, c, g, config_t2, avg_vols_series.get(c, 0), latest_date) for c, g in df.groupby('Code')]
+                            for f in concurrent.futures.as_completed(futures):
+                                try:
+                                    res = f.result()
+                                    if res: results.append(res)
+                                except: pass
 
                         sorted_raw = sorted(results, key=lambda x: (-x.get('T_Score', 0), x.get('GC_Days', 0)))
                         st.session_state.tab2_scan_results_raw = sorted_raw[:300]
