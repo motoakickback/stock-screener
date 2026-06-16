@@ -2249,11 +2249,11 @@ with tab1:
 
                             # 全軍共通・基本除外ルール
                             if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
-                                # print(f"DEBUG: {code} 棄却-ルールf6") # コンソールに出力
+                                print(f"DEBUG: {code} 棄却-ルールf6") # コンソールに出力
                                 return None
                             if cfg.get("f11_ex_wave3"):
                                 if lc > (float(np.min(c_vals)) * 3.0): 
-                                    # print(f"DEBUG: {code} 棄却-波3超過")
+                                    print(f"DEBUG: {code} 棄却-波3超過")
                                     return None
 
                             try:
