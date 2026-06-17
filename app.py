@@ -1753,7 +1753,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         focus_y_range = [y_min - y_margin, y_max + y_margin]
 
     # ==========================================
-    # 🎯 3. レイアウトおよび「モード切替スイッチ」の配備
+    # 🎯 3. レイアウトおよび「白背景・黒文字スイッチ」の配備
     # ==========================================
     fig.update_layout(
         template='plotly_dark', height=650, margin=dict(l=0, r=0, t=40, b=80),
@@ -1766,7 +1766,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[view_start_date, df_plot['Date'].max() + timedelta(days=2)]),
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11)),
         
-        # 🚨 ここがクラッシュの原因でした。direction="right" に修正完了！
+        # 🚨 スイッチの色彩仕様を変更（背景：白 ✕ 文字：漆黒）
         updatemenus=[
             dict(
                 type="buttons",
@@ -1777,9 +1777,9 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 xanchor="left",
                 yanchor="top",
                 pad=dict(t=0, r=0, b=0, l=0),
-                bgcolor="rgba(30, 30, 30, 0.8)",
-                bordercolor="rgba(255, 255, 255, 0.2)",
-                font=dict(color="#eee", size=12),
+                bgcolor="rgba(255, 255, 255, 0.95)",  # 🚨 視認性の高いクリアホワイトに換装
+                bordercolor="rgba(0, 0, 0, 0.4)",      # 枠線も黒系で縁取り
+                font=dict(color="#111111", size=12),   # 🚨 文字盤を漆黒（白以外）にロック
                 buttons=[
                     dict(label="✋ 左右移動（過去に遡る）", method="relayout", args=[{"dragmode": "pan"}]),
                     dict(label="🔍 範囲選択（囲んで拡大）", method="relayout", args=[{"dragmode": "zoom"}])
