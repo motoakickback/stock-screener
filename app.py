@@ -1722,17 +1722,23 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         except Exception:
             continue
 
+    # ==========================================
+    # 🎯 オートフォーカス・パッチ（Y軸動的スケール）適用
+    # ==========================================
     fig.update_layout(
         template='plotly_dark', height=650, margin=dict(l=0, r=0, t=30, b=80),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+        hovermode="x unified",
+        dragmode='pan', # 🎯 マウスドラッグでチャートを移動（パン）できるように変更
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
-        xaxis_rangeslider_visible=True, xaxis_rangeslider_thickness=0.04,
-        yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False),
+        xaxis_rangeslider_visible=False, # 🚨 追従を妨害していた元凶（レンジスライダー）をパージ
+        yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False, zeroline=False),
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]),
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True}, key=f"{chart_key}_{int(time.time()*1000)}")
+    # 🎯 config に 'scrollZoom': True を追加し、マウスホイールでの拡大縮小を有効化
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True, 'scrollZoom': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
 # --- 司令官が先ほど追加した共通マスタ定義 ---
 master_df = load_master()
