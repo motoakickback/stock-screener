@@ -1648,7 +1648,12 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     if df is None or df.empty:
         return
 
+    # ==========================================
+    # 🎯 修正1：描画データのクリッピング（直近約半年）
+    # 過去の極端な暴落・暴騰データを物理的にカットし、Y軸の平坦化を根本から防ぐ
+    # ==========================================
     df_plot = df.copy()
+    df_plot = df_plot.tail(130).reset_index(drop=True) 
     
     if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
     if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
@@ -1723,21 +1728,21 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             continue
 
     # ==========================================
-    # 🎯 オートフォーカス・パッチ（Y軸動的スケール）適用
+    # 🎯 修正2：レイアウト設定（Box Zoom解禁版）
     # ==========================================
     fig.update_layout(
         template='plotly_dark', height=650, margin=dict(l=0, r=0, t=30, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified",
-        dragmode='pan', # 🎯 マウスドラッグでチャートを移動（パン）できるように変更
+        dragmode='zoom', # 🚨 マウスドラッグで「四角く囲んだ範囲」をX・Y共にピッタリ拡大するモード
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
-        xaxis_rangeslider_visible=False, # 🚨 追従を妨害していた元凶（レンジスライダー）をパージ
+        xaxis_rangeslider_visible=False, 
+        # 🚨 固定レンジを撤回し、autorange=True に復帰。データが直近半年分なので美しくスケールされる
         yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False, zeroline=False),
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[df_plot['Date'].max() - timedelta(days=65), df_plot['Date'].max() + timedelta(days=2)]),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'), 
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
     )
 
-    # 🎯 config に 'scrollZoom': True を追加し、マウスホイールでの拡大縮小を有効化
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True, 'scrollZoom': True}, key=f"{chart_key}_{int(time.time()*1000)}")
 
 # --- 司令官が先ほど追加した共通マスタ定義 ---
