@@ -1649,8 +1649,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         return
 
     # ==========================================
-    # 🎯 修正1：1年分（約250営業日）のデータを裏側に完全装填
-    # 過去1年分への遡り（パン）を可能にするため、データを十分に確保します
+    # 🎯 1. 1年分（約250営業日）のデータを裏側に完全装填
     # ==========================================
     df_plot = df.copy()
     df_plot = df_plot.tail(250).reset_index(drop=True) 
@@ -1728,23 +1727,20 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             continue
 
     # ==========================================
-    # 🎯 修正2：初期フォーカス範囲（直近65日間）の適正Y軸を精密計算
+    # 🎯 2. 初期表示（直近65日間）の最適Y軸スケール計算
     # ==========================================
     view_start_date = df_plot['Date'].max() - timedelta(days=65)
     df_recent = df_plot[df_plot['Date'] >= view_start_date]
 
     focus_y_range = None
     if not df_recent.empty:
-        # 直近65日間の最高値・最安値をベースにする
         y_min = df_recent['AdjL'].min()
         y_max = df_recent['AdjH'].max()
 
-        # 目標株価が画面外に消えないよう計算に統合
         if targ_p and not pd.isna(targ_p) and targ_p > 0:
             y_min = min(y_min, targ_p)
             y_max = max(y_max, targ_p)
 
-        # 直近65日間の移動平均線も収まるように調整
         for col in ['MA5', 'MA25', 'MA75']:
             if col in df_recent.columns:
                 ma_min = df_recent[col].min()
@@ -1752,29 +1748,58 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
                 if pd.notna(ma_min): y_min = min(y_min, ma_min)
                 if pd.notna(ma_max): y_max = max(y_max, ma_max)
 
-        # 上下に10%の美しい余白（遊び）を持たせる
         y_margin = (y_max - y_min) * 0.1
         if y_margin == 0: y_margin = y_max * 0.1
         focus_y_range = [y_min - y_margin, y_max + y_margin]
 
     # ==========================================
-    # 🎯 修正3：レイアウト適用（1年保持・65日フォーカス・移動対応）
+    # 🎯 3. レイアウトおよび「モード切替スイッチ」の配備
     # ==========================================
     fig.update_layout(
-        template='plotly_dark', height=650, margin=dict(l=0, r=0, t=30, b=80),
+        template='plotly_dark', height=650, margin=dict(l=0, r=0, t=40, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified",
-        dragmode='pan', # 🎯 マウスドラッグで過去へ遡れる「パン（移動）」モード
+        dragmode='pan', # 🎯 デフォルトは過去へ遡れる「左右移動（パン）」
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False, 
-        # 🎯 初期表示のY軸に、直近65日ベースの最適クローズアップレンジを適用
         yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', range=focus_y_range, fixedrange=False, zeroline=False),
-        # 🎯 初期表示のX軸の視界を「直近65日間」にロック（過去データは左側のタイムラインに装填済み）
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[view_start_date, df_plot['Date'].max() + timedelta(days=2)]),
-        legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
+        legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11)),
+        
+        # 🎯 チャートの左上に「移動（Pan）」「範囲選択（Zoom）」を切り替える戦術スイッチをインジェクション
+        updatemenus=[
+            dict(
+                type="buttons",
+                direction="horizontal",
+                active=0,
+                x=0.01,
+                y=1.08,
+                xanchor="left",
+                yanchor="top",
+                pad=dict(t=0, r=0, b=0, l=0),
+                bgcolor="rgba(30, 30, 30, 0.8)",
+                bordercolor="rgba(255, 255, 255, 0.2)",
+                font=dict(color="#eee", size=12),
+                buttons=[
+                    dict(label="✋ 左右移動（過去に遡る）", method="relayout", args=[{"dragmode": "pan"}]),
+                    dict(label="🔍 範囲選択（囲んで拡大）", method="relayout", args=[{"dragmode": "zoom"}])
+                ]
+            )
+        ]
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True, 'scrollZoom': True}, key=f"{chart_key}_{int(time.time()*1000)}")
+    # 🎯 config の displayModeBar を True に解放し、標準の拡大・縮小・リセットボタンも上部に常駐化
+    st.plotly_chart(
+        fig, 
+        use_container_width=True, 
+        config={
+            'displayModeBar': True,        # 🚨 モードバーを解放
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d'], # 不要な投げ縄ツール等は除外
+            'responsive': True, 
+            'scrollZoom': True
+        }, 
+        key=f"{chart_key}_{int(time.time()*1000)}"
+    )
 
 # --- 司令官が先ほど追加した共通マスタ定義 ---
 master_df = load_master()
