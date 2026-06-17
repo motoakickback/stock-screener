@@ -1759,18 +1759,18 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         template='plotly_dark', height=650, margin=dict(l=0, r=0, t=40, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified",
-        dragmode='pan', # 🎯 デフォルトは過去へ遡れる「左右移動（パン）」
+        dragmode='pan', 
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False, 
         yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', range=focus_y_range, fixedrange=False, zeroline=False),
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[view_start_date, df_plot['Date'].max() + timedelta(days=2)]),
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11)),
         
-        # 🎯 チャートの左上に「移動（Pan）」「範囲選択（Zoom）」を切り替える戦術スイッチをインジェクション
+        # 🚨 ここがクラッシュの原因でした。direction="right" に修正完了！
         updatemenus=[
             dict(
                 type="buttons",
-                direction="horizontal",
+                direction="right", 
                 active=0,
                 x=0.01,
                 y=1.08,
@@ -1788,13 +1788,12 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         ]
     )
 
-    # 🎯 config の displayModeBar を True に解放し、標準の拡大・縮小・リセットボタンも上部に常駐化
     st.plotly_chart(
         fig, 
         use_container_width=True, 
         config={
-            'displayModeBar': True,        # 🚨 モードバーを解放
-            'modeBarButtonsToRemove': ['lasso2d', 'select2d'], # 不要な投げ縄ツール等は除外
+            'displayModeBar': True,        
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d'], 
             'responsive': True, 
             'scrollZoom': True
         }, 
