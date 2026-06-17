@@ -1649,11 +1649,11 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
         return
 
     # ==========================================
-    # 🎯 修正1：描画データのクリッピング（直近約半年）
-    # 過去の極端な暴落・暴騰データを物理的にカットし、Y軸の平坦化を根本から防ぐ
+    # 🎯 修正1：1年分（約250営業日）のデータを裏側に完全装填
+    # 過去1年分への遡り（パン）を可能にするため、データを十分に確保します
     # ==========================================
     df_plot = df.copy()
-    df_plot = df_plot.tail(130).reset_index(drop=True) 
+    df_plot = df_plot.tail(250).reset_index(drop=True) 
     
     if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
     if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
@@ -1728,18 +1728,49 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             continue
 
     # ==========================================
-    # 🎯 修正2：レイアウト設定（Box Zoom解禁版）
+    # 🎯 修正2：初期フォーカス範囲（直近65日間）の適正Y軸を精密計算
+    # ==========================================
+    view_start_date = df_plot['Date'].max() - timedelta(days=65)
+    df_recent = df_plot[df_plot['Date'] >= view_start_date]
+
+    focus_y_range = None
+    if not df_recent.empty:
+        # 直近65日間の最高値・最安値をベースにする
+        y_min = df_recent['AdjL'].min()
+        y_max = df_recent['AdjH'].max()
+
+        # 目標株価が画面外に消えないよう計算に統合
+        if targ_p and not pd.isna(targ_p) and targ_p > 0:
+            y_min = min(y_min, targ_p)
+            y_max = max(y_max, targ_p)
+
+        # 直近65日間の移動平均線も収まるように調整
+        for col in ['MA5', 'MA25', 'MA75']:
+            if col in df_recent.columns:
+                ma_min = df_recent[col].min()
+                ma_max = df_recent[col].max()
+                if pd.notna(ma_min): y_min = min(y_min, ma_min)
+                if pd.notna(ma_max): y_max = max(y_max, ma_max)
+
+        # 上下に10%の美しい余白（遊び）を持たせる
+        y_margin = (y_max - y_min) * 0.1
+        if y_margin == 0: y_margin = y_max * 0.1
+        focus_y_range = [y_min - y_margin, y_max + y_margin]
+
+    # ==========================================
+    # 🎯 修正3：レイアウト適用（1年保持・65日フォーカス・移動対応）
     # ==========================================
     fig.update_layout(
         template='plotly_dark', height=650, margin=dict(l=0, r=0, t=30, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
         hovermode="x unified",
-        dragmode='zoom', # 🚨 マウスドラッグで「四角く囲んだ範囲」をX・Y共にピッタリ拡大するモード
+        dragmode='pan', # 🎯 マウスドラッグで過去へ遡れる「パン（移動）」モード
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=False, 
-        # 🚨 固定レンジを撤回し、autorange=True に復帰。データが直近半年分なので美しくスケールされる
-        yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, fixedrange=False, zeroline=False),
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'), 
+        # 🎯 初期表示のY軸に、直近65日ベースの最適クローズアップレンジを適用
+        yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', range=focus_y_range, fixedrange=False, zeroline=False),
+        # 🎯 初期表示のX軸の視界を「直近65日間」にロック（過去データは左側のタイムラインに装填済み）
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[view_start_date, df_plot['Date'].max() + timedelta(days=2)]),
         legend=dict(orientation="h", yanchor="top", y=-0.32, xanchor="center", x=0.5, font=dict(color="#eee", size=11))
     )
 
