@@ -1723,7 +1723,7 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             continue
 
     fig.update_layout(
-        template='plotly_dark', height=500, margin=dict(l=0, r=0, t=30, b=80),
+        template='plotly_dark', height=650, margin=dict(l=0, r=0, t=30, b=80),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified",
         hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.95)", font_size=13, font_family="Consolas"),
         xaxis_rangeslider_visible=True, xaxis_rangeslider_thickness=0.04,
