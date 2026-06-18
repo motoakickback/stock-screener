@@ -4609,11 +4609,13 @@ with tab5:
                                             if 'check_head_shoulders' in globals() and not check_head_shoulders(win_30): score += 1
                                             if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
                                             
-                                            # 🚨 クジラ流入判定（出来高）をスコアに直結
-                                            vol_prev = prev.get('Volume', 0)
-                                            avg_vol = win_14['Volume'].mean() if len(win_14) > 0 else 1
-                                            if avg_vol > 0 and (vol_prev / avg_vol) >= sim_ambush_vol:
-                                                score += 1
+                                            # 🚨 クジラ流入判定（出来高）をスコアに直結：列揺れ吸収の完全防弾化
+                                            v_col = next((c for c in ['AdjVo', 'Volume', 'volume', 'Vo', 'v'] if c in win_14.columns), None)
+                                            if v_col:
+                                                vol_prev = prev.get(v_col, 0)
+                                                avg_vol = win_14[v_col].mean() if len(win_14) > 0 else 1
+                                                if avg_vol > 0 and (vol_prev / avg_vol) >= sim_ambush_vol:
+                                                    score += 1
                                                 
                                             score += 3 # Base score compensation
                                             
