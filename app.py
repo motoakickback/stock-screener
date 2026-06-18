@@ -4345,12 +4345,21 @@ with tab5:
     if "bt_sl_i" not in st.session_state: st.session_state.bt_sl_i = 8
     if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
     if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
+    
+    # 戦術特化パラメータの初期化
+    if "sim_ambush_fib" not in st.session_state: st.session_state.sim_ambush_fib = 50.0
+    if "sim_ambush_vol" not in st.session_state: st.session_state.sim_ambush_vol = 1.5
+    if "sim_assault_rsi" not in st.session_state: st.session_state.sim_assault_rsi = 75
+    if "sim_assault_atr" not in st.session_state: st.session_state.sim_assault_atr = 1.0
+    if "sim_stealth_val" not in st.session_state: st.session_state.sim_stealth_val = 3.0
+    if "sim_stealth_vol" not in st.session_state: st.session_state.sim_stealth_vol = 0.8
+    if "sim_stealth_atr" not in st.session_state: st.session_state.sim_stealth_atr = 0.6
 
     st.markdown("### 🎯 演習用・売買執行パラメータ")
     st.caption("※この設定は【演習】戦術シミュレータ内でのみ有効であり、広域索敵ルールには影響を与えません。")
     
+    # 🚨 ここに「利確」「損切」「期限」のすべてを一元化しました
     col_bt1, col_bt2, col_bt3 = st.columns(3)
-    # 🚨 二重指定バグを100%回避するため value 引数を排除し、変更時に即座に自動セーブを走らせます
     with col_bt1:
         st.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=extended_save_settings, help="演習における1エントリーの基準株数")
         st.number_input("猶予期限(日)", step=1, key="limit_d", on_change=extended_save_settings, help="シグナル検知から何営業日以内にエントリーするか")
@@ -4361,12 +4370,11 @@ with tab5:
         st.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=extended_save_settings, help="エントリー直後の防衛ライン幅")
         st.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=extended_save_settings, help="トリアージ追従用の現行損切幅")
 
-    st.markdown("---") # 既存のシミュレータUIへ接続
+    st.markdown("---") 
     
     # --- 🛡️ 状態初期化・物理ロック回路 ---
     tab4_defaults = {
         "bt_mode_sim_v2": "🌐 【待伏】鉄の掟 (押し目狙撃)",
-        "sim_tp_val": 10, "sim_sl_val": 8, "sim_limit_d_val": 4, "sim_sell_d_val": 10,
         "sim_push_r_val": 50.0,
         "sim_pass_req_val": 7, 
         "sim_rsi_lim_ambush_val": 45,
@@ -4387,19 +4395,13 @@ with tab5:
     # 🚨 兵站補給パッチ：モード切り替えを検知した瞬間、対象モードの固有デフォルト値を強制再装填する
     if st.session_state.prev_mode_for_sync != current_mode:
         if "待伏" in current_mode:
-            st.session_state.sim_limit_d_val = 4
-            st.session_state.sim_sell_d_val = 10
             st.session_state.sim_push_r_val = 50.0
             st.session_state.sim_pass_req_val = 7
             st.session_state.sim_rsi_lim_ambush_val = 45
         elif "潜伏" in current_mode:
-            st.session_state.sim_limit_d_val = 5
-            st.session_state.sim_sell_d_val = 15
             st.session_state.sim_stealth_vol_val = 10
             st.session_state.sim_rsi_lim_stealth_val = 65
         else: # 強襲
-            st.session_state.sim_limit_d_val = 3
-            st.session_state.sim_sell_d_val = 5
             st.session_state.sim_rsi_lim_assault_val = 70
             st.session_state.sim_time_risk_val = 5
         st.session_state.prev_mode_for_sync = current_mode
@@ -4417,7 +4419,7 @@ with tab5:
         except: pass
 
     col_b1, col_b2 = st.columns([1, 1.8])
-    T4_FILE = f"saved_t4_codes_{user_id}.txt"
+    T4_FILE = f"saved_t4_codes_{user_id if 'user_id' in locals() else 'default'}.txt"
     default_t4 = "7839\n6614"
     if os.path.exists(T4_FILE):
         try:
@@ -4437,32 +4439,46 @@ with tab5:
         
     with col_b2:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
-        st.info("※ 戦術切替時、買い・売り期限および各固有値は自動で最適デフォルト値に同期されます。")
-        cp1, cp2, cp3, cp4 = st.columns(4)
+        st.info("※ 戦術切替時、各固有値は自動で最適デフォルト値に同期されます。")
         
-        # 🚨 各入力ボックスに value 引数を明示し、セッション値の揮発を完全に防御
-        cp1.number_input("🎯 利確目標(%)", min_value=1, value=int(st.session_state.get('sim_tp_val', 10)), key="sim_tp_val")
-        cp2.number_input("🛡️ 損切目安(%)", min_value=1, value=int(st.session_state.get('sim_sl_val', 8)), key="sim_sl_val")
-        cp3.number_input("⏳ 買い期限(日)", min_value=1, value=int(st.session_state.get('sim_limit_d_val', 4)), key="sim_limit_d_val")
-        cp4.number_input("⏳ 売り期限(日)", min_value=1, value=int(st.session_state.get('sim_sell_d_val', 10)), key="sim_sell_d_val")
+        # 🚨🚨 重複していた cp1～cp4 の「利確・損切・期限」フォームを完全にパージ（削除）しました！ 🚨🚨
         
         st.divider()
         if "待伏" in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 🌐 【待伏}シミュレータ固有設定")
+            st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
             ct1.number_input("📉 押し目待ち(%)", min_value=0.0, max_value=100.0, value=float(st.session_state.get('sim_push_r_val', 50.0)), step=0.1, format="%.1f", key="sim_push_r_val")
             ct2.number_input("掟クリア要求数", min_value=1, max_value=9, value=int(st.session_state.get('sim_pass_req_val', 7)), step=1, key="sim_pass_req_val")
             ct3.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_ambush_val', 45)), step=5, key="sim_rsi_lim_ambush_val")
+            
+            # 追加パラメーター（フィボナッチやクジラ判定などを追加可能）
+            st.markdown("###### ＋高度なチューニング")
+            cx1, cx2 = st.columns(2)
+            cx1.number_input("買目標値フィボナッチ (%)", min_value=0.0, max_value=100.0, step=5.0, key="sim_ambush_fib", on_change=extended_save_settings)
+            cx2.number_input("クジラ流入判定 (倍)", min_value=1.0, max_value=5.0, step=0.1, key="sim_ambush_vol", on_change=extended_save_settings)
+
         elif "潜伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 💎 【潜伏】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
             ct1.number_input("ボラティリティ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
             ct2.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
+            
+            st.markdown("###### ＋高度なチューニング")
+            cx1, cx2, cx3 = st.columns(3)
+            cx1.number_input("売買代金下限 (億円)", min_value=0.1, max_value=50.0, step=0.5, key="sim_stealth_val", on_change=extended_save_settings)
+            cx2.number_input("出来高過疎比率 (倍)", min_value=0.1, max_value=2.0, step=0.1, key="sim_stealth_vol", on_change=extended_save_settings)
+            cx3.number_input("値幅収縮比率 (ATR倍)", min_value=0.1, max_value=2.0, step=0.1, key="sim_stealth_atr", on_change=extended_save_settings)
+
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
             ct1.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_assault_val', 70)), step=5, key="sim_rsi_lim_assault_val")
-            ct2.number_input("時間リスク上限（到達予想日数）", min_value=1, max_value=100, value=int(st.session_state.get('sim_time_risk_val', 5)), step=1, key="sim_time_risk_val")
+            ct2.number_input("時間リスク上限(日)", min_value=1, max_value=100, value=int(st.session_state.get('sim_time_risk_val', 5)), step=1, key="sim_time_risk_val", help="到達予想日数")
+            
+            st.markdown("###### ＋高度なチューニング")
+            cx1, cx2 = st.columns(2)
+            cx1.number_input("エントリーRSI許容限界", min_value=50, max_value=90, step=1, key="sim_assault_rsi", on_change=extended_save_settings)
+            cx2.number_input("ボラ未発散限界 (ATR倍)", min_value=0.5, max_value=3.0, step=0.1, key="sim_assault_atr", on_change=extended_save_settings)
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
@@ -4471,10 +4487,11 @@ with tab5:
         if not t_codes: 
             st.warning("有効なコードが見つかりません。")
         else:
-            sim_tp = float(st.session_state.sim_tp_val)
-            sim_sl_i = float(st.session_state.sim_sl_val)
-            sim_limit_d = int(st.session_state.sim_limit_d_val)
-            sim_sell_d = int(st.session_state.sim_sell_d_val)
+            # 🚨 司令官が指定した「共通UI（上部）」から値を引っ張ってくるように修正
+            sim_tp = float(st.session_state.bt_tp)
+            sim_sl_i = float(st.session_state.bt_sl_i)
+            sim_limit_d = int(st.session_state.limit_d)
+            sim_sell_d = int(st.session_state.bt_sell_d)
             sim_push_r = float(st.session_state.sim_push_r_val)
 
             # 🚨 3モードの判定
@@ -4487,7 +4504,6 @@ with tab5:
                 p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
                 p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
                 p1_name, p2_name = "Push率(%)", "要求Score"
-            # 🚨 潜伏モード時の最適化範囲設定
             elif is_stealth:
                 sim_stealth_vol = int(st.session_state.sim_stealth_vol_val)
                 sim_rsi_lim_stealth = int(st.session_state.sim_rsi_lim_stealth_val)
@@ -4516,12 +4532,10 @@ with tab5:
                         df = pd.DataFrame(bars_data)
                         if df.empty: continue
 
-                        # 1. マルチインデックスの破壊（yfinance対策）
                         if isinstance(df.columns, pd.MultiIndex):
                             df.columns = df.columns.get_level_values(0)
                         df.columns = [str(col[0]) if isinstance(col, (tuple, list)) else str(col) for col in df.columns]
 
-                        # 2. カラム名の正規化とマッピング
                         norm_cols = {col: str(col).lower().replace(" ", "").replace("_", "") for col in df.columns}
                         df = df.rename(columns=norm_cols)
 
@@ -4533,12 +4547,8 @@ with tab5:
                             'adjvo': 'AdjVo', 'adjustmentvolume': 'AdjVo'
                         }
                         df = df.rename(columns=col_map)
-
-                        # 3. 重複カラムの完全排除
                         df = df.loc[:, ~df.columns.duplicated(keep='first')]
 
-                        # 4. 🚨【最重要・メモリ保護】文字型を数値型(float32)に強制キャストし、計算エンジンの爆発を防ぐ！
-                        # float64ではなく、司令官の設計思想である float32 を厳守します。
                         numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjVo']
                         for col in numeric_cols:
                             if col in df.columns:
@@ -4548,15 +4558,9 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません")
                             continue
 
-                        # 5. 司令官の浄化処理を実行
                         clean_data = clean_df(df)
-                        
-                        # 万が一の重複排除（保険）
                         clean_data = clean_data.loc[:, ~clean_data.columns.duplicated(keep='first')]
 
-                        # 🚨 無意味になった if 'AdjC' not in ... の冗長な変換ブロックを完全焼却！
-                        
-                        # 必須カラムが揃っているかどうかの最終チェックだけ残す
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                         if not all(col in clean_data.columns for col in target_cols):
                             debug_logs.append(f"[{c}] ❌ 必須株価データが欠損しています")
@@ -4564,7 +4568,6 @@ with tab5:
 
                         clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
 
-                        # 6. 🚨【最終防壁】クレンジング後も念のため float32 を再保証
                         for col in target_cols:
                             clean_data[col] = clean_data[col].astype('float32')
                         
@@ -4572,7 +4575,6 @@ with tab5:
                             debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(clean_data)}日）")
                             continue
 
-                        # 7. 計算エンジンへ投入（float32の純粋な1次元データのみが到達）
                         processed_df = calc_vector_indicators(clean_data)
                         
                         if processed_df is not None and isinstance(processed_df, pd.DataFrame):
@@ -4583,9 +4585,7 @@ with tab5:
                     except Exception as e: 
                         debug_logs.append(f"[{c}] ❌ 内部処理中に致命的エラー: {e}")
                         continue
-            # ====================================================================
 
-            # 🚨 物理修正箇所：データがゼロだった場合、「なぜゼロになったのか」を大々的に画面に表示する
             if not preloaded_data:
                 st.error("🚨 兵站エラー：解析可能なデータが取得できませんでした。以下のデバッグレポートを確認してください。")
                 with st.expander("🛠️ 【参謀用デバッグレポート】 なぜデータが棄却されたのか？", expanded=True):
@@ -4595,7 +4595,6 @@ with tab5:
                         for log in debug_logs:
                             st.info(log)
             else:
-                # 🚨 全体を try-except で囲み、エラー発生時の完全クラッシュを防ぐ防波堤
                 try:
                     opt_results = []
                     total_iterations = len(p1_range) * len(p2_range)
@@ -4640,14 +4639,12 @@ with tab5:
                                                     exec_p = min(td['AdjO'], bt_val)
                                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
                                                     
-                                        # 🚨 潜伏モードのバックテスト判定ロジック
                                         elif is_stealth:
                                             rsi_prev = prev.get('RSI', 50)
                                             volatility_pct = ((h14 - l14) / l14) * 100
                                             
-                                            # 指定したボラティリティ収縮率(%)以下かつRSI上限以下の場合のみ狙撃
                                             if volatility_pct <= t_p1 and rsi_prev <= sim_rsi_lim_stealth:
-                                                trigger_price = h14 + (atr_prev * 0.1) # 14日高値を僅かに超えたらブレイク判定
+                                                trigger_price = h14 + (atr_prev * 0.1) 
                                                 if td['AdjH'] >= trigger_price:
                                                     exec_limit = trigger_price + (atr_prev * 0.5)
                                                     exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
@@ -4675,7 +4672,7 @@ with tab5:
                                                     
                                     else: # ポジション保有中の決済ロジック
                                         bp = pos['b_p']; held = i - pos['b_i']; sp = 0
-                                        current_tp = sim_tp if is_ambush else t_p2 # 強襲・潜伏の場合は t_p2 が利確目標として機能する
+                                        current_tp = sim_tp if is_ambush else t_p2 
                                         e_atr = pos.get('entry_atr', prev.get('ATR', 0))
                                         t_price = pos.get('trigger', bp)
                                         
@@ -4697,7 +4694,7 @@ with tab5:
                                 total_p = p_df['損益額(円)'].sum()
                                 win_r = len(p_df[p_df['損益額(円)'] > 0]) / len(p_df)
                                 opt_results.append({p1_name: t_p1, p2_name: t_p2, '総合利益(円)': total_p, '勝率': win_r, '取引回数': len(all_t)})
-                            p_bar.progress(current_iter / total_iterations)
+                        p_bar.progress(current_iter / total_iterations)
                     
                     p_bar.empty()
 
@@ -4751,14 +4748,10 @@ with tab5:
                             styled_tdf = tdf.drop(columns=['累積損益(円)']).style.map(color_pnl_tab4, subset=['損益額(円)', '損益(%)']).format({'買値(円)': '{:,}', '売値(円)': '{:,}', '損益額(円)': '{:,}', '損益(%)': '{:.2f}'})
                             st.dataframe(styled_tdf, use_container_width=True, hide_index=True)
                 
-                #except Exception as e:
-                    # 🚨 解析・演算中に想定外のエラーが起きた場合の防波堤
-                    #st.error(f"🚨 兵站エラー：データに異常があるか、シミュレーション演算中にエラーが発生しました。詳細: {e}")
-
                 except Exception as e: 
                         import traceback
                         st.error(f"🚨 エラー発生座標特定ログ:\n\n" + traceback.format_exc())
-                        st.stop() # breakの代わりに、確実にシステムを一時停止するコマンドを使用
+                        st.stop()
 
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
