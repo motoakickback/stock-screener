@@ -1880,9 +1880,10 @@ st.sidebar.title("🛠️ 戦術コンソール")
 
 # --- 🌪️ ボラティリティ・フィルターの設定 ---
 st.sidebar.markdown("### 🌪️ ボラティリティ審査")
+# 🚨 修正箇所1：第4引数の初期値をパージし、step=0.1 と明記しました
 st.session_state.f_vol_min = st.sidebar.slider(
     "最小ボラ率 (ATR/価格 %)", 
-    0.0, 2.0, float(st.session_state.get("f_vol_min_slider", 0.5)), 0.1, 
+    0.0, 2.0, step=0.1, 
     help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
     key="f_vol_min_slider"
 )
@@ -1967,10 +1968,10 @@ st.sidebar.divider()
 # ==========================================
 st.sidebar.header("📂 戦略的セクター制御")
 
-current_f_max = st.session_state.get("f_max_stocks_slider", 30)
+# 🚨 修正箇所2：不要な current_f_max 変数と第4引数を完全にパージしました
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
-    1, 30, int(current_f_max),
+    1, 30,
     key="f_max_stocks_slider",
     help="特定セクターへの集中度を調整します。"
 )
