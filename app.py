@@ -1878,19 +1878,9 @@ def extended_save_settings():
 # --- 4. サイドバー UI 展開 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
-# --- 🌪️ ボラティリティ・フィルターの設定 ---
-st.sidebar.markdown("### 🌪️ ボラティリティ審査")
-# 🚨 修正箇所1：第4引数の初期値をパージし、step=0.1 と明記しました
-st.session_state.f_vol_min = st.sidebar.slider(
-    "最小ボラ率 (ATR/価格 %)", 
-    0.0, 2.0, step=0.1, 
-    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
-    key="f_vol_min_slider"
-)
-
-st.sidebar.markdown("---")
-
-# --- 🌐 マクロ地合い連動システム (完全同期・単一エンジン版) ---
+# ==========================================
+# 1. 🌐 マクロ地合い連動 (完全同期・単一エンジン版)
+# ==========================================
 st.sidebar.markdown("### 🌐 マクロ地合い連動")
 use_macro = st.sidebar.toggle("地合い連動を有効化", value=True)
 
@@ -1908,17 +1898,13 @@ def get_latest_macro_sync():
     if len(df) < 25:
         return {"status": "データ不足", "div_rate": 0.0}
         
-    # 🚨 モグラ駆逐パッチ：日経平均データの終値カラムを安全に取得
     close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
-    
     if close_col:
-        # 万が一DataFrame化(重複)していても最初の1列だけを抽出し、確実に数値化
         s = df[close_col]
         if isinstance(s, pd.DataFrame):
             s = s.iloc[:, 0]
         df['MA25'] = pd.to_numeric(s, errors='coerce').rolling(window=25).mean()
     else:
-        # 終値が見つからない場合の緊急回避
         return {"status": "データ異常", "div_rate": 0.0}
         
     price = w["nikkei"]["price"]
@@ -1929,7 +1915,6 @@ def get_latest_macro_sync():
     elif div_rate <= -5.0: return {"status": "地合いチャンス", "div_rate": div_rate}
     else: return {"status": "地合いニュートラル", "div_rate": div_rate}
 
-# 🚨 ここから下のブロックが消えていたため復旧しました！
 if use_macro:
     api_nikkei_pct = weather['nikkei']['pct'] if 'weather' in locals() and weather else 0.0
     manual_pct = st.sidebar.number_input(
@@ -1950,7 +1935,6 @@ if use_macro:
         st.session_state.rsi_penalty = 10     
         prefix = f"🟠 警戒態勢(前日比 {manual_pct:+.2f}%) ｜ "
 
-    # 🚨 常に最新のMA25乖離率を取得してアラート文を構築
     macro = get_latest_macro_sync()
     div_v = macro['div_rate']
     
@@ -1964,24 +1948,13 @@ if use_macro:
 st.sidebar.divider()
 
 # ==========================================
-# 📂 1.5. 戦略的セクター制御（新兵装追加）
+# 2. 🎯 戦略テーマ選別
 # ==========================================
-st.sidebar.header("📂 戦略的セクター制御")
-
-# 🚨 修正箇所2：不要な current_f_max 変数と第4引数を完全にパージしました
-st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
-    "1セクターあたりの最大表示数",
-    1, 30,
-    key="f_max_stocks_slider",
-    help="特定セクターへの集中度を調整します。"
-)
-
-st.sidebar.divider()
 st.sidebar.header("🎯 戦略テーマ選別")
 
 selected_themes = st.sidebar.multiselect(
     "注目テーマ（複数選択可）",
-    options=list(PRESET_THEMES.keys()),
+    options=list(PRESET_THEMES.keys()) if 'PRESET_THEMES' in locals() else [],
     default=[],
     help="選択したテーマの銘柄のみを抽出します。"
 )
@@ -1993,8 +1966,9 @@ custom_theme_input = st.sidebar.text_input(
 )
 
 target_theme_codes = set()
-for t in selected_themes:
-    target_theme_codes.update(PRESET_THEMES[t])
+if 'PRESET_THEMES' in locals():
+    for t in selected_themes:
+        target_theme_codes.update(PRESET_THEMES[t])
 
 if custom_theme_input:
     custom_list = [c.strip() for c in custom_theme_input.split(",") if c.strip()]
@@ -2002,7 +1976,20 @@ if custom_theme_input:
 
 st.sidebar.divider()
 
-if master_df is not None and not master_df.empty:
+# ==========================================
+# 3. 📂 戦略的セクター制御
+# ==========================================
+st.sidebar.header("📂 戦略的セクター制御")
+
+# 🚨 第4引数(value)をパージ済
+st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
+    "1セクターあたりの最大表示数",
+    1, 30,
+    key="f_max_stocks_slider",
+    help="特定セクターへの集中度を調整します。"
+)
+
+if 'master_df' in globals() and master_df is not None and not master_df.empty:
     all_sectors = sorted(master_df['Sector'].unique().tolist())
     if "f_selected_sectors" not in st.session_state:
         st.session_state.f_selected_sectors = all_sectors
@@ -2033,91 +2020,101 @@ else:
 st.sidebar.divider()
 
 # ==========================================
-# 📍 2. ターゲット選別（原本 100% 維持）
+# 4. 📍 ターゲット選別
 # ==========================================
 st.sidebar.header("📍 ターゲット選別")
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.preset_market) if st.session_state.preset_market in market_options else 1, key="preset_market", on_change=extended_save_settings)
+st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.get("preset_market", market_options[1])) if st.session_state.get("preset_market", "") in market_options else 1, key="preset_market", on_change=extended_save_settings)
 
 push_r_options = ["25.0%", "50.0%", "61.8%"]
-st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.preset_push_r) if st.session_state.preset_push_r in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
+st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.get("preset_push_r", push_r_options[1])) if st.session_state.get("preset_push_r", "") in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
 
 tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(st.session_state.sidebar_tactics) if st.session_state.sidebar_tactics in tactics_options else 0, key="sidebar_tactics", on_change=extended_save_settings)
-
-st.sidebar.divider()
-
-# =========================================================================
-# 🔍 全軍共通足切りルール（原本クレンジング・一元管理版）
-# 待伏専用のテクニカルパラメータはすべてTAB1コンソール内へ完全移管しました
-# =========================================================================
-st.sidebar.header("🔍 全軍共通足切りルール")
-c1, c2 = st.sidebar.columns(2)
-with c1:
-    st.number_input("価格下限(円)", value=int(st.session_state.f1_min), step=100, key="f1_min", on_change=extended_save_settings)
-with c2:
-    st.number_input("価格上限(円)", value=int(st.session_state.f1_max), step=100, key="f1_max", on_change=extended_save_settings)
-
-st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-st.sidebar.markdown("#### 🛡️ 特殊個体・自動パージフィルター")
-
-st.sidebar.checkbox("🚀 IPO除外(上場1年未満)", value=bool(st.session_state.f5_ipo), key="f5_ipo", on_change=extended_save_settings)
-st.sidebar.checkbox("疑義注記・信用リスク銘柄除外", value=bool(st.session_state.f6_risk), key="f6_risk", on_change=extended_save_settings)
-st.sidebar.checkbox("上昇第3波終了銘柄を除外", value=bool(st.session_state.f11_ex_wave3), key="f11_ex_wave3", on_change=extended_save_settings)
-st.sidebar.checkbox("非常に割高・赤字銘柄を除外", value=bool(st.session_state.f12_ex_overvalued), key="f12_ex_overvalued", on_change=extended_save_settings)
+st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(st.session_state.get("sidebar_tactics", tactics_options[0])) if st.session_state.get("sidebar_tactics", "") in tactics_options else 0, key="sidebar_tactics", on_change=extended_save_settings)
 
 st.sidebar.divider()
 
 # ==========================================
-# 🎯 4. 買い/売りルール（原本 100% 維持）
+# 5. 🌪️ ボラティリティ審査
 # ==========================================
-st.sidebar.header("🎯 買いルール")
-st.sidebar.number_input("購入ロット(株)", value=int(st.session_state.bt_lot), step=100, key="bt_lot", on_change=extended_save_settings)
-st.sidebar.number_input("猶予期限(日)", value=int(st.session_state.limit_d), step=1, key="limit_d", on_change=extended_save_settings)
-
-st.sidebar.header("💰 売りルール")
-st.sidebar.number_input("利確目標(%)", value=int(st.session_state.bt_tp), step=1, key="bt_tp", on_change=extended_save_settings)
-
-c_sl1, c_sl2 = st.sidebar.columns(2)
-with c_sl1:
-    st.number_input("初期損切(%)", value=int(st.session_state.bt_sl_i), step=1, key="bt_sl_i", on_change=extended_save_settings)
-with c_sl2:
-    st.number_input("現在損切(%)", value=int(st.session_state.bt_sl_c), step=1, key="bt_sl_c", on_change=extended_save_settings)
-
-st.sidebar.number_input("最大保持期間(日)", value=int(st.session_state.bt_sell_d), step=1, key="bt_sell_d", on_change=extended_save_settings)
-
-st.sidebar.divider()
-
-# ==========================================
-# 🚫 5. 特殊除外フィルター（原本 100% 維持）
-# ==========================================
-st.sidebar.header("🚫 特殊除外フィルター")
-st.sidebar.checkbox("ETF・REIT等を除外", value=bool(st.session_state.f7_ex_etf), key="f7_ex_etf", on_change=extended_save_settings)
-st.sidebar.checkbox("医薬品(バイオ)を除外", value=bool(st.session_state.f8_ex_bio), key="f8_ex_bio", on_change=extended_save_settings)
-st.sidebar.checkbox("落ちるナイフ除外(暴落直後)", value=bool(st.session_state.f10_ex_knife), key="f10_ex_knife", on_change=extended_save_settings)
-
-st.sidebar.text_area(
-    "除外銘柄コード", 
-    value=str(st.session_state.gigi_input), 
-    key="gigi_input", 
-    on_change=extended_save_settings
+st.sidebar.header("🌪️ ボラティリティ審査")
+# 🚨 valueをパージ済
+st.session_state.f_vol_min = st.sidebar.slider(
+    "最小ボラ率 (ATR/価格 %)", 
+    0.0, 2.0, step=0.1, 
+    help="1ATRが株価の何%以上かを判定。0.5%未満はTAB1/2の検索結果から排除されます。",
+    key="f_vol_min_slider"
 )
 
 st.sidebar.divider()
 
-# --- システムボタン ---
+# =========================================================================
+# 6. 🔍 全軍共通足切りルール（特殊除外フィルター統合版）
+# =========================================================================
+st.sidebar.header("🔍 全軍共通足切りルール")
+
+c1, c2 = st.sidebar.columns(2)
+# 🚨 致命的バグ修正：value=int(...) の二重指定をパージし key のみに統一しました
+with c1:
+    st.number_input("価格下限(円)", step=100, key="f1_min", on_change=extended_save_settings)
+with c2:
+    st.number_input("価格上限(円)", step=100, key="f1_max", on_change=extended_save_settings)
+
+st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+st.sidebar.markdown("#### 🛡️ 特殊個体・自動パージ")
+
+# 元々の「共通足切り」と「特殊除外」をここに美しく一元化
+st.sidebar.checkbox("🚀 IPO除外(上場1年未満)", key="f5_ipo", on_change=extended_save_settings)
+st.sidebar.checkbox("⚠️ 疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=extended_save_settings)
+st.sidebar.checkbox("🌊 上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=extended_save_settings)
+st.sidebar.checkbox("💸 非常に割高・赤字銘柄を除外", key="f12_ex_overvalued", on_change=extended_save_settings)
+st.sidebar.checkbox("🏢 ETF・REIT等を除外", key="f7_ex_etf", on_change=extended_save_settings)
+st.sidebar.checkbox("💊 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=extended_save_settings)
+st.sidebar.checkbox("🔪 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=extended_save_settings)
+
+st.sidebar.text_area(
+    "除外銘柄コード (カンマ区切り)", 
+    key="gigi_input", 
+    on_change=extended_save_settings,
+    help="手動でスキャンから除外したいコードを入力（例: 9984, 7203）"
+)
+
+st.sidebar.divider()
+
+# ==========================================
+# 🚨 【ステルス防衛線】買い/売りルールの裏側保持
+# UIからは完全にパージ（削除）されましたが、システム内部では初期値を保持し続けます
+# ==========================================
+if "bt_lot" not in st.session_state: st.session_state.bt_lot = 100
+if "limit_d" not in st.session_state: st.session_state.limit_d = 5
+if "bt_tp" not in st.session_state: st.session_state.bt_tp = 10
+if "bt_sl_i" not in st.session_state: st.session_state.bt_sl_i = 8
+if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
+if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
+
+# ==========================================
+# 7. ⚙️ システム管理 (キャッシュパージ & 保存)
+# ==========================================
+st.sidebar.header("⚙️ システム管理")
+
 if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    save_exclude_codes_to_file()
+    if 'save_exclude_codes_to_file' in globals():
+        save_exclude_codes_to_file()
     st.cache_data.clear()
+    if hasattr(st, 'cache_resource'):
+        st.cache_resource.clear()
     st.session_state.tab1_scan_results = None
     st.session_state.tab2_scan_results = None
     st.rerun()
 
 if st.sidebar.button("💾 設定を保存", use_container_width=True):
-    extended_save_settings()
-    st.toast("全設定および除外コードを永久保存した。")
+    if 'extended_save_settings' in globals():
+        extended_save_settings()
+        st.toast("✅ 全設定および除外コードを永久保存しました。")
+    else:
+        st.sidebar.warning("⚠️ 保存機能が未接続です。")
 
-st.sidebar.caption(f"KEY: {cache_key}")
+st.sidebar.caption(f"KEY: {cache_key if 'cache_key' in locals() else 'N/A'}")
 
 # ==========================================
 # (2) メイン画面の描画スタート
