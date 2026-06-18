@@ -1862,6 +1862,15 @@ def save_exclude_codes_to_file():
     except:
         pass
 
+def apply_price_filter(df, price_col='AdjC'):
+    """ 全軍共通：価格上限・下限フィルター適用関数 """
+    if df is None or df.empty:
+        return df
+    min_price = float(st.session_state.get("f1_min", 200))
+    max_price = float(st.session_state.get("f1_max", 3000))
+    filtered_df = df[(df[price_col] >= min_price) & (df[price_col] <= max_price)]
+    return filtered_df
+    
 def extended_save_settings():
     save_exclude_codes_to_file()
     save_settings()
@@ -2256,7 +2265,7 @@ with tab1:
 
                     # スレッドに渡す戦術設定を構築（移管された変数を完全集約）
                     config_t1 = {
-                        "f1_min": float(st.session_state.get("f1_min", 0)), "f1_max": float(st.session_state.get("f1_max", 99999)),
+                        "f1_min": float(st.session_state.get("f1_min", 0)), "f1_max": float(st.session_state.get("f1_max", 999999)),
                         "f2_m30": float(f2_m30_val), "f3_drop": float(f3_drop_val),        
                         "rsi_lim": effective_rsi_limit, "vol_lim": float(vol_lim),
                         "f5_ipo": st.session_state.get("f5_ipo", False), "f11_ex_wave3": st.session_state.get("f11_ex_wave3", False),
@@ -2316,6 +2325,10 @@ with tab1:
                             c_vals = group['AdjC'].values
                             if len(c_vals) < 25: return None
                             lc = float(c_vals[-1])
+
+                            # 【緊急改修】サイドバーの全軍共通ルール：価格下限・上限の超高速足切り審査を投入
+                            if not (cfg.get("f1_min", 0) <= lc <= cfg.get("f1_max", 999999)):
+                                return None
 
                             # 全軍共通・基本除外ルール
                             if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
@@ -2606,7 +2619,7 @@ with tab2:
                     # 🚀 兵站結線：UIパラメータをスキャン用辞書(config_t2)へ完全同期・注入
                     # =========================================================================
                     config_t2 = {
-                        "f1_min": float(st.session_state.get("f1_min", 0)), "f1_max": float(st.session_state.get("f1_max", 99999)),
+                        "f1_min": float(st.session_state.get("f1_min", 0)), "f1_max": float(st.session_state.get("f1_max", 999999)),
                         "f2_m30": 999.0, "f3_drop": -999.0,        
                         "rsi_lim": effective_rsi_limit, "vol_lim": float(vol_lim),
                         "f5_ipo": st.session_state.get("f5_ipo", False), "f11_ex_wave3": st.session_state.get("f11_ex_wave3", False),
@@ -2669,6 +2682,10 @@ with tab2:
                             c_vals = group['AdjC'].values
                             if len(c_vals) < 25: return None
                             lc = float(c_vals[-1])
+
+                            # 【緊急改修】サイドバーの全軍共通ルール：価格下限・上限の超高速足切り審査を投入
+                            if not (cfg.get("f1_min", 0) <= lc <= cfg.get("f1_max", 999999)):
+                                return None
 
                             # 基本フィルター
                             if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): return None
@@ -2909,10 +2926,14 @@ with tab3:
 
         st.session_state.tab2_scan_results_stealth = None
         st.session_state.tab2_time_log_stealth = [] 
+        import gc
         gc.collect()
         t_global_start = time.time()
 
+        # 【緊急改修】サイドバーの共通価格フィルターを cfg_stealth に同期
         cfg_stealth = {
+            "f1_min": float(st.session_state.get("f1_min", 0)), 
+            "f1_max": float(st.session_state.get("f1_max", 999999)),
             "val_min": float(st_val_min), "vol_ratio": float(st_vol_ratio),
             "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox)
         }
@@ -2923,13 +2944,19 @@ with tab3:
             group_df = group.tail(30).copy().ffill().bfill()
             if len(group_df) < 26: return None
 
+            group_df['AdjC'] = group_df['AdjC'].astype(float)
+            today = group_df.iloc[-1]
+            
+            # 【緊急改修】最新価格による超高速足切り（全軍共通ルール）
+            if not (cfg.get("f1_min", 0) <= float(today['AdjC']) <= cfg.get("f1_max", 999999)):
+                return None
+
             # 🚨 【完全浄化】大元の計算エンジンを強制起動し、純度100%のWilder式実数ATRを付与
             group_df = calc_vector_indicators(group_df)
 
             v_candidates = [c for c in group_df.columns if 'Volume' in c or 'Vo' in c]
             v_col_name = v_candidates[0] if v_candidates else group_df.columns[-1]
 
-            group_df['AdjC'] = group_df['AdjC'].astype(float)
             group_df['AdjH'] = group_df['AdjH'].astype(float)
             group_df['AdjL'] = group_df['AdjL'].astype(float)
             group_df[v_col_name] = group_df[v_col_name].astype(float)
@@ -2947,7 +2974,7 @@ with tab3:
             group_df['avg_volume_5_prev'] = group_df[v_col_name].shift(1).rolling(window=5, min_periods=1).mean()
             group_df['day_range'] = group_df['AdjH'] - group_df['AdjL']
 
-            today = group_df.iloc[-1]
+            today = group_df.iloc[-1] # 再度取得
 
             # 🚨 浄化された実数ATRの抽出
             if 'ATR_Standard' in today and pd.notna(today['ATR_Standard']):
