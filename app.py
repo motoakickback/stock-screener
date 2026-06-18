@@ -1089,11 +1089,15 @@ def load_master():
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
     base = datetime.utcnow() + timedelta(hours=9)
-    f_d = (base - timedelta(days=365*yrs)).strftime('%Y%m%d')
+    # 🚨 改修1：確実な営業日（兵站）を確保するため、365日ではなく「400日」を基準にする
+    f_d = (base - timedelta(days=400*yrs)).strftime('%Y%m%d')
     t_d = base.strftime('%Y%m%d')
     result = {"bars": [], "events": {"dividend": [], "earnings": []}}
+    
     try:
-        api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+        # 🚨 改修2：過去の「.0混入バグ（ゾンビ）」を完全に粉砕し、安全に5桁化
+        clean_code = str(code).replace('.0', '').strip()
+        api_code = clean_code if len(clean_code) >= 5 else clean_code + "0"
         
         url_bars = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
         r_bars = api_session.get(url_bars, timeout=10.0)
