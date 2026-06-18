@@ -1981,7 +1981,6 @@ st.sidebar.divider()
 # ==========================================
 st.sidebar.header("📂 戦略的セクター制御")
 
-# 🚨 第4引数(value)をパージ済
 st.session_state.f_max_stocks_per_sector = st.sidebar.slider(
     "1セクターあたりの最大表示数",
     1, 30,
@@ -2038,7 +2037,6 @@ st.sidebar.divider()
 # 5. 🌪️ ボラティリティ審査
 # ==========================================
 st.sidebar.header("🌪️ ボラティリティ審査")
-# 🚨 valueをパージ済
 st.session_state.f_vol_min = st.sidebar.slider(
     "最小ボラ率 (ATR/価格 %)", 
     0.0, 2.0, step=0.1, 
@@ -2048,13 +2046,12 @@ st.session_state.f_vol_min = st.sidebar.slider(
 
 st.sidebar.divider()
 
-# =========================================================================
+# ==========================================
 # 6. 🔍 全軍共通足切りルール（特殊除外フィルター統合版）
-# =========================================================================
+# ==========================================
 st.sidebar.header("🔍 全軍共通足切りルール")
 
 c1, c2 = st.sidebar.columns(2)
-# 🚨 致命的バグ修正：value=int(...) の二重指定をパージし key のみに統一しました
 with c1:
     st.number_input("価格下限(円)", step=100, key="f1_min", on_change=extended_save_settings)
 with c2:
@@ -2063,7 +2060,6 @@ with c2:
 st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 st.sidebar.markdown("#### 🛡️ 特殊個体・自動パージ")
 
-# 元々の「共通足切り」と「特殊除外」をここに美しく一元化
 st.sidebar.checkbox("🚀 IPO除外(上場1年未満)", key="f5_ipo", on_change=extended_save_settings)
 st.sidebar.checkbox("⚠️ 疑義注記・信用リスク銘柄除外", key="f6_risk", on_change=extended_save_settings)
 st.sidebar.checkbox("🌊 上昇第3波終了銘柄を除外", key="f11_ex_wave3", on_change=extended_save_settings)
@@ -2080,17 +2076,6 @@ st.sidebar.text_area(
 )
 
 st.sidebar.divider()
-
-# ==========================================
-# 🚨 【ステルス防衛線】買い/売りルールの裏側保持
-# UIからは完全にパージ（削除）されましたが、システム内部では初期値を保持し続けます
-# ==========================================
-if "bt_lot" not in st.session_state: st.session_state.bt_lot = 100
-if "limit_d" not in st.session_state: st.session_state.limit_d = 5
-if "bt_tp" not in st.session_state: st.session_state.bt_tp = 10
-if "bt_sl_i" not in st.session_state: st.session_state.bt_sl_i = 8
-if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
-if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
 
 # ==========================================
 # 7. ⚙️ システム管理 (キャッシュパージ & 保存)
@@ -4349,6 +4334,34 @@ with tab4:
 # --- 9. タブコンテンツ (TAB5: 戦術シミュレータ) ---
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
+
+    # ==========================================
+    # 🎯 TAB5専用：演習売買執行パラメータ（防弾・自動保存仕様）
+    # ==========================================
+    # 初回起動時のシステムエラー（存在しない変数の参照）を防ぐ安全装置
+    if "bt_lot" not in st.session_state: st.session_state.bt_lot = 100
+    if "limit_d" not in st.session_state: st.session_state.limit_d = 5
+    if "bt_tp" not in st.session_state: st.session_state.bt_tp = 10
+    if "bt_sl_i" not in st.session_state: st.session_state.bt_sl_i = 8
+    if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
+    if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
+
+    st.markdown("### 🎯 演習用・売買執行パラメータ")
+    st.caption("※この設定は【演習】戦術シミュレータ内でのみ有効であり、広域索敵ルールには影響を与えません。")
+    
+    col_bt1, col_bt2, col_bt3 = st.columns(3)
+    # 🚨 二重指定バグを100%回避するため value 引数を排除し、変更時に即座に自動セーブを走らせます
+    with col_bt1:
+        st.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=extended_save_settings, help="演習における1エントリーの基準株数")
+        st.number_input("猶予期限(日)", step=1, key="limit_d", on_change=extended_save_settings, help="シグナル検知から何営業日以内にエントリーするか")
+    with col_bt2:
+        st.number_input("利確目標(%)", step=1, key="bt_tp", on_change=extended_save_settings)
+        st.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=extended_save_settings, help="手仕舞い（タイムアップ）までの最大日数")
+    with col_bt3:
+        st.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=extended_save_settings, help="エントリー直後の防衛ライン幅")
+        st.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=extended_save_settings, help="トリアージ追従用の現行損切幅")
+
+    st.markdown("---") # 既存のシミュレータUIへ接続
     
     # --- 🛡️ 状態初期化・物理ロック回路 ---
     tab4_defaults = {
