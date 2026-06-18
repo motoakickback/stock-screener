@@ -4346,10 +4346,8 @@ with tab5:
     if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
     if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
     
-    # 戦術特化パラメータの初期化
-    if "sim_ambush_fib" not in st.session_state: st.session_state.sim_ambush_fib = 50.0
+    # 🚨 戦術特化パラメータの初期化（重複パージ済）
     if "sim_ambush_vol" not in st.session_state: st.session_state.sim_ambush_vol = 1.5
-    if "sim_assault_rsi" not in st.session_state: st.session_state.sim_assault_rsi = 75
     if "sim_assault_atr" not in st.session_state: st.session_state.sim_assault_atr = 1.0
     if "sim_stealth_val" not in st.session_state: st.session_state.sim_stealth_val = 3.0
     if "sim_stealth_vol" not in st.session_state: st.session_state.sim_stealth_vol = 0.8
@@ -4358,7 +4356,6 @@ with tab5:
     st.markdown("### 🎯 演習用・売買執行パラメータ")
     st.caption("※この設定は【演習】戦術シミュレータ内でのみ有効であり、広域索敵ルールには影響を与えません。")
     
-    # 🚨 ここに「利確」「損切」「期限」のすべてを一元化しました
     col_bt1, col_bt2, col_bt3 = st.columns(3)
     with col_bt1:
         st.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=extended_save_settings, help="演習における1エントリーの基準株数")
@@ -4379,7 +4376,6 @@ with tab5:
         "sim_pass_req_val": 7, 
         "sim_rsi_lim_ambush_val": 45,
         "sim_rsi_lim_assault_val": 70, 
-        "sim_time_risk_val": 5,
         "sim_stealth_vol_val": 10,
         "sim_rsi_lim_stealth_val": 65
     }
@@ -4392,7 +4388,6 @@ with tab5:
     if "prev_mode_for_sync" not in st.session_state:
         st.session_state.prev_mode_for_sync = current_mode
 
-    # 🚨 兵站補給パッチ：モード切り替えを検知した瞬間、対象モードの固有デフォルト値を強制再装填する
     if st.session_state.prev_mode_for_sync != current_mode:
         if "待伏" in current_mode:
             st.session_state.sim_push_r_val = 50.0
@@ -4403,18 +4398,7 @@ with tab5:
             st.session_state.sim_rsi_lim_stealth_val = 65
         else: # 強襲
             st.session_state.sim_rsi_lim_assault_val = 70
-            st.session_state.sim_time_risk_val = 5
         st.session_state.prev_mode_for_sync = current_mode
-        try: save_settings()
-        except: pass
-
-    current_sidebar_push = st.session_state.get("push_r", 50.0)
-    if "last_known_sidebar_push" not in st.session_state:
-        st.session_state.last_known_sidebar_push = current_sidebar_push
-
-    if st.session_state.last_known_sidebar_push != current_sidebar_push:
-        st.session_state.sim_push_r_val = current_sidebar_push
-        st.session_state.last_known_sidebar_push = current_sidebar_push
         try: save_settings()
         except: pass
 
@@ -4441,44 +4425,37 @@ with tab5:
         st.markdown("#### ⚙️ 戦術パラメーター（演習用チューニング）")
         st.info("※ 戦術切替時、各固有値は自動で最適デフォルト値に同期されます。")
         
-        # 🚨🚨 重複していた cp1～cp4 の「利確・損切・期限」フォームを完全にパージ（削除）しました！ 🚨🚨
-        
         st.divider()
         if "待伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            ct1.number_input("📉 押し目待ち(%)", min_value=0.0, max_value=100.0, value=float(st.session_state.get('sim_push_r_val', 50.0)), step=0.1, format="%.1f", key="sim_push_r_val")
-            ct2.number_input("掟クリア要求数", min_value=1, max_value=9, value=int(st.session_state.get('sim_pass_req_val', 7)), step=1, key="sim_pass_req_val")
-            ct3.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_ambush_val', 45)), step=5, key="sim_rsi_lim_ambush_val")
+            # 🚨 押し目(%)とフィボナッチの重複を統合
+            ct1.number_input("📉 買目標(フィボナッチ押 %)", min_value=0.0, max_value=100.0, value=float(st.session_state.get('sim_push_r_val', 50.0)), step=0.1, format="%.1f", key="sim_push_r_val")
+            ct2.number_input("🎯 掟クリア要求スコア", min_value=1, max_value=9, value=int(st.session_state.get('sim_pass_req_val', 7)), step=1, key="sim_pass_req_val")
+            ct3.number_input("📈 RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_ambush_val', 45)), step=5, key="sim_rsi_lim_ambush_val")
             
-            # 追加パラメーター（フィボナッチやクジラ判定などを追加可能）
-            st.markdown("###### ＋高度なチューニング")
+            st.markdown("###### ＋ 高度なチューニング")
             cx1, cx2 = st.columns(2)
-            cx1.number_input("買目標値フィボナッチ (%)", min_value=0.0, max_value=100.0, step=5.0, key="sim_ambush_fib", on_change=extended_save_settings)
-            cx2.number_input("クジラ流入判定 (倍)", min_value=1.0, max_value=5.0, step=0.1, key="sim_ambush_vol", on_change=extended_save_settings)
+            cx1.number_input("🐳 クジラ流入判定 (過去平均のN倍)", min_value=1.0, max_value=5.0, value=float(st.session_state.get('sim_ambush_vol', 1.5)), step=0.1, key="sim_ambush_vol", on_change=extended_save_settings)
 
         elif "潜伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 💎 【潜伏】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("ボラティリティ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
-            ct2.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
+            ct1.number_input("📉 ボラ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
+            ct2.number_input("📈 RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
             
-            st.markdown("###### ＋高度なチューニング")
+            st.markdown("###### ＋ 高度なチューニング")
             cx1, cx2, cx3 = st.columns(3)
-            cx1.number_input("売買代金下限 (億円)", min_value=0.1, max_value=50.0, step=0.5, key="sim_stealth_val", on_change=extended_save_settings)
-            cx2.number_input("出来高過疎比率 (倍)", min_value=0.1, max_value=2.0, step=0.1, key="sim_stealth_vol", on_change=extended_save_settings)
-            cx3.number_input("値幅収縮比率 (ATR倍)", min_value=0.1, max_value=2.0, step=0.1, key="sim_stealth_atr", on_change=extended_save_settings)
+            cx1.number_input("💰 売買代金下限(億円)", min_value=0.1, max_value=50.0, value=float(st.session_state.get('sim_stealth_val', 3.0)), step=0.5, key="sim_stealth_val", on_change=extended_save_settings)
+            cx2.number_input("📉 出来高過疎比率(倍)", min_value=0.1, max_value=2.0, value=float(st.session_state.get('sim_stealth_vol', 0.8)), step=0.1, key="sim_stealth_vol", on_change=extended_save_settings)
+            cx3.number_input("🎯 値幅収縮比率(ATR倍)", min_value=0.1, max_value=2.0, value=float(st.session_state.get('sim_stealth_atr', 0.6)), step=0.1, key="sim_stealth_atr", on_change=extended_save_settings)
 
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            ct1.number_input("RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_assault_val', 70)), step=5, key="sim_rsi_lim_assault_val")
-            ct2.number_input("時間リスク上限(日)", min_value=1, max_value=100, value=int(st.session_state.get('sim_time_risk_val', 5)), step=1, key="sim_time_risk_val", help="到達予想日数")
-            
-            st.markdown("###### ＋高度なチューニング")
-            cx1, cx2 = st.columns(2)
-            cx1.number_input("エントリーRSI許容限界", min_value=50, max_value=90, step=1, key="sim_assault_rsi", on_change=extended_save_settings)
-            cx2.number_input("ボラ未発散限界 (ATR倍)", min_value=0.5, max_value=3.0, step=0.1, key="sim_assault_atr", on_change=extended_save_settings)
+            # 🚨 RSI重複および不要な時間リスクをパージし、2つの最強条件のみに凝縮
+            ct1.number_input("📈 エントリーRSI上限 (%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_assault_val', 70)), step=5, key="sim_rsi_lim_assault_val")
+            ct2.number_input("🌋 ボラ未発散限界 (ATR倍)", min_value=0.5, max_value=3.0, value=float(st.session_state.get('sim_assault_atr', 1.0)), step=0.1, key="sim_assault_atr", on_change=extended_save_settings, help="起点安値から現在値までの上昇幅が14日ATRの何倍以内か")
 
     if (run_bt or optimize_bt) and bt_c_in:
         with open(T4_FILE, "w", encoding="utf-8") as f: f.write(bt_c_in)
@@ -4487,20 +4464,19 @@ with tab5:
         if not t_codes: 
             st.warning("有効なコードが見つかりません。")
         else:
-            # 🚨 司令官が指定した「共通UI（上部）」から値を引っ張ってくるように修正
             sim_tp = float(st.session_state.bt_tp)
             sim_sl_i = float(st.session_state.bt_sl_i)
             sim_limit_d = int(st.session_state.limit_d)
             sim_sell_d = int(st.session_state.bt_sell_d)
             sim_push_r = float(st.session_state.sim_push_r_val)
 
-            # 🚨 3モードの判定
             is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
             is_stealth = "潜伏" in st.session_state.bt_mode_sim_v2
             
             if is_ambush:
                 sim_pass_req = int(st.session_state.sim_pass_req_val)
                 sim_rsi_lim_ambush = int(st.session_state.sim_rsi_lim_ambush_val)
+                sim_ambush_vol = float(st.session_state.sim_ambush_vol)
                 p1_range = range(25, 66, 5) if optimize_bt else [sim_push_r]
                 p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
                 p1_name, p2_name = "Push率(%)", "要求Score"
@@ -4512,7 +4488,7 @@ with tab5:
                 p1_name, p2_name = "収縮率上限(%)", "利確目標(%)"
             else:
                 sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
-                sim_time_risk = int(st.session_state.sim_time_risk_val)
+                sim_assault_atr = float(st.session_state.sim_assault_atr)
                 p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim_assault]
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
@@ -4629,10 +4605,17 @@ with tab5:
                                             score = 0
                                             if 1.3 <= r14 <= 2.0: score += 1
                                             if d_high <= sim_limit_d: score += 1 
-                                            if not check_double_top(win_30): score += 1
-                                            if not check_head_shoulders(win_30): score += 1
+                                            if 'check_double_top' in globals() and not check_double_top(win_30): score += 1
+                                            if 'check_head_shoulders' in globals() and not check_head_shoulders(win_30): score += 1
                                             if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
-                                            score += 4 
+                                            
+                                            # 🚨 クジラ流入判定（出来高）をスコアに直結
+                                            vol_prev = prev.get('Volume', 0)
+                                            avg_vol = win_14['Volume'].mean() if len(win_14) > 0 else 1
+                                            if avg_vol > 0 and (vol_prev / avg_vol) >= sim_ambush_vol:
+                                                score += 1
+                                                
+                                            score += 3 # Base score compensation
                                             
                                             if score >= t_p2:
                                                 if td['AdjL'] <= bt_val:
@@ -4651,20 +4634,27 @@ with tab5:
                                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
                                         
                                         else: # 強襲モード
-                                            rsi_prev = prev.get('RSI', 50); exp_days = int((lc_prev * (t_p2/100.0)) / atr_prev) if atr_prev > 0 else 99
-                                            gc_triggered = False; trigger_price = 0
+                                            rsi_prev = prev.get('RSI', 50)
+                                            gc_triggered = False; trigger_price = 0; is_unexpanded = True
                                             for d_ago in range(1, int(sim_limit_d) + 1):
                                                 idx_eval = i - d_ago
                                                 if idx_eval >= 1:
                                                     if df.iloc[idx_eval].get('MACD_Hist', 0) > 0 and df.iloc[idx_eval-1].get('MACD_Hist', 0) <= 0:
                                                         gc_triggered = True
                                                         eval_h14 = df.iloc[max(0, idx_eval-14):idx_eval]['AdjH'].max()
+                                                        eval_l14 = df.iloc[max(0, idx_eval-14):idx_eval]['AdjL'].min()
                                                         eval_atr = df.iloc[idx_eval].get('ATR', 0)
                                                         eval_c = df.iloc[idx_eval]['AdjC']
+                                                        
+                                                        # 🚨 ボラ未発散限界の計算をバックエンドに直結
+                                                        if eval_atr > 0 and (eval_c - eval_l14) > (eval_atr * sim_assault_atr):
+                                                            is_unexpanded = False
+                                                            
                                                         trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
                                                         break
                                             
-                                            if gc_triggered and rsi_prev <= t_p1 and exp_days < sim_time_risk:
+                                            # 不要な「時間リスク」をパージし、シンプルかつ最強の2条件（RSI上限、未発散）で狙撃
+                                            if gc_triggered and is_unexpanded and rsi_prev <= t_p1:
                                                 if td['AdjH'] >= trigger_price:
                                                     exec_limit = trigger_price + (atr_prev * 0.2)
                                                     exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
