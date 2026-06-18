@@ -2930,12 +2930,17 @@ with tab3:
         gc.collect()
         t_global_start = time.time()
 
-        # 【緊急改修】サイドバーの共通価格フィルターを cfg_stealth に同期
+        # 【緊急改修】サイドバーの共通フィルターを cfg_stealth に完全同期
         cfg_stealth = {
             "f1_min": float(st.session_state.get("f1_min", 0)), 
             "f1_max": float(st.session_state.get("f1_max", 999999)),
             "val_min": float(st_val_min), "vol_ratio": float(st_vol_ratio),
-            "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox)
+            "atr_ratio": float(st_atr_ratio), "ma_prox": float(st_ma_prox),
+            # ▼ 追加：サイドバー共通除外ルールを引込
+            "f6_risk": st.session_state.get("f6_risk", False),
+            "gigi_codes": [c.strip() for c in str(st.session_state.get("gigi_input", "")).split(",") if c.strip()],
+            "f11_ex_wave3": st.session_state.get("f11_ex_wave3", False),
+            "f12_ex_overvalued": st.session_state.get("f12_ex_overvalued", False)
         }
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
