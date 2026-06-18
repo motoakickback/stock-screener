@@ -2945,16 +2945,28 @@ with tab3:
 
         def scan_unit_stealth_parallel(code, group, l_date, cfg):
             import pandas as pd
+            import numpy as np # ▼ numpyを追加（波3判定で使用）
+            
             # 🚨 OOM回避＆爆速化パッチ：計算に必要な直近30日分のみを抽出
             group_df = group.tail(30).copy().ffill().bfill()
             if len(group_df) < 26: return None
 
             group_df['AdjC'] = group_df['AdjC'].astype(float)
             today = group_df.iloc[-1]
+            lc = float(today['AdjC'])
+            c_str = str(code)[:4] # ▼ コード文字列化
             
             # 【緊急改修】最新価格による超高速足切り（全軍共通ルール）
-            if not (cfg.get("f1_min", 0) <= float(today['AdjC']) <= cfg.get("f1_max", 999999)):
+            if not (cfg.get("f1_min", 0) <= lc <= cfg.get("f1_max", 999999)):
                 return None
+
+            # ▼ 追加：共通除外ルール（高速判定できるものを最上流でパージ）
+            if cfg.get("f6_risk") and (c_str in cfg.get("gigi_codes", [])): 
+                return None
+            if cfg.get("f11_ex_wave3"):
+                c_vals = group_df['AdjC'].values
+                if lc > (float(np.min(c_vals)) * 3.0): 
+                    return None
 
             # 🚨 【完全浄化】大元の計算エンジンを強制起動し、純度100%のWilder式実数ATRを付与
             group_df = calc_vector_indicators(group_df)
@@ -2999,10 +3011,18 @@ with tab3:
 
             if pd.isna(today['avg_value_5']) or today['avg_value_5'] < (cfg["val_min"] * 100_000_000): return None
             if pd.isna(today['avg_volume_5_prev']) or today['avg_volume_5_prev'] <= 0 or today[v_col_name] >= (today['avg_volume_5_prev'] * cfg["vol_ratio"]): return None
-            
+
             # 🚨 修正：判定にも「実数ATR」を厳格に適用
             if pd.isna(real_atr) or real_atr <= 0 or today['day_range'] >= (real_atr * cfg["atr_ratio"]): return None
             if pd.isna(today['ma25']) or today['AdjC'] < today['ma25'] or today['AdjC'] > (today['ma25'] * (1.0 + cfg["ma_prox"] / 100.0)): return None
+
+            # ▼ 追加：共通除外ルール（ファンダメンタルズ）
+            # ※通信等の重い処理を含むため、全フィルターを生き残った最終候補にのみ実行
+            if cfg.get("f12_ex_overvalued"):
+                try:
+                    f_data = get_fundamentals(c_str)
+                    if f_data and (f_data.get("op", 0) or 0) < 0: return None
+                except: pass
 
             return {
                 'Code': code, 'lc': float(today['AdjC']), 'ma25': float(today['ma25']),
