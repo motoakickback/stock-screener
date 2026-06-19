@@ -2022,14 +2022,39 @@ st.sidebar.divider()
 # 4. 📍 ターゲット選別
 # ==========================================
 st.sidebar.header("📍 ターゲット選別")
+
+# --- 1. 市場ターゲット ---
 market_options = ["🏢 大型株 (プライム・一部)", "🚀 中小型株 (スタンダード・グロース)"]
-st.sidebar.selectbox("市場ターゲット", options=market_options, index=market_options.index(st.session_state.get("preset_market", market_options[1])) if st.session_state.get("preset_market", "") in market_options else 1, key="preset_market", on_change=extended_save_settings)
+if "preset_market" not in st.session_state:
+    st.session_state.preset_market = market_options[1]
+st.sidebar.selectbox(
+    "市場ターゲット", 
+    options=market_options, 
+    key="preset_market", 
+    on_change=extended_save_settings
+)
 
+# --- 2. 押し目プリセット ---
 push_r_options = ["25.0%", "50.0%", "61.8%"]
-st.sidebar.selectbox("押し目プリセット", options=push_r_options, index=push_r_options.index(st.session_state.get("preset_push_r", push_r_options[1])) if st.session_state.get("preset_push_r", "") in push_r_options else 1, key="preset_push_r", on_change=apply_presets)
+if "preset_push_r" not in st.session_state:
+    st.session_state.preset_push_r = push_r_options[1]
+st.sidebar.selectbox(
+    "押し目プリセット", 
+    options=push_r_options, 
+    key="preset_push_r", 
+    on_change=apply_presets
+)
 
+# --- 3. 戦術アルゴリズム ---
 tactics_options = ["⚖️ バランス (掟達成率 ＞ 到達度)", "🎯 狙撃優先 (到達度 ＞ 掟達成率)"]
-st.sidebar.selectbox("戦術アルゴリズム", options=tactics_options, index=tactics_options.index(st.session_state.get("sidebar_tactics", tactics_options[0])) if st.session_state.get("sidebar_tactics", "") in tactics_options else 0, key="sidebar_tactics", on_change=extended_save_settings)
+if "sidebar_tactics" not in st.session_state:
+    st.session_state.sidebar_tactics = tactics_options[0]
+st.sidebar.selectbox(
+    "戦術アルゴリズム", 
+    options=tactics_options, 
+    key="sidebar_tactics", 
+    on_change=extended_save_settings
+)
 
 st.sidebar.divider()
 
