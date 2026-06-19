@@ -4466,9 +4466,12 @@ with tab5:
             sim_sl_i = float(st.session_state.bt_sl_i)
             sim_limit_d = int(st.session_state.limit_d)
             sim_sell_d = int(st.session_state.bt_sell_d)
-            
+
             is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
             is_stealth = "潜伏" in st.session_state.bt_mode_sim_v2
+            is_assault = "強襲" in st.session_state.bt_mode_sim_v2  # 🚨 この1行を追加！
+            
+            # 各モードごとの最適化の軸・固有値変数の初期配線
             
             # 各モードごとの最適化の軸・固有値変数の初期配線
             if is_ambush:
