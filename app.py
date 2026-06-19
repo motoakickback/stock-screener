@@ -4338,7 +4338,6 @@ with tab5:
     # ==========================================
     # 🎯 TAB5専用：演習売買執行パラメータ（防弾・自動保存仕様）
     # ==========================================
-    # 初回起動時のシステムエラー（存在しない変数の参照）を防ぐ安全装置
     if "bt_lot" not in st.session_state: st.session_state.bt_lot = 100
     if "limit_d" not in st.session_state: st.session_state.limit_d = 5
     if "bt_tp" not in st.session_state: st.session_state.bt_tp = 10
@@ -4346,7 +4345,6 @@ with tab5:
     if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
     if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
     
-    # 🚨 戦術特化パラメータの初期化（重複パージ済）
     if "sim_ambush_vol" not in st.session_state: st.session_state.sim_ambush_vol = 1.5
     if "sim_assault_atr" not in st.session_state: st.session_state.sim_assault_atr = 1.0
     if "sim_stealth_val" not in st.session_state: st.session_state.sim_stealth_val = 3.0
@@ -4429,7 +4427,6 @@ with tab5:
         if "待伏" in st.session_state.bt_mode_sim_v2:
             st.markdown("##### 🌐 【待伏】シミュレータ固有設定")
             ct1, ct2, ct3 = st.columns(3)
-            # 🚨 押し目(%)とフィボナッチの重複を統合
             ct1.number_input("📉 買目標(フィボナッチ押 %)", min_value=0.0, max_value=100.0, value=float(st.session_state.get('sim_push_r_val', 50.0)), step=0.1, format="%.1f", key="sim_push_r_val")
             ct2.number_input("🎯 掟クリア要求スコア", min_value=1, max_value=9, value=int(st.session_state.get('sim_pass_req_val', 7)), step=1, key="sim_pass_req_val")
             ct3.number_input("📈 RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_ambush_val', 45)), step=5, key="sim_rsi_lim_ambush_val")
@@ -4453,7 +4450,6 @@ with tab5:
         else:
             st.markdown("##### ⚡ 【強襲】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
-            # 🚨 RSI重複および不要な時間リスクをパージし、2つの最強条件のみに凝縮
             ct1.number_input("📈 エントリーRSI上限 (%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_assault_val', 70)), step=5, key="sim_rsi_lim_assault_val")
             ct2.number_input("🌋 ボラ未発散限界 (ATR倍)", min_value=0.5, max_value=3.0, value=float(st.session_state.get('sim_assault_atr', 1.0)), step=0.1, key="sim_assault_atr", on_change=extended_save_settings, help="起点安値から現在値までの上昇幅が14日ATRの何倍以内か")
 
@@ -4487,11 +4483,12 @@ with tab5:
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "収縮率上限(%)", "利確目標(%)"
             else:
+                # 🚨 強襲の最適化の軸を「RSI上限」と「ボラ未発散限界(ATR倍)」に換装しました！
                 sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
                 sim_assault_atr = float(st.session_state.sim_assault_atr)
-                p1_range = range(30, 85, 5) if optimize_bt else [sim_rsi_lim_assault]
-                p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
-                p1_name, p2_name = "RSI上限(%)", "利確目標(%)"
+                p1_range = range(50, 86, 5) if optimize_bt else [sim_rsi_lim_assault]
+                p2_range = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0] if optimize_bt else [sim_assault_atr]
+                p1_name, p2_name = "RSI上限(%)", "未発散限界(ATR倍)"
             
             with st.spinner("データをプリロード中（メモリ極限圧縮＆完全クリーンアップ中）..."):
                 preloaded_data = {}
@@ -4531,7 +4528,6 @@ with tab5:
                                 df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
 
                         if 'Close' not in df.columns and 'AdjC' not in df.columns:
-                            debug_logs.append(f"[{c}] ❌ 株価カラム(Close/AdjC)が存在しません")
                             continue
 
                         clean_data = clean_df(df)
@@ -4539,7 +4535,6 @@ with tab5:
 
                         target_cols = ['AdjO', 'AdjH', 'AdjL', 'AdjC']
                         if not all(col in clean_data.columns for col in target_cols):
-                            debug_logs.append(f"[{c}] ❌ 必須株価データが欠損しています")
                             continue
 
                         clean_data = clean_data.dropna(subset=target_cols).reset_index(drop=True)
@@ -4548,28 +4543,18 @@ with tab5:
                             clean_data[col] = clean_data[col].astype('float32')
                         
                         if len(clean_data) < 35: 
-                            debug_logs.append(f"[{c}] ❌ 稼働日数が不足しています（現在 {len(clean_data)}日）")
                             continue
 
                         processed_df = calc_vector_indicators(clean_data)
                         
                         if processed_df is not None and isinstance(processed_df, pd.DataFrame):
                             preloaded_data[c] = processed_df
-                        else:
-                            debug_logs.append(f"[{c}] ❌ テクニカル計算エラー")
                             
                     except Exception as e: 
-                        debug_logs.append(f"[{c}] ❌ 内部処理中に致命的エラー: {e}")
                         continue
 
             if not preloaded_data:
-                st.error("🚨 兵站エラー：解析可能なデータが取得できませんでした。以下のデバッグレポートを確認してください。")
-                with st.expander("🛠️ 【参謀用デバッグレポート】 なぜデータが棄却されたのか？", expanded=True):
-                    if not debug_logs:
-                        st.warning("⚠️ 銘柄コード欄から有効なコードが抽出されていません。（入力形式を確認してください）")
-                    else:
-                        for log in debug_logs:
-                            st.info(log)
+                st.error("🚨 兵站エラー：解析可能なデータが取得できませんでした。銘柄コードを確認してください。")
             else:
                 try:
                     opt_results = []
@@ -4609,15 +4594,14 @@ with tab5:
                                             if 'check_head_shoulders' in globals() and not check_head_shoulders(win_30): score += 1
                                             if bt_val * 0.85 <= lc_prev <= bt_val * 1.35: score += 1
                                             
-                                            # 🚨 クジラ流入判定（出来高）をスコアに直結：列揺れ吸収の完全防弾化
-                                            v_col = next((c for c in ['AdjVo', 'Volume', 'volume', 'Vo', 'v'] if c in win_14.columns), None)
+                                            v_col = next((cc for cc in ['AdjVo', 'Volume', 'volume', 'Vo', 'v'] if cc in win_14.columns), None)
                                             if v_col:
                                                 vol_prev = prev.get(v_col, 0)
                                                 avg_vol = win_14[v_col].mean() if len(win_14) > 0 else 1
                                                 if avg_vol > 0 and (vol_prev / avg_vol) >= sim_ambush_vol:
                                                     score += 1
                                                 
-                                            score += 3 # Base score compensation
+                                            score += 3
                                             
                                             if score >= t_p2:
                                                 if td['AdjL'] <= bt_val:
@@ -4648,14 +4632,13 @@ with tab5:
                                                         eval_atr = df.iloc[idx_eval].get('ATR', 0)
                                                         eval_c = df.iloc[idx_eval]['AdjC']
                                                         
-                                                        # 🚨 ボラ未発散限界の計算をバックエンドに直結
-                                                        if eval_atr > 0 and (eval_c - eval_l14) > (eval_atr * sim_assault_atr):
+                                                        # 🚨 ボラ未発散限界の最適化をバックエンドに直結（t_p2を使用）
+                                                        if eval_atr > 0 and (eval_c - eval_l14) > (eval_atr * t_p2):
                                                             is_unexpanded = False
                                                             
                                                         trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
                                                         break
                                             
-                                            # 不要な「時間リスク」をパージし、シンプルかつ最強の2条件（RSI上限、未発散）で狙撃
                                             if gc_triggered and is_unexpanded and rsi_prev <= t_p1:
                                                 if td['AdjH'] >= trigger_price:
                                                     exec_limit = trigger_price + (atr_prev * 0.2)
@@ -4664,7 +4647,13 @@ with tab5:
                                                     
                                     else: # ポジション保有中の決済ロジック
                                         bp = pos['b_p']; held = i - pos['b_i']; sp = 0
-                                        current_tp = sim_tp if is_ambush else t_p2 
+                                        
+                                        # 🚨 決済ロジックの最適化軸の競合を完全に分離
+                                        if is_stealth:
+                                            current_tp = t_p2 # 潜伏は利確目標を最適化
+                                        else:
+                                            current_tp = sim_tp # 待伏・強襲は共通UIの利確目標を固定で使用
+                                            
                                         e_atr = pos.get('entry_atr', prev.get('ATR', 0))
                                         t_price = pos.get('trigger', bp)
                                         
@@ -4690,26 +4679,35 @@ with tab5:
                     
                     p_bar.empty()
 
-                    if optimize_bt and opt_results:
-                        st.markdown(f"### 🏆 {st.session_state.bt_mode_sim_v2.split()[1]}・最適化レポート")
-                        opt_df = pd.DataFrame(opt_results).sort_values('総合利益(円)', ascending=False)
-                        best = opt_df.iloc[0]
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric(f"推奨 {p1_name}", f"{int(best[p1_name])} " + ("%" if is_ambush or is_stealth else ""))
-                        c2.metric(f"推奨 {p2_name}", f"{int(best[p2_name])} " + ("点" if is_ambush else "%"))
-                        c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
-                        st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
-                        st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
-                        
-                        if is_ambush: 
-                            st.info(f"💡 【推奨戦術】高値から {int(best[p1_name])}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高いと解析されます。")
-                        elif is_stealth:
-                            st.info(f"💡 【推奨戦術】ボラティリティ収縮率 {int(best[p1_name])}% 以下の煮詰まり銘柄に対し、利確目標 {int(best[p2_name])}% でブレイクアウトを狙うのが最も期待値が高いと解析されます。")
+                    # 🚨 判定：opt_results が空だった場合の「無反応バグ」を完全粉砕！
+                    if optimize_bt:
+                        if not opt_results:
+                            st.warning("⚠️ 指定された期間・条件でシグナル点灯（約定）は1件も確認できませんでした。条件を緩和して再試行してください。")
                         else:
-                            st.info(f"💡 【推奨戦術】RSI上限 {int(best[p1_name])}% 以下で、利確目標 {int(best[p2_name])}% の強襲ブレイクアウトが最も期待値が高いと解析されます。")
+                            st.markdown(f"### 🏆 {st.session_state.bt_mode_sim_v2.split()[1]}・最適化レポート")
+                            opt_df = pd.DataFrame(opt_results).sort_values('総合利益(円)', ascending=False)
+                            best = opt_df.iloc[0]
+                            c1, c2, c3 = st.columns(3)
+                            
+                            c1_unit = " %" if "%" in p1_name else ""
+                            c2_unit = " 倍" if "倍" in p2_name else " 点" if "Score" in p2_name else " %"
+                            
+                            c1.metric(f"推奨 {p1_name}", f"{best[p1_name]}{c1_unit}")
+                            c2.metric(f"推奨 {p2_name}", f"{best[p2_name]}{c2_unit}")
+                            c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
+                            st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
+                            st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
+                            
+                            if is_ambush: 
+                                st.info(f"💡 【推奨戦術】高値から {best[p1_name]}% の押し目位置に指値を展開し、掟スコア {int(best[p2_name])}点 以上で迎撃するのが最も期待値が高いと解析されます。")
+                            elif is_stealth:
+                                st.info(f"💡 【推奨戦術】ボラティリティ収縮率 {best[p1_name]}% 以下の煮詰まり銘柄に対し、利確目標 {int(best[p2_name])}% でブレイクアウトを狙うのが最も期待値が高いと解析されます。")
+                            else:
+                                st.info(f"💡 【推奨戦術】RSI上限 {best[p1_name]}% 以下かつ、トレンド初動の未発散限界を {best[p2_name]} ATR以内に絞り込んだ強襲ブレイクアウトが最も期待値が高いと解析されます。")
 
                     elif run_bt:
-                        if not opt_results: st.warning("指定された期間・条件でシグナル点灯（約定）は確認できませんでした。")
+                        if not opt_results:
+                            st.warning("⚠️ 指定された期間・条件でシグナル点灯（約定）は1件も確認できませんでした。")
                         else:
                             tdf = pd.DataFrame(all_t).sort_values('決済日').reset_index(drop=True)
                             tdf['累積損益(円)'] = tdf['損益額(円)'].cumsum()
