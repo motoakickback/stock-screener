@@ -4345,6 +4345,7 @@ with tab5:
     if "bt_sl_c" not in st.session_state: st.session_state.bt_sl_c = 15
     if "bt_sell_d" not in st.session_state: st.session_state.bt_sell_d = 20
     
+    # 戦術特化パラメータの初期化
     if "sim_ambush_vol" not in st.session_state: st.session_state.sim_ambush_vol = 1.5
     if "sim_assault_atr" not in st.session_state: st.session_state.sim_assault_atr = 1.0
     if "sim_stealth_val" not in st.session_state: st.session_state.sim_stealth_val = 3.0
@@ -4359,10 +4360,10 @@ with tab5:
         st.number_input("購入ロット(株)", step=100, key="bt_lot", on_change=extended_save_settings, help="演習における1エントリーの基準株数")
         st.number_input("猶予期限(日)", step=1, key="limit_d", on_change=extended_save_settings, help="シグナル検知から何営業日以内にエントリーするか")
     with col_bt2:
-        st.number_input("利確目標(%)", step=1, key="bt_tp", on_change=extended_save_settings)
-        st.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=extended_save_settings, help="手仕舞い（タイムアップ）までの最大日数")
+        st.number_input("利確目標(%)", step=1, key="bt_tp", on_change=extended_save_settings, help="シミュレーションに直結する利確目標幅")
+        st.number_input("最大保持期間(日)", step=1, key="bt_sell_d", on_change=extended_save_settings, help="手仕舞いまでの最大日数（保有期間）")
     with col_bt3:
-        st.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=extended_save_settings, help="エントリー直後の防衛ライン幅")
+        st.number_input("初期損切(%)", step=1, key="bt_sl_i", on_change=extended_save_settings, help="シミュレーションに直結する防衛ライン幅（損切目標）")
         st.number_input("現在損切(%)", step=1, key="bt_sl_c", on_change=extended_save_settings, help="トリアージ追従用の現行損切幅")
 
     st.markdown("---") 
@@ -4441,7 +4442,7 @@ with tab5:
             ct1.number_input("📉 ボラ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
             ct2.number_input("📈 RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
             
-            st.markdown("###### ＋ 高度なチューニング")
+            st.markdown("###### ＋高度なチューニング")
             cx1, cx2, cx3 = st.columns(3)
             cx1.number_input("💰 売買代金下限(億円)", min_value=0.1, max_value=50.0, value=float(st.session_state.get('sim_stealth_val', 3.0)), step=0.5, key="sim_stealth_val", on_change=extended_save_settings)
             cx2.number_input("📉 出来高過疎比率(倍)", min_value=0.1, max_value=2.0, value=float(st.session_state.get('sim_stealth_vol', 0.8)), step=0.1, key="sim_stealth_vol", on_change=extended_save_settings)
@@ -4460,16 +4461,18 @@ with tab5:
         if not t_codes: 
             st.warning("有効なコードが見つかりません。")
         else:
+            # 🚨 司令官指定のコア売買執行パラメータを完全同期装填
             sim_tp = float(st.session_state.bt_tp)
             sim_sl_i = float(st.session_state.bt_sl_i)
             sim_limit_d = int(st.session_state.limit_d)
             sim_sell_d = int(st.session_state.bt_sell_d)
-            sim_push_r = float(st.session_state.sim_push_r_val)
-
+            
             is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
             is_stealth = "潜伏" in st.session_state.bt_mode_sim_v2
             
+            # 各モードごとの最適化の軸・固有値変数の初期配線
             if is_ambush:
+                sim_push_r = float(st.session_state.sim_push_r_val)
                 sim_pass_req = int(st.session_state.sim_pass_req_val)
                 sim_rsi_lim_ambush = int(st.session_state.sim_rsi_lim_ambush_val)
                 sim_ambush_vol = float(st.session_state.sim_ambush_vol)
@@ -4477,13 +4480,15 @@ with tab5:
                 p2_range = range(5, 10, 1) if optimize_bt else [sim_pass_req]
                 p1_name, p2_name = "Push率(%)", "要求Score"
             elif is_stealth:
-                sim_stealth_vol = int(st.session_state.sim_stealth_vol_val)
+                sim_stealth_vol_spec = int(st.session_state.sim_stealth_vol_val)
                 sim_rsi_lim_stealth = int(st.session_state.sim_rsi_lim_stealth_val)
-                p1_range = range(5, 20, 2) if optimize_bt else [sim_stealth_vol]
+                sim_stealth_val = float(st.session_state.sim_stealth_val)
+                sim_stealth_vol = float(st.session_state.sim_stealth_vol)
+                sim_stealth_atr = float(st.session_state.sim_stealth_atr)
+                p1_range = range(5, 20, 2) if optimize_bt else [sim_stealth_vol_spec]
                 p2_range = range(3, 16, 1) if optimize_bt else [int(sim_tp)]
                 p1_name, p2_name = "収縮率上限(%)", "利確目標(%)"
             else:
-                # 🚨 強襲の最適化の軸を「RSI上限」と「ボラ未発散限界(ATR倍)」に換装しました！
                 sim_rsi_lim_assault = int(st.session_state.sim_rsi_lim_assault_val)
                 sim_assault_atr = float(st.session_state.sim_assault_atr)
                 p1_range = range(50, 86, 5) if optimize_bt else [sim_rsi_lim_assault]
@@ -4546,7 +4551,6 @@ with tab5:
                             continue
 
                         processed_df = calc_vector_indicators(clean_data)
-                        
                         if processed_df is not None and isinstance(processed_df, pd.DataFrame):
                             preloaded_data[c] = processed_df
                             
@@ -4578,12 +4582,19 @@ with tab5:
                                         if pd.isna(h14) or pd.isna(l14) or l14 <= 0: continue
                                         if atr_prev < 1 or (atr_prev / lc_prev) < 0.01: continue
                                         
+                                        # -----------------------------------------------
+                                        # 🌐 待伏戦術のシミュレーション演算
+                                        # -----------------------------------------------
                                         if is_ambush:
+                                            # 最適化時か通常時かで走査変数を動的に結合
+                                            effective_push = t_p1 if optimize_bt else sim_push_r
+                                            effective_score_req = t_p2 if optimize_bt else sim_pass_req
+                                            
                                             r14 = h14 / l14
                                             rsi_prev = prev.get('RSI', 50)
                                             idxmax = win_14['AdjH'].idxmax()
                                             d_high = len(win_14[win_14['Date'] > win_14.loc[idxmax, 'Date']]) if pd.notna(idxmax) else 0
-                                            bt_val = int(h14 - ((h14 - l14) * (t_p1 / 100.0)))
+                                            bt_val = int(h14 - ((h14 - l14) * (effective_push / 100.0)))
                                             
                                             if rsi_prev > sim_rsi_lim_ambush: continue
 
@@ -4603,23 +4614,34 @@ with tab5:
                                                 
                                             score += 3
                                             
-                                            if score >= t_p2:
+                                            if score >= effective_score_req:
                                                 if td['AdjL'] <= bt_val:
                                                     exec_p = min(td['AdjO'], bt_val)
                                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p}
-                                                    
+                                        
+                                        # -----------------------------------------------
+                                        # 💎 潜伏戦術のシミュレーション演算
+                                        # -----------------------------------------------
                                         elif is_stealth:
+                                            effective_stealth_vol = t_p1 if optimize_bt else sim_stealth_vol_spec
+                                            
                                             rsi_prev = prev.get('RSI', 50)
                                             volatility_pct = ((h14 - l14) / l14) * 100
                                             
-                                            if volatility_pct <= t_p1 and rsi_prev <= sim_rsi_lim_stealth:
-                                                trigger_price = h14 + (atr_prev * 0.1) 
+                                            if volatility_pct <= effective_stealth_vol and rsi_prev <= sim_rsi_lim_stealth:
+                                                trigger_price = h14 + (atr_prev * sim_stealth_atr) 
                                                 if td['AdjH'] >= trigger_price:
                                                     exec_limit = trigger_price + (atr_prev * 0.5)
                                                     exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
                                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
                                         
-                                        else: # 強襲モード
+                                        # -----------------------------------------------
+                                        # ⚡ 強襲戦術のシミュレーション演算
+                                        # -----------------------------------------------
+                                        else: 
+                                            effective_rsi = t_p1 if optimize_bt else sim_rsi_lim_assault
+                                            effective_atr_mult = t_p2 if optimize_bt else sim_assault_atr
+                                            
                                             rsi_prev = prev.get('RSI', 50)
                                             gc_triggered = False; trigger_price = 0; is_unexpanded = True
                                             for d_ago in range(1, int(sim_limit_d) + 1):
@@ -4632,40 +4654,50 @@ with tab5:
                                                         eval_atr = df.iloc[idx_eval].get('ATR', 0)
                                                         eval_c = df.iloc[idx_eval]['AdjC']
                                                         
-                                                        # 🚨 ボラ未発散限界の最適化をバックエンドに直結（t_p2を使用）
-                                                        if eval_atr > 0 and (eval_c - eval_l14) > (eval_atr * t_p2):
+                                                        if eval_atr > 0 and (eval_c - eval_l14) > (eval_atr * effective_atr_mult):
                                                             is_unexpanded = False
                                                             
                                                         trigger_price = eval_h14 if eval_h14 > eval_c else eval_c + (eval_atr * 0.5)
                                                         break
                                             
-                                            if gc_triggered and is_unexpanded and rsi_prev <= t_p1:
+                                            if gc_triggered and is_unexpanded and rsi_prev <= effective_rsi:
                                                 if td['AdjH'] >= trigger_price:
                                                     exec_limit = trigger_price + (atr_prev * 0.2)
                                                     exec_p = min(max(td['AdjO'], trigger_price), exec_limit)
                                                     pos = {'b_i': i, 'b_d': td['Date'], 'b_p': exec_p, 'entry_atr': atr_prev, 'trigger': trigger_price}
                                                     
-                                    else: # ポジション保有中の決済ロジック
-                                        bp = pos['b_p']; held = i - pos['b_i']; sp = 0
+                                    else: 
+                                        # -----------------------------------------------
+                                        # 💰 共通エグジット審査判定（利確目標・損切目標%・保有期間の物理直結）
+                                        # -----------------------------------------------
+                                        bp = pos['b_p']
+                                        held = i - pos['b_i']
+                                        sp = 0
                                         
-                                        # 🚨 決済ロジックの最適化軸の競合を完全に分離
-                                        if is_stealth:
-                                            current_tp = t_p2 # 潜伏は利確目標を最適化
-                                        else:
-                                            current_tp = sim_tp # 待伏・強襲は共通UIの利確目標を固定で使用
-                                            
-                                        e_atr = pos.get('entry_atr', prev.get('ATR', 0))
+                                        # 利確目標値の動的ロード（潜伏の最適化時のみ t_p2 を利確目標として使用）
+                                        effective_tp_pct = t_p2 if (is_stealth and optimize_bt) else sim_tp
+                                        
+                                        # 🚨 司令官指定の「初期損切(%)」および「利確(%)」に基づく絶対値幅の自動計算
+                                        sl_val = bp * (1 - (sim_sl_i / 100.0))
+                                        tp_val = bp * (1 + (effective_tp_pct / 100.0))
+                                        
+                                        # トリガー価格が存在する場合はそこを規準にディフェンスラインを設定
                                         t_price = pos.get('trigger', bp)
-                                        
-                                        sl_val = t_price - (e_atr * 1.0)
-                                        tp_val = bp * (1 + (current_tp / 100.0))
-                                        
-                                        if td['AdjL'] <= sl_val: sp = min(td['AdjO'], sl_val)
-                                        elif td['AdjH'] >= tp_val: sp = max(td['AdjO'], tp_val)
-                                        elif held >= sim_sell_d: sp = td['AdjC']
+                                        if is_assault or is_stealth:
+                                            e_atr = pos.get('entry_atr', prev.get('ATR', 0))
+                                            # スナイパー仕様のATR追従型損切りもセーフティとして併設
+                                            sl_val = min(sl_val, t_price - (e_atr * 1.0))
+
+                                        if td['AdjL'] <= sl_val: 
+                                            sp = min(td['AdjO'], sl_val) # 損切目標発動
+                                        elif td['AdjH'] >= tp_val: 
+                                            sp = max(td['AdjO'], tp_val) # 利確目標発動
+                                        elif held >= sim_sell_d: 
+                                            sp = td['AdjC'] # 最大保有期間タイムアップ手仕舞い
                                         
                                         if sp > 0:
-                                            sp = round(sp, 1); p_pct = round(((sp / bp) - 1) * 100, 2)
+                                            sp = round(sp, 1)
+                                            p_pct = round(((sp / bp) - 1) * 100, 2)
                                             p_amt = int((sp - bp) * st.session_state.get('bt_lot', 100))
                                             all_t.append({'銘柄': c, '購入日': pos['b_d'], '決済日': td['Date'], '保有日数': held, '買値(円)': int(bp), '売値(円)': int(sp), '損益(%)': p_pct, '損益額(円)': p_amt})
                                             pos = None
@@ -4679,7 +4711,6 @@ with tab5:
                     
                     p_bar.empty()
 
-                    # 🚨 判定：opt_results が空だった場合の「無反応バグ」を完全粉砕！
                     if optimize_bt:
                         if not opt_results:
                             st.warning("⚠️ 指定された期間・条件でシグナル点灯（約定）は1件も確認できませんでした。条件を緩和して再試行してください。")
@@ -4695,6 +4726,10 @@ with tab5:
                             c1.metric(f"推奨 {p1_name}", f"{best[p1_name]}{c1_unit}")
                             c2.metric(f"推奨 {p2_name}", f"{best[p2_name]}{c2_unit}")
                             c3.metric("期待勝率", f"{round(best['勝率']*100, 1)} %")
+                            
+                            # 💾 現在適用中の売買パラメータ状況をサイドバナー通知の如く可視化
+                            st.caption(f"ℹ️ 現在の固定適用値： 損切目標: {sim_sl_i}% ｜ 保有期間上限: {sim_sell_d}日" + (f" ｜ 利確目標: {sim_tp}%" if not is_stealth else ""))
+                            
                             st.write("#### 📊 パラメーター別収益ヒートマップ（上位10選）")
                             st.dataframe(opt_df.head(10).style.format({'総合利益(円)': '{:,}', '勝率': '{:.2%}'}), use_container_width=True, hide_index=True)
                             
