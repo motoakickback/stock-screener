@@ -307,14 +307,25 @@ def load_db_to_df(sheet_name, default_cols):
     return pd.DataFrame(columns=default_cols)
 
 def extended_save_settings():
-    """UI変更時に即座にGoogle Sheetsへ書き出すフック"""
+    """UI変更時に即座にGoogle Sheetsへ書き出すフック（最新版）"""
+    # 1. 除外銘柄コードの保存
     save_exclude_codes_to_file()
+    
+    # 2. TAB6（交戦モニター）とTAB7（戦績）のGoogle DB保存
     try:
-        if "frontline_df" in st.session_state: save_frontline_db(st.session_state.frontline_df)
-        if "aar_df_stable" in st.session_state: save_aar_db(st.session_state.aar_df_stable)
-    except Exception: pass
-    try: save_settings()
-    except NameError: pass
+        if "frontline_df" in st.session_state:
+            save_frontline_db(st.session_state.frontline_df)
+        if "aar_df_stable" in st.session_state:
+            save_aar_db(st.session_state.aar_df_stable)
+    except Exception as e:
+        st.error(f"永続化保存エラー: {str(e)}")
+        
+    # 3. 既存の設定保存ロジック（あれば連動）
+    try:
+        if 'save_settings' in globals():
+            save_settings()
+    except Exception:
+        pass
 
 # =========================================================
 # 🚨 ここが欠損しているか、場所がずれている可能性が高いです！
