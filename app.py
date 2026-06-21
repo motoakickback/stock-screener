@@ -217,7 +217,7 @@ components.html(
     """, height=0, width=0
 )
 
-# --- 2. 認証・通信設定（Connection Pooling of 導入） ---
+# --- 2. 認証・通信設定（Connection Poolingの導入） ---
 user_id = st.session_state.get("current_user", "UNKNOWN")
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
@@ -270,6 +270,47 @@ def save_monitor_data():
         with open(MONITOR_FILE, "w", encoding="utf-8") as f:
             json.dump(monitor_data, f, ensure_ascii=False, indent=4)
     except Exception:
+        pass
+
+# セッション初期化（システム起動時に自動復旧）
+if "monitor_data" not in st.session_state:
+    st.session_state.monitor_data = load_monitor_data()
+
+# ==========================================
+# 3. TAB7：交戦データベースの永続化ロジック
+# ==========================================
+def load_combat_database():
+    if os.path.exists(COMBAT_DB_FILE):
+        try:
+            return pd.read_csv(COMBAT_DB_FILE, encoding="utf-8-sig")
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def save_combat_database():
+    try:
+        combat_db_df = st.session_state.get("combat_database_df", pd.DataFrame())
+        if not combat_db_df.empty:
+            combat_db_df.to_csv(COMBAT_DB_FILE, index=False, encoding="utf-8-sig")
+    except Exception:
+        pass
+
+# セッション初期化（システム起動時に自動復旧）
+if "combat_database_df" not in st.session_state:
+    st.session_state.combat_database_df = load_combat_database()
+
+# ==========================================
+# 4. 全軍同期・強制保存フック (統合上書き版)
+# ==========================================
+def extended_save_settings():
+    """UIのあらゆる変更を検知した際に全ステートを物理ファイルへ書き出す"""
+    save_exclude_codes_to_file()
+    save_monitor_data()
+    save_combat_database()
+    try:
+        # 既存の一般設定保存ロジックが存在する場合は連動
+        save_settings()
+    except NameError:
         pass
 
 # セッション初期化（システム起動時に自動復旧）
@@ -1930,21 +1971,6 @@ PRESET_THEMES = {
         "4274", "5597", "2326", "4493"
     ]
 }
-
-# ==========================================
-# 🛡️ 0. 除外銘柄コードのローカルファイル永続化シールド
-# ==========================================
-EXCLUDE_FILE = "exclude_codes.txt"
-
-if "gigi_input" not in st.session_state:
-    if os.path.exists(EXCLUDE_FILE):
-        try:
-            with open(EXCLUDE_FILE, "r", encoding="utf-8") as f:
-                st.session_state.gigi_input = f.read().strip()
-        except:
-            st.session_state.gigi_input = ""
-    else:
-        st.session_state.gigi_input = ""
 
 def apply_price_filter(df, price_col='AdjC'):
     """ 全軍共通：価格上限・下限フィルター適用関数 """
