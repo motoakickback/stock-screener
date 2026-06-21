@@ -270,41 +270,45 @@ def save_exclude_codes_to_file():
     ws = get_or_create_worksheet(WS_EXCLUDE)
     if ws:
         current_val = str(st.session_state.get("gigi_input", "")).strip()
-        # gspread 6.0以降の新仕様対応
         try:
-            ws.update(values=[[current_val]], range_name="A1")
-        except TypeError:
-            ws.update("A1", [[current_val]])
+            try: ws.update(values=[[current_val]], range_name="A1")
+            except TypeError: ws.update("A1", [[current_val]])
+        except Exception as e:
+            st.sidebar.error(f"🚨 [除外コード] 書込エラー: {e}")
 
 # --- 2. データベース汎用保存・読込関数 ---
 def save_frontline_db(df):
     ws = get_or_create_worksheet(WS_FRONTLINE)
     if ws:
         ws.clear()
-        # 空のデータフレームでもヘッダーだけは確実に保存する
-        if df.empty:
-            data = [df.columns.values.tolist()]
+        # カラムが空の場合はデフォルトヘッダーを用意してエラーを防ぐ
+        if df.empty and len(df.columns) == 0:
+            data = [["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]]
         else:
-            data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+            data = [list(df.columns)] + df.fillna("").astype(str).values.tolist()
         
         try:
-            ws.update(values=data, range_name="A1")
-        except TypeError:
-            ws.update("A1", data)
+            try: ws.update(values=data, range_name="A1")
+            except TypeError: ws.update("A1", data)
+            st.sidebar.success("✅ [交戦モニター] Google DBへ書き込み完了")
+        except Exception as e:
+            st.sidebar.error(f"🚨 [交戦モニター] 書込エラー: {e}")
 
 def save_aar_db(df):
     ws = get_or_create_worksheet(WS_AAR)
     if ws:
         ws.clear()
-        if df.empty:
-            data = [df.columns.values.tolist()]
+        if df.empty and len(df.columns) == 0:
+            data = [["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"]]
         else:
-            data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+            data = [list(df.columns)] + df.fillna("").astype(str).values.tolist()
             
         try:
-            ws.update(values=data, range_name="A1")
-        except TypeError:
-            ws.update("A1", data)
+            try: ws.update(values=data, range_name="A1")
+            except TypeError: ws.update("A1", data)
+            st.sidebar.success("✅ [戦績DB] Google DBへ書き込み完了")
+        except Exception as e:
+            st.sidebar.error(f"🚨 [戦績DB] 書込エラー: {e}")
 
 def load_db_to_df(sheet_name, default_cols):
     ws = get_or_create_worksheet(sheet_name)
@@ -315,46 +319,20 @@ def load_db_to_df(sheet_name, default_cols):
         except: pass
     return pd.DataFrame(columns=default_cols)
 
+# --- 3. 強制同期フック ---
 def extended_save_settings():
-    """UI変更時に即座にGoogle Sheetsへ書き出すフック（デバッグ版）"""
+    save_exclude_codes_to_file()
     try:
-        # 除外銘柄の書き込みテスト
-        save_exclude_codes_to_file()
-        
-        # データベース書き込みテスト
-        if "frontline_df" in st.session_state:
+        if "frontline_df" in st.session_state: 
             save_frontline_db(st.session_state.frontline_df)
-            st.toast("✅ 交戦モニター保存成功")
-        
-        if "aar_df_stable" in st.session_state:
+        if "aar_df_stable" in st.session_state: 
             save_aar_db(st.session_state.aar_df_stable)
-            st.toast("✅ 戦績DB保存成功")
-            
     except Exception as e:
-        # エラー発生時に詳細を画面に表示
-        st.error(f"🚨 保存失敗！原因: {str(e)}")
-        st.write("詳細情報:", e)
+        st.sidebar.error(f"🚨 [同期フック] エラー: {e}")
         
-# def extended_save_settings():
-    # """UI変更時に即座にGoogle Sheetsへ書き出すフック（最新版）"""
-    # 1. 除外銘柄コードの保存
-    # save_exclude_codes_to_file()
-    
-    # 2. TAB6（交戦モニター）とTAB7（戦績）のGoogle DB保存
-    # try:
-        # if "frontline_df" in st.session_state:
-            # save_frontline_db(st.session_state.frontline_df)
-        # if "aar_df_stable" in st.session_state:
-            # save_aar_db(st.session_state.aar_df_stable)
-    # except Exception as e:
-        # st.error(f"永続化保存エラー: {str(e)}")
-        
-    # 3. 既存の設定保存ロジック（あれば連動）
-    # try:
-        # if 'save_settings' in globals():
-            # save_settings()
-    # except Exception:
-        # pass
+    try:
+        if 'save_settings' in globals(): save_settings()
+    except Exception: pass
 
 # =========================================================
 # 🚨 ここが欠損しているか、場所がずれている可能性が高いです！
