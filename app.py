@@ -232,24 +232,41 @@ import pandas as pd
 SPREADSHEET_ID = "1PZZwhGvUgTHd0ptY2g9AmLloZoB9qZpr-VIx6DrYIdw"
 
 @st.cache_resource
+# キャッシュを解除し、リアルタイムに接続診断を行う仕様に換装
 def init_gspread():
     try:
+        if "gcp_service_account" not in st.secrets:
+            st.sidebar.error("❌ 金庫(Secrets)の中に 'gcp_service_account' が見つかりません。")
+            return None
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
+        st.sidebar.error(f"🚨 Google認証エラー: {e}")
         return None
 
 g_client = init_gspread()
-db_sheet = g_client.open_by_key(SPREADSHEET_ID) if g_client else None
+
+try:
+    if g_client:
+        db_sheet = g_client.open_by_key(SPREADSHEET_ID)
+        st.sidebar.success(f"🔌 DB接続成功: {db_sheet.title}")
+    else:
+        db_sheet = None
+except Exception as e:
+    db_sheet = None
+    st.sidebar.error(f"🚨 シート取得エラー: {e}")
 
 def get_or_create_worksheet(sheet_name):
     if not db_sheet: return None
     try:
         return db_sheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
-        # シートが無ければユーザー専用シートを自動生成
-        return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+        try:
+            return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+        except Exception as e:
+            st.sidebar.error(f"🚨 シート作成エラー: {e}")
+            return None
 
 # ユーザーごとに完全独立したシートを自動生成・使用する
 WS_EXCLUDE = f"除外コード_{user_id}"
