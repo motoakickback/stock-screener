@@ -1946,14 +1946,6 @@ if "gigi_input" not in st.session_state:
     else:
         st.session_state.gigi_input = ""
 
-def save_exclude_codes_to_file():
-    try:
-        current_input = st.session_state.get("gigi_input", "")
-        with open(EXCLUDE_FILE, "w", encoding="utf-8") as f:
-            f.write(str(current_input).strip())
-    except:
-        pass
-
 def apply_price_filter(df, price_col='AdjC'):
     """ 全軍共通：価格上限・下限フィルター適用関数 """
     if df is None or df.empty:
@@ -1963,10 +1955,6 @@ def apply_price_filter(df, price_col='AdjC'):
     filtered_df = df[(df[price_col] >= min_price) & (df[price_col] <= max_price)]
     return filtered_df
     
-def extended_save_settings():
-    save_exclude_codes_to_file()
-    save_settings()
-
 # --- 4. サイドバー UI 展開 ---
 st.sidebar.title("🛠️ 戦術コンソール")
 
