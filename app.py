@@ -217,10 +217,6 @@ components.html(
     """, height=0, width=0
 )
 
-# --- 2. 認証・通信設定（Connection Poolingの導入） ---
-user_id = st.session_state.get("current_user", "UNKNOWN")
-st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
-
 # --- 2. 認証・通信設定（Connection Pooling of 導入） ---
 user_id = st.session_state.get("current_user", "UNKNOWN")
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
