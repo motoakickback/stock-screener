@@ -2203,6 +2203,10 @@ st.sidebar.checkbox("🏢 ETF・REIT等を除外", key="f7_ex_etf", on_change=ex
 st.sidebar.checkbox("💊 医薬品(バイオ)を除外", key="f8_ex_bio", on_change=extended_save_settings)
 st.sidebar.checkbox("🔪 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=extended_save_settings)
 
+# --- 🛡️ アプリ起動時にGoogle DBから除外コードを復元する ---
+if "gigi_input" not in st.session_state:
+    st.session_state.gigi_input = load_exclude_codes()
+    
 st.sidebar.text_area(
     "除外銘柄コード (カンマ区切り)", 
     key="gigi_input", 
