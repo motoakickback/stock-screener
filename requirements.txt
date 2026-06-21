@@ -5,3 +5,5 @@ plotly
 xlrd
 yfinance
 jpholiday
+gspread
+oauth2client
