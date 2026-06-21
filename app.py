@@ -2204,8 +2204,10 @@ st.sidebar.checkbox("💊 医薬品(バイオ)を除外", key="f8_ex_bio", on_ch
 st.sidebar.checkbox("🔪 落ちるナイフ除外(暴落直後)", key="f10_ex_knife", on_change=extended_save_settings)
 
 # --- 🛡️ アプリ起動時にGoogle DBから除外コードを復元する ---
-if "gigi_input" not in st.session_state:
+# gigi_inputが存在するかどうかではなく、確実に1回だけDBから読み込むためのフラグを使う
+if "db_exclude_loaded" not in st.session_state:
     st.session_state.gigi_input = load_exclude_codes()
+    st.session_state.db_exclude_loaded = True
     
 st.sidebar.text_area(
     "除外銘柄コード (カンマ区切り)", 
