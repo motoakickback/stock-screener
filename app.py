@@ -316,20 +316,6 @@ def extended_save_settings():
     try: save_settings()
     except NameError: pass
 
-# ==========================================
-# 4. 全軍同期・強制保存フック (統合上書き版)
-# ==========================================
-def extended_save_settings():
-    """UIのあらゆる変更を検知した際に全ステートを物理ファイルへ書き出す"""
-    save_exclude_codes_to_file()
-    save_monitor_data()
-    save_combat_database()
-    try:
-        # 既存の一般設定保存ロジックが存在する場合は連動
-        save_settings()
-    except NameError:
-        pass
-        
 # =========================================================
 # 🚨 ここが欠損しているか、場所がずれている可能性が高いです！
 # 必ずセッション構築の「上」に以下の2行を配置してください。
@@ -2183,30 +2169,6 @@ st.sidebar.text_area(
 )
 
 st.sidebar.divider()
-
-# ==========================================
-# 7. ⚙️ システム管理 (キャッシュパージ & 保存)
-# ==========================================
-st.sidebar.header("⚙️ システム管理")
-
-if st.sidebar.button("🔴 キャッシュ強制パージ", use_container_width=True):
-    if 'save_exclude_codes_to_file' in globals():
-        save_exclude_codes_to_file()
-    st.cache_data.clear()
-    if hasattr(st, 'cache_resource'):
-        st.cache_resource.clear()
-    st.session_state.tab1_scan_results = None
-    st.session_state.tab2_scan_results = None
-    st.rerun()
-
-if st.sidebar.button("💾 設定を保存", use_container_width=True):
-    if 'extended_save_settings' in globals():
-        extended_save_settings()
-        st.toast("✅ 全設定および除外コードを永久保存しました。")
-    else:
-        st.sidebar.warning("⚠️ 保存機能が未接続です。")
-
-st.sidebar.caption(f"KEY: {cache_key if 'cache_key' in locals() else 'N/A'}")
 
 # ==========================================
 # (2) メイン画面の描画スタート
