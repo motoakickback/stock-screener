@@ -238,8 +238,15 @@ def init_gspread():
         if "gcp_service_account" not in st.secrets:
             st.sidebar.error("❌ 金庫(Secrets)の中に 'gcp_service_account' が見つかりません。")
             return None
+            
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        
+        # ▼▼▼ 開発参謀パッチ：鍵の改行コード(\n)を本物の改行に強制翻訳 ▼▼▼
+        gcp_credentials = dict(st.secrets["gcp_service_account"])
+        gcp_credentials["private_key"] = gcp_credentials["private_key"].replace('\\n', '\n')
+        # ▲▲▲ ここまで ▲▲▲
+        
+        creds = Credentials.from_service_account_info(gcp_credentials, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
         st.sidebar.error(f"🚨 Google認証エラー: {e}")
