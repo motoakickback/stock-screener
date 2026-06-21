@@ -270,32 +270,41 @@ def save_exclude_codes_to_file():
     ws = get_or_create_worksheet(WS_EXCLUDE)
     if ws:
         current_val = str(st.session_state.get("gigi_input", "")).strip()
-        try: ws.update(range_name="A1", values=[[current_val]])
-        except: ws.update("A1", [[current_val]])
+        # gspread 6.0以降の新仕様対応
+        try:
+            ws.update(values=[[current_val]], range_name="A1")
+        except TypeError:
+            ws.update("A1", [[current_val]])
 
-if "gigi_input" not in st.session_state:
-    st.session_state.gigi_input = load_exclude_codes()
-
-# --- データベース汎用保存・読込関数 ---
+# --- 2. データベース汎用保存・読込関数 ---
 def save_frontline_db(df):
     ws = get_or_create_worksheet(WS_FRONTLINE)
-    if ws and not df.empty:
+    if ws:
         ws.clear()
-        data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
-        try: ws.update(range_name="A1", values=data)
-        except: ws.update("A1", data)
-    elif ws and df.empty:
-        ws.clear()
+        # 空のデータフレームでもヘッダーだけは確実に保存する
+        if df.empty:
+            data = [df.columns.values.tolist()]
+        else:
+            data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+        
+        try:
+            ws.update(values=data, range_name="A1")
+        except TypeError:
+            ws.update("A1", data)
 
 def save_aar_db(df):
     ws = get_or_create_worksheet(WS_AAR)
-    if ws and not df.empty:
+    if ws:
         ws.clear()
-        data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
-        try: ws.update(range_name="A1", values=data)
-        except: ws.update("A1", data)
-    elif ws and df.empty:
-        ws.clear()
+        if df.empty:
+            data = [df.columns.values.tolist()]
+        else:
+            data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+            
+        try:
+            ws.update(values=data, range_name="A1")
+        except TypeError:
+            ws.update("A1", data)
 
 def load_db_to_df(sheet_name, default_cols):
     ws = get_or_create_worksheet(sheet_name)
