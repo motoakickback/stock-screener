@@ -222,96 +222,99 @@ user_id = st.session_state.get("current_user", "UNKNOWN")
 st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
 
 # ==========================================
-# 🛡️ 永続化ストレージ定義（ユーザーID単位で分離・防弾仕様）
+# ☁️ 究極永続化ストレージ（Google Sheets 直結仕様）
 # ==========================================
-EXCLUDE_FILE = f"exclude_codes_{user_id}.txt"
-MONITOR_FILE = f"monitor_data_{user_id}.json"
-COMBAT_DB_FILE = f"combat_database_{user_id}.csv"
+import gspread
+from google.oauth2.service_account import Credentials
+import pandas as pd
 
-# ==========================================
-# 1. サイドバー：除外銘柄コードの永続化ロジック
-# ==========================================
+# 👇 【重要】ここにスプレッドシートIDを貼り付けてください 👇
+SPREADSHEET_ID = "1PZZwhGvUgTHd0ptY2g9AmLloZoB9qZpr-VIx6DrYIdw"
+
+@st.cache_resource
+def init_gspread():
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception as e:
+        return None
+
+g_client = init_gspread()
+db_sheet = g_client.open_by_key(SPREADSHEET_ID) if g_client else None
+
+def get_or_create_worksheet(sheet_name):
+    if not db_sheet: return None
+    try:
+        return db_sheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # シートが無ければユーザー専用シートを自動生成
+        return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+
+# ユーザーごとに完全独立したシートを自動生成・使用する
+WS_EXCLUDE = f"除外コード_{user_id}"
+WS_FRONTLINE = f"交戦モニター_{user_id}"
+WS_AAR = f"交戦DB_{user_id}"
+
+# --- 1. サイドバー：除外銘柄コードの自動復旧 ---
 def load_exclude_codes():
-    if os.path.exists(EXCLUDE_FILE):
+    ws = get_or_create_worksheet(WS_EXCLUDE)
+    if ws:
         try:
-            with open(EXCLUDE_FILE, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception:
-            return ""
+            val = ws.col_values(1)
+            return val[0] if val else ""
+        except: pass
     return ""
 
 def save_exclude_codes_to_file():
-    try:
-        current_input = st.session_state.get("gigi_input", "")
-        with open(EXCLUDE_FILE, "w", encoding="utf-8") as f:
-            f.write(str(current_input).strip())
-    except Exception:
-        pass
+    ws = get_or_create_worksheet(WS_EXCLUDE)
+    if ws:
+        current_val = str(st.session_state.get("gigi_input", "")).strip()
+        try: ws.update(range_name="A1", values=[[current_val]])
+        except: ws.update("A1", [[current_val]])
 
-# セッション初期化（システム起動時に自動復旧）
 if "gigi_input" not in st.session_state:
     st.session_state.gigi_input = load_exclude_codes()
 
-# ==========================================
-# 2. TAB6：交戦モニターの永続化ロジック
-# ==========================================
-def load_monitor_data():
-    if os.path.exists(MONITOR_FILE):
+# --- データベース汎用保存・読込関数 ---
+def save_frontline_db(df):
+    ws = get_or_create_worksheet(WS_FRONTLINE)
+    if ws and not df.empty:
+        ws.clear()
+        data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+        try: ws.update(range_name="A1", values=data)
+        except: ws.update("A1", data)
+    elif ws and df.empty:
+        ws.clear()
+
+def save_aar_db(df):
+    ws = get_or_create_worksheet(WS_AAR)
+    if ws and not df.empty:
+        ws.clear()
+        data = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+        try: ws.update(range_name="A1", values=data)
+        except: ws.update("A1", data)
+    elif ws and df.empty:
+        ws.clear()
+
+def load_db_to_df(sheet_name, default_cols):
+    ws = get_or_create_worksheet(sheet_name)
+    if ws:
         try:
-            with open(MONITOR_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+            data = ws.get_all_records()
+            if data: return pd.DataFrame(data)
+        except: pass
+    return pd.DataFrame(columns=default_cols)
 
-def save_monitor_data():
-    try:
-        monitor_data = st.session_state.get("monitor_data", {})
-        with open(MONITOR_FILE, "w", encoding="utf-8") as f:
-            json.dump(monitor_data, f, ensure_ascii=False, indent=4)
-    except Exception:
-        pass
-
-# セッション初期化（システム起動時に自動復旧）
-if "monitor_data" not in st.session_state:
-    st.session_state.monitor_data = load_monitor_data()
-
-# ==========================================
-# 3. TAB7：交戦データベースの永続化ロジック
-# ==========================================
-def load_combat_database():
-    if os.path.exists(COMBAT_DB_FILE):
-        try:
-            return pd.read_csv(COMBAT_DB_FILE, encoding="utf-8-sig")
-        except Exception:
-            return pd.DataFrame()
-    return pd.DataFrame()
-
-def save_combat_database():
-    try:
-        combat_db_df = st.session_state.get("combat_database_df", pd.DataFrame())
-        if not combat_db_df.empty:
-            combat_db_df.to_csv(COMBAT_DB_FILE, index=False, encoding="utf-8-sig")
-    except Exception:
-        pass
-
-# セッション初期化（システム起動時に自動復旧）
-if "combat_database_df" not in st.session_state:
-    st.session_state.combat_database_df = load_combat_database()
-
-# ==========================================
-# 4. 全軍同期・強制保存フック (統合上書き版)
-# ==========================================
 def extended_save_settings():
-    """UIのあらゆる変更を検知した際に全ステートを物理ファイルへ書き出す"""
+    """UI変更時に即座にGoogle Sheetsへ書き出すフック"""
     save_exclude_codes_to_file()
-    save_monitor_data()
-    save_combat_database()
     try:
-        # 既存の一般設定保存ロジックが存在する場合は連動
-        save_settings()
-    except NameError:
-        pass
+        if "frontline_df" in st.session_state: save_frontline_db(st.session_state.frontline_df)
+        if "aar_df_stable" in st.session_state: save_aar_db(st.session_state.aar_df_stable)
+    except Exception: pass
+    try: save_settings()
+    except NameError: pass
 
 # セッション初期化（システム起動時に自動復旧）
 if "monitor_data" not in st.session_state:
@@ -4943,25 +4946,19 @@ with tab6:
         height=0,
     )
 
-    FRONTLINE_FILE = f"saved_frontline_{user_id}.csv"
     target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
     if 'frontline_df' not in st.session_state:
-        if os.path.exists(FRONTLINE_FILE):
-            try:
-                temp_df = pd.read_csv(FRONTLINE_FILE)
-                rename_map = {'code': '銘柄', 'price': '現在値', 'buy': '買値', 'target': '第1利確', 'stop': '損切', 'lot': '株数'}
-                temp_df = temp_df.rename(columns=rename_map).reindex(columns=target_cols)
-                temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
-                num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
-                for c in num_cols:
-                    temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
-                
-                default_lot = int(st.session_state.get("bt_lot", 100))
-                temp_df['株数'] = temp_df['株数'].fillna(default_lot)
-                st.session_state.frontline_df = temp_df
-            except:
-                st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
+        temp_df = load_db_to_df(WS_FRONTLINE, target_cols)
+        if not temp_df.empty:
+            temp_df['銘柄'] = temp_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
+            num_cols = ["株数", "買値", "第1利確", "第2利確", "損切", "現在値", "atr"]
+            for c in num_cols:
+                temp_df[c] = pd.to_numeric(temp_df[c], errors='coerce')
+            
+            default_lot = int(st.session_state.get("bt_lot", 100))
+            temp_df['株数'] = temp_df['株数'].fillna(default_lot)
+            st.session_state.frontline_df = temp_df
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
@@ -4983,6 +4980,15 @@ with tab6:
         }
     )
 
+    # ▼▼▼ 開発参謀パッチ：TAB6 瞬間オートセーブ ▼▼▼
+    try:
+        if not working_df.equals(st.session_state.frontline_df):
+            st.session_state.frontline_df = working_df.copy()
+            save_frontline_db(st.session_state.frontline_df)
+    except Exception:
+        pass
+    # ▲▲▲ ここまで ▲▲▲
+
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
@@ -4995,16 +5001,17 @@ with tab6:
                             mask = working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
                             working_df.loc[mask, '現在値'] = c_price
                         st.session_state.frontline_df = working_df.copy()
+                        save_frontline_db(st.session_state.frontline_df)
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
             else:
                 st.warning("同期対象の銘柄コードがありません。")
 
     with col_c2:
-        if st.button("💾 戦況をファイルに保存", use_container_width=True):
+        if st.button("💾 戦況をGoogle DBに保存", use_container_width=True):
             st.session_state.frontline_df = working_df.copy()
-            st.session_state.frontline_df.to_csv(FRONTLINE_FILE, index=False)
-            st.toast("✅ 戦況を固定保存しました。", icon="💾")
+            save_frontline_db(st.session_state.frontline_df)
+            st.toast("✅ 戦況をGoogle DBに固定保存しました。", icon="💾")
 
     st.markdown("---")
 
@@ -5093,20 +5100,19 @@ with tab6:
                 xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), 
                 margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
             )
-            st.plotly_chart(fig, use_container_width=True, key=f"frontline_bar_{ticker_raw}_{index}_{cache_key}", config={'displayModeBar': False})
+            cache_key_str = st.session_state.get("cache_key", "default_key")
+            st.plotly_chart(fig, use_container_width=True, key=f"frontline_bar_{ticker_raw}_{index}_{cache_key_str}", config={'displayModeBar': False})
         
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
     if active_squads == 0:
         st.info("部隊未展開。有効な銘柄コードがないか、保存されていません。")
         
-# --- 11. タブコンテンツ (TAB6: 戦績ダッシュボード) ---
+# --- 11. タブコンテンツ (TAB7: 戦績ダッシュボード) ---
 with tab7:
     import datetime as dt_module
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📁 事後任務報告 (AAR) & 戦績ダッシュボード</h3>', unsafe_allow_html=True)
     st.caption("※ 記録の編集は下部の『🛠️ 戦績編集コンソール』で行ってください。")
-    
-    AAR_FILE = f"saved_aar_log_{user_id}.csv"
     
     def get_scale_for_code(code):
         api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
@@ -5118,19 +5124,16 @@ with tab7:
         return "不明"
 
     if 'aar_df_stable' not in st.session_state:
-        if os.path.exists(AAR_FILE):
-            try:
-                df_l = pd.read_csv(AAR_FILE)
-                df_l['決済日'] = df_l['決済日'].astype(str)
-                df_l['銘柄'] = df_l['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
-                for c in ['買値', '売値', '株数', '損益額(円)', '損益(%)']:
-                    if c in df_l.columns:
-                        df_l[c] = pd.to_numeric(df_l[c], errors='coerce').fillna(0)
-                st.session_state.aar_df_stable = df_l.sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
-            except:
-                st.session_state.aar_df_stable = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+        df_l = load_db_to_df(WS_AAR, ["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+        if not df_l.empty:
+            df_l['決済日'] = df_l['決済日'].astype(str)
+            df_l['銘柄'] = df_l['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True)
+            for c in ['買値', '売値', '株数', '損益額(円)', '損益(%)']:
+                if c in df_l.columns:
+                    df_l[c] = pd.to_numeric(df_l[c], errors='coerce').fillna(0)
+            st.session_state.aar_df_stable = df_l.sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
         else:
-            st.session_state.aar_df_stable = pd.DataFrame(columns=["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"])
+            st.session_state.aar_df_stable = df_l
 
     col_a1, col_a2 = st.columns([1, 2.2])
     
@@ -5160,7 +5163,7 @@ with tab7:
                         "損益額(円)": profit, "損益(%)": p_pct, "規律": "遵守" if "遵守" in f_rule else "違反", "敗因/勝因メモ": f_memo
                     }])
                     st.session_state.aar_df_stable = pd.concat([new_entry, st.session_state.aar_df_stable], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
-                    st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
+                    save_aar_db(st.session_state.aar_df_stable)
                     st.rerun()
 
         with st.expander("📥 CSV一括登録"):
@@ -5199,7 +5202,7 @@ with tab7:
                                         records.append({"決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析", "買値": int(avg_b), "売値": int(s['price']), "株数": int(m_qty), "損益額(円)": int((s['price']-avg_b)*m_qty), "損益(%)": round(((s['price']/avg_b)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動取り込み"})
                             if records:
                                 st.session_state.aar_df_stable = pd.concat([st.session_state.aar_df_stable, pd.DataFrame(records)], ignore_index=True).drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
-                                st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False); st.rerun()
+                                save_aar_db(st.session_state.aar_df_stable); st.rerun()
                     except Exception as e: st.error(f"エラー: {e}")
 
     with col_a2:
@@ -5264,12 +5267,21 @@ with tab7:
             hide_index=True, use_container_width=True, key="aar_editor_maintenance_v10"
         )
 
-        if st.button("💾 戦績の変更を確定し、色彩を同期", use_container_width=True, type="primary"):
+        # ▼▼▼ 開発参謀パッチ：TAB7 瞬間オートセーブ ▼▼▼
+        try:
+            if not working_log_df.equals(st.session_state.aar_df_stable):
+                st.session_state.aar_df_stable = working_log_df.copy()
+                save_aar_db(st.session_state.aar_df_stable)
+        except Exception:
+            pass
+        # ▲▲▲ ここまで ▲▲▲
+
+        if st.button("💾 戦績の変更を確定し、Google DBへ同期", use_container_width=True, type="primary"):
             st.session_state.aar_df_stable = working_log_df.copy()
             for col in ["買値", "売値", "株数", "損益額(円)"]:
                 st.session_state.aar_df_stable[col] = pd.to_numeric(st.session_state.aar_df_stable[col], errors='coerce').fillna(0).astype(int)
-            st.session_state.aar_df_stable.to_csv(AAR_FILE, index=False)
-            st.success("✅ 整数化完了。色彩規律を再適用しました。")
+            save_aar_db(st.session_state.aar_df_stable)
+            st.success("✅ Google Sheetsへの完全同期・色彩規律の再適用を完了しました。")
             st.rerun()
 
 # ==========================================
