@@ -316,33 +316,6 @@ def extended_save_settings():
     try: save_settings()
     except NameError: pass
 
-# セッション初期化（システム起動時に自動復旧）
-if "monitor_data" not in st.session_state:
-    st.session_state.monitor_data = load_monitor_data()
-
-# ==========================================
-# 3. TAB7：交戦データベースの永続化ロジック
-# ==========================================
-def load_combat_database():
-    if os.path.exists(COMBAT_DB_FILE):
-        try:
-            return pd.read_csv(COMBAT_DB_FILE, encoding="utf-8-sig")
-        except Exception:
-            return pd.DataFrame()
-    return pd.DataFrame()
-
-def save_combat_database():
-    try:
-        combat_db_df = st.session_state.get("combat_database_df", pd.DataFrame())
-        if not combat_db_df.empty:
-            combat_db_df.to_csv(COMBAT_DB_FILE, index=False, encoding="utf-8-sig")
-    except Exception:
-        pass
-
-# セッション初期化（システム起動時に自動復旧）
-if "combat_database_df" not in st.session_state:
-    st.session_state.combat_database_df = load_combat_database()
-
 # ==========================================
 # 4. 全軍同期・強制保存フック (統合上書き版)
 # ==========================================
