@@ -4892,7 +4892,7 @@ with tab5:
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 銘柄コードと株数を入力し、確定（Enter）後に『🔄 全軍同期』を押してください。")
+    st.caption("※ 銘柄コードと株数を入力し、確定（Enter）すると即座にGoogle DBへ自動保存されます。")
 
     components.html(
         """
@@ -4931,6 +4931,7 @@ with tab6:
 
     target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
+    # Googleスプレッドシート（DB）から初期読み込み
     if 'frontline_df' not in st.session_state:
         temp_df = load_db_to_df(WS_FRONTLINE, target_cols)
         if not temp_df.empty:
@@ -4945,6 +4946,7 @@ with tab6:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
+    # 画面エディタ（メモリ上の frontline_df を直接バインド）
     working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -4963,13 +4965,13 @@ with tab6:
         }
     )
 
-    # ▼▼▼ 開発参謀パッチ：TAB6 瞬間オートセーブ ▼▼▼
-    try:
-        if not working_df.equals(st.session_state.frontline_df):
-            st.session_state.frontline_df = working_df.copy()
-            save_frontline_db(st.session_state.frontline_df)
-    except Exception:
-        pass
+    # ▼▼▼ 開発参謀オートフラッシュパッチ：入力確定の瞬間にメモリ上書き＆Google自動保存 ▼▼▼
+    if working_df.astype(str).values.tolist() != st.session_state.frontline_df.astype(str).values.tolist():
+        st.session_state.frontline_df = working_df.copy()
+        try:
+            save_frontline_db(working_df)
+        except Exception:
+            pass
     # ▲▲▲ ここまで ▲▲▲
 
     col_c1, col_c2 = st.columns(2)
@@ -5007,6 +5009,7 @@ with tab6:
         master_df_tmp['Code_Str'] = master_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         name_map = dict(zip(master_df_tmp['Code_Str'], master_df_tmp['CompanyName']))
 
+    # 表示側ループもすべて最新の working_df（画面入力状態）から同期
     for index, row in working_df.iterrows():
         ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
@@ -5054,7 +5057,7 @@ with tab6:
                 <div style="background: {bg_rgba}; padding: 8px; border-radius: 6px; border: 1px solid {st_color}; text-align: center;">
                     <div style="font-size: 11px; color: {st_color}; font-weight: bold;">🔴 損益状況</div>
                     <div style="font-size: 20px; color: #fff; font-weight: bold;">¥{profit_amt:+,}</div>
-                    <div style="font-size: 13px; color: {st_color}; font-weight: bold;">¥{cur:,} / {cur_pct:+.2f}%</div>
+                    <div style="font-size: 13px; color: #fff; font-weight: bold;">¥{cur:,} / {cur_pct:+.2f}%</div>
                 </div>
             """, unsafe_allow_html=True)
             
