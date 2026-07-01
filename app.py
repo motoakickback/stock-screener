@@ -6,6 +6,8 @@ import itertools
 from typing import List, Dict, Tuple, Optional
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import requests
+import time
 
 # ==========================================
 # 0. システム設定 & UI初期化
@@ -13,71 +15,55 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Project AEGIS | Quant Dashboard", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
-# 1. 銘柄マスター＆モックデータ生成 (API連携までの代替)
+# 1. API通信モジュール (Lightプラン: 60リクエスト/分 対応)
 # ==========================================
-# 実運用時はAPIから全上場銘柄リスト（/v2/equities/master）を取得します
-MOCK_SECTORS = ["電気機器", "輸送用機器", "情報・通信業", "銀行業", "小売業"]
-MOCK_TICKERS = {
-    "電気機器": ["6501", "6502", "6752", "6758", "6861"],
-    "輸送用機器": ["7201", "7203", "7267", "7269"],
-    "情報・通信業": ["9432", "9433", "9434", "9984"],
-    "銀行業": ["8306", "8316", "8411"],
-    "小売業": ["8267", "9983", "7453"]
-}
-ALL_TICKERS = [t for sublist in MOCK_TICKERS.values() for t in sublist]
+HEADERS = lambda api_key: {"x-api-key": api_key}
+API_DELAY = 1.05  # 1秒間に1リクエストの制限を守るための安全マージン
 
-@st.cache_data
-def generate_market_data() -> Dict[str, pd.DataFrame]:
-    """全銘柄の日足ダミーデータを一括生成（実際のAPI通信処理に置き換わる部分）"""
-    np.random.seed(42)
-    dates = pd.date_range(end=datetime.date.today(), periods=60)
-    market_data = {}
+@st.cache_data(ttl=86400) # 1日キャッシュ
+def fetch_jquants_master(api_key: str) -> pd.DataFrame:
+    """全上場銘柄の一覧とセクター情報を取得"""
+    url = "https://api.jquants.com/v2/equities/master"
+    res = requests.get(url, headers=HEADERS(api_key))
+    if res.status_code == 200:
+        data = res.json().get("data", [])
+        return pd.DataFrame(data)
+    return pd.DataFrame()
+
+@st.cache_data(ttl=3600) # 1時間キャッシュ
+def fetch_jquants_daily_data(api_key: str, ticker: str) -> pd.DataFrame:
+    """単一銘柄の株価四本値を過去分取得 (Lightプランの制約によりSleepを強制)"""
+    time.sleep(API_DELAY) # レートリミット回避の絶対条件
     
-    # セクターごとのトレンドを生成（M1の相関用）
-    sector_trends = {sec: np.cumsum(np.random.normal(0, 5, 60)) for sec in MOCK_SECTORS}
-    
-    for sector, tickers in MOCK_TICKERS.items():
-        for i, ticker in enumerate(tickers):
-            df = pd.DataFrame(index=dates)
-            df['Date'] = dates.strftime('%Y-%m-%d')
-            base_price = np.random.randint(500, 5000)
+    url = f"https://api.jquants.com/v2/equities/bars/daily?code={ticker}"
+    res = requests.get(url, headers=HEADERS(api_key))
+    if res.status_code == 200:
+        data = res.json().get("data", [])
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True, drop=False)
             
-            # セクタートレンド + 個別ノイズ
-            trend = sector_trends[sector] + np.cumsum(np.random.normal(0, 2, 60))
-            df['AdjC'] = base_price + trend
-            df['AdjO'] = df['AdjC'].shift(1).fillna(base_price) + np.random.normal(0, 5, 60)
-            df['AdjH'] = df[['AdjO', 'AdjC']].max(axis=1) + np.random.uniform(2, 15, 60)
-            df['AdjL'] = df[['AdjO', 'AdjC']].min(axis=1) - np.random.uniform(2, 15, 60)
-            df['AdjVo'] = np.random.randint(100000, 1000000, 60)
-            
-            # --- 意図的なシグナル発生（デモ用） ---
-            # M1: 特定ペアの乖離 (7201 と 7203)
-            if ticker == "7201":
-                df.iloc[-1, df.columns.get_loc('AdjC')] *= 0.85 
-            # M2: アビス条件 (9984)
-            if ticker == "9984":
-                df.iloc[-2, df.columns.get_loc('AdjC')] = df['AdjO'].iloc[-2] * 0.90 # 大陰線
-                df.iloc[-1, df.columns.get_loc('AdjO')] = df['AdjC'].iloc[-2] * 0.98
-                df.iloc[-1, df.columns.get_loc('AdjC')] = df['AdjO'].iloc[-1] * 1.01
-                df.iloc[-1, df.columns.get_loc('AdjL')] = df['AdjC'].iloc[-1] * 0.85 # たくり線
-                df.iloc[-1, df.columns.get_loc('AdjVo')] *= 6 # 出来高急増
-            # M3: ポスト・アサルト条件 (6861)
-            if ticker == "6861":
-                df.iloc[-1, df.columns.get_loc('AdjO')] = df['AdjC'].iloc[-2] * 1.06 # +6% Gap Up
-                df.iloc[-1, df.columns.get_loc('AdjC')] = df['AdjO'].iloc[-1] * 1.04 # 大陽線
-                df.iloc[-1, df.columns.get_loc('AdjH')] = df['AdjC'].iloc[-1] * 1.01
-                df.iloc[-1, df.columns.get_loc('AdjL')] = df['AdjO'].iloc[-1] * 0.99
-                df.iloc[-1, df.columns.get_loc('AdjVo')] = df['AdjVo'].max() * 2 # 最大出来高
+            # 必要なカラムをfloat型へキャスト
+            cols = ['O', 'H', 'L', 'C', 'Vo', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjVo']
+            for c in cols:
+                if c in df.columns:
+                    df[c] = df[c].astype(float)
+            return df
+    return pd.DataFrame()
 
-            market_data[ticker] = df.ffill().bfill()
-            
-    return market_data
-
-@st.cache_data
-def generate_earnings_calendar() -> Dict[str, str]:
-    """モック用の決算カレンダー (Ticker: Date)"""
-    today_str = datetime.date.today().strftime('%Y-%m-%d')
-    return {"6861": today_str, "6501": today_str}
+@st.cache_data(ttl=21600) # 6時間キャッシュ
+def fetch_earnings_calendar(api_key: str) -> Dict[str, str]:
+    """決算発表予定日の取得"""
+    url = "https://api.jquants.com/v2/equities/earnings-calendar"
+    res = requests.get(url, headers=HEADERS(api_key))
+    earnings_dict = {}
+    if res.status_code == 200:
+        data = res.json().get("data", [])
+        for item in data:
+            if item.get("Code") and item.get("Date"):
+                earnings_dict[item["Code"]] = item["Date"]
+    return earnings_dict
 
 # ==========================================
 # 2. 共通ロジック＆描画エンジン
@@ -98,95 +84,58 @@ def apply_core_risk_management(entry: float, support: float, atr: float) -> Opti
     return {"Entry": entry, "TP1": entry + (risk_amt * 2.0), "TP2": entry + (risk_amt * 3.0), "SL": sl, "RR": "1:2+"}
 
 def plot_interactive_chart(df: pd.DataFrame, ticker: str, entry: float=None, sl: float=None, tp1: float=None):
-    """Plotlyによるインタラクティブなローソク足チャートの描画"""
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-    
-    # ローソク足
     fig.add_trace(go.Candlestick(x=df['Date'], open=df['AdjO'], high=df['AdjH'], low=df['AdjL'], close=df['AdjC'], name="Price"), row=1, col=1)
     
-    # ボリンジャーバンド等の追加（M2等の分析用）
     sma = df['AdjC'].rolling(20).mean()
     fig.add_trace(go.Scatter(x=df['Date'], y=sma, line=dict(color='orange', width=1), name="SMA20"), row=1, col=1)
     
-    # 出来高
     colors = ['green' if df['AdjC'].iloc[i] >= df['AdjO'].iloc[i] else 'red' for i in range(len(df))]
     fig.add_trace(go.Bar(x=df['Date'], y=df['AdjVo'], marker_color=colors, name="Volume"), row=2, col=1)
 
-    # ライン描画（エントリー、SL、TP）
-    if entry and entry != "-":
-        fig.add_hline(y=float(entry), line_dash="dot", line_color="cyan", annotation_text="Entry", row=1, col=1)
-    if sl and sl != "-":
-        fig.add_hline(y=float(sl), line_dash="dash", line_color="red", annotation_text="SL", row=1, col=1)
-    if tp1 and tp1 != "-":
-        fig.add_hline(y=float(tp1), line_dash="dash", line_color="green", annotation_text="TP1", row=1, col=1)
+    if entry and entry != "-": fig.add_hline(y=float(entry), line_dash="dot", line_color="cyan", annotation_text="Entry", row=1, col=1)
+    if sl and sl != "-": fig.add_hline(y=float(sl), line_dash="dash", line_color="red", annotation_text="SL", row=1, col=1)
+    if tp1 and tp1 != "-": fig.add_hline(y=float(tp1), line_dash="dash", line_color="green", annotation_text="TP1", row=1, col=1)
 
-    fig.update_layout(
-        title=f"Advanced Chart: {ticker}",
-        template="plotly_dark",
-        xaxis_rangeslider_visible=False,
-        height=500,
-        margin=dict(l=20, r=20, t=40, b=20)
-    )
+    fig.update_layout(title=f"Advanced Chart: {ticker}", template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=40, b=20))
     return fig
 
 # ==========================================
-# 3. スクリーニング・モジュール (自動スキャン対応)
+# 3. スクリーニング・モジュール
 # ==========================================
-def auto_pair_snipe_engine(df_dict: Dict[str, pd.DataFrame], sector: str) -> List[Dict]:
-    """モジュール1改修版：Long/Shortの方向とRRパラメーターの完全可視化"""
-    tickers = MOCK_TICKERS.get(sector, [])
+def auto_pair_snipe_engine(df_dict: Dict[str, pd.DataFrame], tickers: List[str]) -> List[Dict]:
     pairs = list(itertools.combinations(tickers, 2))
     results = []
     
     for tk_a, tk_b in pairs:
-        df_a = df_dict[tk_a].copy()
-        df_b = df_dict[tk_b].copy()
+        if tk_a not in df_dict or tk_b not in df_dict: continue
+        df_a, df_b = df_dict[tk_a], df_dict[tk_b]
+        if len(df_a) < 60 or len(df_b) < 60: continue
         
-        corr = df_a['AdjC'].corr(df_b['AdjC'])
+        corr = df_a['AdjC'].tail(60).corr(df_b['AdjC'].tail(60))
         if corr < 0.8: continue
             
-        # スプレッド = A / B
         spread = df_a['AdjC'] / df_b['AdjC']
         mean, std = spread.rolling(20).mean(), spread.rolling(20).std()
         
-        latest_spread = spread.iloc[-1]
-        upper_band = mean.iloc[-1] + (2 * std.iloc[-1])
-        
-        # Aが割高、Bが割安 (+2σ乖離) の場合
-        if latest_spread > upper_band:
-            # --- Long側 (B銘柄) の算出 ---
+        if spread.iloc[-1] > mean.iloc[-1] + (2 * std.iloc[-1]):
             atr_b = calculate_atr(df_b, 14).iloc[-1]
             rd_long = apply_core_risk_management(df_b['AdjC'].iloc[-1], df_b['AdjL'].iloc[-1], atr_b)
             
-            # --- Short側 (A銘柄) の算出 ---
-            # 空売りのため、SLは直近高値の「上」に置く
             atr_a = calculate_atr(df_a, 14).iloc[-1]
             entry_short = df_a['AdjC'].iloc[-1]
             sl_short = df_a['AdjH'].iloc[-1] + (atr_a * 0.5)
             risk_amt_a = sl_short - entry_short
             
-            # リスクが適正(-8.0%以内)なら算出
             if rd_long and risk_amt_a > 0 and (risk_amt_a / entry_short) <= 0.08:
-                tp1_short = entry_short - (risk_amt_a * 2.0)
-                tp2_short = entry_short - (risk_amt_a * 3.0)
-                
-                # Long出力を追加
-                results.append({
-                    "戦術": "裁定狙撃", "銘柄コード": tk_b, "方向": "🟢 買い (Long)",
-                    "Entry": f"{rd_long['Entry']:.1f}", "TP1": f"{rd_long['TP1']:.1f}", 
-                    "TP2": f"{rd_long['TP2']:.1f}", "SL": f"{rd_long['SL']:.1f}", "条件": f"割安側 (Corr: {corr:.2f})"
-                })
-                # Short出力を追加
-                results.append({
-                    "戦術": "裁定狙撃", "銘柄コード": tk_a, "方向": "🔴 売り (Short)",
-                    "Entry": f"{entry_short:.1f}", "TP1": f"{tp1_short:.1f}", 
-                    "TP2": f"{tp2_short:.1f}", "SL": f"{sl_short:.1f}", "条件": f"割高側 (Corr: {corr:.2f})"
-                })
+                results.append({"戦術": "裁定狙撃", "銘柄コード": tk_b, "方向": "🟢 買い (Long)", "Entry": f"{rd_long['Entry']:.1f}", "TP1": f"{rd_long['TP1']:.1f}", "TP2": f"{rd_long['TP2']:.1f}", "SL": f"{rd_long['SL']:.1f}", "条件": f"割安側 (Corr: {corr:.2f})"})
+                results.append({"戦術": "裁定狙撃", "銘柄コード": tk_a, "方向": "🔴 売り (Short)", "Entry": f"{entry_short:.1f}", "TP1": f"{entry_short - (risk_amt_a * 2.0):.1f}", "TP2": f"{entry_short - (risk_amt_a * 3.0):.1f}", "SL": f"{sl_short:.1f}", "条件": f"割高側 (Corr: {corr:.2f})"})
     return results
 
 def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
     results = []
     for ticker, df_orig in df_dict.items():
+        if len(df_orig) < 50: continue
         df = df_orig.copy()
         df['ATR'] = calculate_atr(df, 14)
         
@@ -199,7 +148,6 @@ def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
         df['Vol_SMA50'] = df['AdjVo'].rolling(50).mean()
         
         latest, prev = df.iloc[-1], df.iloc[-2]
-        
         cond1 = latest['RSI'] <= 20
         cond2 = (latest['AdjL'] <= latest['BB_minus3']) or (latest['AdjC'] <= latest['BB_minus3'])
         cond3 = latest['AdjVo'] >= latest['Vol_SMA50'] * 5.0
@@ -214,10 +162,7 @@ def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
         if cond1 and cond2 and cond3 and (is_takuri or is_engulf):
             rd = apply_core_risk_management(latest['AdjC'], latest['AdjL'], latest['ATR'])
             if rd:
-                results.append({
-                    "戦術": "深淵の底引き", "銘柄コード": ticker, "条件": f"RSI<=20, 出来高5倍",
-                    "Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']
-                })
+                results.append({"戦術": "深淵の底引き", "銘柄コード": ticker, "方向": "🟢 逆張り (Long)", "Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']})
     return results
 
 def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dict[str, str], start_dt: str, end_dt: str) -> List[Dict]:
@@ -227,6 +172,7 @@ def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dic
     for ticker in target_tickers:
         if ticker not in df_dict: continue
         df = df_dict[ticker].copy()
+        if len(df) < 60: continue
         df['ATR'] = calculate_atr(df, 14)
         latest, prev = df.iloc[-1], df.iloc[-2]
         
@@ -239,126 +185,149 @@ def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dic
             entry_target = (latest['AdjH'] + latest['AdjL']) / 2.0
             rd = apply_core_risk_management(entry_target, latest['AdjL'], latest['ATR'])
             if rd:
-                results.append({
-                    "戦術": "事後確信", "銘柄コード": ticker, "条件": f"GapUp+5%, 最大出来高",
-                    "Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']
-                })
+                results.append({"戦術": "事後確信", "銘柄コード": ticker, "方向": "🟢 押し目買い (Long)","Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']})
     return results
 
 # ==========================================
-# 4. Streamlit UI (ダッシュボード)
+# 4. Streamlit UI
 # ==========================================
 def main():
-    st.title("🛡️ Project AEGIS - Automated Tactical Dashboard")
+    st.title("🛡️ Project AEGIS - Live Operations (Light Plan)")
     
     # 認証フェーズ
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
+        st.session_state["api_key"] = ""
 
     if not st.session_state["authenticated"]:
-        st.info("System Locked. Enter API Key to initialize core engines.")
-        api_key = st.text_input("J-Quants API Key", type="password")
+        st.info("System Locked. Enter J-Quants API Key to initialize.")
+        api_key = st.text_input("J-Quants API Key (x-api-key)", type="password")
         if st.button("Initialize System"):
             if api_key:
+                st.session_state["api_key"] = api_key
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
                 st.error("API Key is required.")
         return
 
-    # データロード
-    with st.spinner("Loading Market Data..."):
-        df_dict = generate_market_data()
-        earnings_cal = generate_earnings_calendar()
-
-    st.sidebar.success("🟢 Core Engines Online")
+    api_key = st.session_state["api_key"]
+    st.sidebar.success("🟢 API Connected")
+    
+    # 銘柄マスターの取得（初回のみ少し時間がかかる）
+    with st.spinner("Fetching Market Master Data..."):
+        df_master = fetch_jquants_master(api_key)
+        if df_master.empty:
+            st.error("マスターデータの取得に失敗しました。APIキーを確認してください。")
+            st.stop()
+            
+    # セクターリストの作成
+    sector_col = "Sector33CodeName" if "Sector33CodeName" in df_master.columns else "Sector17CodeName"
+    sectors = sorted(df_master[sector_col].dropna().unique().tolist())
+    
+    st.sidebar.markdown(f"**Total Tickers:** {len(df_master)}")
+    st.sidebar.markdown(f"**Rate Limit:** 60 req/min (1.05s delay)")
     if st.sidebar.button("Shutdown System"):
         st.session_state["authenticated"] = False
         st.rerun()
-    st.sidebar.markdown("---")
-    
-    # タブ構成
-    tab1, tab2, tab3 = st.tabs(["[M1] Sector Pair Snipe", "[M2] Global Abyss Scan", "[M3] Earnings Assault Scan"])
+
+    st.markdown("### モジュール選択")
+    tab1, tab2, tab3 = st.tabs(["[M1] Pair Snipe", "[M2] Abyss Scan", "[M3] Earnings Assault"])
+
+    # 共通データフェッチ関数（プログレスバー付き）
+    def fetch_data_for_tickers(tickers: List[str]) -> Dict[str, pd.DataFrame]:
+        df_dict = {}
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        total = len(tickers)
+        
+        for i, tk in enumerate(tickers):
+            status_text.text(f"Fetching data: {tk} ({i+1}/{total}) - Light Plan rate limiting active...")
+            df = fetch_jquants_daily_data(api_key, tk)
+            if not df.empty:
+                df_dict[tk] = df
+            progress_bar.progress((i + 1) / total)
+            
+        status_text.text("Data fetching complete.")
+        return df_dict
 
     # --- M1 UI ---
-    # --- M1 UI ---
     with tab1:
-        st.markdown("### 🎯 モジュール1: セクター全自動サヤ抜きスキャン")
-        selected_sector = st.selectbox("ターゲット・セクターを選択", MOCK_SECTORS)
+        st.markdown("### 🎯 M1: セクター別 サヤ抜きスキャン")
+        selected_sector_m1 = st.selectbox("ターゲット・セクターを選択 (M1)", sectors, key="m1_sec")
         
-        if st.button("Scan Sector (M1)"):
-            with st.spinner(f"{selected_sector}セクターの全ペアをスキャン中..."):
-                results = auto_pair_snipe_engine(df_dict, selected_sector)
-                if results:
-                    # 2行で1ペア（Long/Short）となるため、件数表示を調整
-                    st.success(f"{len(results)//2} ペア（計 {len(results)} 件のオーダー）を検知。")
-                    st.dataframe(pd.DataFrame(results), use_container_width=True)
-                    
-                    # 詳細情報の展開（チャート）
-                    for res in results:
-                        ticker = res["銘柄コード"]
-                        direction = res.get("方向", "")
-                        
-                        with st.expander(f"📊 チャート分析: {direction} [{ticker}]"):
-                            # パラメーターが存在する場合のみチャートにラインを描画
-                            entry_val = res["Entry"] if res["Entry"] != "-" else None
-                            sl_val = res["SL"] if res["SL"] != "-" else None
-                            tp1_val = res["TP1"] if res["TP1"] != "-" else None
-                            
-                            st.plotly_chart(plot_interactive_chart(
-                                df_dict[ticker], 
-                                ticker,
-                                entry=entry_val,
-                                sl=sl_val,
-                                tp1=tp1_val
-                            ), use_container_width=True)
-                else:
-                    st.info("現在、指定セクター内に統計的優位性のある歪みは存在しません。")
+        if st.button("Execute M1 Scan"):
+            target_tickers = df_master[df_master[sector_col] == selected_sector_m1]['Code'].tolist()
+            st.warning(f"対象 {len(target_tickers)} 銘柄のデータを取得します。完了まで約 {len(target_tickers) * API_DELAY:.1f} 秒かかります。")
+            
+            df_dict_m1 = fetch_data_for_tickers(target_tickers)
+            results_m1 = auto_pair_snipe_engine(df_dict_m1, target_tickers)
+            
+            if results_m1:
+                st.success(f"{len(results_m1)//2} ペアの異常乖離を検知。")
+                st.dataframe(pd.DataFrame(results_m1), use_container_width=True)
+                for res in results_m1:
+                    tk = res["銘柄コード"]
+                    direction = res.get("方向", "")
+                    with st.expander(f"📊 チャート: {direction} [{tk}]"):
+                        st.plotly_chart(plot_interactive_chart(df_dict_m1[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
+            else:
+                st.info("指定セクター内に優位性のある歪みは存在しません。")
 
     # --- M2 UI ---
     with tab2:
-        st.markdown("### 🕳️ モジュール2: 全市場セリング・クライマックス検知")
-        st.write("ボタン一つで全銘柄（現在モックの全リスト）からパニック売りの底値をスキャンします。")
+        st.markdown("### 🕳️ M2: セクター別 セリング・クライマックス検知")
+        st.write("※Lightプランの制約上、全市場の一括スキャンは行えません。セクターを指定してください。")
+        selected_sector_m2 = st.selectbox("ターゲット・セクターを選択 (M2)", sectors, key="m2_sec")
         
-        if st.button("Execute Global Scan (M2)"):
-            with st.spinner("全銘柄のボラティリティ及びRSIを解析中..."):
-                results = auto_abyss_engine(df_dict)
-                if results:
-                    st.success(f"{len(results)} 件の極限反発ポイントを検知。")
-                    st.dataframe(pd.DataFrame(results), use_container_width=True)
-                    
-                    for res in results:
-                        ticker = res["銘柄コード"]
-                        with st.expander(f"📊 戦術詳細 & チャート: {ticker}"):
-                            st.plotly_chart(plot_interactive_chart(df_dict[ticker], ticker, res["Entry"], res["SL"], res["TP1"]), use_container_width=True)
-                else:
-                    st.info("条件に合致する銘柄は検知されませんでした。")
+        if st.button("Execute M2 Scan"):
+            target_tickers = df_master[df_master[sector_col] == selected_sector_m2]['Code'].tolist()
+            st.warning(f"対象 {len(target_tickers)} 銘柄のデータを取得します。完了まで約 {len(target_tickers) * API_DELAY:.1f} 秒かかります。")
+            
+            df_dict_m2 = fetch_data_for_tickers(target_tickers)
+            results_m2 = auto_abyss_engine(df_dict_m2)
+            
+            if results_m2:
+                st.success(f"{len(results_m2)} 件の極限反発ポイントを検知。")
+                st.dataframe(pd.DataFrame(results_m2), use_container_width=True)
+                for res in results_m2:
+                    tk = res["銘柄コード"]
+                    with st.expander(f"📊 チャート: [{tk}]"):
+                        st.plotly_chart(plot_interactive_chart(df_dict_m2[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
+            else:
+                st.info("条件に合致する銘柄は検知されませんでした。")
 
     # --- M3 UI ---
     with tab3:
-        st.markdown("### 🚀 モジュール3: 決算資金流入スキャン")
-        st.write("指定した期間内に決算を発表した全銘柄から、機関投資家の本気の買いを検知します。")
-        
+        st.markdown("### 🚀 M3: 決算資金流入スキャン")
         col1, col2 = st.columns(2)
-        start_date = col1.date_input("開始日", datetime.date.today() - datetime.timedelta(days=7))
+        start_date = col1.date_input("開始日", datetime.date.today() - datetime.timedelta(days=3))
         end_date = col2.date_input("終了日", datetime.date.today())
         
-        if st.button("Scan Earnings (M3)"):
-            with st.spinner("指定期間の決算銘柄のプライスアクションを解析中..."):
-                start_dt_str = start_date.strftime('%Y-%m-%d')
-                end_dt_str = end_date.strftime('%Y-%m-%d')
-                results = auto_post_assault_engine(df_dict, earnings_cal, start_dt_str, end_dt_str)
+        if st.button("Execute M3 Scan"):
+            with st.spinner("決算カレンダーを取得中..."):
+                earnings_cal = fetch_earnings_calendar(api_key)
                 
-                if results:
-                    st.success(f"{len(results)} 件の資金流入トレンドを検知。")
-                    st.dataframe(pd.DataFrame(results), use_container_width=True)
-                    
-                    for res in results:
-                        ticker = res["銘柄コード"]
-                        with st.expander(f"📊 戦術詳細 & チャート: {ticker}"):
-                            st.plotly_chart(plot_interactive_chart(df_dict[ticker], ticker, res["Entry"], res["SL"], res["TP1"]), use_container_width=True)
+            start_dt_str = start_date.strftime('%Y-%m-%d')
+            end_dt_str = end_date.strftime('%Y-%m-%d')
+            target_tickers = [tk for tk, dt in earnings_cal.items() if start_dt_str <= dt <= end_dt_str]
+            
+            if not target_tickers:
+                st.info("指定期間に決算発表を行う銘柄は見つかりません。")
+            else:
+                st.warning(f"対象 {len(target_tickers)} 銘柄のデータを取得します。完了まで約 {len(target_tickers) * API_DELAY:.1f} 秒かかります。")
+                df_dict_m3 = fetch_data_for_tickers(target_tickers)
+                results_m3 = auto_post_assault_engine(df_dict_m3, earnings_cal, start_dt_str, end_dt_str)
+                
+                if results_m3:
+                    st.success(f"{len(results_m3)} 件の資金流入トレンドを検知。")
+                    st.dataframe(pd.DataFrame(results_m3), use_container_width=True)
+                    for res in results_m3:
+                        tk = res["銘柄コード"]
+                        with st.expander(f"📊 チャート: [{tk}]"):
+                            st.plotly_chart(plot_interactive_chart(df_dict_m3[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
                 else:
-                    st.info("指定期間内に条件を満たす決算銘柄は存在しません。")
+                    st.info("条件を満たす資金流入銘柄は存在しません。")
 
 if __name__ == "__main__":
     main()
