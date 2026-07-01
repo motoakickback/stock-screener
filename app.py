@@ -281,6 +281,7 @@ def main():
     tab1, tab2, tab3 = st.tabs(["[M1] Sector Pair Snipe", "[M2] Global Abyss Scan", "[M3] Earnings Assault Scan"])
 
     # --- M1 UI ---
+    # --- M1 UI ---
     with tab1:
         st.markdown("### 🎯 モジュール1: セクター全自動サヤ抜きスキャン")
         selected_sector = st.selectbox("ターゲット・セクターを選択", MOCK_SECTORS)
@@ -289,18 +290,28 @@ def main():
             with st.spinner(f"{selected_sector}セクターの全ペアをスキャン中..."):
                 results = auto_pair_snipe_engine(df_dict, selected_sector)
                 if results:
-                    st.success(f"{len(results)} 件の異常乖離ペアを検知。")
+                    # 2行で1ペア（Long/Short）となるため、件数表示を調整
+                    st.success(f"{len(results)//2} ペア（計 {len(results)} 件のオーダー）を検知。")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
                     
                     # 詳細情報の展開（チャート）
                     for res in results:
-                        tk_a, tk_b = res["銘柄コード"].split(" / ")
-                        with st.expander(f"📊 チャート分析: {res['銘柄コード']}"):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.plotly_chart(plot_interactive_chart(df_dict[tk_a], tk_a), use_container_width=True)
-                            with col2:
-                                st.plotly_chart(plot_interactive_chart(df_dict[tk_b], tk_b), use_container_width=True)
+                        ticker = res["銘柄コード"]
+                        direction = res.get("方向", "")
+                        
+                        with st.expander(f"📊 チャート分析: {direction} [{ticker}]"):
+                            # パラメーターが存在する場合のみチャートにラインを描画
+                            entry_val = res["Entry"] if res["Entry"] != "-" else None
+                            sl_val = res["SL"] if res["SL"] != "-" else None
+                            tp1_val = res["TP1"] if res["TP1"] != "-" else None
+                            
+                            st.plotly_chart(plot_interactive_chart(
+                                df_dict[ticker], 
+                                ticker,
+                                entry=entry_val,
+                                sl=sl_val,
+                                tp1=tp1_val
+                            ), use_container_width=True)
                 else:
                     st.info("現在、指定セクター内に統計的優位性のある歪みは存在しません。")
 
