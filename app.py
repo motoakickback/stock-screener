@@ -223,16 +223,24 @@ def main():
             st.error("マスターデータの取得に失敗しました。APIキーを確認してください。")
             st.stop()
             
-    # 【デバッグ・パッチ: カラム構造の完全可視化】
-    st.error("【システム・アラート】マスターデータのカラム構造が予測と一致しません。")
-    st.warning("▼ 以下の『取得した全カラム名』をコピーして、AI（私）にそのまま報告してくれ。")
-    st.code(df_master.columns.tolist())
+    # 【最終パッチ: V2仕様 完全適合版セクター解析】
+    sector_col = None
+    sectors = []
     
-    if not df_master.empty:
-        st.warning("▼ データサンプル（1行目）:")
-        st.json(df_master.iloc[0].to_dict())
-        
-    st.stop() # ここでシステムの進行を強制停止する
+    # デバッグで判明した最新のV2カラム名「S33Nm」と「S17Nm」を直接指定
+    for col in ["S33Nm", "S17Nm"]:
+        if col in df_master.columns:
+            # ETF/REIT等の無効な業種（ハイフン等）を除外し、純粋なセクターのみを抽出
+            valid_sectors = df_master[col].replace('-', np.nan).dropna().unique()
+            valid_sectors = [s for s in valid_sectors if str(s).strip() != '']
+            if len(valid_sectors) > 0:
+                sector_col = col
+                sectors = sorted(list(valid_sectors))
+                break
+
+    if not sectors:
+        st.error("エラー: マスターデータから業種列を特定できませんでした。")
+        st.stop()
             
     # 決定したカラム名でドロップダウン用のリストを生成
     sectors = sorted(df_master[sector_col].dropna().unique().tolist())
