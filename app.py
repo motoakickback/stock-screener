@@ -133,6 +133,7 @@ def plot_interactive_chart(df: pd.DataFrame, ticker: str, entry: float=None, sl:
 # 3. スクリーニング・モジュール (自動スキャン対応)
 # ==========================================
 def auto_pair_snipe_engine(df_dict: Dict[str, pd.DataFrame], sector: str) -> List[Dict]:
+    """モジュール1改修版：Long/Shortの方向とRRパラメーターの完全可視化"""
     tickers = MOCK_TICKERS.get(sector, [])
     pairs = list(itertools.combinations(tickers, 2))
     results = []
@@ -144,16 +145,43 @@ def auto_pair_snipe_engine(df_dict: Dict[str, pd.DataFrame], sector: str) -> Lis
         corr = df_a['AdjC'].corr(df_b['AdjC'])
         if corr < 0.8: continue
             
+        # スプレッド = A / B
         spread = df_a['AdjC'] / df_b['AdjC']
         mean, std = spread.rolling(20).mean(), spread.rolling(20).std()
         
-        if spread.iloc[-1] > mean.iloc[-1] + (2 * std.iloc[-1]):
-            results.append({
-                "戦術": "裁定狙撃",
-                "銘柄コード": f"{tk_a} / {tk_b}",
-                "条件": f"スプレッド +2σ (相関: {corr:.2f})",
-                "Entry": "-", "TP1": "-", "TP2": "-", "SL": "-", "RR": "1:2+"
-            })
+        latest_spread = spread.iloc[-1]
+        upper_band = mean.iloc[-1] + (2 * std.iloc[-1])
+        
+        # Aが割高、Bが割安 (+2σ乖離) の場合
+        if latest_spread > upper_band:
+            # --- Long側 (B銘柄) の算出 ---
+            atr_b = calculate_atr(df_b, 14).iloc[-1]
+            rd_long = apply_core_risk_management(df_b['AdjC'].iloc[-1], df_b['AdjL'].iloc[-1], atr_b)
+            
+            # --- Short側 (A銘柄) の算出 ---
+            # 空売りのため、SLは直近高値の「上」に置く
+            atr_a = calculate_atr(df_a, 14).iloc[-1]
+            entry_short = df_a['AdjC'].iloc[-1]
+            sl_short = df_a['AdjH'].iloc[-1] + (atr_a * 0.5)
+            risk_amt_a = sl_short - entry_short
+            
+            # リスクが適正(-8.0%以内)なら算出
+            if rd_long and risk_amt_a > 0 and (risk_amt_a / entry_short) <= 0.08:
+                tp1_short = entry_short - (risk_amt_a * 2.0)
+                tp2_short = entry_short - (risk_amt_a * 3.0)
+                
+                # Long出力を追加
+                results.append({
+                    "戦術": "裁定狙撃", "銘柄コード": tk_b, "方向": "🟢 買い (Long)",
+                    "Entry": f"{rd_long['Entry']:.1f}", "TP1": f"{rd_long['TP1']:.1f}", 
+                    "TP2": f"{rd_long['TP2']:.1f}", "SL": f"{rd_long['SL']:.1f}", "条件": f"割安側 (Corr: {corr:.2f})"
+                })
+                # Short出力を追加
+                results.append({
+                    "戦術": "裁定狙撃", "銘柄コード": tk_a, "方向": "🔴 売り (Short)",
+                    "Entry": f"{entry_short:.1f}", "TP1": f"{tp1_short:.1f}", 
+                    "TP2": f"{tp2_short:.1f}", "SL": f"{sl_short:.1f}", "条件": f"割高側 (Corr: {corr:.2f})"
+                })
     return results
 
 def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
