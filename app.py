@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import time
+import concurrent.futures
+import threading
 
 # ==========================================
 # 0. システム設定 & UI初期化
@@ -251,9 +253,6 @@ def main():
 
     st.markdown("### モジュール選択")
     tab1, tab2, tab3 = st.tabs(["[M1] Pair Snipe", "[M2] Abyss Scan", "[M3] Earnings Assault"])
-
-    import concurrent.futures
-    import threading
 
     # 【新パッチ2: 限界スロットル・非同期フェッチエンジン】
     def fetch_data_for_tickers(tickers: List[str]) -> Dict[str, pd.DataFrame]:
