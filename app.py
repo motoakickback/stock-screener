@@ -309,11 +309,11 @@ def main():
             if results_m1:
                 st.success(f"{len(results_m1)//2} ペアの異常乖離を検知。")
                 st.dataframe(pd.DataFrame(results_m1), use_container_width=True)
-                for res in results_m1:
+                for i, res in enumerate(results_m1):
                     tk = res["銘柄コード"]
                     direction = res.get("方向", "")
-                    with st.expander(f"📊 チャート: {direction} [{tk}]"):
-                        st.plotly_chart(plot_interactive_chart(df_dict_m1[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
+                    with st.expander(f"📊 チャート: {direction} [{tk}] (No.{i})"):
+                        st.plotly_chart(plot_interactive_chart(df_dict_m1[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True, key=f"m1_chart_{tk}_{i}")
             else:
                 st.info("指定セクター内に優位性のある歪みは存在しません。")
 
@@ -333,10 +333,10 @@ def main():
             if results_m2:
                 st.success(f"{len(results_m2)} 件の極限反発ポイントを検知。")
                 st.dataframe(pd.DataFrame(results_m2), use_container_width=True)
-                for res in results_m2:
+                for i, res in enumerate(results_m2):
                     tk = res["銘柄コード"]
-                    with st.expander(f"📊 チャート: [{tk}]"):
-                        st.plotly_chart(plot_interactive_chart(df_dict_m2[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
+                    with st.expander(f"📊 チャート: [{tk}] (No.{i})"):
+                        st.plotly_chart(plot_interactive_chart(df_dict_m2[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True, key=f"m2_chart_{tk}_{i}")
             else:
                 st.info("条件に合致する銘柄は検知されませんでした。")
 
@@ -365,10 +365,10 @@ def main():
                 if results_m3:
                     st.success(f"{len(results_m3)} 件の資金流入トレンドを検知。")
                     st.dataframe(pd.DataFrame(results_m3), use_container_width=True)
-                    for res in results_m3:
+                    for i, res in enumerate(results_m3):
                         tk = res["銘柄コード"]
-                        with st.expander(f"📊 チャート: [{tk}]"):
-                            st.plotly_chart(plot_interactive_chart(df_dict_m3[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True)
+                        with st.expander(f"📊 チャート: [{tk}] (No.{i})"):
+                            st.plotly_chart(plot_interactive_chart(df_dict_m3[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True, key=f"m3_chart_{tk}_{i}")
                 else:
                     st.info("条件を満たす資金流入銘柄は存在しません。")
 
