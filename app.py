@@ -221,27 +221,24 @@ def main():
             st.error("マスターデータの取得に失敗しました。APIキーを確認してください。")
             st.stop()
             
-    # 【パッチ: V2仕様対応・セクターカラムの動的検知とフェイルセーフ】
+    # 【新パッチ1: 業種マスターの完全解析と修復】
     sector_col = None
-    # 考えられるV2の短縮カラム名候補をリストアップ
-    known_cols = ["Sector33CodeName", "Sector17CodeName", "Sec33Name", "Sec17Name", "SectorName", "Sector33", "Sector17"]
+    sectors = []
     
-    for col in known_cols:
+    # V2のあらゆるカラム名の可能性をスキャン
+    for col in ["Sector33CodeName", "Sector17CodeName", "17SectorName", "33SectorName"]:
         if col in df_master.columns:
-            sector_col = col
-            break
-            
-    if not sector_col:
-        # 候補にない場合、"Sec" と "Name" が含まれるカラムを動的に探す
-        sec_candidates = [c for c in df_master.columns if 'Sec' in c and 'Name' in c]
-        if sec_candidates:
-            sector_col = sec_candidates[0]
-        else:
-            # 完全に未知の構造に変更されていた場合のフェイルセーフ（クラッシュ防止）
-            df_master["Sector_Unknown"] = "全銘柄 (Sector Data Missing)"
-            sector_col = "Sector_Unknown"
-            # デバッグ用に実際のカラム名を画面に出力する
-            st.warning(f"⚠️ V2 APIのカラム名が未知の形式です。現在のカラム: {df_master.columns.tolist()}")
+            # ETF/REIT等の無効な業種（ハイフン等）を除外し、純粋なセクターのみを抽出
+            valid_sectors = df_master[col].replace('-', np.nan).dropna().unique()
+            valid_sectors = [s for s in valid_sectors if str(s).strip() != '']
+            if len(valid_sectors) > 0:
+                sector_col = col
+                sectors = sorted(list(valid_sectors))
+                break
+
+    if not sectors:
+        st.error("エラー: マスターデータから業種列を特定できませんでした。APIの仕様変更が疑われます。")
+        st.stop()
             
     # 決定したカラム名でドロップダウン用のリストを生成
     sectors = sorted(df_master[sector_col].dropna().unique().tolist())
@@ -255,20 +252,46 @@ def main():
     st.markdown("### モジュール選択")
     tab1, tab2, tab3 = st.tabs(["[M1] Pair Snipe", "[M2] Abyss Scan", "[M3] Earnings Assault"])
 
-    # 共通データフェッチ関数（プログレスバー付き）
+    import concurrent.futures
+    import threading
+
+    # 【新パッチ2: 限界スロットル・非同期フェッチエンジン】
     def fetch_data_for_tickers(tickers: List[str]) -> Dict[str, pd.DataFrame]:
         df_dict = {}
         progress_bar = st.progress(0)
         status_text = st.empty()
         total = len(tickers)
+        completed = 0
         
-        for i, tk in enumerate(tickers):
-            status_text.text(f"Fetching data: {tk} ({i+1}/{total}) - Light Plan rate limiting active...")
-            df = fetch_jquants_daily_data(api_key, tk)
-            if not df.empty:
-                df_dict[tk] = df
-            progress_bar.progress((i + 1) / total)
+        # 4並列で動かしつつ、APIへの攻撃を防ぐ（1.05秒間隔を絶対維持する）ためのロック機構
+        rate_limit_lock = threading.Lock()
+        
+        def _fetch_task(tk):
+            # API制限の壁（排他制御）: ここで全スレッドが整列し、必ず1.05秒に1回だけ通過する
+            with rate_limit_lock:
+                time.sleep(API_DELAY)
             
+            # 通信（ネットワークI/O）自体は並列で進行し、ラグを吸収する
+            df = fetch_jquants_daily_data(api_key, tk)
+            return tk, df
+
+        # 最大4スレッドで非同期実行
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_tk = {executor.submit(_fetch_task, tk): tk for tk in tickers}
+            
+            for future in concurrent.futures.as_completed(future_to_tk):
+                tk = future_to_tk[future]
+                try:
+                    tk_res, df = future.result()
+                    if not df.empty:
+                        df_dict[tk_res] = df
+                except Exception as e:
+                    pass # エラー時は無視して次へ
+                
+                completed += 1
+                progress_bar.progress(completed / total)
+                status_text.text(f"Fetching data: {tk} ({completed}/{total}) - 4-Thread Async I/O Active")
+                
         status_text.text("Data fetching complete.")
         return df_dict
 
