@@ -221,8 +221,29 @@ def main():
             st.error("マスターデータの取得に失敗しました。APIキーを確認してください。")
             st.stop()
             
-    # セクターリストの作成
-    sector_col = "Sector33CodeName" if "Sector33CodeName" in df_master.columns else "Sector17CodeName"
+    # 【パッチ: V2仕様対応・セクターカラムの動的検知とフェイルセーフ】
+    sector_col = None
+    # 考えられるV2の短縮カラム名候補をリストアップ
+    known_cols = ["Sector33CodeName", "Sector17CodeName", "Sec33Name", "Sec17Name", "SectorName", "Sector33", "Sector17"]
+    
+    for col in known_cols:
+        if col in df_master.columns:
+            sector_col = col
+            break
+            
+    if not sector_col:
+        # 候補にない場合、"Sec" と "Name" が含まれるカラムを動的に探す
+        sec_candidates = [c for c in df_master.columns if 'Sec' in c and 'Name' in c]
+        if sec_candidates:
+            sector_col = sec_candidates[0]
+        else:
+            # 完全に未知の構造に変更されていた場合のフェイルセーフ（クラッシュ防止）
+            df_master["Sector_Unknown"] = "全銘柄 (Sector Data Missing)"
+            sector_col = "Sector_Unknown"
+            # デバッグ用に実際のカラム名を画面に出力する
+            st.warning(f"⚠️ V2 APIのカラム名が未知の形式です。現在のカラム: {df_master.columns.tolist()}")
+            
+    # 決定したカラム名でドロップダウン用のリストを生成
     sectors = sorted(df_master[sector_col].dropna().unique().tolist())
     
     st.sidebar.markdown(f"**Total Tickers:** {len(df_master)}")
