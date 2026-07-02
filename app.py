@@ -18,7 +18,6 @@ from urllib3.util.retry import Retry
 # ==========================================
 st.set_page_config(page_title="Project AEGIS v2.0", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
 
-# --- st.metric文字切れ防止パッチ ---
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] > div { text-overflow: clip !important; overflow: visible !important; white-space: nowrap !important; }
@@ -30,10 +29,9 @@ st.markdown("""
 # 1. API通信モジュール (セッション永続化＆限界スロットル対応)
 # ==========================================
 HEADERS = lambda api_key: {"x-api-key": api_key}
-API_DELAY = 1.05  # Lightプランの安全マージン
+API_DELAY = 1.05  
 
 def get_session():
-    """TCPハンドシェイクを省略し、通信ラグをゼロにする永続セッション（自動リトライ機構付き）"""
     if "api_session" not in st.session_state:
         session = requests.Session()
         retry = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET"])
@@ -45,38 +43,53 @@ def get_session():
 @st.cache_data(ttl=86400)
 def fetch_jquants_master(api_key: str) -> pd.DataFrame:
     url = "https://api.jquants.com/v2/equities/master"
-    res = get_session().get(url, headers=HEADERS(api_key), timeout=10)
-    if res.status_code == 200:
-        return pd.DataFrame(res.json().get("data", []))
-    else:
-        st.error(f"【J-Quants API 拒否応答】 Status Code: {res.status_code}")
+    try:
+        res = get_session().get(url, headers=HEADERS(api_key), timeout=20)
+        if res.status_code == 200:
+            return pd.DataFrame(res.json().get("data", []))
+        else:
+            st.error(f"【J-Quants API 拒否応答】 Status Code: {res.status_code}")
+            return pd.DataFrame()
+    except requests.exceptions.RetryError:
+        # 🚨 【パッチ】リトライ限界到達時のクラッシュを防ぎ、冷静な警告を表示
+        st.error("【システム・アラート】短期間のアクセス集中により、J-Quants APIの呼び出し上限（Lightプラン：60回/分）に到達しました。")
+        st.warning("⏳ サーバーから一時的に遮断されています。約2〜3分間、何も操作せずに待機してから画面を更新してください。")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"マスターデータ通信エラー: {e}")
         return pd.DataFrame()
 
 def fetch_jquants_daily_data(api_key: str, ticker: str) -> pd.DataFrame:
     url = f"https://api.jquants.com/v2/equities/bars/daily?code={ticker}"
-    res = get_session().get(url, headers=HEADERS(api_key), timeout=10)
-    if res.status_code == 200:
-        df = pd.DataFrame(res.json().get("data", []))
-        if not df.empty:
-            df['Date'] = pd.to_datetime(df['Date'])
-            df.set_index('Date', inplace=True, drop=False)
-            cols = ['O', 'H', 'L', 'C', 'Vo', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjVo']
-            for c in cols:
-                if c in df.columns:
-                    df[c] = df[c].astype(float)
-            return df
+    try:
+        res = get_session().get(url, headers=HEADERS(api_key), timeout=10)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json().get("data", []))
+            if not df.empty:
+                df['Date'] = pd.to_datetime(df['Date'])
+                df.set_index('Date', inplace=True, drop=False)
+                cols = ['O', 'H', 'L', 'C', 'Vo', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'AdjVo']
+                for c in cols:
+                    if c in df.columns:
+                        df[c] = df[c].astype(float)
+                return df
+    except Exception:
+        pass
     return pd.DataFrame()
 
 @st.cache_data(ttl=21600)
 def fetch_earnings_calendar(api_key: str) -> Dict[str, str]:
     url = "https://api.jquants.com/v2/equities/earnings-calendar"
-    res = get_session().get(url, headers=HEADERS(api_key), timeout=10)
-    earnings_dict = {}
-    if res.status_code == 200:
-        for item in res.json().get("data", []):
-            if item.get("Code") and item.get("Date"):
-                earnings_dict[item["Code"]] = item["Date"]
-    return earnings_dict
+    try:
+        res = get_session().get(url, headers=HEADERS(api_key), timeout=10)
+        earnings_dict = {}
+        if res.status_code == 200:
+            for item in res.json().get("data", []):
+                if item.get("Code") and item.get("Date"):
+                    earnings_dict[item["Code"]] = item["Date"]
+        return earnings_dict
+    except Exception:
+        return {}
 
 # ==========================================
 # 2. 共通ロジック＆描画エンジン
@@ -250,12 +263,10 @@ def main():
     st.markdown("### モジュール選択")
     tab1, tab2, tab3 = st.tabs(["[M1] Pair Snipe", "[M2] Abyss Scan", "[M3] Earnings Assault"])
 
-    # 【革命的パッチ】時空一括取得（バルクフェッチ）＆スマートバイパス統合エンジン
     def fetch_data_for_tickers(tickers: List[str]) -> Dict[str, pd.DataFrame]:
         df_dict = {}
         missing_tickers = [tk for tk in tickers if tk not in st.session_state["data_pool"]]
         
-        # 取得済みのものはプールから即時展開 (空のDFも含む)
         for tk in tickers:
             if tk in st.session_state["data_pool"]:
                 cached_df = st.session_state["data_pool"][tk]
@@ -270,17 +281,14 @@ def main():
         status_text = st.empty()
         rate_limit_lock = threading.Lock()
         
-        # ターゲットが30銘柄以上なら、一括取得モード（バルク・フェッチ）を発動
         if len(missing_tickers) >= 30:
             status_text.text("🔥 バルク・フェッチ起動: 全市場・過去60営業日データを一括ダウンロード中...")
             
-            # 1. マスター先頭銘柄を基準に、営業日カレンダーを取得
             rep_ticker = df_master['Code'].iloc[0]
             with rate_limit_lock: time.sleep(API_DELAY)
             rep_df = fetch_jquants_daily_data(api_key, rep_ticker)
             
             if not rep_df.empty:
-                # 最新から60日分の営業日リストを抽出 (YYYYMMDD形式)
                 dates = rep_df['Date'].dt.strftime('%Y%m%d').tolist()[-60:]
                 total_dates = len(dates)
                 completed_dates = 0
@@ -289,19 +297,21 @@ def main():
                 session = get_session()
                 headers = HEADERS(api_key)
                 
-                # 2. 日付ごとに全市場のデータを取得するスレッド処理
                 def _fetch_date(dt_str):
                     with rate_limit_lock: time.sleep(API_DELAY)
                     url = f"https://api.jquants.com/v2/equities/bars/daily?date={dt_str}"
                     all_data = []
                     while url:
-                        res = session.get(url, headers=headers, timeout=10)
-                        if res.status_code == 200:
-                            j = res.json()
-                            all_data.extend(j.get("data", []))
-                            pag_key = j.get("pagination_key")
-                            url = f"https://api.jquants.com/v2/equities/bars/daily?date={dt_str}&pagination_key={pag_key}" if pag_key else None
-                        else:
+                        try:
+                            res = session.get(url, headers=headers, timeout=10)
+                            if res.status_code == 200:
+                                j = res.json()
+                                all_data.extend(j.get("data", []))
+                                pag_key = j.get("pagination_key")
+                                url = f"https://api.jquants.com/v2/equities/bars/daily?date={dt_str}&pagination_key={pag_key}" if pag_key else None
+                            else:
+                                break
+                        except Exception:
                             break
                     return all_data
 
@@ -315,7 +325,6 @@ def main():
                         progress_bar.progress(completed_dates / total_dates)
                         status_text.text(f"バルクデータ取得進行度: ({completed_dates}/{total_dates} 日分)")
                 
-                # 3. 取得した巨大データを一気に処理し、各銘柄ごとに分割してプールへ
                 status_text.text("データ構築中... (全銘柄のメモリ割り当て)")
                 if bulk_records:
                     bulk_df = pd.DataFrame(bulk_records)
@@ -332,7 +341,6 @@ def main():
                         if tk in tickers:
                             df_dict[tk] = g_df
                             
-                # 🚨 【無限ループ修正パッチ】空データの銘柄もプールに登録し、二度とフェッチさせない
                 for tk in missing_tickers:
                     if tk not in st.session_state["data_pool"]:
                         st.session_state["data_pool"][tk] = pd.DataFrame()
@@ -343,7 +351,6 @@ def main():
                 status_text.empty()
                 return df_dict
 
-        # 30銘柄未満の場合は個別取得モード
         total_missing = len(missing_tickers)
         completed = 0
         def _fetch_task(tk):
