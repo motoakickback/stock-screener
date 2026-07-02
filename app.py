@@ -130,9 +130,12 @@ def plot_interactive_chart(df: pd.DataFrame, ticker: str, entry: float=None, sl:
 # ==========================================
 # 3. スクリーニング・モジュール
 # ==========================================
-def auto_pair_snipe_engine_grouped(df_dict: Dict[str, pd.DataFrame], tickers: List[str]) -> Dict[str, List[Dict]]:
+def auto_pair_snipe_engine(df_dict: Dict[str, pd.DataFrame], tickers: List[str]) -> List[Dict]:
+    """M1: ご指示通り「フラットな一覧（サマリー）」で出力し、出来高情報も追加したエンジン"""
     pairs = list(itertools.combinations(tickers, 2))
-    grouped_results = {}
+    hub_dict = {}
+    results = []
+    
     for tk_a, tk_b in pairs:
         if tk_a not in df_dict or tk_b not in df_dict: continue
         df_a, df_b = df_dict[tk_a], df_dict[tk_b]
@@ -153,11 +156,24 @@ def auto_pair_snipe_engine_grouped(df_dict: Dict[str, pd.DataFrame], tickers: Li
             risk_amt_a = sl_short - entry_short
             
             if rd_long and risk_amt_a > 0 and (risk_amt_a / entry_short) <= 0.08:
-                short_data = {"銘柄コード": tk_a, "方向": "🔴 売り (Short)", "Entry": f"{entry_short:.1f}", "TP1": f"{entry_short - (risk_amt_a * 2.0):.1f}", "TP2": f"{entry_short - (risk_amt_a * 3.0):.1f}", "SL": f"{sl_short:.1f}", "条件": f"割高側"}
-                long_data = {"銘柄コード": tk_b, "方向": "🟢 買い (Long)", "Entry": f"{rd_long['Entry']:.1f}", "TP1": f"{rd_long['TP1']:.1f}", "TP2": f"{rd_long['TP2']:.1f}", "SL": f"{rd_long['SL']:.1f}", "条件": f"割安側 (Corr: {corr:.2f})"}
-                if tk_a not in grouped_results: grouped_results[tk_a] = {"hub": short_data, "targets": []}
-                grouped_results[tk_a]["targets"].append(long_data)
-    return grouped_results
+                vol_a = int(df_a['AdjVo'].iloc[-1]) if pd.notna(df_a['AdjVo'].iloc[-1]) else 0
+                vol_b = int(df_b['AdjVo'].iloc[-1]) if pd.notna(df_b['AdjVo'].iloc[-1]) else 0
+                
+                short_data = {"銘柄コード": tk_a, "方向": "🔴 売り (Short)", "Entry": f"{entry_short:.1f}", "TP1": f"{entry_short - (risk_amt_a * 2.0):.1f}", "TP2": f"{entry_short - (risk_amt_a * 3.0):.1f}", "SL": f"{sl_short:.1f}", "出来高": vol_a, "条件": f"割高ハブ"}
+                long_data = {"銘柄コード": tk_b, "方向": "🟢 買い (Long)", "Entry": f"{rd_long['Entry']:.1f}", "TP1": f"{rd_long['TP1']:.1f}", "TP2": f"{rd_long['TP2']:.1f}", "SL": f"{rd_long['SL']:.1f}", "出来高": vol_b, "条件": f"割安ペア (vs {tk_a})"}
+                
+                if tk_a not in hub_dict:
+                    hub_dict[tk_a] = {"hub": short_data, "targets": []}
+                hub_dict[tk_a]["targets"].append(long_data)
+                
+    # ハブのすぐ下に紐づくターゲットが並ぶよう、フラットなリストに整理する
+    for hub_tk, data in hub_dict.items():
+        data["hub"]["条件"] = f"割高ハブ (対象 {len(data['targets'])}件)"
+        results.append(data["hub"])
+        for tgt in data["targets"]:
+            results.append(tgt)
+            
+    return results
 
 def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
     results = []
@@ -186,7 +202,9 @@ def auto_abyss_engine(df_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
         
         if cond1 and cond2 and cond3 and (is_takuri or is_engulf):
             rd = apply_core_risk_management(latest['AdjC'], latest['AdjL'], latest['ATR'])
-            if rd: results.append({"戦術": "深淵の底引き", "銘柄コード": ticker, "方向": "🟢 逆張り (Long)", "Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']})
+            if rd: 
+                vol = int(latest['AdjVo']) if pd.notna(latest['AdjVo']) else 0
+                results.append({"戦術": "深淵の底引き", "銘柄コード": ticker, "方向": "🟢 逆張り (Long)", "Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "出来高": vol, "RR": rd['RR']})
     return results
 
 def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dict[str, str], start_dt: str, end_dt: str) -> List[Dict]:
@@ -207,7 +225,9 @@ def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dic
         if cond_gap and cond_vol and cond_bull:
             entry_target = (latest['AdjH'] + latest['AdjL']) / 2.0
             rd = apply_core_risk_management(entry_target, latest['AdjL'], latest['ATR'])
-            if rd: results.append({"戦術": "事後確信", "銘柄コード": ticker, "方向": "🟢 押し目買い (Long)","Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "RR": rd['RR']})
+            if rd: 
+                vol = int(latest['AdjVo']) if pd.notna(latest['AdjVo']) else 0
+                results.append({"戦術": "事後確信", "銘柄コード": ticker, "方向": "🟢 押し目買い (Long)","Entry": f"{rd['Entry']:.1f}", "TP1": f"{rd['TP1']:.1f}", "TP2": f"{rd['TP2']:.1f}", "SL": f"{rd['SL']:.1f}", "出来高": vol, "RR": rd['RR']})
     return results
 
 # ==========================================
@@ -268,7 +288,6 @@ def main():
         df_dict = {}
         missing_tickers = [tk for tk in tickers if tk not in st.session_state["data_pool"]]
         
-        # 取得済みのものはプールから即時展開 (空のDFも含む)
         for tk in tickers:
             if tk in st.session_state["data_pool"]:
                 cached_df = st.session_state["data_pool"][tk]
@@ -283,7 +302,6 @@ def main():
         status_text = st.empty()
         rate_limit_lock = threading.Lock()
         
-        # 🎯 【修正】100銘柄以上の場合のみ「全市場一括（バルク）」を発動。
         if len(missing_tickers) >= 100:
             status_text.text("🔥 超高速バルク・フェッチ起動中 (対象多数のため全市場データを一括ダウンロード)...")
             
@@ -327,7 +345,6 @@ def main():
                         completed_dates += 1
                         progress_bar.progress(completed_dates / total_dates)
                         
-                        # ⏳ 【修正】予想残り時間の表示 (バルク用)
                         eta_sec = int((total_dates - completed_dates) * API_DELAY)
                         status_text.text(f"🔥 全市場一括取得中 ({completed_dates}/{total_dates} 日分完了) | ⏳ 残り約 {eta_sec} 秒")
                 
@@ -357,7 +374,6 @@ def main():
                 status_text.empty()
                 return df_dict
 
-        # 100銘柄未満の場合は、従来通りの個別取得モードを実行
         total_missing = len(missing_tickers)
         completed = 0
         def _fetch_task(tk):
@@ -382,7 +398,6 @@ def main():
                 completed += 1
                 progress_bar.progress(completed / total_missing)
                 
-                # ⏳ 【修正】予想残り時間の表示 (個別取得用)
                 eta_sec = int((total_missing - completed) * API_DELAY)
                 status_text.text(f"個別データ取得中: {tk} ({completed}/{total_missing}) | ⏳ 残り約 {eta_sec} 秒")
                 
@@ -392,7 +407,7 @@ def main():
         status_text.empty()
         return df_dict
 
-    # --- M1 UI ---
+    # --- M1 UI (ご指示通りに「フラットなサマリー一覧」と「その下に詳細」へ修正) ---
     with tab1:
         st.markdown("### 🎯 M1: 裁定狙撃 (テーマ / セクター別)")
         scan_mode = st.radio("スキャン・モード", ["セクター指定", "テーマ指定（カスタム銘柄リスト）"], horizontal=True)
@@ -410,23 +425,22 @@ def main():
                 st.warning("スキャン対象の銘柄が存在しません。")
             else:
                 df_dict_m1 = fetch_data_for_tickers(target_tickers)
-                grouped_results = auto_pair_snipe_engine_grouped(df_dict_m1, target_tickers)
+                results_m1 = auto_pair_snipe_engine(df_dict_m1, target_tickers)
                 
-                if grouped_results:
-                    st.success(f"{len(grouped_results)} 件のハブ銘柄（異常点）を検知。")
-                    for i, (hub_tk, data) in enumerate(grouped_results.items()):
-                        hub_info = data["hub"]
-                        targets = data["targets"]
-                        with st.expander(f"🔥 HUB ALERT: {hub_tk} (対象 {len(targets)} 銘柄に対して割高)", expanded=True):
-                            st.markdown("#### ▼ 割高ハブ銘柄 (Short候補)")
-                            st.dataframe(pd.DataFrame([hub_info]), use_container_width=True)
-                            st.plotly_chart(plot_interactive_chart(df_dict_m1[hub_tk], hub_tk, hub_info.get("Entry"), hub_info.get("SL"), hub_info.get("TP1")), use_container_width=True, key=f"m1_hub_{hub_tk}_{i}")
-                            st.markdown(f"#### ▼ サヤ抜き対象 (Long候補) - 全 {len(targets)} 銘柄")
-                            st.dataframe(pd.DataFrame(targets), use_container_width=True)
-                            for j, target_info in enumerate(targets):
-                                tgt_tk = target_info["銘柄コード"]
-                                with st.expander(f"📊 チャート確認: {tgt_tk}"):
-                                    st.plotly_chart(plot_interactive_chart(df_dict_m1[tgt_tk], tgt_tk, target_info.get("Entry"), target_info.get("SL"), target_info.get("TP1")), use_container_width=True, key=f"m1_tgt_{hub_tk}_{tgt_tk}_{j}")
+                if results_m1:
+                    st.success(f"{len(results_m1)} 件のシグナル（ハブおよびターゲット）を検知しました。")
+                    
+                    # 1. まず一覧でサマリーを表示
+                    st.markdown("#### ▼ サマリー（一覧）")
+                    st.dataframe(pd.DataFrame(results_m1), use_container_width=True)
+                    
+                    # 2. その下にペアの詳細（チャート）を表示
+                    st.markdown("#### ▼ ペアの詳細（チャート確認）")
+                    for i, res in enumerate(results_m1):
+                        tk = res["銘柄コード"]
+                        direction = res.get("方向", "")
+                        with st.expander(f"📊 チャート: {direction} [{tk}] (No.{i})"):
+                            st.plotly_chart(plot_interactive_chart(df_dict_m1[tk], tk, res.get("Entry"), res.get("SL"), res.get("TP1")), use_container_width=True, key=f"m1_chart_{tk}_{i}")
                 else:
                     st.info("指定範囲内に優位性のある歪みは存在しません。")
 
