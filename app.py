@@ -18,6 +18,7 @@ from urllib3.util.retry import Retry
 # ==========================================
 st.set_page_config(page_title="Project AEGIS v2.0", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
 
+# --- st.metric文字切れ防止パッチ ---
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] > div { text-overflow: clip !important; overflow: visible !important; white-space: nowrap !important; }
@@ -29,9 +30,10 @@ st.markdown("""
 # 1. API通信モジュール (セッション永続化＆限界スロットル対応)
 # ==========================================
 HEADERS = lambda api_key: {"x-api-key": api_key}
-API_DELAY = 1.05  
+API_DELAY = 1.05  # Lightプランの安全マージン
 
 def get_session():
+    """TCPハンドシェイクを省略し、通信ラグをゼロにする永続セッション（自動リトライ機構付き）"""
     if "api_session" not in st.session_state:
         session = requests.Session()
         retry = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET"])
@@ -51,7 +53,6 @@ def fetch_jquants_master(api_key: str) -> pd.DataFrame:
             st.error(f"【J-Quants API 拒否応答】 Status Code: {res.status_code}")
             return pd.DataFrame()
     except requests.exceptions.RetryError:
-        # 🚨 【パッチ】リトライ限界到達時のクラッシュを防ぎ、冷静な警告を表示
         st.error("【システム・アラート】短期間のアクセス集中により、J-Quants APIの呼び出し上限（Lightプラン：60回/分）に到達しました。")
         st.warning("⏳ サーバーから一時的に遮断されています。約2〜3分間、何も操作せずに待機してから画面を更新してください。")
         return pd.DataFrame()
@@ -210,7 +211,7 @@ def auto_post_assault_engine(df_dict: Dict[str, pd.DataFrame], earnings_cal: Dic
     return results
 
 # ==========================================
-# 4. Streamlit UI (AEGIS v2.0 - バルクフェッチ搭載)
+# 4. Streamlit UI (AEGIS v2.0)
 # ==========================================
 def main():
     st.title("🛡️ Project AEGIS v2.0 - Orchestration Dashboard")
@@ -267,6 +268,7 @@ def main():
         df_dict = {}
         missing_tickers = [tk for tk in tickers if tk not in st.session_state["data_pool"]]
         
+        # 取得済みのものはプールから即時展開 (空のDFも含む)
         for tk in tickers:
             if tk in st.session_state["data_pool"]:
                 cached_df = st.session_state["data_pool"][tk]
@@ -281,8 +283,9 @@ def main():
         status_text = st.empty()
         rate_limit_lock = threading.Lock()
         
-        if len(missing_tickers) >= 30:
-            status_text.text("🔥 バルク・フェッチ起動: 全市場・過去60営業日データを一括ダウンロード中...")
+        # 🎯 【修正】100銘柄以上の場合のみ「全市場一括（バルク）」を発動。
+        if len(missing_tickers) >= 100:
+            status_text.text("🔥 超高速バルク・フェッチ起動中 (対象多数のため全市場データを一括ダウンロード)...")
             
             rep_ticker = df_master['Code'].iloc[0]
             with rate_limit_lock: time.sleep(API_DELAY)
@@ -323,9 +326,12 @@ def main():
                         except Exception: pass
                         completed_dates += 1
                         progress_bar.progress(completed_dates / total_dates)
-                        status_text.text(f"バルクデータ取得進行度: ({completed_dates}/{total_dates} 日分)")
+                        
+                        # ⏳ 【修正】予想残り時間の表示 (バルク用)
+                        eta_sec = int((total_dates - completed_dates) * API_DELAY)
+                        status_text.text(f"🔥 全市場一括取得中 ({completed_dates}/{total_dates} 日分完了) | ⏳ 残り約 {eta_sec} 秒")
                 
-                status_text.text("データ構築中... (全銘柄のメモリ割り当て)")
+                status_text.text("⚙️ 巨大データをメモリに展開中... (数秒お待ちください)")
                 if bulk_records:
                     bulk_df = pd.DataFrame(bulk_records)
                     bulk_df['Date'] = pd.to_datetime(bulk_df['Date'])
@@ -345,12 +351,13 @@ def main():
                     if tk not in st.session_state["data_pool"]:
                         st.session_state["data_pool"][tk] = pd.DataFrame()
                             
-                status_text.text("🚀 バルク・フェッチ完了。全市場の同期に成功しました。")
-                time.sleep(1)
+                status_text.text("🚀 全市場データのメモリ同期に成功しました。")
+                time.sleep(1) 
                 progress_bar.empty()
                 status_text.empty()
                 return df_dict
 
+        # 100銘柄未満の場合は、従来通りの個別取得モードを実行
         total_missing = len(missing_tickers)
         completed = 0
         def _fetch_task(tk):
@@ -374,9 +381,12 @@ def main():
                     
                 completed += 1
                 progress_bar.progress(completed / total_missing)
-                status_text.text(f"Fetching new data: {tk} ({completed}/{total_missing})")
                 
-        status_text.text("Data Pool Synchronized.")
+                # ⏳ 【修正】予想残り時間の表示 (個別取得用)
+                eta_sec = int((total_missing - completed) * API_DELAY)
+                status_text.text(f"個別データ取得中: {tk} ({completed}/{total_missing}) | ⏳ 残り約 {eta_sec} 秒")
+                
+        status_text.text("✅ データの取得が完了しました。")
         time.sleep(1)
         progress_bar.empty()
         status_text.empty()
