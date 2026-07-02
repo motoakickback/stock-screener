@@ -200,6 +200,7 @@ def main():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
         st.session_state["api_key"] = ""
+        st.session_state["data_pool"] = {}  # ◀◀ AEGIS共有メモリの初期化
 
     if not st.session_state["authenticated"]:
         st.info("System Locked. Enter J-Quants API Key to initialize.")
@@ -254,25 +255,57 @@ def main():
     st.markdown("### モジュール選択")
     tab1, tab2, tab3 = st.tabs(["[M1] Pair Snipe", "[M2] Abyss Scan", "[M3] Earnings Assault"])
 
-    # 【新パッチ2: 限界スロットル・非同期フェッチエンジン】
+    # 【究極パッチ2: AEGIS共通データプール ＆ スマート・バイパス・エンジン】
     def fetch_data_for_tickers(tickers: List[str]) -> Dict[str, pd.DataFrame]:
         df_dict = {}
+        
+        # プール（メモリ）に存在しない「新規の未取得銘柄」だけを洗い出す
+        missing_tickers = [tk for tk in tickers if tk not in st.session_state["data_pool"]]
+        
+        # 取得済みの銘柄は0秒でプールから直接ロードする
+        for tk in tickers:
+            if tk in st.session_state["data_pool"]:
+                df_dict[tk] = st.session_state["data_pool"][tk]
+                
+        # もし全銘柄が取得済みなら、一瞬（0秒）で関数を終了する
+        if not missing_tickers:
+            st.toast(f"⚡ キャッシュ・ヒット: 対象 {len(tickers)} 銘柄をメモリから 0.01秒 で展開しました。", icon="⚡")
+            return df_dict
+
+        # ▼▼ ここから下は、新規銘柄が存在する場合のみ実行される ▼▼
         progress_bar = st.progress(0)
         status_text = st.empty()
-        total = len(tickers)
+        total_missing = len(missing_tickers)
         completed = 0
-        
-        # 4並列で動かしつつ、APIへの攻撃を防ぐ（1.05秒間隔を絶対維持する）ためのロック機構
         rate_limit_lock = threading.Lock()
         
         def _fetch_task(tk):
-            # API制限の壁（排他制御）: ここで全スレッドが整列し、必ず1.05秒に1回だけ通過する
+            # 新規銘柄を取りに行く時だけ、1.05秒待機のロックを発動する
             with rate_limit_lock:
-                time.sleep(API_DELAY)
-            
-            # 通信（ネットワークI/O）自体は並列で進行し、ラグを吸収する
+                time.sleep(API_DELAY) 
             df = fetch_jquants_daily_data(api_key, tk)
             return tk, df
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_tk = {executor.submit(_fetch_task, tk): tk for tk in missing_tickers}
+            
+            for future in concurrent.futures.as_completed(future_to_tk):
+                tk = future_to_tk[future]
+                try:
+                    tk_res, df = future.result()
+                    if not df.empty:
+                        df_dict[tk_res] = df
+                        # 取得した生データを直ちにAEGISデータプールに保存し、次回から0秒にする
+                        st.session_state["data_pool"][tk_res] = df
+                except Exception as e:
+                    pass
+                
+                completed += 1
+                progress_bar.progress(completed / total_missing)
+                status_text.text(f"Fetching new data: {tk} ({completed}/{total_missing}) - Smart Bypass Active")
+                
+        status_text.text("Data Pool Synchronized.")
+        return df_dict
 
         # 最大4スレッドで非同期実行
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
