@@ -4892,46 +4892,11 @@ with tab5:
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 銘柄コードと株数を入力し、確定（Enter）すると即座にGoogle DBへ自動保存されます。")
-
-    components.html(
-        """
-        <script>
-        const doc = window.parent.document;
-        const sniperEntryPatch = () => {
-            const editors = doc.querySelectorAll('div[data-testid="stDataEditor"]');
-            editors.forEach(editor => {
-                if (editor.dataset.sniperPatched === 'true') return;
-                
-                editor.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.stopPropagation();
-                        const downEvent = new KeyboardEvent('keydown', {
-                            key: 'ArrowDown',
-                            code: 'ArrowDown',
-                            keyCode: 40,
-                            which: 40,
-                            bubbles: true,
-                            cancelable: true
-                        });
-                        e.target.dispatchEvent(downEvent);
-                    }
-                }, true); 
-                
-                editor.dataset.sniperPatched = 'true';
-            });
-        };
-        const observer = new MutationObserver(sniperEntryPatch);
-        observer.observe(doc.body, { childList: true, subtree: true });
-        sniperEntryPatch();
-        </script>
-        """,
-        height=0,
-    )
+    st.caption("※ 表を編集後、必ず下部の「💾 編集内容を確定＆DB保存」ボタンを押してください。")
 
     target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
-    # Googleスプレッドシート（DB）から初期読み込み
+    # Google DBから初期読み込み
     if 'frontline_df' not in st.session_state:
         temp_df = load_db_to_df(WS_FRONTLINE, target_cols)
         if not temp_df.empty:
@@ -4946,7 +4911,7 @@ with tab6:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # 画面エディタ（メモリ上の frontline_df を直接バインド）
+    # 画面エディタ（ここで編集してもすぐにはリロードさせない）
     working_df = st.data_editor(
         st.session_state.frontline_df,
         num_rows="dynamic",
@@ -4965,15 +4930,6 @@ with tab6:
         }
     )
 
-    # ▼▼▼ 開発参謀オートフラッシュパッチ：入力確定の瞬間にメモリ上書き＆Google自動保存 ▼▼▼
-    if working_df.astype(str).values.tolist() != st.session_state.frontline_df.astype(str).values.tolist():
-        st.session_state.frontline_df = working_df.copy()
-        try:
-            save_frontline_db(working_df)
-        except Exception:
-            pass
-    # ▲▲▲ ここまで ▲▲▲
-
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
@@ -4986,17 +4942,21 @@ with tab6:
                             mask = working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
                             working_df.loc[mask, '現在値'] = c_price
                         st.session_state.frontline_df = working_df.copy()
-                        save_frontline_db(st.session_state.frontline_df)
+                        try: save_frontline_db(st.session_state.frontline_df)
+                        except Exception: pass
                         st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
                         st.rerun()
             else:
                 st.warning("同期対象の銘柄コードがありません。")
 
     with col_c2:
-        if st.button("💾 戦況をGoogle DBに保存", use_container_width=True):
+        # ここで明示的にユーザーが保存を押すことで、競合リセットを防ぐ
+        if st.button("💾 編集内容を確定＆DB保存", use_container_width=True):
             st.session_state.frontline_df = working_df.copy()
-            save_frontline_db(st.session_state.frontline_df)
+            try: save_frontline_db(st.session_state.frontline_df)
+            except Exception: pass
             st.toast("✅ 戦況をGoogle DBに固定保存しました。", icon="💾")
+            st.rerun()
 
     st.markdown("---")
 
@@ -5009,8 +4969,8 @@ with tab6:
         master_df_tmp['Code_Str'] = master_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         name_map = dict(zip(master_df_tmp['Code_Str'], master_df_tmp['CompanyName']))
 
-    # 表示側ループもすべて最新の working_df（画面入力状態）から同期
-    for index, row in working_df.iterrows():
+    # 表示ループは確定済みの session_state から描画する（編集中にチラつかせないため）
+    for index, row in st.session_state.frontline_df.iterrows():
         ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
         
