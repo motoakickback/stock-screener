@@ -4892,7 +4892,9 @@ with tab5:
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">📡 交戦モニター (全軍生存圏レーダー)</h3>', unsafe_allow_html=True)
-    st.caption("※ 表を編集後、必ず下部の「💾 編集内容を確定＆DB保存」ボタンを押してください。")
+    
+    # ⚠️ フォーム化に伴う重要なアナウンス
+    st.info("💡 **【Excelモード】** 表の中は自由に編集・追加できます（Enterを押しても画面は更新されません）。編集後は必ず下部の**「💾 確定＆DB保存」**を押してください。")
 
     target_cols = ["銘柄", "株数", "買値", "現在値", "損切", "第1利確", "第2利確", "atr"]
 
@@ -4911,55 +4913,63 @@ with tab6:
         else:
             st.session_state.frontline_df = pd.DataFrame(columns=target_cols)
 
-    # 画面エディタ（ここで編集してもすぐにはリロードさせない）
-    working_df = st.data_editor(
-        st.session_state.frontline_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="frontline_editor_stable_vfinal",
-        hide_index=True,
-        column_config={
-            "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
-            "株数": st.column_config.NumberColumn("株数", format="%d", min_value=0),
-            "買値": st.column_config.NumberColumn("買値", format="%d"),
-            "現在値": st.column_config.NumberColumn("現在値", format="%d"),
-            "損切": st.column_config.NumberColumn("損切", format="%d"),
-            "第1利確": st.column_config.NumberColumn("利確1", format="%d"),
-            "第2利確": st.column_config.NumberColumn("利確2", format="%d"),
-            "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
-        }
-    )
+    # ▼▼▼ 開発参謀パッチ：フォーム（隔離結界）の展開 ▼▼▼
+    # これにより、内部でのエンター押下や行追加による「画面リロード」を物理的に無効化します
+    with st.form(key="frontline_editor_form", clear_on_submit=False):
+        working_df = st.data_editor(
+            st.session_state.frontline_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
+                "株数": st.column_config.NumberColumn("株数", format="%d", min_value=0),
+                "買値": st.column_config.NumberColumn("買値", format="%d"),
+                "現在値": st.column_config.NumberColumn("現在値", format="%d"),
+                "損切": st.column_config.NumberColumn("損切", format="%d"),
+                "第1利確": st.column_config.NumberColumn("利確1", format="%d"),
+                "第2利確": st.column_config.NumberColumn("利確2", format="%d"),
+                "atr": st.column_config.NumberColumn("ATR", format="%.1f"),
+            }
+        )
 
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        if st.button("🔄 全軍の現在値を同期", use_container_width=True, type="primary"):
-            codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
-            if codes:
-                with st.spinner("J-Quants 接続中..."):
-                    new_prices = fetch_current_prices_fast(codes)
-                    if new_prices:
-                        for c_code, c_price in new_prices.items():
-                            mask = working_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
-                            working_df.loc[mask, '現在値'] = c_price
-                        st.session_state.frontline_df = working_df.copy()
-                        try: save_frontline_db(st.session_state.frontline_df)
-                        except Exception: pass
-                        st.success(f"✅ {len(new_prices)} 銘柄の同期を完了。")
-                        st.rerun()
-            else:
-                st.warning("同期対象の銘柄コードがありません。")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            # フォーム内に「同期ボタン」を配置
+            sync_btn = st.form_submit_button("🔄 全軍の現在値を同期", use_container_width=True)
+        with col_c2:
+            # フォーム内に「保存（確定）ボタン」を配置
+            save_btn = st.form_submit_button("💾 編集内容を確定＆DB保存", use_container_width=True, type="primary")
+    # ▲▲▲ フォーム空間ここまで ▲▲▲
 
-    with col_c2:
-        # ここで明示的にユーザーが保存を押すことで、競合リセットを防ぐ
-        if st.button("💾 編集内容を確定＆DB保存", use_container_width=True):
-            st.session_state.frontline_df = working_df.copy()
-            try: save_frontline_db(st.session_state.frontline_df)
-            except Exception: pass
-            st.toast("✅ 戦況をGoogle DBに固定保存しました。", icon="💾")
-            st.rerun()
+    # --- ボタン押下時の処理（ここで初めて画面が更新される） ---
+    if save_btn:
+        st.session_state.frontline_df = working_df.copy()
+        try: save_frontline_db(st.session_state.frontline_df)
+        except Exception: pass
+        st.toast("✅ 戦況をGoogle DBに固定保存しました。", icon="💾")
+
+    if sync_btn:
+        # 同期前に、入力中の最新状態を一旦メモリに保存
+        st.session_state.frontline_df = working_df.copy()
+        codes = [str(c).replace('.0', '').strip() for c in working_df['銘柄'].tolist() if pd.notna(c) and str(c).strip() != "" and str(c).strip() != "nan"]
+        if codes:
+            with st.spinner("J-Quants 接続中..."):
+                new_prices = fetch_current_prices_fast(codes)
+                if new_prices:
+                    for c_code, c_price in new_prices.items():
+                        mask = st.session_state.frontline_df['銘柄'].astype(str).str.replace(r'\.0$', '', regex=True) == str(c_code)
+                        st.session_state.frontline_df.loc[mask, '現在値'] = c_price
+                    try: save_frontline_db(st.session_state.frontline_df)
+                    except Exception: pass
+                    st.toast(f"✅ {len(new_prices)} 銘柄の同期を完了しました。", icon="🔄")
+                    st.rerun() # 同期した数字を表に反映させるため再描画
+        else:
+            st.warning("同期対象の銘柄コードがありません。")
 
     st.markdown("---")
 
+    # --- 下部のステータス表示（確定済みの session_state からのみ描画するためチラつかない） ---
     active_squads = 0
     sl_mult = float(st.session_state.get("bt_sl_c_mult", 2.5))
     
@@ -4969,7 +4979,6 @@ with tab6:
         master_df_tmp['Code_Str'] = master_df_tmp['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
         name_map = dict(zip(master_df_tmp['Code_Str'], master_df_tmp['CompanyName']))
 
-    # 表示ループは確定済みの session_state から描画する（編集中にチラつかせないため）
     for index, row in st.session_state.frontline_df.iterrows():
         ticker_raw = str(row.get('銘柄', '')).replace('.0', '').strip()
         if not ticker_raw or ticker_raw in ["nan", "None", ""]: continue
