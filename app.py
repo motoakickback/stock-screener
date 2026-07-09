@@ -3660,15 +3660,15 @@ with tab4:
                         lh = float(t_latest['AdjH'])
                         ll = float(t_latest['AdjL'])
                         
-                        # 🚨 開発参謀パッチ：モードに応じた「高値・安値」の可変参照
+                        # 🚨 開発参謀パッチ：安値(l14)は全モード共通で「前日までの14日間」を厳守
+                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+
                         if is_ambush:
-                            # 【待伏】当日を含む直近3日間の最高値・最安値を採用
+                            # 【待伏】高値(h14)のみ「当日を含む直近3日間」の最高値を採用
                             h14 = float(df_chart_full.tail(3)['AdjH'].max())
-                            l14 = float(df_chart_full.tail(3)['AdjL'].min())
                         else:
-                            # 【強襲・潜伏】従来通り前日までの14日間を採用
+                            # 【強襲・潜伏】高値(h14)も従来通り「前日までの14日間」を採用
                             h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                            l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                             
                         ur_v = (h14 - l14)
                         
