@@ -3660,8 +3660,16 @@ with tab4:
                         lh = float(t_latest['AdjH'])
                         ll = float(t_latest['AdjL'])
                         
-                        h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                        # 🚨 開発参謀パッチ：モードに応じた「高値・安値」の可変参照
+                        if is_ambush:
+                            # 【待伏】当日を含む直近3日間の最高値・最安値を採用
+                            h14 = float(df_chart_full.tail(3)['AdjH'].max())
+                            l14 = float(df_chart_full.tail(3)['AdjL'].min())
+                        else:
+                            # 【強襲・潜伏】従来通り前日までの14日間を採用
+                            h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                            l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
+                            
                         ur_v = (h14 - l14)
                         
                         # 🚨 修正: RSIを正しく取得。欠損時は計算するフォールバック
