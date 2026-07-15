@@ -392,13 +392,20 @@ def compress_memory(df):
     if df is None or df.empty:
         return df
         
-    for col in df.columns:
-        col_type = df[col].dtype
-        
-        if col_type == 'float64':
-            df[col] = df[col].astype('float32')
-        elif col_type == 'int64':
-            df[col] = df[col].astype('int32')
+    # 🚨 改善1：forループを排除し、select_dtypesで一括抽出＆一括変換（超高速化）
+    # 浮動小数点の圧縮 (float64 -> float32)
+    float_cols = df.select_dtypes(include=['float64']).columns
+    df[float_cols] = df[float_cols].astype('float32')
+    
+    # 整数の圧縮 (int64 -> int32)
+    int_cols = df.select_dtypes(include=['int64']).columns
+    df[int_cols] = df[int_cols].astype('int32')
+    
+    # 🚨 改善2：文字列（object型）の極限圧縮
+    # 種類が少ない文字列（市場名や業種など）を「カテゴリ型」に変換し、RAM消費を激減させる
+    for col in df.select_dtypes(include=['object']).columns:
+        if df[col].nunique() / len(df) < 0.5:
+            df[col] = df[col].astype('category')
             
     return df
 
