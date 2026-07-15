@@ -4941,12 +4941,13 @@ with tab6:
 
     # ▼▼▼ 開発参謀パッチ：フォーム（隔離結界）の展開 ▼▼▼
     # これにより、内部でのエンター押下や行追加による「画面リロード」を物理的に無効化します
-    with st.form(key="frontline_editor_form", clear_on_submit=False):
+    with st.form(key="frontline_editor_form_v2", clear_on_submit=False): # 🚨 keyを固定化してバージョン付け
         working_df = st.data_editor(
             st.session_state.frontline_df,
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
+            key="frontline_data_editor_fixed", # 🚨 データエディタのkeyを完全に固定（暴走防止）
             column_config={
                 "銘柄": st.column_config.TextColumn("銘柄コード", required=True),
                 "株数": st.column_config.NumberColumn("株数", format="%d", min_value=0),
@@ -4989,7 +4990,7 @@ with tab6:
                     try: save_frontline_db(st.session_state.frontline_df)
                     except Exception: pass
                     st.toast(f"✅ {len(new_prices)} 銘柄の同期を完了しました。", icon="🔄")
-                    st.rerun() # 同期した数字を表に反映させるため再描画
+                    # 🚨 st.rerun() をパージ（削除）し、Streamlitの自然な状態更新に任せる
         else:
             st.warning("同期対象の銘柄コードがありません。")
 
@@ -5081,8 +5082,8 @@ with tab6:
                 xaxis=dict(showgrid=False, range=[mi, mx], tickformat=",.0f", fixedrange=True), 
                 margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', dragmode=False
             )
-            cache_key_str = st.session_state.get("cache_key", "default_key")
-            st.plotly_chart(fig, use_container_width=True, key=f"frontline_bar_{ticker_raw}_{index}_{cache_key_str}", config={'displayModeBar': False})
+            # 🚨 グラフの key を完全に静的（固定）にしてチラつき・再描画を防止
+            st.plotly_chart(fig, use_container_width=True, key=f"fl_bar_static_{ticker_raw}_{index}", config={'displayModeBar': False})
         
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
@@ -5236,28 +5237,29 @@ with tab7:
 
     with st.expander("🛠️ 戦績編集コンソール (一括修正・削除)"):
         st.warning("※ 編集後、必ず下の『確定』ボタンを押してください。")
-        working_log_df = st.data_editor(
-            st.session_state.aar_df_stable, 
-            column_config={
-                "規模": st.column_config.TextColumn("規模", disabled=True),
-                "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "潜伏", "自動解析", "その他"], required=True),
-                "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
-                "買値": st.column_config.NumberColumn("買値", format="%d"),
-                "売値": st.column_config.NumberColumn("売値", format="%d"),
-            },
-            hide_index=True, use_container_width=True, key="aar_editor_maintenance_v10"
-        )
+        
+        # ▼▼▼ 開発参謀パッチ：フォーム（防爆障壁）の展開 ▼▼▼
+        # エディタをフォームに隔離し、入力中の画面更新とカーソル飛びを完全に防止します
+        with st.form(key="aar_editor_form_fixed", clear_on_submit=False):
+            working_log_df = st.data_editor(
+                st.session_state.aar_df_stable, 
+                column_config={
+                    "規模": st.column_config.TextColumn("規模", disabled=True),
+                    "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "潜伏", "自動解析", "その他"], required=True),
+                    "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
+                    "買値": st.column_config.NumberColumn("買値", format="%d"),
+                    "売値": st.column_config.NumberColumn("売値", format="%d"),
+                },
+                hide_index=True, use_container_width=True, key="aar_editor_maintenance_fixed"
+            )
 
-        # ▼▼▼ 開発参謀パッチ：TAB7 瞬間オートセーブ ▼▼▼
-        try:
-            if not working_log_df.equals(st.session_state.aar_df_stable):
-                st.session_state.aar_df_stable = working_log_df.copy()
-                save_aar_db(st.session_state.aar_df_stable)
-        except Exception:
-            pass
-        # ▲▲▲ ここまで ▲▲▲
+            # 🚨 瞬間オートセーブの地雷ブロック（try〜except）は完全削除済
+            
+            # 保存ボタンをフォーム専用のボタンに変更
+            save_aar_btn = st.form_submit_button("💾 戦績の変更を確定し、Google DBへ同期", use_container_width=True, type="primary")
+        # ▲▲▲ フォーム隔離ここまで ▲▲▲
 
-        if st.button("💾 戦績の変更を確定し、Google DBへ同期", use_container_width=True, type="primary"):
+        if save_aar_btn:
             st.session_state.aar_df_stable = working_log_df.copy()
             for col in ["買値", "売値", "株数", "損益額(円)"]:
                 st.session_state.aar_df_stable[col] = pd.to_numeric(st.session_state.aar_df_stable[col], errors='coerce').fillna(0).astype(int)
