@@ -505,7 +505,8 @@ def get_macro_weather():
                                 if jq_date > yf_latest_date:
                                     # 🚨 修正：API側データの値取得も安全に
                                     val = jq_latest.get("Close") or jq_latest.get("C") or jq_latest.get("AdjC") or jq_latest.get("c")
-                                    if val is not None:
+                                    # 🚨 J-Quants特有の「空文字("")」が紛れ込んだ際の ValueError を物理的に防ぐ
+                                    if val is not None and str(val).strip() != "":
                                         new_row = df_ni.iloc[-1].copy()
                                         new_row['Date'] = pd.to_datetime(jq_date)
                                         
@@ -1299,7 +1300,7 @@ def get_nikkei_macro_status():
 # =========================================================
 # 🚀 共通エンジン：進捗バー・件数表示 完全復旧版
 # =========================================================
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
+@st.cache_data(ttl=86400, max_entries=1, show_spinner=False, persist="disk") # 🚨 ディスク退避をON
 def get_hist_data_cached(key):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -1313,8 +1314,8 @@ def get_hist_data_cached(key):
         if days > 400: break
 
     dfs = []
-    # 🚨 開発参謀パッチ：3部隊による「限界突破」並列突撃に変更
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
+    # 🚨 OOMを回避するため、並列数を「2」に抑制し、メモリの過剰な同時展開を防ぐ
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
         futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()
@@ -1334,11 +1335,14 @@ def get_hist_data_cached(key):
     full_df = pd.concat(dfs, ignore_index=True)
     full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
     
+    # 🚨 結合直後の巨大データフレームを強制圧縮（ここでRAM消費を半減させます）
+    full_df = compress_memory(full_df)
+    
     gc.collect()
     return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
 
 def fetch_and_compress_single_day(dt):
-    # 🚨 無条件の「巡航ブレーキ」を撤廃（待機ゼロで突撃）
+    # 🚨 開発参謀パッチ適用：無条件突撃から「GC息継ぎ型の戦術巡航」へ移行
     for attempt in range(4):
         try:
             r = api_session.get(f"{BASE_URL}/equities/bars/daily?date={dt}", timeout=20.0)
@@ -1346,7 +1350,14 @@ def fetch_and_compress_single_day(dt):
                 raw_json = r.json()
                 data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
                 if not data: return None
-                return pd.DataFrame(data)
+                
+                # 🚨 パッチ3：個別のチャンク（1日分）の段階で即座にメモリ極限圧縮をかける
+                df_chunk = pd.DataFrame(data)
+                df_chunk = compress_memory(df_chunk)
+                
+                # 🚨 パッチ3：ガベージコレクション（メモリ掃除）に息継ぎの隙間を与える微小ウェイト
+                time.sleep(0.05) 
+                return df_chunk
             
             elif r.status_code == 429:
                 # 🚨 オートブレーキ機構：壁に激突（制限到達）した時だけ5秒間息を潜める
