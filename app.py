@@ -1267,44 +1267,43 @@ def get_single_data(code, yrs=1):
     return result
 
 def get_nikkei_macro_status():
-    """完全防弾仕様：列名不一致によるシステム停止を根絶した単一エンジン"""
+    """完全防弾仕様：列名不一致によるシステム停止を根絶した単一エンジン（18日/50日仕様）"""
     w = get_macro_weather()
     if not w or "nikkei" not in w:
-        return {"status": "取得不可", "div_rate": 0.0, "close": 0, "ma25": 0, "icon": "⚪", "color": "#888"}
+        return {"status": "取得不可", "div_rate": 0.0, "close": 0, "ma18": 0, "ma50": 0, "icon": "⚪", "color": "#888"}
     
     df = w["nikkei"]["df"].copy()
-    if len(df) < 25:
-        # 価格が取得できれば、それを返す
+    if len(df) < 50: # 🚨 50日線を計算するため足切りを50に変更
         price = w["nikkei"].get("price", 0)
-        return {"status": "データ不足", "div_rate": 0.0, "close": price, "ma25": 0, "icon": "⚪", "color": "#888"}
+        return {"status": "データ不足", "div_rate": 0.0, "close": price, "ma18": 0, "ma50": 0, "icon": "⚪", "color": "#888"}
         
-    # 🚨 最終モグラ駆逐パッチ：終値カラムを安全に動的取得
     close_col = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in df.columns), None)
     
     if not close_col:
-        return {"status": "列名異常", "div_rate": 0.0, "close": w["nikkei"]["price"], "ma25": 0, "icon": "⚪", "color": "#888"}
+        return {"status": "列名異常", "div_rate": 0.0, "close": w["nikkei"]["price"], "ma18": 0, "ma50": 0, "icon": "⚪", "color": "#888"}
 
-    # 1次元Seriesとして安全に抽出
     s = df[close_col]
     if isinstance(s, pd.DataFrame):
         s = s.iloc[:, 0]
         
-    df['MA25'] = pd.to_numeric(s, errors='coerce').rolling(window=25).mean()
+    df['MA18'] = pd.to_numeric(s, errors='coerce').rolling(window=18).mean()
+    df['MA50'] = pd.to_numeric(s, errors='coerce').rolling(window=50).mean()
     price = w["nikkei"]["price"]
-    ma25 = df['MA25'].iloc[-1]
+    ma18 = df['MA18'].iloc[-1]
+    ma50 = df['MA50'].iloc[-1]
     
-    # 🚨 乖離率の算出
-    if pd.notna(ma25) and ma25 > 0:
-        div_rate = ((price / ma25) - 1) * 100
+    # 🚨 乖離率の算出（短期トレンド基準として18日線を使用）
+    if pd.notna(ma18) and ma18 > 0:
+        div_rate = ((price / ma18) - 1) * 100
     else:
         div_rate = 0.0
         
     if div_rate >= 5.0:
-        return {"status": "地合い警戒", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🔥", "color": "#ef5350"}
+        return {"status": "地合い警戒", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🔥", "color": "#ef5350"}
     elif div_rate <= -5.0:
-        return {"status": "地合いチャンス", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🚨", "color": "#ef5350"}
+        return {"status": "地合いチャンス", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚨", "color": "#ef5350"}
     else:
-        return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma25": ma25, "icon": "🚢", "color": "#26a69a"}
+        return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # =========================================================
 # 🚀 共通エンジン：進捗バー・件数表示 完全復旧版
@@ -3306,36 +3305,32 @@ with tab4:
     T3_AM_DAILY_FILE = f"saved_t3_am_daily_{user_id}.txt"
     T3_AS_WATCH_FILE = f"saved_t3_as_watch_{user_id}.txt"
     T3_AS_DAILY_FILE = f"saved_t3_as_daily_{user_id}.txt"
-    T3_ST_WATCH_FILE = f"saved_t3_st_watch_{user_id}.txt" # 💎 潜伏用セーブファイル追加
-    T3_ST_DAILY_FILE = f"saved_t3_st_daily_{user_id}.txt" # 💎 潜伏用セーブファイル追加
+    T3_ST_WATCH_FILE = f"saved_t3_st_watch_{user_id}.txt"
+    T3_ST_DAILY_FILE = f"saved_t3_st_daily_{user_id}.txt"
 
     def load_t3_text(file_path):
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    return content
+                    return f.read()
             except Exception:
                 return ""
         return ""
 
-    # 🚨 修正1：永続バッファ（buf）の初期化。非表示になってもここから復元するため絶対に蒸発しません。
     if "t3_am_watch_buf" not in st.session_state: st.session_state.t3_am_watch_buf = load_t3_text(T3_AM_WATCH_FILE)
     if "t3_am_daily_buf" not in st.session_state: st.session_state.t3_am_daily_buf = load_t3_text(T3_AM_DAILY_FILE)
     if "t3_as_watch_buf" not in st.session_state: st.session_state.t3_as_watch_buf = load_t3_text(T3_AS_WATCH_FILE)
     if "t3_as_daily_buf" not in st.session_state: st.session_state.t3_as_daily_buf = load_t3_text(T3_AS_DAILY_FILE)
-    if "t3_st_watch_buf" not in st.session_state: st.session_state.t3_st_watch_buf = load_t3_text(T3_ST_WATCH_FILE) # 💎
-    if "t3_st_daily_buf" not in st.session_state: st.session_state.t3_st_daily_buf = load_t3_text(T3_ST_DAILY_FILE) # 💎
+    if "t3_st_watch_buf" not in st.session_state: st.session_state.t3_st_watch_buf = load_t3_text(T3_ST_WATCH_FILE)
+    if "t3_st_daily_buf" not in st.session_state: st.session_state.t3_st_daily_buf = load_t3_text(T3_ST_DAILY_FILE)
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 💎 潜伏（Stealth）モードをラジオボタンに追加
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り", "💎 【潜伏】 収縮・上放れ狙い"], key="t3_scope_mode_absolute_lock_v2026")
         is_ambush = "待伏" in scope_mode
-        is_stealth = "潜伏" in scope_mode # 💎 潜伏フラグ
+        is_stealth = "潜伏" in scope_mode
         st.markdown("---")
         
-        # 🚨 修正2：【相互補完型・永続バッファ同期システム】
         if is_ambush:
             if "t3_am_watch_widget" not in st.session_state: st.session_state.t3_am_watch_widget = st.session_state.t3_am_watch_buf
             if "t3_am_daily_widget" not in st.session_state: st.session_state.t3_am_daily_widget = st.session_state.t3_am_daily_buf
@@ -3344,7 +3339,6 @@ with tab4:
             st.session_state.t3_am_watch_buf = watch_in
             st.session_state.t3_am_daily_buf = daily_in
         elif is_stealth:
-            # 💎 潜伏モード用UIバッファ処理
             if "t3_st_watch_widget" not in st.session_state: st.session_state.t3_st_watch_widget = st.session_state.t3_st_watch_buf
             if "t3_st_daily_widget" not in st.session_state: st.session_state.t3_st_daily_widget = st.session_state.t3_st_daily_buf
             watch_in = st.text_area("💎 【潜伏】主力監視部隊", key="t3_st_watch_widget", height=120)
@@ -3368,7 +3362,7 @@ with tab4:
 底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。
             
 **【🚨 市場連動バフ稼働中】**
-日経平均25日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、**スコアをボーナス加点(+3〜+5pts)** します。
+日経平均18日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、**スコアをボーナス加点(+3〜+5pts)** します。
 
 **【PTS評価軸】**
 - **12点以上 (S級🔥)** 全力買い：複数の酒田サイン（陰の極み・二重底等）が重複、勝率・値幅共に期待値最大
@@ -3376,21 +3370,20 @@ with tab4:
 - **5〜7点 (B級🛡️)** 様子見：底打ちの兆候はあるが引き金（シグナル）不足、監視を継続
 - **5点未満 (圏外💀)** 見送り：兵站（データ）不足、または下落トレンドの真っ立ち中、手を出すべきではない""")
         elif is_stealth:
-            # 💎 潜伏モードの行動指針
             st.info("""**💎 【潜伏】モード（収縮・上放れ狙い）**
 ボラティリティ収縮からのレンジブレイク初動を狙うハントモード。
 
 **【セットアップ基準】**
 - 🟢 **煮詰まり検知：** 当日の実体が値幅の10%以下の「極小十字線」
 - 💀 **防衛機構：** 前日終値から1ATR以上のギャップダウンで「強制撤退（圏外）」
-- 🎯 **自動ターゲット：** 過去3日高値突破でエントリー、防衛線はMA25を基準にリスク幅を自動算出（8%超過で警告）
-- 🌟 **潜伏スコア加点：** 極限の収縮(+5)、売り枯れ(+3)、MA25上昇(+5)でS級昇格を判定""")
+- 🎯 **自動ターゲット：** 過去3日高値突破でエントリー、防衛線はMA18を基準にリスク幅を自動算出（8%超過で警告）
+- 🌟 **潜伏スコア加点：** 極限の収縮(+5)、売り枯れ(+3)、MA18上昇(+5)でS級昇格を判定""")
         else:
             st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
-トレンド初動の电击戦。14日高値突破とGCを監視。
+トレンド初動の电击戦。14日高値突破とGC（18日線と50日線）を監視。
 
 **【🚨 市場連動デバフ稼働中】**
-日経平均25日乖離率が過熱（+5%〜+8%超）している場合、天井掴みを防ぐため**スコアを強制的にデグレード(-20〜-35pts)** します。
+日経平均18日乖離率が過熱（+5%〜+8%超）している場合、天井掴みを防ぐため**スコアを強制的にデグレード(-20〜-35pts)** します。
             
 **【PTS評価軸】**
 - **80点以上 (S級⚡)** 即・強襲：GC直後かつ、ROE10%以上の優良ファンダが裏打ち
@@ -3399,7 +3392,6 @@ with tab4:
 - **40点未満 (圏外💀)** 撤退/見送り：天井圏の罠（三尊・三山等）を検知、またはトレンドが未発生""")
 
     if run_scope:
-        # 🚨 修正3：重複コードを完全パージし、バッファからファイルへ確実な書き込みを実行
         if is_ambush:
             for f, d in [(T3_AM_WATCH_FILE, st.session_state.t3_am_watch_buf), (T3_AM_DAILY_FILE, st.session_state.t3_am_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
@@ -3410,7 +3402,6 @@ with tab4:
             for f, d in [(T3_AS_WATCH_FILE, st.session_state.t3_as_watch_buf), (T3_AS_DAILY_FILE, st.session_state.t3_as_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
-        # 🚨 物理結線：市場地合い（乖離率）の事前取得（NameError防止 ＆ 演算同期）
         n225_m_data = get_nikkei_macro_status()
         n225_div_rate = n225_m_data['div_rate'] if n225_m_data else 0.0
 
@@ -3435,16 +3426,12 @@ with tab4:
                         api_code = c_str if len(c_str) >= 5 else c_str + "0"
                         events = {"dividend": [], "earnings": []}
                         
-                        # 1. API取得試行
                         data = get_single_data(api_code, 3)
                         if data and isinstance(data.get("events"), dict):
                             api_ev = data.get("events", {})
-                            if api_ev.get("earnings"): 
-                                events["earnings"].extend(api_ev["earnings"])
-                            if api_ev.get("dividend"): 
-                                events["dividend"].extend(api_ev["dividend"])
+                            if api_ev.get("earnings"): events["earnings"].extend(api_ev["earnings"])
+                            if api_ev.get("dividend"): events["dividend"].extend(api_ev["dividend"])
                         
-                        # 2. データ不足時のフォールバック (yfinance)
                         if not data or not isinstance(data.get("bars"), list) or len(data.get("bars", [])) < 60:
                             try:
                                 import yfinance as yf
@@ -3465,9 +3452,8 @@ with tab4:
                                         })
                                     data = {"bars": bars}
                             except Exception:
-                                pass # フォールバック失敗時はdata=Noneのまま進行
+                                pass 
                         
-                        # 3. 決算イベントの補完取得
                         if not events["earnings"]:
                             try:
                                 import yfinance as yf
@@ -3480,36 +3466,21 @@ with tab4:
                             except Exception:
                                 pass
                         
-                        # 4. 財務情報取得と初期化
                         f_data = get_fundamentals(c_str)
                         r_per, r_pbr, r_mcap, r_roe = None, None, None, None
                         
                         if f_data:
-                            if f_data.get('per'): r_per = f_data.get('per')
-                            if r_per is None and f_data.get('PER'): r_per = f_data.get('PER')
-                            if r_per is None and f_data.get('trailingPE'): r_per = f_data.get('trailingPE')
-                            if r_per is None and f_data.get('forwardPE'): r_per = f_data.get('forwardPE')
-                            
-                            if f_data.get('pbr'): r_pbr = f_data.get('pbr')
-                            if r_pbr is None and f_data.get('PBR'): r_pbr = f_data.get('PBR')
-                            if r_pbr is None and f_data.get('priceToBook'): r_pbr = f_data.get('priceToBook')
-                            
-                            if f_data.get('cap'): r_mcap = f_data.get('cap')
-                            if r_mcap is None and f_data.get('MCAP'): r_mcap = f_data.get('MCAP')
-                            if r_mcap is None and f_data.get('marketCap'): r_mcap = f_data.get('marketCap')
-                            if r_mcap is None and f_data.get('MarketCapitalization'): r_mcap = f_data.get('MarketCapitalization')
-                            
-                            if f_data.get('roe'): r_roe = f_data.get('roe')
-                            if r_roe is None and f_data.get('ROE'): r_roe = f_data.get('ROE')
-                            if r_roe is None and f_data.get('returnOnEquity'): r_roe = f_data.get('returnOnEquity')
+                            r_per = f_data.get('per') or f_data.get('PER') or f_data.get('trailingPE') or f_data.get('forwardPE')
+                            r_pbr = f_data.get('pbr') or f_data.get('PBR') or f_data.get('priceToBook')
+                            r_mcap = f_data.get('cap') or f_data.get('MCAP') or f_data.get('marketCap') or f_data.get('MarketCapitalization')
+                            r_roe = f_data.get('roe') or f_data.get('ROE') or f_data.get('returnOnEquity')
                             
                             if r_roe is None:
                                 try:
                                     ni = f_data.get("NetIncome")
                                     eq = f_data.get("Equity")
                                     if ni is not None and eq is not None:
-                                        ni_f, eq_f = float(ni), float(eq)
-                                        r_roe = (ni_f / eq_f) * 100 if eq_f != 0 else 0.0
+                                        r_roe = (float(ni) / float(eq)) * 100 if float(eq) != 0 else 0.0
                                     else:
                                         r_roe = 0.0
                                 except Exception:
@@ -3547,12 +3518,7 @@ with tab4:
                         try:
                             res_c, res_data, r_per, r_pbr, r_mcap, r_roe, res_events = f.result()
                             raw_data_dict[str(res_c)] = {
-                                "data": res_data, 
-                                "per": r_per, 
-                                "pbr": r_pbr, 
-                                "mcap": r_mcap, 
-                                "roe": r_roe,
-                                "events": res_events
+                                "data": res_data, "per": r_per, "pbr": r_pbr, "mcap": r_mcap, "roe": r_roe, "events": res_events
                             }
                         except Exception:
                             continue
@@ -3591,32 +3557,26 @@ with tab4:
                         if raw_mcap is not None:
                             try:
                                 rmc = float(raw_mcap)
-                                if rmc >= 1e12:
-                                    res_mcap_str = f"{rmc / 1e12:.2f}兆円"
-                                elif rmc >= 1e8:
-                                    res_mcap_str = f"{rmc / 1e8:.0f}億円"
-                                elif rmc >= 1e4:
-                                    res_mcap_str = f"{rmc / 1e4:.0f}万円"
-                                else:
-                                    res_mcap_str = f"{int(rmc):,}円"
+                                if rmc >= 1e12: res_mcap_str = f"{rmc / 1e12:.2f}兆円"
+                                elif rmc >= 1e8: res_mcap_str = f"{rmc / 1e8:.0f}億円"
+                                elif rmc >= 1e4: res_mcap_str = f"{rmc / 1e4:.0f}万円"
+                                else: res_mcap_str = f"{int(rmc):,}円"
                             except Exception:
                                 res_mcap_str = "-"
 
-                        # 🚨 修正：TAB4にも不沈艦フォールバック（fetch_parallel_t3）を接続
                         bars = raw_s.get("data", {}).get("bars", []) if raw_s.get("data") else []
                         
-                        if not bars or len(bars) < 20:
+                        if not bars or len(bars) < 55: # 🚨 50日線計算のため足切りを55に延長
                             f_data, _ = fetch_parallel_t3(target_key)
                             if f_data and "bars" in f_data:
                                 bars = f_data["bars"]
 
-                        # 最終チェック
-                        if not bars or len(bars) < 20:
+                        if not bars or len(bars) < 55:
                             scope_results.append({
                                 'code': target_key, 'name': c_name, 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
                                 'rank': '圏外💀', 'bg': '#616161', 'score': 0, 'reach_val': 0, 'gc_days': 0, 'df_chart': pd.DataFrame(),
                                 'per': res_per, 'pbr': res_pbr, 'roe': res_roe, 'mcap': res_mcap_str, 'source': "🛡️ 監視" if target_key in watch_in else "🚀 新規", 
-                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足"], 'error': True, 'is_deep': False,
+                                'sector': c_sector, 'market': c_market, 'alerts': ["⚠️ 兵站データ不足（50日線計算不能）"], 'error': True, 'is_deep': False,
                                 'events': raw_s.get("events", {"dividend": [], "earnings": []}), 'stealth_data': {}
                             })
                             continue
@@ -3644,7 +3604,7 @@ with tab4:
                         
                         df_s = clean_df(df_raw)
                         
-                        if df_s.empty or len(df_s) < 20:
+                        if df_s.empty or len(df_s) < 55:
                             scope_results.append({
                                 'code': target_key, 'name': c_name,
                                 'lc': 0, 'h14': 0, 'l14': 0, 'ur': 0, 'bt_val': 0, 'atr_val': 0, 'rsi': 50,
@@ -3655,11 +3615,10 @@ with tab4:
                                 'sector': c_sector, 'market': c_market,
                                 'alerts': ["⚠️ 兵站データ破損（有効期間不足）"],
                                 'error': True, 'is_deep': False,
-                                'events': curr_events, 'stealth_data': {} # 💎
+                                'events': curr_events, 'stealth_data': {}
                             })
                             continue
 
-                        # 🚨 修正：旧関数名をパージし、真のエンジンを直結（エラー隠蔽のtry-exceptも破壊）
                         df_chart_full = calc_vector_indicators(df_s.copy())
                             
                         t_latest = df_chart_full.iloc[-1]
@@ -3671,19 +3630,15 @@ with tab4:
                         lh = float(t_latest['AdjH'])
                         ll = float(t_latest['AdjL'])
                         
-                        # 🚨 開発参謀パッチ：安値(l14)は全モード共通で「前日までの14日間」を厳守
                         l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
 
                         if is_ambush:
-                            # 【待伏】高値(h14)のみ「当日を含む直近3日間」の最高値を採用
                             h14 = float(df_chart_full.tail(3)['AdjH'].max())
                         else:
-                            # 【強襲・潜伏】高値(h14)も従来通り「前日までの14日間」を採用
                             h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
                             
                         ur_v = (h14 - l14)
                         
-                        # 🚨 修正: RSIを正しく取得。欠損時は計算するフォールバック
                         if 'RSI' in df_chart_full.columns and pd.notna(t_latest['RSI']):
                             rsi_v = float(t_latest['RSI'])
                         else:
@@ -3694,11 +3649,10 @@ with tab4:
                                 rs = gain / loss
                                 rsi_series = 100 - (100 / (1 + rs))
                                 rsi_v = float(rsi_series.iloc[-1])
-                                df_chart_full['RSI'] = rsi_series # DataFrameにもセット
+                                df_chart_full['RSI'] = rsi_series
                             except Exception:
                                 rsi_v = 50.0
 
-                        # 🚨 修正：実数ATRを『ATR_Standard』から確実に抽出
                         if 'ATR_Standard' in df_chart_full.columns and pd.notna(t_latest['ATR_Standard']):
                             atr_v = float(t_latest['ATR_Standard'])
                         elif 'atr' in df_chart_full.columns and pd.notna(t_latest['atr']):
@@ -3712,7 +3666,7 @@ with tab4:
                         alerts = []
                         gc_days = 0
                         is_deep = False
-                        stealth_payload = {} # 💎
+                        stealth_payload = {}
 
                         vol_pct = 0
                         if lc > 0:
@@ -3767,7 +3721,7 @@ with tab4:
                         if is_stealth:
                             df_sub = df_chart_full.copy()
                             
-                            if len(df_sub) < 25:
+                            if len(df_sub) < 50: # 🚨 50日線計算のため
                                 rank = "圏外💀"
                                 bg_c = "#616161"
                                 alerts.append("⚠️ データ不足による潜伏解析不能")
@@ -3779,8 +3733,9 @@ with tab4:
                                 h_col = 'AdjH'
                                 l_col = 'AdjL'
 
-                                # 🚨 修正：密造回路（単純平均の自前計算）を完全撤去。大水源の実数ATRをそのまま使う
-                                df_sub['MA25'] = df_sub[c_col].rolling(window=25, min_periods=1).mean()
+                                # 🚨 潜伏モードのMAを18日・50日に換装
+                                df_sub['MA18'] = df_sub[c_col].rolling(window=18, min_periods=1).mean()
+                                df_sub['MA50'] = df_sub[c_col].rolling(window=50, min_periods=1).mean()
 
                                 s_latest = df_sub.iloc[-1]
                                 s_prev = df_sub.iloc[-2]
@@ -3791,22 +3746,20 @@ with tab4:
                                 l_val = s_latest[l_col]
                                 prev_c_val = s_prev[c_col]
                                 
-                                # 大水源から流れてきたATR_Standardをそのまま使用
                                 if 'ATR_Standard' in s_latest and pd.notna(s_latest['ATR_Standard']):
                                     atr14_val = float(s_latest['ATR_Standard'])
                                 else:
                                     atr14_val = float(c_val * 0.05)
                                     
-                                ma25_val = s_latest['MA25']
+                                ma18_val = s_latest['MA18']
 
                                 rank = "A級💎"
                                 bg_c = "#2e7d32"
-                                score = 10 # 💎 潜伏時の基本スコア
+                                score = 10 
 
                                 body_size = abs(c_val - o_val)
                                 day_range = h_val - l_val
                                 
-                                # 🚨 追加: 潜伏スコア加点ロジック
                                 if day_range > 0:
                                     if body_size <= (day_range * 0.05):
                                         score += 5
@@ -3814,7 +3767,6 @@ with tab4:
                                     elif body_size <= (day_range * 0.10):
                                         alerts.append("🟢【極小十字線】煮詰まりの極致")
 
-                                # 🚨 修正: 枯渇ボーナス (Volumeキーエラー対策の堅牢化)
                                 vol_col = 'Volume' if 'Volume' in df_sub.columns else ('volume' if 'volume' in df_sub.columns else None)
                                 if vol_col and len(df_sub) >= 6:
                                     vol_5d_avg = df_sub[vol_col].iloc[-6:-1].mean()
@@ -3823,11 +3775,10 @@ with tab4:
                                         score += 3
                                         alerts.append("💎【売り枯れ】出来高が直近平均の50%未満へ急減（+3pts）")
 
-                                # トレンド同調ボーナス
-                                prev_ma25_val = s_prev['MA25']
-                                if pd.notna(ma25_val) and pd.notna(prev_ma25_val) and ma25_val > prev_ma25_val:
+                                prev_ma18_val = s_prev['MA18']
+                                if pd.notna(ma18_val) and pd.notna(prev_ma18_val) and ma18_val > prev_ma18_val:
                                     score += 5
-                                    alerts.append("🔥【上昇同調】MA25上向き。順張り方向の潜伏（+5pts）")
+                                    alerts.append("🔥【上昇同調】MA18上向き。順張り方向の潜伏（+5pts）")
 
                                 if o_val <= (prev_c_val - atr14_val):
                                     alerts.append("💀【偽潜伏・パニック警戒】ギャップダウンによるトレンド崩壊")
@@ -3840,7 +3791,7 @@ with tab4:
 
                                 high_3d = df_sub[h_col].iloc[-3:].max()
                                 entry_trigger = int(round(high_3d + 1))
-                                stop_loss = int(round(ma25_val - (atr14_val * 0.5)))
+                                stop_loss = int(round(ma18_val - (atr14_val * 0.5))) # 🚨 防衛線もMA18基準に
                                 take_profit = int(round(entry_trigger + ((entry_trigger - stop_loss) * 2)))
 
                                 if entry_trigger > 0:
@@ -3869,18 +3820,17 @@ with tab4:
 
                             if n225_div_rate <= -8.0:
                                 score += 5
-                                alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
+                                alerts.append(f"💎 【待伏好機】日経18日乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
                             elif n225_div_rate <= -5.0:
                                 score += 3
-                                alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                                alerts.append(f"⚓ 【地合い支援】日経18日乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
                             elif n225_div_rate >= 8.0:
                                 score -= 5
-                                alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                                alerts.append(f"⚠️ 【地合い逆風】日経18日乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
                             elif n225_div_rate >= 5.0:
                                 score -= 3
-                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+                                alerts.append(f"🌐 【地合い警戒】日経18日乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
 
-                            # 🚨 修正: 待伏せモードでのRSI加点ロジック実装
                             if rsi_v <= 20:
                                 score += 5
                                 alerts.append(f"🔥 【極度売られすぎ】RSI {rsi_v:.1f}%。強烈な反発エネルギーを内包。")
@@ -3900,7 +3850,6 @@ with tab4:
                             else:
                                 bt_val = int(bt_val_standard)
 
-                            # 🚨 MACD完全排除：ATRベースの価格アクショントリアージエンジン
                             triage_score = 0
                             if lc > (bt_val + atr_v):
                                 alerts.append("🟡 【未達・監視】買目標まで距離あり。引き付け継続。")
@@ -3945,38 +3894,38 @@ with tab4:
                             bt_val = int(max(h14, lc + (atr_v * 0.5)))
                             
                             c_vals_t3 = df_mini['AdjC'].values
-                            if len(c_vals_t3) >= 25:
+                            if len(c_vals_t3) >= 50: # 🚨 50日線計算のため
                                 s_c_t3 = pd.Series(c_vals_t3)
-                                ma5_s_t3 = s_c_t3.rolling(5).mean().values
-                                ma25_s_t3 = s_c_t3.rolling(25).mean().values
+                                # 🚨 強襲モードのMAを18日・50日に換装
+                                ma18_s_t3 = s_c_t3.rolling(18).mean().values
+                                ma50_s_t3 = s_c_t3.rolling(50).mean().values
                                 
-                                ma5_t3 = ma5_s_t3[-1]
-                                ma25_t3 = ma25_s_t3[-1]
-                                prev_ma5_t3 = ma5_s_t3[-2]
+                                ma18_t3 = ma18_s_t3[-1]
+                                ma50_t3 = ma50_s_t3[-1]
+                                prev_ma18_t3 = ma18_s_t3[-2]
                             else:
-                                ma5_t3, ma25_t3, prev_ma5_t3 = 0, 0, 0
+                                ma18_t3, ma50_t3, prev_ma18_t3 = 0, 0, 0
                                 
                             gc_days = 0
                             gc_score = 5
                             is_pre_gc_t3 = False
                             
-                            if ma5_t3 > 0 and ma25_t3 > 0 and prev_ma5_t3 > 0:
-                                if ma5_t3 >= ma25_t3:
+                            if ma18_t3 > 0 and ma50_t3 > 0 and prev_ma18_t3 > 0:
+                                if ma18_t3 >= ma50_t3:
                                     for d in range(1, 4): 
-                                        if ma5_s_t3[-d] >= ma25_s_t3[-d] and ma5_s_t3[-(d+1)] < ma25_s_t3[-(d+1)]:
+                                        if ma18_s_t3[-d] >= ma50_s_t3[-d] and ma18_s_t3[-(d+1)] < ma50_s_t3[-(d+1)]:
                                             gc_days = d
                                             break
                                     if gc_days == 1: gc_score = 60
                                     elif gc_days == 2: gc_score = 40
                                 else:
-                                    dist_pct_t3 = ((ma5_t3 / ma25_t3) - 1) * 100
-                                    if (lc > ma5_t3) and (lc > ma25_t3) and (-2.0 <= dist_pct_t3 < 0.0) and (ma5_t3 > prev_ma5_t3):
+                                    dist_pct_t3 = ((ma18_t3 / ma50_t3) - 1) * 100
+                                    if (lc > ma18_t3) and (lc > ma50_t3) and (-2.0 <= dist_pct_t3 < 0.0) and (ma18_t3 > prev_ma18_t3):
                                         is_pre_gc_t3 = True
                                         gc_score = 95
                                 
                             score = gc_score + (10 if (res_roe is not None and res_roe >= 10.0) else 0)
 
-                            # 🚨 修正: 強襲モードでのRSI加減点ロジック実装
                             if rsi_v >= 80:
                                 score -= 10
                                 alerts.append(f"⚠️ 【高値掴み警戒】RSI {rsi_v:.1f}%。過熱しすぎの兆候。")
@@ -3987,8 +3936,7 @@ with tab4:
                             _macro_t3 = get_macro_weather()
                             if _macro_t3 and "nikkei" in _macro_t3:
                                 _df_m = _macro_t3["nikkei"]["df"]
-                                if not _df_m.empty and len(_df_m) >= 25:
-                                    # 🚨 モグラ駆逐パッチ：ここも安全な動的カラム取得と強制1次元化に書き換え
+                                if not _df_m.empty and len(_df_m) >= 50:
                                     _close_col_m = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in _df_m.columns), None)
                                     
                                     if _close_col_m:
@@ -3996,24 +3944,25 @@ with tab4:
                                         if isinstance(_s_m, pd.DataFrame):
                                             _s_m = _s_m.iloc[:, 0]
                                         
-                                        _ma25_m = pd.to_numeric(_s_m, errors='coerce').rolling(window=25).mean().iloc[-1]
+                                        # 🚨 日経の基準を18日に換装
+                                        _ma18_m = pd.to_numeric(_s_m, errors='coerce').rolling(window=18).mean().iloc[-1]
                                         _price_m = _macro_t3["nikkei"]["price"]
                                         
-                                        if pd.notna(_ma25_m) and _ma25_m > 0:
-                                            n225_div_rate = ((_price_m / _ma25_m) - 1) * 100
+                                        if pd.notna(_ma18_m) and _ma18_m > 0:
+                                            n225_div_rate = ((_price_m / _ma18_m) - 1) * 100
 
                             if n225_div_rate <= -8.0:
                                 score += 5
-                                alerts.append(f"💎 【待伏好機】日経乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
+                                alerts.append(f"💎 【待伏好機】日経18日乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
                             elif n225_div_rate <= -5.0:
                                 score += 3
-                                alerts.append(f"⚓ 【地合い支援】日経乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                                alerts.append(f"⚓ 【地合い支援】日経18日乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
                             elif n225_div_rate >= 8.0:
                                 score -= 5
-                                alerts.append(f"⚠️ 【地合い逆風】日経乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                                alerts.append(f"⚠️ 【地合い逆風】日経18日乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
                             elif n225_div_rate >= 5.0:
                                 score -= 3
-                                alerts.append(f"🌐 【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+                                alerts.append(f"🌐 【地合い警戒】日経18日乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
 
                             if any(x in "".join(alerts) for x in ["三尊", "二重天井", "三山", "赤三先"]):
                                 score -= 25
@@ -4035,7 +3984,7 @@ with tab4:
                                 if is_pre_gc_t3:
                                     rank = "S+🎯"
                                     bg_c = "#ff5252"
-                                    alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロスを達成する、本物の超直前モメンタムを補足。")
+                                    alerts.append("🎯 【強襲初動】明日大引けでゴールデンクロス(18/50日)を達成する、本物の超直前モメンタムを補足。")
                                 else:
                                     if gc_days == 0 and not is_pre_gc_t3:
                                         rank = "圏外💀"
@@ -4054,7 +4003,6 @@ with tab4:
                                         rank = "圏外💀"
                                         bg_c = "#616161"
 
-                        # 🤝 【原本100%同期】ボスの既存の美しいパッキング構造を1文字の狂いもなく完全無傷で保持
                         scope_results.append({
                             'code': target_key,
                             'name': c_name,
@@ -4067,7 +4015,7 @@ with tab4:
                             'rsi': rsi_v,
                             'rank': rank,
                             'bg': bg_c,
-                            'score': score, # 🚨 修正: 算出されたscoreを格納
+                            'score': score,
                             'reach_val': reach_rate,
                             'gc_days': gc_days,
                             'df_chart': df_mini, 
@@ -4083,7 +4031,7 @@ with tab4:
                             'error': False,
                             'is_deep': is_deep,
                             'events': raw_s.get('events', {}) if isinstance(raw_s, dict) else {},
-                            'stealth_data': stealth_payload # 💎 潜伏用の拡張コンテナ
+                            'stealth_data': stealth_payload
                         })
                                     
                     except Exception as e:
@@ -4096,7 +4044,7 @@ with tab4:
                             'error': True,
                             'df_chart': pd.DataFrame(),
                             'stealth_data': {},
-                            'score': 0 # 🚨 修正: エラー時もキーが存在するように
+                            'score': 0
                         })
 
                 rank_order = {"S+": 5, "S": 4, "A": 3, "B": 2, "圏外": 0}
@@ -4105,7 +4053,6 @@ with tab4:
                     r_clean_str = re.sub(r'[^S\+ABC圏外]', '', r_raw_str)
                     res['r_val'] = rank_order.get(r_clean_str, 0)
                 
-                # ソート実行（ランク > スコア > 到達率）
                 scope_results = sorted(
                     scope_results, 
                     key=lambda x: (x.get('r_val', 0), x.get('score', 0), x.get('reach_val', 0)), 
@@ -4116,7 +4063,6 @@ with tab4:
                 st.write(f"✔️ 解析完了・色彩同期済み [{t_calc - t_fetch:.2f}秒]")
                 status.update(label=f"🎯 全 {len(t_codes)} 銘柄のスキャン完遂", state="complete", expanded=False)
 
-            # --- 🛡️ ユーティリティ関数のスコープ前方配置（NameErrorの完全根滅） ---
             def safe_int(x):
                 try: return int(float(x)) if not pd.isna(x) else 0
                 except Exception: return 0
@@ -4135,7 +4081,6 @@ with tab4:
                 n225_close_val = "取得不可"
                 n225_div_rate_val = "計算不可"
                 
-                # 🚨 修正: マクロ気象観測からの日経平均データ取得の確実化
                 _macro_fallback = get_macro_weather()
                 if _macro_fallback and "nikkei" in _macro_fallback:
                     _ni_fb = _macro_fallback["nikkei"]
@@ -4148,7 +4093,6 @@ with tab4:
                     if _df_fb is not None and not _df_fb.empty:
                         _df_fb_c = _df_fb.copy()
                         
-                        # 🚨 モグラ駆逐パッチ：安全な動的カラム取得と強制1次元化
                         _close_col_fb = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in _df_fb_c.columns), None)
                         
                         if _close_col_fb:
@@ -4156,20 +4100,21 @@ with tab4:
                             if isinstance(_s_fb, pd.DataFrame):
                                 _s_fb = _s_fb.iloc[:, 0]
                             
-                            _df_fb_c['MA25'] = pd.to_numeric(_s_fb, errors='coerce').rolling(window=25).mean()
+                            # 🚨 日経の再計算も18日線に換装
+                            _df_fb_c['MA18'] = pd.to_numeric(_s_fb, errors='coerce').rolling(window=18).mean()
                             
-                            if 'MA25' in _df_fb_c.columns and not pd.isna(_df_fb_c['MA25'].iloc[-1]):
-                                _ma25_fb = _df_fb_c['MA25'].iloc[-1]
-                                if _price_fb is not None and _ma25_fb > 0:
-                                    _div_fb = ((_price_fb / _ma25_fb) - 1) * 100
+                            if 'MA18' in _df_fb_c.columns and not pd.isna(_df_fb_c['MA18'].iloc[-1]):
+                                _ma18_fb = _df_fb_c['MA18'].iloc[-1]
+                                if _price_fb is not None and _ma18_fb > 0:
+                                    _div_fb = ((_price_fb / _ma18_fb) - 1) * 100
                                     n225_div_rate_val = f"{_div_fb:+.2f}%"
                                 
                                     if _div_fb >= 5.0:
-                                        st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
+                                        st.session_state['macro_alert'] = f"🌐【地合い警戒】日経18日乖離率 {_div_fb:+.2f}%。天井掴みに注意。"
                                     elif _div_fb <= -5.0:
-                                        st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {_div_fb:+.2f}%。押し目買い好機。"
+                                        st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経18日乖離率 {_div_fb:+.2f}%。押し目買い好機。"
                                     else:
-                                        st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
+                                        st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経18日乖離率 {_div_fb:+.2f}%。個別銘柄の動きを重視。"
                 else:
                     if 'n225_m_data' in locals() and n225_m_data and n225_m_data.get('close'):
                         n225_close_val = f"{int(safe_float(n225_m_data.get('close'))):,}円"
@@ -4177,11 +4122,11 @@ with tab4:
                         try: 
                             n225_div_rate_val = f"{n225_div_rate:+.2f}%"
                             if n225_div_rate >= 5.0:
-                                st.session_state['macro_alert'] = f"🌐【地合い警戒】日経乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。"
+                                st.session_state['macro_alert'] = f"🌐【地合い警戒】日経18日乖離率 {n225_div_rate:+.2f}%。天井掴みに注意。"
                             elif n225_div_rate <= -5.0:
-                                st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経乖離率 {n225_div_rate:+.2f}%。押し目買い好機。"
+                                st.session_state['macro_alert'] = f"🌐【地合いチャンス】日経18日乖離率 {n225_div_rate:+.2f}%。押し目買い好機。"
                             else:
-                                st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
+                                st.session_state['macro_alert'] = f"🌐【地合いニュートラル】日経18日乖離率 {n225_div_rate:+.2f}%。個別銘柄の動きを重視。"
                         except: pass
 
                 try:
@@ -4195,7 +4140,6 @@ with tab4:
                     
                     rank_str = str(vr.get('rank', ''))
                     
-                    # 🚨 動的フィルター：待伏せ・強襲モードは S/A級「以外」ならスキップ（＝潜伏は全件通過する）
                     if not is_stealth and not ("S" in rank_str or "A" in rank_str):
                         continue
 
@@ -4217,24 +4161,36 @@ with tab4:
                     fund_status = f"{g_count}/3グリーン"
                     
                     v_df_chart = vr.get('df_chart', pd.DataFrame())
-                    v_ma25 = None
+                    v_ma18 = None
+                    v_ma50 = None
+                    
+                    # 🚨 18日線と50日線の出力値取得
                     if not v_df_chart.empty:
                         last_row = v_df_chart.iloc[-1]
-                        for k in ['MA25', 'ma25', 'MA_25', 'ma_25', 'SMA25', 'sma25']:
+                        
+                        for k in ['MA18', 'ma18', 'MA_18', 'ma_18', 'SMA18', 'sma18']:
                             if k in last_row and pd.notna(last_row[k]):
-                                v_ma25 = safe_float(last_row[k])
+                                v_ma18 = safe_float(last_row[k])
                                 break
-                        if v_ma25 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 25:
-                            try:
-                                v_ma25 = safe_float(v_df_chart['AdjC'].rolling(25).mean().iloc[-1])
-                            except:
-                                v_ma25 = None
-                    ma25_str = f"{int(v_ma25):,}円" if v_ma25 is not None else "計算期間不足"
+                        if v_ma18 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 18:
+                            try: v_ma18 = safe_float(v_df_chart['AdjC'].rolling(18).mean().iloc[-1])
+                            except: v_ma18 = None
+                            
+                        for k in ['MA50', 'ma50', 'MA_50', 'ma_50', 'SMA50', 'sma50']:
+                            if k in last_row and pd.notna(last_row[k]):
+                                v_ma50 = safe_float(last_row[k])
+                                break
+                        if v_ma50 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 50:
+                            try: v_ma50 = safe_float(v_df_chart['AdjC'].rolling(50).mean().iloc[-1])
+                            except: v_ma50 = None
+
+                    ma18_str = f"{int(v_ma18):,}円" if v_ma18 is not None else "計算期間不足"
+                    ma50_str = f"{int(v_ma50):,}円" if v_ma50 is not None else "計算期間不足"
                     
                     if is_ambush:
                         bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
                         bt_target_str = f"{bt_label} {int(vr.get('bt_val', 0)):,}円"
-                    elif is_stealth: # 💎 潜伏モード用のテキスト出力
+                    elif is_stealth: 
                         st_data = vr.get('stealth_data', {})
                         sl_val = st_data.get('stop_loss', 0)
                         tp_val = st_data.get('take_profit', 0)
@@ -4243,25 +4199,18 @@ with tab4:
                         stop_p = int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
                         bt_target_str = f"トリガー目安 {int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
-                    # ==========================================
-                    # 🚨 テンプレート展開前の変数定義ブロック（ループ内に格納）
-                    # ==========================================
-                    
-                    # 💡 1. 時価総額の動的取得（関数からダイレクトに強制抽出）
-                    # vrの中にデータが無くても、get_fundamentalsを直接叩いて確実に引っぱり出します
                     market_cap_str = "N/A"
                     try:
                         f_data = get_fundamentals(vr.get('code'))
                         if f_data and f_data.get('cap'):
                             raw_cap = float(f_data.get('cap'))
-                            if raw_cap > 1000000: # 円単位で返ってきた場合は億円に変換
+                            if raw_cap > 1000000: 
                                 market_cap_str = f"{int(raw_cap / 100000000):,}億円"
                             else:
                                 market_cap_str = f"{int(raw_cap):,}億円"
                     except Exception:
                         market_cap_str = "N/A"
 
-                    # 💡 2. 総合判定ランクの整形・統一（各モードのテキスト・絵文字を自動融合）
                     raw_rank = str(vr.get('rank', ''))
                     display_rank = raw_rank
                     if "待伏" not in display_rank and "潜伏" not in display_rank and "強襲" not in display_rank:
@@ -4272,15 +4221,13 @@ with tab4:
                         else:
                             display_rank = f"{raw_rank}強襲🔥"
 
-                    # ==========================================
-                    # 📝 出力テンプレート（戦術モード行パージ ＆ 判定・時価総額結合版）
-                    # ==========================================
+                    # 🚨 出力テンプレートを18日・50日仕様に変更
                     text_template = f"""■銘柄基本情報
 ・銘柄コード：{vr.get('code')}
 ・データ抽出日時：{current_date_str}
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
-・日経平均MA25乖離率：{n225_div_rate_val}
+・日経平均MA18乖離率：{n225_div_rate_val}
 ■システム判定ステータス
 ・総合判定：{display_rank}
 ・点灯シグナル・アラート：{alerts_str}
@@ -4289,7 +4236,8 @@ with tab4:
 ・ファンダメンタルズ判定：{fund_status} / 時価総額：{market_cap_str}
 ■絶対価格データ（確値）
 ・最新終値：{int(vr.get('lc', 0)):,}円
-・MA25（25日移動平均線）：{ma25_str}
+・MA18（短期トレンド）：{ma18_str}
+・MA50（中期トレンド）：{ma50_str}
 ・直近高値（スイングハイ）：{int(vr.get('h14', 0)):,}円
 ・起点安値（スイングロウ）：{int(vr.get('l14', 0)):,}円
 ■ボラティリティ・ターゲットデータ
@@ -4298,7 +4246,6 @@ with tab4:
 
                     export_texts.append(text_template)
                 
-                # 👇 ループの外（for と同じ階層）で全テキストを結合
                 final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
                 
                 st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
@@ -4399,7 +4346,7 @@ with tab4:
                     if is_ambush:
                         box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
                         box_val = f"{safe_int(r['bt_val']):,}円"
-                    elif is_stealth: # 💎 潜伏モード用のメトリクス表示
+                    elif is_stealth: 
                         st_data = r.get('stealth_data', {})
                         sl_val = st_data.get('stop_loss', 0)
                         tp_val = st_data.get('take_profit', 0)
