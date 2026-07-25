@@ -2038,8 +2038,13 @@ def get_latest_macro_sync():
 # ==========================================
 # 🚨 UI展開・サイドバー処理（関数の外に配置します）
 # ==========================================
+use_macro = True  # 🚨 参謀パッチ：NameErrorを完全に防ぐため、明示的に定義（常時有効化）
+
 if use_macro:
-    api_nikkei_pct = weather['nikkei']['pct'] if 'weather' in locals() and weather else 0.0
+    # 🚨 weather変数の未定義エラーも同時に防ぐため、関数から直接安全に取得
+    _weather_data = get_macro_weather() 
+    api_nikkei_pct = _weather_data['nikkei']['pct'] if _weather_data and 'nikkei' in _weather_data else 0.0
+    
     manual_pct = st.sidebar.number_input(
         "日経騰落率（API値自動入力 %）", 
         value=float(api_nikkei_pct), 
