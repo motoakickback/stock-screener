@@ -3637,12 +3637,13 @@ with tab4:
                         lh = float(t_latest['AdjH'])
                         ll = float(t_latest['AdjL'])
                         
-                        l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
-
+                        # 🚨 修正：待伏は従来通り、それ以外（強襲・潜伏等）は「当日を含む直近14日間」の高値・安値を算出
                         if is_ambush:
+                            l14 = float(df_chart_full.tail(15).iloc[:-1]['AdjL'].min())
                             h14 = float(df_chart_full.tail(3)['AdjH'].max())
                         else:
-                            h14 = float(df_chart_full.tail(15).iloc[:-1]['AdjH'].max())
+                            l14 = float(df_chart_full.tail(14)['AdjL'].min())  # 当日を含む直近14日間の安値
+                            h14 = float(df_chart_full.tail(14)['AdjH'].max())  # 当日を含む直近14日間の高値
                             
                         ur_v = (h14 - l14)
                         
