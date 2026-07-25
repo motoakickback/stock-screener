@@ -589,7 +589,7 @@ def fetch_current_prices_fast(codes):
 
 # --- 🌪️ 2. マクロ気象・司令部通信（実戦配線） ---
 weather = get_macro_weather()
-nikkei_pct_api = weather['nikkei']['pct'] if weather else 0.0
+nikkei_pct_api = weather['nikkei']['pct'] if weather and 'nikkei' in weather else 0.0
 
 def render_macro_board():
     data = get_macro_weather()
@@ -609,7 +609,10 @@ def render_macro_board():
         if not close_col:
             return
 
-        df['MA25'] = df[close_col].rolling(window=25).mean()
+        # 🚨 スナイパー仕様：18日線と50日線を計算
+        df['MA18'] = df[close_col].rolling(window=18).mean()
+        df['MA50'] = df[close_col].rolling(window=50).mean()
+        
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
         
@@ -628,13 +631,22 @@ def render_macro_board():
             import plotly.graph_objects as go
             fig = go.Figure()
             
+            # 日経平均（現在値）の線
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df[close_col], name='日経平均', mode='lines', 
                 line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'
             ))
+            
+            # 🚨 18日線（短期トレンド）の追加
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['MA25'], name='25日線', mode='lines', 
-                line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5, dash='dot'), hovertemplate='25日線: ¥%{y:,.0f}<extra></extra>'
+                x=df['Date'], y=df['MA18'], name='18日線', mode='lines', 
+                line=dict(color='#26a69a', width=1.5, dash='dot'), hovertemplate='18日線: ¥%{y:,.0f}<extra></extra>'
+            ))
+            
+            # 🚨 50日線（中期トレンド）の追加
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['MA50'], name='50日線', mode='lines', 
+                line=dict(color='#ff9800', width=1.5, dash='dash'), hovertemplate='50日線: ¥%{y:,.0f}<extra></extra>'
             ))
             
             y_min, y_max = df[close_col].min(), df[close_col].max()
@@ -1799,12 +1811,6 @@ def analyze_stealth_scope_tab3(df: pd.DataFrame, code: str, company_name: str) -
     return result_payload
 
 def draw_chart(df, targ_p, sakata=[], chart_key=None):
-    import plotly.graph_objects as go
-    from datetime import timedelta
-    import pandas as pd
-    import numpy as np
-    import time
-
     if df is None or df.empty:
         return
 
@@ -1814,17 +1820,17 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
     df_plot = df.copy()
     df_plot = df_plot.tail(250).reset_index(drop=True) 
     
-    if 'MA5' not in df_plot.columns: df_plot['MA5'] = df_plot['AdjC'].rolling(5).mean()
-    if 'MA25' not in df_plot.columns: df_plot['MA25'] = df_plot['AdjC'].rolling(25).mean()
-    if 'MA75' not in df_plot.columns: df_plot['MA75'] = df_plot['AdjC'].rolling(75).mean()
+    # 🚨 スナイパー仕様：MAを18日と50日に完全換装
+    if 'MA18' not in df_plot.columns: df_plot['MA18'] = df_plot['AdjC'].rolling(18).mean()
+    if 'MA50' not in df_plot.columns: df_plot['MA50'] = df_plot['AdjC'].rolling(50).mean()
 
     df_plot['arrow'] = df_plot['AdjC'].diff().apply(lambda x: " ▲" if x > 0 else " ▼" if x < 0 else "")
 
-    ma5_str = df_plot['MA5'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
-    ma25_str = df_plot['MA25'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
-    ma75_str = df_plot['MA75'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma18_str = df_plot['MA18'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
+    ma50_str = df_plot['MA50'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "-")
 
-    customdata = np.column_stack((df_plot['arrow'], ma5_str, ma25_str, ma75_str))
+    # ホバーテキスト用のカスタムデータ配列を再構築
+    customdata = np.column_stack((df_plot['arrow'], ma18_str, ma50_str))
 
     fig = go.Figure()
 
@@ -1839,16 +1845,16 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             "終値：%{close:,.0f}%{customdata[0]}<br>"
             "高値：%{high:,.0f}<br>"
             "安値：%{low:,.0f}<br>"
-            "MA5 ：%{customdata[1]}<br>"
-            "MA25：%{customdata[2]}<br>"
-            "MA75：%{customdata[3]}<br>"
+            "MA18：%{customdata[1]}<br>"
+            "MA50：%{customdata[2]}<br>"
             "<extra></extra>"
         ),
         increasing_line_color='#26a69a', 
         decreasing_line_color='#ef5350'
     ))
 
-    ma_configs = [('MA5', '#ffd700', 'MA5'), ('MA25', '#42a5f5', 'MA25'), ('MA75', '#ab47bc', 'MA75')]
+    # 🚨 描画する移動平均線を18日（緑系）と50日（オレンジ系）に設定
+    ma_configs = [('MA18', '#26a69a', '18日線'), ('MA50', '#ff9800', '50日線')]
     for col, color, label in ma_configs:
         if col in df_plot.columns:
             fig.add_trace(go.Scatter(
@@ -1901,7 +1907,8 @@ def draw_chart(df, targ_p, sakata=[], chart_key=None):
             y_min = min(y_min, targ_p)
             y_max = max(y_max, targ_p)
 
-        for col in ['MA5', 'MA25', 'MA75']:
+        # 🚨 スケール計算用の判定軸も18日・50日に変更
+        for col in ['MA18', 'MA50']:
             if col in df_recent.columns:
                 ma_min = df_recent[col].min()
                 ma_max = df_recent[col].max()
