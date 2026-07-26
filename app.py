@@ -3067,82 +3067,74 @@ with tab2:
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 突破目標(高値)</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
 # --- 8. タブコンテンツ (TAB3: 新・売買ルール) ---
-    with tab3:
-        st.markdown('⚡ 【新陣形】3日間反転フォーメーション ＋ ファンダ連動スキャン', unsafe_allow_html=True)
-        st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
+with tab3:
+    st.markdown('⚡ 【新陣形】3日間反転フォーメーション ＋ ファンダ連動スキャン', unsafe_allow_html=True)
+    st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
 
-        st.markdown("#### ⚙️ スキャン条件設定")
-        col_t3_1, col_t3_2 = st.columns(2)
-        min_p_t3 = col_t3_1.number_input("価格下限(円) [TAB3]", value=int(st.session_state.get('f1_min', 200)), step=100, key="t3_min")
-        max_p_t3 = col_t3_2.number_input("価格上限(円) [TAB3]", value=int(st.session_state.get('f1_max', 3000)), step=100, key="t3_max")
+    st.markdown("#### ⚙️ スキャン条件設定")
+    col_t3_1, col_t3_2 = st.columns(2)
+    min_p_t3 = col_t3_1.number_input("価格下限(円) [TAB3]", value=int(st.session_state.get('f1_min', 200)), step=100, key="t3_min")
+    max_p_t3 = col_t3_2.number_input("価格上限(円) [TAB3]", value=int(st.session_state.get('f1_max', 3000)), step=100, key="t3_max")
 
-        if st.button("🚀 新ルール索敵開始", key="btn_scan_new_rules", type="primary"):
-            with st.spinner("兵站データを展開・接続中..."):
-                try:
-                    # 🚨 大元キャッシュからのデータ抽出
-                    raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else None
+    if st.button("🚀 新ルール索敵開始", key="btn_scan_new_rules", type="primary"):
+        with st.spinner("兵站データを展開・接続中..."):
+            try:
+                raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else None
                     
-                    # 🚨 防弾パッチ：データがDataFrameでもリストでも安全に「空（カラ）」を判定する
-                    is_data_empty = False
-                    if raw is None:
-                        is_data_empty = True
-                    elif hasattr(raw, 'empty') and raw.empty:  # DataFrame等の場合
-                        is_data_empty = True
-                    elif isinstance(raw, (list, dict, tuple)) and len(raw) == 0:
-                        is_data_empty = True
+                is_data_empty = False
+                if raw is None:
+                    is_data_empty = True
+                elif hasattr(raw, 'empty') and raw.empty:
+                    is_data_empty = True
+                elif isinstance(raw, (list, dict, tuple)) and len(raw) == 0:
+                    is_data_empty = True
 
-                    if is_data_empty:
-                        st.error("兵站データが空です。APIからのデータ取得に失敗しています。")
-                    else:
-                        # データの成形とグループ化（エンジン起動準備）
-                        full_df = clean_df(raw if hasattr(raw, 'columns') else pd.DataFrame(raw))
-                        if 'Code' in full_df.columns:
-                            full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-                        dict_bars_t3 = {c: group for c, group in full_df.groupby('Code')}
+                if is_data_empty:
+                    st.error("兵站データが空です。サイドバーから「🔄 全軍データ取得」を実行するか、TAB1で一度スキャンを行ってください。")
+                else:
+                    full_df = clean_df(raw if hasattr(raw, 'columns') else pd.DataFrame(raw))
+                    if 'Code' in full_df.columns:
+                        full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                    dict_bars_t3 = {c: group for c, group in full_df.groupby('Code')}
 
-                        with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
+                    with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
+                        cfg_new_rules = {
+                            "f1_min": min_p_t3,
+                            "f1_max": max_p_t3
+                        }
+                        macro_status = st.session_state.get('macro_alert', '')
 
-                        with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
-                            cfg_new_rules = {
-                                "f1_min": min_p_t3,
-                                "f1_max": max_p_t3
+                        results_t3 = []
+                        valid_codes = list(dict_bars_t3.keys())
+                        progress_bar_t3 = st.progress(0)
+                        total_c = len(valid_codes)
+
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                            future_to_code = {
+                                executor.submit(scan_unit_new_rules_parallel, dict_bars_t3[c], c, cfg_new_rules, macro_status): c
+                                for c in valid_codes
                             }
-                            macro_status = st.session_state.get('macro_alert', '')
+                            for i, future in enumerate(concurrent.futures.as_completed(future_to_code)):
+                                res = future.result()
+                                if res is not None:
+                                    results_t3.append(res)
+                                if i % max(1, total_c // 10) == 0:
+                                    progress_bar_t3.progress(min(1.0, (i + 1) / total_c))
 
-                            results_t3 = []
-                            valid_codes = list(dict_bars_t3.keys())
-                            progress_bar_t3 = st.progress(0)
-                            total_c = len(valid_codes)
+                        progress_bar_t3.empty()
 
-                            # 8スレッドの並列爆撃処理
-                            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                                future_to_code = {
-                                    executor.submit(scan_unit_new_rules_parallel, dict_bars_t3[c], c, cfg_new_rules, macro_status): c
-                                    for c in valid_codes
-                                }
-                                for i, future in enumerate(concurrent.futures.as_completed(future_to_code)):
-                                    res = future.result()
-                                    if res is not None:
-                                        results_t3.append(res)
-                                    # プログレスバーの更新
-                                    if i % max(1, total_c // 10) == 0:
-                                        progress_bar_t3.progress(min(1.0, (i + 1) / total_c))
-
-                            progress_bar_t3.empty()
-
-                            # 結果の集計と表示
-                            if results_t3:
-                                df_res_t3 = pd.DataFrame(results_t3)
-                                if 'master_map' in globals():
-                                    df_res_t3['Name'] = df_res_t3['Code'].map(master_map).fillna('不明')
+                        if results_t3:
+                            df_res_t3 = pd.DataFrame(results_t3)
+                            if 'master_map' in globals():
+                                df_res_t3['Name'] = df_res_t3['Code'].map(master_map).fillna('不明')
                                 
-                                st.success(f"索敵完了: {len(df_res_t3)}件の該当銘柄を捕捉しました！")
-                                st.dataframe(df_res_t3, use_container_width=True)
-                            else:
-                                st.warning("現在、新ルールのフォーメーション（買い/空売り）を満たす銘柄は0件です。")
+                            st.success(f"索敵完了: {len(df_res_t3)}件の該当銘柄を捕捉しました！")
+                            st.dataframe(df_res_t3, use_container_width=True)
+                        else:
+                            st.warning("現在、新ルールのフォーメーション（買い/空売り）を満たす銘柄は0件です。")
 
-                except Exception as e:
-                    st.error(f"スキャン中に内部エラーが発生しました: {e}")
+            except Exception as e:
+                st.error(f"スキャン中に内部エラーが発生しました: {e}")
 
 # --- 8. タブコンテンツ (TAB4: 精密スコープ) ---
 with tab4:
