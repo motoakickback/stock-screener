@@ -3080,7 +3080,7 @@ with tab3:
         with st.spinner("兵站データを展開・接続中..."):
             try:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else None
-                    
+                
                 is_data_empty = False
                 if raw is None:
                     is_data_empty = True
@@ -3105,33 +3105,147 @@ with tab3:
                         macro_status = st.session_state.get('macro_alert', '')
 
                         results_t3 = []
+                        telemetry_data = []
+                        
                         valid_codes = list(dict_bars_t3.keys())
                         progress_bar_t3 = st.progress(0)
                         total_c = len(valid_codes)
 
+                        def evaluate_with_telemetry(group_df, c, cfg, macro_alert_text):
+                            tele = {"code": c, "price_pass": False, "tech_pass": False, "funda_pass": False, "payload": None}
+                            try:
+                                if group_df is None or len(group_df) < 5:
+                                    return tele
+                                df = group_df.copy()
+                                lc = df['Close'].iloc[-1]
+                                
+                                min_p = cfg.get("f1_min", 0)
+                                max_p = cfg.get("f1_max", 99999)
+                                if not (min_p <= lc <= max_p):
+                                    return tele
+                                tele["price_pass"] = True
+
+                                buy_day1 = df['Close'].iloc[-3] < df['Low'].iloc[-4]
+                                buy_day2 = df['Close'].iloc[-2] > df['High'].iloc[-3]
+                                buy_day3 = df['Close'].iloc[-1] > df['Close'].iloc[-2]
+                                is_buy_tech = buy_day1 and buy_day2 and buy_day3
+
+                                short_day1 = df['Close'].iloc[-3] > df['High'].iloc[-4]
+                                short_day2 = df['Close'].iloc[-2] < df['Low'].iloc[-3]
+                                short_day3 = df['Close'].iloc[-1] < df['Close'].iloc[-2]
+                                is_short_tech = short_day1 and short_day2 and short_day3
+
+                                if not (is_buy_tech or is_short_tech):
+                                    return tele
+                                tele["tech_pass"] = True
+
+                                is_macro_downtrend = False
+                                if "警戒" in macro_alert_text or "下落" in macro_alert_text or "-" in macro_alert_text:
+                                    is_macro_downtrend = True
+
+                                buy_funda_ok = False
+                                short_funda_ok = False
+                                funda_msg = "条件未達"
+
+                                try:
+                                    import yfinance as yf
+                                    tk = yf.Ticker(f"{c}.T")
+                                    info = tk.info
+                                    rev_growth = info.get('revenueGrowth', 0)
+                                    earn_growth = info.get('earningsGrowth', 0)
+                                    if rev_growth is None: rev_growth = 0
+                                    if earn_growth is None: earn_growth = 0
+
+                                    if is_buy_tech:
+                                        score = 0
+                                        if rev_growth >= 0.07: score += 2
+                                        elif rev_growth >= 0.05: score += 1
+                                        if earn_growth >= 0.20: score += 2
+                                        elif earn_growth >= 0.15: score += 1
+
+                                        if score >= 3:
+                                            buy_funda_ok = True
+                                            funda_msg = f"🔥 買S級 (売上:{rev_growth*100:.1f}% 益:{earn_growth*100:.1f}%)"
+                                        elif score >= 1:
+                                            buy_funda_ok = True
+                                            funda_msg = f"🟢 買A級 (売上:{rev_growth*100:.1f}% 益:{earn_growth*100:.1f}%)"
+
+                                    if is_short_tech:
+                                        if is_macro_downtrend:
+                                            short_funda_ok = True
+                                            funda_msg = f"📉 空S級 (マクロ地合い連動: 下げ相場)"
+                                        else:
+                                            score = 0
+                                            if earn_growth < 0.05: score += 2
+                                            elif earn_growth < 0.08: score += 1
+                                            if score >= 2:
+                                                short_funda_ok = True
+                                                funda_msg = f"⚠️ 空S級 (益:{earn_growth*100:.1f}% 減速)"
+                                            elif score >= 1:
+                                                short_funda_ok = True
+                                                funda_msg = f"🟡 空A級 (益:{earn_growth*100:.1f}% 減速傾向)"
+                                except Exception:
+                                    funda_msg = "ファンダ情報取得不能(技術的承認)"
+                                    if is_buy_tech: buy_funda_ok = True
+                                    if is_short_tech: short_funda_ok = True
+
+                                is_final_buy = is_buy_tech and buy_funda_ok
+                                is_final_short = is_short_tech and short_funda_ok
+
+                                if not (is_final_buy or is_final_short):
+                                    return tele
+                                
+                                tele["funda_pass"] = True
+                                signal_type = "🔵 買いシグナル" if is_final_buy else "🔴 空売りシグナル"
+                                tele["payload"] = {
+                                    "Code": c,
+                                    "Close": lc,
+                                    "Signal": signal_type,
+                                    "Funda": funda_msg,
+                                    "Volume": df['Volume'].iloc[-1]
+                                }
+                                return tele
+                            except Exception:
+                                return tele
+
                         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                             future_to_code = {
-                                executor.submit(scan_unit_new_rules_parallel, dict_bars_t3[c], c, cfg_new_rules, macro_status): c
+                                executor.submit(evaluate_with_telemetry, dict_bars_t3[c], c, cfg_new_rules, macro_status): c
                                 for c in valid_codes
                             }
                             for i, future in enumerate(concurrent.futures.as_completed(future_to_code)):
                                 res = future.result()
                                 if res is not None:
-                                    results_t3.append(res)
+                                    telemetry_data.append(res)
+                                    if res.get("payload"):
+                                        results_t3.append(res["payload"])
                                 if i % max(1, total_c // 10) == 0:
                                     progress_bar_t3.progress(min(1.0, (i + 1) / total_c))
 
                         progress_bar_t3.empty()
 
+                        total_target = len(valid_codes)
+                        price_hits = sum(1 for t in telemetry_data if t["price_pass"])
+                        tech_hits = sum(1 for t in telemetry_data if t["tech_pass"])
+                        funda_hits = sum(1 for t in telemetry_data if t["funda_pass"])
+
+                        st.markdown("---")
+                        st.markdown("### 📊 索敵フィルター通過レポート")
+                        col_rep_1, col_rep_2, col_rep_3 = st.columns(3)
+                        col_rep_1.metric("価格フィルター通過", f"{price_hits}件 / {total_target}件")
+                        col_rep_2.metric("チャート条件通過", f"{tech_hits}件 / {total_target}件")
+                        col_rep_3.metric("ファンダ情報通過 (最終)", f"{funda_hits}件 / {total_target}件")
+                        st.markdown("---")
+
                         if results_t3:
                             df_res_t3 = pd.DataFrame(results_t3)
                             if 'master_map' in globals():
                                 df_res_t3['Name'] = df_res_t3['Code'].map(master_map).fillna('不明')
-                                
+                            
                             st.success(f"索敵完了: {len(df_res_t3)}件の該当銘柄を捕捉しました！")
                             st.dataframe(df_res_t3, use_container_width=True)
                         else:
-                            st.warning("現在、新ルールのフォーメーション（買い/空売り）を満たす銘柄は0件です。")
+                            st.warning("現在、新ルールのフォーメーション（買い/空売り）を満たす銘柄は0件です。（上記のフィルター通過数をご確認ください）")
 
             except Exception as e:
                 st.error(f"スキャン中に内部エラーが発生しました: {e}")
