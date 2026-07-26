@@ -3079,16 +3079,28 @@ with tab2:
         if st.button("🚀 新ルール索敵開始", key="btn_scan_new_rules", type="primary"):
             with st.spinner("兵站データを展開・接続中..."):
                 try:
-                    # 🚨 修正：TAB1/TAB2と同じく、大元キャッシュから自力でデータを引き出す物理結線
-                    raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else []
-                    if not raw:
+                    # 🚨 大元キャッシュからのデータ抽出
+                    raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else None
+                    
+                    # 🚨 防弾パッチ：データがDataFrameでもリストでも安全に「空（カラ）」を判定する
+                    is_data_empty = False
+                    if raw is None:
+                        is_data_empty = True
+                    elif hasattr(raw, 'empty') and raw.empty:  # DataFrame等の場合
+                        is_data_empty = True
+                    elif isinstance(raw, (list, dict, tuple)) and len(raw) == 0:
+                        is_data_empty = True
+
+                    if is_data_empty:
                         st.error("兵站データが空です。APIからのデータ取得に失敗しています。")
                     else:
                         # データの成形とグループ化（エンジン起動準備）
-                        full_df = clean_df(pd.DataFrame(raw))
+                        full_df = clean_df(raw if hasattr(raw, 'columns') else pd.DataFrame(raw))
                         if 'Code' in full_df.columns:
                             full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                         dict_bars_t3 = {c: group for c, group in full_df.groupby('Code')}
+
+                        with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
 
                         with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
                             cfg_new_rules = {
