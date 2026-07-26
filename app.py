@@ -3781,6 +3781,7 @@ with tab4:
                 except Exception: return None
 
             valid_results = [x for x in scope_results if not x.get('error')]
+            is_stealth = False  # 🚨 潜伏パージ済のため常にFalse（システム通過用パスポート）
             if not is_stealth:
                 valid_results = [x for x in valid_results if x.get('r_val', 0) >= 3]
 
