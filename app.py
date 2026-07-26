@@ -2332,7 +2332,7 @@ render_macro_board()
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌐 【待伏】広域レーダー", 
     "⚡ 【強襲】広域レーダー", 
-    "💎 【潜伏】広域レーダー", 
+    "💎 【挟撃】広域レーダー", 
     "🎯 【照準】精密スコープ", 
     "⚙️ 【演習】戦術シミュレータ", 
     "⛺ 【戦線】交戦モニター", 
@@ -4057,11 +4057,11 @@ with tab4:
 
                     raw_rank = str(vr.get('rank', ''))
                     display_rank = raw_rank
-                    if "待伏" not in display_rank and "潜伏" not in display_rank and "強襲" not in display_rank:
+                    if "待伏" not in display_rank and "挟撃" not in display_rank and "強襲" not in display_rank:
                         if is_ambush:
                             display_rank = f"{raw_rank}待伏💎"
                         elif is_stealth:
-                            display_rank = f"{raw_rank}潜伏💎"
+                            display_rank = f"{raw_rank}挟撃💎"
                         else:
                             display_rank = f"{raw_rank}強襲🔥"
 
@@ -4318,7 +4318,7 @@ with tab5:
             st.session_state.sim_push_r_val = 50.0
             st.session_state.sim_pass_req_val = 7
             st.session_state.sim_rsi_lim_ambush_val = 45
-        elif "潜伏" in current_mode:
+        elif "挟撃" in current_mode:
             st.session_state.sim_stealth_vol_val = 10
             st.session_state.sim_rsi_lim_stealth_val = 65
         else: # 強襲
@@ -4340,7 +4340,7 @@ with tab5:
         st.radio("戦術モード", [
             "🌐 【待伏】鉄の掟 (押し目狙撃)", 
             "⚡ 【強襲】GCブレイクアウト (順張り)", 
-            "💎 【潜伏】大爆発前夜ハント (ブレイク狙撃)"
+            "💎 【挟撃】大爆発前夜ハント (ブレイク狙撃)"
         ], key="bt_mode_sim_v2")
         bt_c_in = st.text_area("銘柄コード", value=default_t4, height=100, key="bt_codes_sim_v2")
         run_bt = st.button("🔥 仮想実弾テスト実行", use_container_width=True)
@@ -4362,8 +4362,8 @@ with tab5:
             cx1, cx2 = st.columns(2)
             cx1.number_input("🐳 クジラ流入判定 (過去平均のN倍)", min_value=1.0, max_value=5.0, value=float(st.session_state.get('sim_ambush_vol', 1.5)), step=0.1, key="sim_ambush_vol", on_change=extended_save_settings)
 
-        elif "潜伏" in st.session_state.bt_mode_sim_v2:
-            st.markdown("##### 💎 【潜伏】シミュレータ固有設定")
+        elif "挟撃" in st.session_state.bt_mode_sim_v2:
+            st.markdown("##### 💎 【挟撃】シミュレータ固有設定")
             ct1, ct2 = st.columns(2)
             ct1.number_input("📉 ボラ収縮率上限(%)", min_value=1, max_value=100, value=int(st.session_state.get('sim_stealth_vol_val', 10)), step=1, key="sim_stealth_vol_val")
             ct2.number_input("📈 RSI上限 (過熱感)", min_value=1, max_value=100, value=int(st.session_state.get('sim_rsi_lim_stealth_val', 65)), step=5, key="sim_rsi_lim_stealth_val")
@@ -4393,7 +4393,7 @@ with tab5:
             sim_sell_d = int(st.session_state.bt_sell_d)
             
             is_ambush = "待伏" in st.session_state.bt_mode_sim_v2
-            is_stealth = "潜伏" in st.session_state.bt_mode_sim_v2
+            is_stealth = "挟撃" in st.session_state.bt_mode_sim_v2
             is_assault = "強襲" in st.session_state.bt_mode_sim_v2
             
             # 🚨 全モードにおいて「第2の最適化軸」を「利確目標(%)」に統一
@@ -5029,7 +5029,7 @@ with tab7:
                 st.session_state.aar_df_stable, 
                 column_config={
                     "規模": st.column_config.TextColumn("規模", disabled=True),
-                    "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "潜伏", "自動解析", "その他"], required=True),
+                    "戦術": st.column_config.SelectboxColumn("戦術", options=["待伏", "強襲", "挟撃", "自動解析", "その他"], required=True),
                     "規律": st.column_config.SelectboxColumn("規律", options=["遵守", "違反", "不明"], required=True),
                     "買値": st.column_config.NumberColumn("買値", format="%d"),
                     "売値": st.column_config.NumberColumn("売値", format="%d"),
