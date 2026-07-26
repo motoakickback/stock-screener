@@ -3511,42 +3511,51 @@ with tab4:
                         has_top_trap_t3 = any(x in "".join(alerts) for x in ["三山", "三尊", "二重天井", "買い三空", "二重頂", "三尊天井"])
 
                         # =========================================================================
-                        # 🌐 待伏（Ambush）モード処理ブロック
+                        # 🌐 待伏（Ambush）モード または 🔥 新ルール（買/空）モード処理ブロック
                         # =========================================================================
-                        elif is_ambush:
-                            score = 4
+                        # 🚨 修正：強襲モード（is_assault_mode）ではない場合の処理として if 〜 を再定義
+                        if not is_assault_mode:
+                            if is_ambush:
+                                score = 4
 
-                            if n225_div_rate <= -8.0:
-                                score += 5
-                                alerts.append(f"💎 【待伏好機】日経18日乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
-                            elif n225_div_rate <= -5.0:
-                                score += 3
-                                alerts.append(f"⚓ 【地合い支援】日経18日乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
-                            elif n225_div_rate >= 8.0:
-                                score -= 5
-                                alerts.append(f"⚠️ 【地合い逆風】日経18日乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
-                            elif n225_div_rate >= 5.0:
-                                score -= 3
-                                alerts.append(f"🌐 【地合い警戒】日経18日乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
+                                if n225_div_rate <= -8.0:
+                                    score += 5
+                                    alerts.append(f"💎 【待伏好機】日経18日乖離率 {n225_div_rate:+.2f}%。パニック売り局面、反転期待値を最大加点。")
+                                elif n225_div_rate <= -5.0:
+                                    score += 3
+                                    alerts.append(f"⚓ 【地合い支援】日経18日乖離率 {n225_div_rate:+.2f}%。安値圏、迎撃成功率を上方修正。")
+                                elif n225_div_rate >= 8.0:
+                                    score -= 5
+                                    alerts.append(f"⚠️ 【地合い逆風】日経18日乖離率 {n225_div_rate:+.2f}%。市場全体が天井圏につき、偽の押し目に警戒。")
+                                elif n225_div_rate >= 5.0:
+                                    score -= 3
+                                    alerts.append(f"🌐 【地合い警戒】日経18日乖離率 {n225_div_rate:+.2f}%。高値圏につき、慎重なエントリーを。")
 
-                            if rsi_v <= 20:
-                                score += 5
-                                alerts.append(f"🔥 【極度売られすぎ】RSI {rsi_v:.1f}%。強烈な反発エネルギーを内包。")
-                            elif rsi_v <= 30:
-                                score += 3
-                                alerts.append(f"⚡ 【売られすぎ】RSI {rsi_v:.1f}%。オシレーターが底値圏を示唆。")
+                                if rsi_v <= 20:
+                                    score += 5
+                                    alerts.append(f"🔥 【極度売られすぎ】RSI {rsi_v:.1f}%。強烈な反発エネルギーを内包。")
+                                elif rsi_v <= 30:
+                                    score += 3
+                                    alerts.append(f"⚡ 【売られすぎ】RSI {rsi_v:.1f}%。オシレーターが底値圏を示唆。")
 
-                            base_push_r = st.session_state.push_r / 100.0
-                            bt_val_standard = h14 - (ur_v * base_push_r)
-                            bt_val_deep = h14 - (ur_v * 0.618)
-                            
-                            if lc < (bt_val_standard * 0.95):
-                                bt_val = int(bt_val_deep)
-                                is_deep = True
-                                if not any("深海" in a for a in alerts):
-                                    alerts.append("💎 【深海待伏】目標地点より5%以上乖離。61.8%押しへ補正。")
-                            else:
-                                bt_val = int(bt_val_standard)
+                                base_push_r = st.session_state.push_r / 100.0
+                                bt_val_standard = h14 - (ur_v * base_push_r)
+                                bt_val_deep = h14 - (ur_v * 0.618)
+                                
+                                if lc < (bt_val_standard * 0.95):
+                                    bt_val = int(bt_val_deep)
+                                    is_deep = True
+                                    if not any("深海" in a for a in alerts):
+                                        alerts.append("💎 【深海待伏】目標地点より5%以上乖離。61.8%押しへ補正。")
+                                else:
+                                    bt_val = int(bt_val_standard)
+
+                            elif is_new_rule:
+                                # 🔥 新ルール専用のスコアリング（必要に応じて拡張可能）
+                                score = 10  # S級/A級の判定は既にTAB3で終わっているため、TAB4では一律高得点を付与
+                                bt_val = lc # トリガーは現在値付近
+                                if not any("新ルール" in a for a in alerts):
+                                    alerts.append("🔥 【新ルール】3日間反転フォーメーション確認済み。直近のプライスアクションに従い行動。")
 
                             triage_score = 0
                             if lc > (bt_val + atr_v):
