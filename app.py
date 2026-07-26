@@ -3187,12 +3187,15 @@ with tab4:
 
     if run_scope:
         if is_ambush:
+            # 待伏せ用保存
             for f, d in [(T3_AM_WATCH_FILE, st.session_state.t3_am_watch_buf), (T3_AM_DAILY_FILE, st.session_state.t3_am_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
-        elif is_stealth:
+        elif is_new_rule:
+            # 新ルール用保存（内部変数は旧STを使い回し）
             for f, d in [(T3_ST_WATCH_FILE, st.session_state.t3_st_watch_buf), (T3_ST_DAILY_FILE, st.session_state.t3_st_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
         else:
+            # 強襲用保存
             for f, d in [(T3_AS_WATCH_FILE, st.session_state.t3_as_watch_buf), (T3_AS_DAILY_FILE, st.session_state.t3_as_daily_buf)]:
                 with open(f, "w", encoding="utf-8") as file: file.write(d)
 
