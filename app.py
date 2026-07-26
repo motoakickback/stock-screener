@@ -3280,7 +3280,7 @@ with tab4:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り", "🔥 【新ルール】 買/空フォーメーション"], key="t3_scope_mode_absolute_lock_v2026")
+        scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り", "🔥 【挟撃】 買/空フォーメーション"], key="t3_scope_mode_absolute_lock_v2026")
         is_ambush = "待伏" in scope_mode
         is_new_rule = "新ルール" in scope_mode
         st.markdown("---")
@@ -3295,8 +3295,8 @@ with tab4:
         elif is_new_rule:
             if "t3_st_watch_widget" not in st.session_state: st.session_state.t3_st_watch_widget = st.session_state.t3_st_watch_buf
             if "t3_st_daily_widget" not in st.session_state: st.session_state.t3_st_daily_widget = st.session_state.t3_st_daily_buf
-            watch_in = st.text_area("🔥 【新ルール】主力監視部隊", key="t3_st_watch_widget", height=120)
-            daily_in = st.text_area("🔥 【新ルール】本日新規部隊", key="t3_st_daily_widget", height=120)
+            watch_in = st.text_area("🔥 【挟撃】主力監視部隊", key="t3_st_watch_widget", height=120)
+            daily_in = st.text_area("🔥 【挟撃】本日新規部隊", key="t3_st_daily_widget", height=120)
             st.session_state.t3_st_watch_buf = watch_in
             st.session_state.t3_st_daily_buf = daily_in
         else:
@@ -3314,7 +3314,7 @@ with tab4:
         if is_ambush:
             st.info("**🌐 【待伏】モード（押し目・逆張り）**\n底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。")
         elif is_new_rule:
-            st.info("**🔥 【新ルール】モード（3日間反転 ＋ ファンダ・地合い連動）**\n厳格なキャンドルアクション（包み足・アウトサイドバー等）を起点とし、業績や地合いをスコアリングして「買い／空売り」のS級シグナルを抽出します。")
+            st.info("**🔥 【挟撃】モード（3日間反転 ＋ ファンダ・地合い連動）**\n厳格なキャンドルアクション（包み足・アウトサイドバー等）を起点とし、業績や地合いをスコアリングして「買い／空売り」のS級シグナルを抽出します。")
         else:
             st.info("**⚡ 【強襲】モード（トレンド・順張り）**\nエネルギー圧縮からの「ブレイク前夜」を狙う電撃戦。")
 
@@ -3691,7 +3691,7 @@ with tab4:
                                 score = 10  # S級/A級の判定は既にTAB3で終わっているため、TAB4では一律高得点を付与
                                 bt_val = lc # トリガーは現在値付近
                                 if not any("新ルール" in a for a in alerts):
-                                    alerts.append("🔥 【新ルール】3日間反転フォーメーション確認済み。直近のプライスアクションに従い行動。")
+                                    alerts.append("🔥 【挟撃】3日間反転フォーメーション確認済み。直近のプライスアクションに従い行動。")
 
                             triage_score = 0
                             if lc > (bt_val + atr_v):
