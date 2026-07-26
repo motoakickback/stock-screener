@@ -3066,9 +3066,9 @@ with tab2:
                 m_cols[3].markdown(f'<div style="background: rgba(239, 83, 80, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(239, 83, 80, 0.3); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🛡️ 損切(起点安値)</div><div style="font-size: 1.6rem; font-weight: bold; color: #ef5350;">{d_price:,}円</div></div>', unsafe_allow_html=True)
                 m_cols[4].markdown(f'<div style="background: rgba(255, 215, 0, 0.05); padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.2); text-align: center;"><div style="font-size: 13px; color: rgba(250, 250, 250, 0.6); margin-bottom: 2px;">🎯 突破目標(高値)</div><div style="font-size: 1.6rem; font-weight: bold; color: #FFD700;">{t_price:,}円</div></div>', unsafe_allow_html=True)
 
-# --- 8. タブコンテンツ (TAB3: 新・売買ルール) ---
+# --- 8. タブコンテンツ (TAB3: 夾撃ルール) ---
 with tab3:
-    st.markdown('⚡ 【新陣形】3日間反転フォーメーション ＋ ファンダ連動スキャン', unsafe_allow_html=True)
+    st.markdown('⚔️ 【新陣形】夾撃（きょうげき）レーダー ── 3日間反転フォーメーション ＋ ファンダ連動スキャン', unsafe_allow_html=True)
     st.info(f"現在の地合い連動：{st.session_state.get('macro_alert', '未設定')}")
 
     st.markdown("#### ⚙️ スキャン条件設定")
@@ -3076,7 +3076,7 @@ with tab3:
     min_p_t3 = col_t3_1.number_input("価格下限(円) [TAB3]", value=int(st.session_state.get('f1_min', 200)), step=100, key="t3_min")
     max_p_t3 = col_t3_2.number_input("価格上限(円) [TAB3]", value=int(st.session_state.get('f1_max', 3000)), step=100, key="t3_max")
 
-    if st.button("🚀 新ルール索敵開始", key="btn_scan_new_rules", type="primary"):
+    if st.button("⚔️ 夾撃索敵開始", key="btn_scan_new_rules", type="primary"):
         with st.spinner("兵站データを展開・接続中..."):
             try:
                 raw = get_hist_data_cached(cache_key) if 'cache_key' in globals() else None
@@ -3097,7 +3097,7 @@ with tab3:
                         full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
                     dict_bars_t3 = {c: group for c, group in full_df.groupby('Code')}
 
-                    with st.spinner("新ルール（テクニカル＆ファンダメンタルズ）解析中..."):
+                    with st.spinner("夾撃戦術（テクニカル＆ファンダメンタルズ）解析中..."):
                         cfg_new_rules = {
                             "f1_min": min_p_t3,
                             "f1_max": max_p_t3
@@ -3230,7 +3230,7 @@ with tab3:
                         funda_hits = sum(1 for t in telemetry_data if t["funda_pass"])
 
                         st.markdown("---")
-                        st.markdown("### 📊 索敵フィルター通過レポート")
+                        st.markdown("### 📊 夾撃作戦 フィルター通過レポート")
                         col_rep_1, col_rep_2, col_rep_3 = st.columns(3)
                         col_rep_1.metric("価格フィルター通過", f"{price_hits}件 / {total_target}件")
                         col_rep_2.metric("チャート条件通過", f"{tech_hits}件 / {total_target}件")
@@ -3242,10 +3242,10 @@ with tab3:
                             if 'master_map' in globals():
                                 df_res_t3['Name'] = df_res_t3['Code'].map(master_map).fillna('不明')
                             
-                            st.success(f"索敵完了: {len(df_res_t3)}件の該当銘柄を捕捉しました！")
+                            st.success(f"索敵完了: {len(df_res_t3)}件の夾撃ターゲットを捕捉しました！")
                             st.dataframe(df_res_t3, use_container_width=True)
                         else:
-                            st.warning("現在、新ルールのフォーメーション（買い/空売り）を満たす銘柄は0件です。（上記のフィルター通過数をご確認ください）")
+                            st.warning("現在、夾撃フォーメーション（買い/空売り）を満たす銘柄は0件です。（上記のフィルター通過数をご確認ください）")
 
             except Exception as e:
                 st.error(f"スキャン中に内部エラーが発生しました: {e}")
