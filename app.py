@@ -3147,7 +3147,6 @@ with tab4:
 
     col_s1, col_s2 = st.columns([1.2, 1.8])
     with col_s1:
-        # 🚨 「潜伏」をパージし、「新ルール」に入れ替え
         scope_mode = st.radio("🎯 解析モードを選択", ["🌐 【待伏】 押し目・逆張り", "⚡ 【強襲】 トレンド・順張り", "🔥 【新ルール】 買/空フォーメーション"], key="t3_scope_mode_absolute_lock_v2026")
         is_ambush = "待伏" in scope_mode
         is_new_rule = "新ルール" in scope_mode
@@ -3161,7 +3160,6 @@ with tab4:
             st.session_state.t3_am_watch_buf = watch_in
             st.session_state.t3_am_daily_buf = daily_in
         elif is_new_rule:
-            # 💡 内部変数は旧「潜伏(st)」の枠をそのまま再利用（エラー防止とセーブデータ引継ぎのため）
             if "t3_st_watch_widget" not in st.session_state: st.session_state.t3_st_watch_widget = st.session_state.t3_st_watch_buf
             if "t3_st_daily_widget" not in st.session_state: st.session_state.t3_st_daily_widget = st.session_state.t3_st_daily_buf
             watch_in = st.text_area("🔥 【新ルール】主力監視部隊", key="t3_st_watch_widget", height=120)
@@ -3181,17 +3179,25 @@ with tab4:
     with col_s2:
         st.markdown("#### 🔍 索敵ステータス ＆ 行動指針")
         if is_ambush:
-            st.info("""**🌐 【待伏】モード（押し目・逆張り）**
-底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。
-
-**【🚨 市場連動バフ稼働中】**
-日経平均25日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、スコアをボーナス加点(+3〜+5pts) します。""")
+            msg_ambush = (
+                "**🌐 【待伏】モード（押し目・逆張り）**\n"
+                "底打ち反転の迎撃戦。安値圏での「陰の極み」「二重底」を検知。\n\n"
+                "**【🚨 市場連動バフ稼働中】**\n"
+                "日経平均25日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、スコアをボーナス加点(+3〜+5pts) します。"
+            )
+            st.info(msg_ambush)
         elif is_new_rule:
-            st.info("""**🔥 【新ルール】モード（3日間反転 ＋ ファンダ・地合い連動）**
-厳格なキャンドルアクション（包み足・アウトサイドバー等）を起点とし、業績や地合いをスコアリングして「買い／空売り」のS級シグナルを抽出します。""")
+            msg_new = (
+                "**🔥 【新ルール】モード（3日間反転 ＋ ファンダ・地合い連動）**\n"
+                "厳格なキャンドルアクション（包み足・アウトサイドバー等）を起点とし、業績や地合いをスコアリングして「買い／空売り」のS級シグナルを抽出します。"
+            )
+            st.info(msg_new)
         else:
-            st.info("""**⚡ 【強襲】モード（トレンド・順張り）**
-エネルギー圧縮からの「ブレイク前夜」を狙う電撃戦。""")
+            msg_assault = (
+                "**⚡ 【強襲】モード（トレンド・順張り）**\n"
+                "エネルギー圧縮からの「ブレイク前夜」を狙う電撃戦。"
+            )
+            st.info(msg_assault)
             
 **【🚨 市場連動バフ稼働中】**
 日経平均18日乖離率が冷え込んでいる（-5%〜-8%以下）場合、パニック売りによる底値圏と判断し、**スコアをボーナス加点(+3〜+5pts)** します。
