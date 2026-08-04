@@ -1744,16 +1744,15 @@ def scan_unit_new_rules_parallel(group_df, c, cfg, macro_alert_text):
         # ==========================================
         # 1. テクニカル判定（3日間の反転フォーメーション）
         # ==========================================
-        # 買いルール
-        buy_day1 = df['Close'].iloc[-3] < df['Low'].iloc[-4]     # 1日目: 終値が前日の安値を下回る
-        buy_day2 = df['Close'].iloc[-2] > df['High'].iloc[-3]    # 2日目: 終値が前日の高値を上回る
-        buy_day3 = df['Close'].iloc[-1] > df['Close'].iloc[-2]   # 3日目: 終値が前日の終値を上回る
+        # --- ラリー・ウィリアムズ完全再現（ヒゲを含む厳格な高値・安値の突破） ---
+        buy_day1 = df['Close'].iloc[-3] < df['Low'].iloc[-4]
+        buy_day2 = df['Close'].iloc[-2] > df['High'].iloc[-3]
+        buy_day3 = df['Close'].iloc[-1] > df['Close'].iloc[-2]
         is_buy_tech = buy_day1 and buy_day2 and buy_day3
 
-        # 空売りルール
-        short_day1 = df['Close'].iloc[-3] > df['High'].iloc[-4]  # 1日目: 終値が前日の高値を上回る
-        short_day2 = df['Close'].iloc[-2] < df['Low'].iloc[-3]   # 2日目: 終値が前日の安値を下回る
-        short_day3 = df['Close'].iloc[-1] < df['Close'].iloc[-2] # 3日目: 終値が前日の終値を下回る
+        short_day1 = df['Close'].iloc[-3] > df['High'].iloc[-4]
+        short_day2 = df['Close'].iloc[-2] < df['Low'].iloc[-3]
+        short_day3 = df['Close'].iloc[-1] < df['Close'].iloc[-2]
         is_short_tech = short_day1 and short_day2 and short_day3
 
         # テクニカル条件未達なら即時パージ（通信リソースの節約）
@@ -3677,30 +3676,41 @@ with tab4:
 
                             elif is_new_rule:
                                 # =========================================================================
-                                # ⚔️ 夾撃（3日間反転）専用の厳格な判定・スコアリング
+                                # ⚔️ 夾撃（3日間反転）ラリー・ウィリアムズ完全再現判定
                                 # =========================================================================
                                 is_buy_pattern = False
                                 is_short_pattern = False
                                 if len(df_mini) >= 4:
-                                    day_m3, day_m2, day_m1, day_t0 = df_mini.iloc[-4], df_mini.iloc[-3], df_mini.iloc[-2], df_mini.iloc[-1]
-                                    is_buy_pattern = (day_m2['AdjC'] < day_m3['AdjL']) and (day_m1['AdjC'] > day_m2['AdjH']) and (day_t0['AdjC'] > day_m1['AdjC'])
-                                    is_short_pattern = (day_m2['AdjC'] > day_m3['AdjH']) and (day_m1['AdjC'] < day_m2['AdjL']) and (day_t0['AdjC'] < day_m1['AdjC'])
+                                    day_m4 = df_mini.iloc[-4]
+                                    day_m3 = df_mini.iloc[-3]
+                                    day_m2 = df_mini.iloc[-2]
+                                    day_m1 = df_mini.iloc[-1] # 最新の足
+                                    
+                                    # 買い：1日目(下落) -> 2日目(前日高値突破のアウトサイド) -> 3日目(上昇確定)
+                                    is_buy_pattern = (day_m3['AdjC'] < day_m4['AdjL']) and \
+                                                     (day_m2['AdjC'] > day_m3['AdjH']) and \
+                                                     (day_m1['AdjC'] > day_m2['AdjC'])
+
+                                    # 空売り：1日目(上昇) -> 2日目(前日安値割れのアウトサイド) -> 3日目(下落確定)
+                                    is_short_pattern = (day_m3['AdjC'] > day_m4['AdjH']) and \
+                                                       (day_m2['AdjC'] < day_m3['AdjL']) and \
+                                                       (day_m1['AdjC'] < day_m2['AdjC'])
 
                                 bt_val = lc # エントリー基準は現在値
 
                                 if is_buy_pattern:
                                     score = 90
                                     rank, bg_c = "S級夾撃(買)🔥", "#1b5e20"
-                                    alerts.append("🔵 【夾撃: 買】強烈な3日間上昇反転（包み足）を検知。反撃の狼煙。")
+                                    alerts.append("🔵 【夾撃: 買】ラリー・ウィリアムズの厳格な3日間反転（アウトサイド・リバーサル）を検知。反撃の狼煙。")
                                     reach_rate = 100
                                 elif is_short_pattern:
                                     score = 90
                                     rank, bg_c = "S級夾撃(空)📉", "#b71c1c"
-                                    alerts.append("🔴 【夾撃: 空】致命的な3日間下落反転（包み足）を検知。崩壊の予兆。")
+                                    alerts.append("🔴 【夾撃: 空】ラリー・ウィリアムズの厳格な3日間反転（アウトサイド・リバーサル）を検知。崩壊の予兆。")
                                     reach_rate = 100
                                 else:
                                     score = 0
-                                    rank, bg_c = "圏外💀", "#616161" # 🚨 不成立の銘柄を完全に「圏外」へパージ（A級と誤認させない）
+                                    rank, bg_c = "圏外💀", "#616161" 
                                     alerts.append("⚪ 【監視中】フォーメーション未成立。見送り。")
                                     reach_rate = 0
 
