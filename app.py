@@ -3837,10 +3837,10 @@ with tab4:
                 try: return float(x) if not pd.isna(x) else None
                 except Exception: return None
 
-            # 🚨 修正：UIカード表示用には「エラーのない全件」を残す（TAB4は分析用タブのため、全件表示が鉄則）
-            valid_results = [x for x in scope_results if not x.get('error')]
+            # 🚨 UIカード描画用：エラーのない「全銘柄」のリスト（TAB4は分析用タブのため全件残す）
+            all_valid_results = [x for x in scope_results if not x.get('error')]
 
-            if valid_results:
+            if all_valid_results:
                 export_texts = []
                 
                 n225_close_val = "取得不可"
@@ -3888,86 +3888,119 @@ with tab4:
                     current_date_str = datetime.now().strftime("%Y/%m/%d %H:%M")
 
                 # =========================================================================
-                # 📝 テキスト出力ループ（S/A級のみに限定）
+                # 📝 ループ1：データ一括抽出＆テキスト出力用（S/A級のみに限定してテキスト化）
                 # =========================================================================
-                for vr in valid_results:
-                    if vr.get('r_val', 0) < 3: 
-                        continue # 🚨 テキスト出力では圏外やB級をパージ
-
-                    display_rank = str(vr.get('rank', ''))
-                    
+                for r in all_valid_results:
+                    # 1. アラートのクレンジング
                     clean_alerts = []
-                    for al in vr.get('alerts', []):
+                    for al in r.get('alerts', []):
                         if isinstance(al, str):
                             clean_text = re.sub(r'<[^>]*>', '', al).strip()
                             if clean_text: clean_alerts.append(clean_text)
-                    alerts_str = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
+                    r['alerts_str'] = "、".join(clean_alerts) if clean_alerts else "特記事項なし"
                     
-                    v_roe, v_per, v_pbr = safe_float(vr.get('roe')), safe_float(vr.get('per')), safe_float(vr.get('pbr'))
-                    g_count = sum(1 for condition in [v_roe is not None and v_roe >= 10.0, v_per is not None and v_per <= 20.0, v_pbr is not None and v_pbr <= 5.0] if condition)
-                    fund_status = f"{g_count}/3グリーン"
+                    # 2. 🔥【重要】直近四半期のファンダメンタルズ詳細取得 (YoY成長率)
+                    growth = {"Sales": "-", "OpProfit": "-", "OrdProfit": "-", "NetProfit": "-", "EPS": "-"}
+                    try:
+                        import yfinance as yf
+                        tk = yf.Ticker(f"{r['code']}.T")
+                        info = tk.info
+                        if info.get('revenueGrowth') is not None: growth["Sales"] = f"{info['revenueGrowth']*100:+.1f}%"
+                        if info.get('earningsGrowth') is not None: growth["NetProfit"] = f"{info['earningsGrowth']*100:+.1f}%"
+                        
+                        qf = tk.quarterly_income_stmt
+                        if qf.empty: qf = tk.quarterly_financials
+                        if not qf.empty and len(qf.columns) >= 5:
+                            c0, c4 = qf.columns[0], qf.columns[4] # 最新Q と 1年前の同Q
+                            def calc_g(idx):
+                                try:
+                                    if idx in qf.index:
+                                        v0, v4 = qf.loc[idx, c0], qf.loc[idx, c4]
+                                        if pd.notna(v0) and pd.notna(v4) and v4 != 0: return f"{((v0/abs(v4))-1)*100:+.1f}%"
+                                except: pass
+                                return None
+                            
+                            s_g = calc_g("Total Revenue")
+                            if s_g: growth["Sales"] = s_g
+                            op_g = calc_g("Operating Income")
+                            if op_g: growth["OpProfit"] = op_g
+                            ord_g = calc_g("Pretax Income")
+                            if ord_g: growth["OrdProfit"] = ord_g
+                            net_g = calc_g("Net Income")
+                            if net_g: growth["NetProfit"] = net_g
+                            eps_g = calc_g("Basic EPS")
+                            if eps_g: growth["EPS"] = eps_g
+                    except: pass
+                    r['detailed_growth'] = growth
                     
-                    v_df_chart = vr.get('df_chart', pd.DataFrame())
+                    # 3. MA・時価総額等の計算
+                    v_df_chart = r.get('df_chart', pd.DataFrame())
                     v_ma18, v_ma50 = None, None
                     if not v_df_chart.empty:
                         last_row = v_df_chart.iloc[-1]
                         for k in ['MA18', 'ma18', 'MA_18', 'ma_18', 'SMA18', 'sma18']:
-                            if k in last_row and pd.notna(last_row[k]):
-                                v_ma18 = safe_float(last_row[k]); break
+                            if k in last_row and pd.notna(last_row[k]): v_ma18 = safe_float(last_row[k]); break
                         if v_ma18 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 18:
                             try: v_ma18 = safe_float(v_df_chart['AdjC'].rolling(18).mean().iloc[-1])
                             except: pass
-                            
                         for k in ['MA50', 'ma50', 'MA_50', 'ma_50', 'SMA50', 'sma50']:
-                            if k in last_row and pd.notna(last_row[k]):
-                                v_ma50 = safe_float(last_row[k]); break
+                            if k in last_row and pd.notna(last_row[k]): v_ma50 = safe_float(last_row[k]); break
                         if v_ma50 is None and 'AdjC' in v_df_chart.columns and len(v_df_chart) >= 50:
                             try: v_ma50 = safe_float(v_df_chart['AdjC'].rolling(50).mean().iloc[-1])
                             except: pass
 
-                    ma18_str = f"{int(v_ma18):,}円" if v_ma18 is not None else "計算期間不足"
-                    ma50_str = f"{int(v_ma50):,}円" if v_ma50 is not None else "計算期間不足"
+                    r['ma18_str'] = f"{int(v_ma18):,}円" if v_ma18 is not None else "計算期間不足"
+                    r['ma50_str'] = f"{int(v_ma50):,}円" if v_ma50 is not None else "計算期間不足"
                     
+                    atr_v_val = safe_float(r.get('atr_val', 0)) or 0.0
                     if is_ambush:
-                        bt_label = "61.8%押し" if vr.get('is_deep') else f"{st.session_state.push_r}%押し"
-                        bt_target_str = f"{bt_label} {safe_int(vr.get('bt_val', 0)):,}円"
+                        bt_label = "61.8%押し" if r.get('is_deep') else f"{st.session_state.get('push_r', 50.0)}%押し"
+                        r['bt_target_str'] = f"{bt_label} {safe_int(r.get('bt_val', 0)):,}円"
                     elif is_new_rule: 
-                        bt_target_str = f"エントリー想定値(現在値付近): {safe_int(vr.get('bt_val', 0)):,}円"
+                        r['bt_target_str'] = f"エントリー想定値(現在値付近): {safe_int(r.get('bt_val', 0)):,}円"
                     else:
-                        stop_p = safe_int(vr.get('bt_val', 0) + ((safe_float(vr.get('atr_val')) or 0.0) * 0.1))
-                        bt_target_str = f"トリガー目安 {safe_int(vr.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
+                        stop_p = safe_int(r.get('bt_val', 0) + (atr_v_val * 0.1))
+                        r['bt_target_str'] = f"トリガー目安 {safe_int(r.get('bt_val', 0)):,}円 / 逆指値目安 {stop_p:,}円"
 
                     market_cap_str = "N/A"
                     try:
-                        f_data = get_fundamentals(vr.get('code'))
+                        f_data = get_fundamentals(r.get('code'))
                         if f_data and f_data.get('cap'):
                             raw_cap = float(f_data.get('cap'))
                             market_cap_str = f"{int(raw_cap / 100000000):,}億円" if raw_cap > 1000000 else f"{int(raw_cap):,}億円"
                     except: pass
+                    r['market_cap_str'] = market_cap_str
 
-                    text_template = f"""■銘柄基本情報
-・銘柄コード：{vr.get('code')}
+                    # 🚨 テキスト出力はS/A級(ランク値3以上)に限定
+                    if r.get('r_val', 0) >= 3:
+                        text_template = f"""■銘柄基本情報
+・銘柄コード：{r.get('code')}
 ・データ抽出日時：{current_date_str}
 ■マクロ環境（地合い）
 ・日経平均終値：{n225_close_val}
 ・日経平均MA18乖離率：{n225_div_rate_val}
 ■システム判定ステータス
-・総合判定：{display_rank}
-・点灯シグナル・アラート：{alerts_str}
-• テクニカルスコア：{vr.get('score', 0)} pts
-・RSI：{safe_float(vr.get('rsi', 50)):.1f}%
-・ファンダメンタルズ判定：{fund_status} / 時価総額：{market_cap_str}
+・総合判定：{r.get('rank', '')}
+・点灯シグナル・アラート：{r['alerts_str']}
+• テクニカルスコア：{r.get('score', 0)} pts
+・RSI：{safe_float(r.get('rsi', 50)):.1f}%
+・時価総額：{r['market_cap_str']}
+■直近業績（四半期 YoY成長率）
+・売上高 ：{growth['Sales']}
+・営業利益：{growth['OpProfit']}
+・経常利益：{growth['OrdProfit']}
+・純利益 ：{growth['NetProfit']}
+・ＥＰＳ ：{growth['EPS']}
 ■絶対価格データ（確値）
-・最新終値：{int(vr.get('lc', 0)):,}円
-・MA18（短期トレンド）：{ma18_str}
-・MA50（中期トレンド）：{ma50_str}
-・直近高値（スイングハイ）：{int(vr.get('h14', 0)):,}円
-・起点安値（スイングロウ）：{int(vr.get('l14', 0)):,}円
+・最新終値：{int(r.get('lc', 0)):,}円
+・MA18（短期トレンド）：{r['ma18_str']}
+・MA50（中期トレンド）：{r['ma50_str']}
+・直近高値（スイングハイ）：{int(r.get('h14', 0)):,}円
+・起点安値（スイングロウ）：{int(r.get('l14', 0)):,}円
 ■ボラティリティ・ターゲットデータ
-・1ATR（14日）：{safe_int(vr.get('atr_val', 0)):,}円
-・システム算出 買目標値：{bt_target_str}"""
-
-                    export_texts.append(text_template)
+・1ATR（14日）：{safe_int(r.get('atr_val', 0)):,}円
+・システム算出 買目標値：{r['bt_target_str']}"""
+                        export_texts.append(text_template)
                 
                 final_copypaste_text = "\n\n========================================\n\n".join(export_texts)
                 
@@ -3984,9 +4017,26 @@ with tab4:
                         st.info("※現在表示できるテキストデータがありません。（S/A級の該当銘柄なし）")
 
                 # =========================================================================
-                # 🖼️ UIカード描画ループ（全件描画）
+                # 🖼️ ループ2：UIカード描画ループ（all_valid_results: 圏外含む全件出力）
                 # =========================================================================
-                for index, r in enumerate(valid_results): # 🚨 ここで全件表示用のリストを回す
+                
+                # 色彩判定ヘルパー（売上7%、利益20%・5%基準）
+                def g_color(val_str, is_sales=False):
+                    if val_str in ["-", "データなし", "取得不可", None]: return "#fff"
+                    try:
+                        v = float(val_str.replace("%", "").replace("+", "").replace(",", ""))
+                        if is_sales:
+                            if v >= 7.0: return "#4caf50"  # 🟢 7%以上クリア
+                            elif v < 0: return "#ef5350"   # 🔴 マイナス
+                            else: return "#fff"
+                        else:
+                            if v >= 20.0: return "#4caf50" # 🟢 20%以上クリア
+                            elif v < 5.0: return "#ef5350" # 🔴 5%未満（空売り条件）
+                            else: return "#ff9800"         # 🟠 中間
+                    except:
+                        return "#fff"
+
+                for index, r in enumerate(all_valid_results): # 🚨 全件を描画
                     st.divider()
                     
                     has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
@@ -4028,36 +4078,27 @@ with tab4:
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
                     
                     with sc_left:
-                        def safe_int_local(x):
-                            try: return int(float(x)) if not pd.isna(x) else 0
-                            except Exception: return 0
-                        
-                        h14_v = safe_int_local(r.get('h14', 0))
-                        l14_v = safe_int_local(r.get('l14', 0))
-                        ur_v = safe_int_local(r.get('ur', 0))
-                        lc_v = safe_int_local(r.get('lc', 0))
+                        h14_v = safe_int(r.get('h14', 0))
+                        l14_v = safe_int(r.get('l14', 0))
+                        ur_v = safe_int(r.get('ur', 0))
+                        lc_v = safe_int(r.get('lc', 0))
                         atr_v_val = safe_float(r.get('atr_val', 0)) or 0.0
                         
                         c1, c2 = st.columns(2); c1.metric("直近高値", f"{h14_v:,}円"); c2.metric("起点安値", f"{l14_v:,}円")
                         c3, c4 = st.columns(2); c3.metric("波高(14d)", f"{ur_v:,}円"); c4.metric("最新終値", f"{lc_v:,}円")
-                        st.metric("🌪️ 1ATR", f"{safe_int_local(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
+                        st.metric("🌪️ 1ATR", f"{safe_int(atr_v_val):,}円", f"ボラ: {(atr_v_val/lc_v*100) if lc_v>0 else 0:.1f}%", delta_color="off")
 
                     with sc_mid:
-                        roe_v, per_v, pbr_v = safe_float(r.get('roe')), safe_float(r.get('per')), safe_float(r.get('pbr'))
-                        roe_s, roe_c = (f"{roe_v:.1f}%", "#26a69a") if roe_v is not None and roe_v >= 10.0 else (f"{roe_v:.1f}%" if roe_v is not None else "-", "#ef5350")
-                        per_s, per_c = (f"{per_v:.1f}倍", "#26a69a") if per_v is not None and per_v <= 20.0 else (f"{per_v:.1f}倍" if per_v is not None else "-", "#ef5350")
-                        pbr_s, pbr_c = (f"{pbr_v:.2f}倍", "#26a69a") if pbr_v is not None and pbr_v <= 5.0 else (f"{pbr_v:.2f}倍" if pbr_v is not None else "-", "#ef5350")
-                        
-                        if is_ambush:
-                            box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
-                            box_val = f"{safe_int_local(r.get('bt_val', 0)):,}円"
-                        elif is_new_rule: 
-                            box_title = "⚔️ 夾撃 エントリー想定値"
-                            box_val = f"{safe_int_local(r.get('bt_val', 0)):,}円"
-                        else:
-                            box_title = "🎯 トリガー / 逆指値目安"
-                            stop_p = safe_int_local(r.get('bt_val', 0) + (atr_v_val * 0.1))
-                            box_val = f"{safe_int_local(r.get('bt_val', 0)):,}円 / {stop_p:,}円"
+                        growth = r.get('detailed_growth', {})
+                        c_sal = g_color(growth.get('Sales'), True)
+                        c_op = g_color(growth.get('OpProfit'))
+                        c_ord = g_color(growth.get('OrdProfit'))
+                        c_net = g_color(growth.get('NetProfit'))
+                        c_eps = g_color(growth.get('EPS'))
+
+                        if is_ambush: box_title = "💎 深海買値(61.8%)" if r.get('is_deep') else "🎯 買値目標"
+                        elif is_new_rule: box_title = "⚔️ 夾撃 エントリー想定値"
+                        else: box_title = "🎯 トリガー / 逆指値目安"
 
                         e_html = ""
                         e_alerts = check_event_mines(str(r.get('code', ''))[:4], r.get('events', {}))
@@ -4067,18 +4108,21 @@ with tab4:
                         st.markdown(f"""
                         <div style='background:rgba(255,215,0,0.05); padding:1.2rem; border-radius:10px; border:1px solid rgba(255,215,0,0.3); text-align:center; box-shadow: inset 0 0 15px rgba(255,215,0,0.1);'>
                         <div style='font-size:14px; color: #eee; margin-bottom: 0.4rem;'>{box_title}{e_html}</div>
-                        <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{box_val}</div>
+                        <div style='font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:bold; color:#FFD700; margin: 0.2rem 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5);'>{r.get('bt_target_str', '').split(' ')[-1]}</div>
                         <div style='display:flex; justify-content:space-around; margin-top:10px; border-top:1px dashed rgba(255,255,255,0.2); padding-top:10px;'>
-                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>PER</div><div style='color:{per_c}; font-weight:bold; font-size:1.1rem;'>{per_s}</div></div>
-                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>PBR</div><div style='color:{pbr_c}; font-weight:bold; font-size:1.1rem;'>{pbr_s}</div></div>
-                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>ROE</div><div style='color:{roe_c}; font-weight:bold; font-size:1.1rem;'>{roe_s}</div></div>
+                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>売上高</div><div style='color:{c_sal}; font-weight:bold; font-size:1.0rem;'>{growth.get('Sales', '-')}</div></div>
+                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>営業益</div><div style='color:{c_op}; font-weight:bold; font-size:1.0rem;'>{growth.get('OpProfit', '-')}</div></div>
+                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>経常益</div><div style='color:{c_ord}; font-weight:bold; font-size:1.0rem;'>{growth.get('OrdProfit', '-')}</div></div>
+                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>純利益</div><div style='color:{c_net}; font-weight:bold; font-size:1.0rem;'>{growth.get('NetProfit', '-')}</div></div>
+                        <div style='flex:1;'><div style='color:#888; font-size:10px;'>EPS</div><div style='color:{c_eps}; font-weight:bold; font-size:1.0rem;'>{growth.get('EPS', '-')}</div></div>
                         </div>
-                        <div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;'>
-                        <span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('mcap', '-')}</span>
+                        <div style='margin-top:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px; display:flex; justify-content:space-between;'>
+                        <div><span style='color:#888; font-size:11px;'>PER: </span><span style='color:#fff; font-size:11px;'>{r.get('per_s', '-')}</span> <span style='color:#888; font-size:11px;'>PBR: </span><span style='color:#fff; font-size:11px;'>{r.get('pbr_s', '-')}</span></div>
+                        <div><span style='color:#888; font-size:11px;'>時価総額: </span><span style='color:#fff; font-size:11px; font-weight:bold;'>{r.get('market_cap_str', '-')}</span></div>
                         </div></div>""", unsafe_allow_html=True)
 
                     with sc_right:
-                        c_target = safe_int_local(r.get('bt_val', 0))
+                        c_target = safe_int(r.get('bt_val', 0))
                         r_rank = str(r.get('rank', ''))
                         rec_tps = [2.0, 3.0] if any(mark in r_rank for mark in ["⚡", "🔥", "S"]) else [0.5, 1.0]
                         
@@ -4112,7 +4156,6 @@ with tab4:
                             st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
                         except Exception as e:
                             st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
-
 # --- 9. タブコンテンツ (TAB5: 戦術シミュレータ) ---
 with tab5:
     st.markdown('<h3 style="font-size: clamp(14px, 4.5vw, 24px); margin-bottom: 1rem;">⚙️ 戦術シミュレータ (2年間のバックテスト)</h3>', unsafe_allow_html=True)
