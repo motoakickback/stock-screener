@@ -3827,8 +3827,8 @@ with tab4:
                 try: return float(x) if not pd.isna(x) else None
                 except Exception: return None
 
-            # 🚨 全てのモード（待伏・強襲・夾撃）で共通して「S級・A級」のみを抽出する（ここで完全統一）
-            valid_results = [x for x in scope_results if not x.get('error') and x.get('r_val', 0) >= 3]
+            # 🚨 修正：UIカード表示用には「エラーのない全件」を残す（TAB4は分析用タブのため、全件表示が鉄則）
+            valid_results = [x for x in scope_results if not x.get('error')]
 
             if valid_results:
                 export_texts = []
@@ -3878,9 +3878,12 @@ with tab4:
                     current_date_str = datetime.now().strftime("%Y/%m/%d %H:%M")
 
                 # =========================================================================
-                # 📝 テキスト出力ループ（valid_results と完全同期）
+                # 📝 テキスト出力ループ（S/A級のみに限定）
                 # =========================================================================
                 for vr in valid_results:
+                    if vr.get('r_val', 0) < 3: 
+                        continue # 🚨 テキスト出力では圏外やB級をパージ
+
                     display_rank = str(vr.get('rank', ''))
                     
                     clean_alerts = []
@@ -3968,12 +3971,12 @@ with tab4:
                     if final_copypaste_text.strip():
                         st.code(final_copypaste_text, language="text")
                     else:
-                        st.info("※現在表示できるテキストデータがありません。（該当銘柄なし等）")
+                        st.info("※現在表示できるテキストデータがありません。（S/A級の該当銘柄なし）")
 
                 # =========================================================================
-                # 🖼️ UIカード描画ループ（valid_results と完全同期）
+                # 🖼️ UIカード描画ループ（全件描画）
                 # =========================================================================
-                for index, r in enumerate(valid_results):
+                for index, r in enumerate(valid_results): # 🚨 ここで全件表示用のリストを回す
                     st.divider()
                     
                     has_chart = not (r.get('df_chart') is None or r['df_chart'].empty)
@@ -4009,7 +4012,7 @@ with tab4:
                     if r.get('alerts'):
                         for alert in r['alerts']:
                             if any(m in alert for m in ["🟢", "⚡", "🔥", "💎", "🔵"]): st.success(alert)
-                            elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "📉"]): st.error(alert)
+                            elif any(m in alert for m in ["🔴", "💀", "💣", "⚠️", "📉", "絶対排除", "天井地雷"]): st.error(alert)
                             else: st.warning(alert)
 
                     sc_left, sc_mid, sc_right = st.columns([2.5, 3.5, 5.0])
@@ -4099,7 +4102,6 @@ with tab4:
                             st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
                         except Exception as e:
                             st.error(f"⚠️ チャート描画物理エラー: {str(e)}")
-                        st.stop()
 
 # --- 10. タブコンテンツ (TAB6: 交戦モニター) ---
 with tab6:
