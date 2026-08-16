@@ -2462,37 +2462,55 @@ with tab1:
 
     if btn_scan_t1:
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
-            st.write("1. 全市場対象銘柄のリストアップおよび価格帯フィルタを適用...")
+            # === 第1関門：価格帯による高速一括足切り ===
+            status.update(label="⚡ Phase 1/3: 価格帯フィルタによる高速一次足切り中...", state="running")
+            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            target_codes = master_df['Code'].tolist() if not master_df.empty else []
+            # 高速価格取得関数の呼出（既存関数を活用）
+            prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
+            
+            p_filtered_codes = []
+            for code in raw_codes:
+                code_str = str(code).replace('.0', '').strip()
+                p = prices_map.get(code_str, None)
+                if p is not None:
+                    if float(t1_p_min) <= float(p) <= float(t1_p_max):
+                        p_filtered_codes.append(code_str)
+                else:
+                    p_filtered_codes.append(code_str) # 価格不明銘柄は安全のため通過
+
+            status.update(label=f"⚡ Phase 2/3: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
+
+            # === 第2・第3関門：並列処理によるQoQモメンタム解析 ===
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s = []
             hit_codes_a = []
-            total = len(target_codes)
-            
-            for i, code in enumerate(target_codes):
-                if i % 100 == 0:
-                    status.update(label=f"📡 索敵中: {i}/{total} 銘柄完了...", state="running")
-                
+
+            def worker_t1(code):
                 try:
-                    # 💡 注意: 暫定的に1銘柄ずつ取得するループにしています。
-                    # テスト後、司令官の並列処理(executor)に組み替えることで劇的に高速化します。
                     df_fins = get_fundamentals(code)
                     if df_fins is None or df_fins.empty:
-                        continue
-                        
+                        return None, None
                     is_hit, rank = analyze_fundamental_momentum(
                         df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
                     )
-                    
                     if is_hit:
-                        if "S級" in rank:
-                            hit_codes_s.append(str(code))
-                        else:
-                            hit_codes_a.append(str(code))
-                            
-                except Exception as e:
+                        return str(code), rank
+                except Exception:
                     pass
-            
+                return None, None
+
+            # 8スレッドで並列処理を実行（速度激変）
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
+                for future in as_completed(futures):
+                    c_res, r_res = future.result()
+                    if c_res:
+                        if "S級" in r_res:
+                            hit_codes_s.append(c_res)
+                        else:
+                            hit_codes_a.append(c_res)
+
             all_hits = hit_codes_s + hit_codes_a
             status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。", state="complete", expanded=False)
             
@@ -2529,35 +2547,49 @@ with tab2:
 
     if btn_scan_t2:
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
-            st.write("1. 全市場の対象銘柄をリストアップ...")
-            st.write(f"2. 時価総額 {t2_mcap}億円以上 / 売買代金 {t2_vol}億円以上 の流動性フィルタを適用...")
-            st.write(f"3. 直近2四半期の業績衰退（QoQ）を解析中...")
+            status.update(label="⚡ Phase 1/3: 価格帯および流動性フィルタによる足切り中...", state="running")
+            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            target_codes = master_df['Code'].tolist() if not master_df.empty else []
+            prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
+            
+            p_filtered_codes = []
+            for code in raw_codes:
+                code_str = str(code).replace('.0', '').strip()
+                p = prices_map.get(code_str, None)
+                if p is not None:
+                    if float(t2_p_min) <= float(p) <= float(t2_p_max):
+                        p_filtered_codes.append(code_str)
+                else:
+                    p_filtered_codes.append(code_str)
+
+            status.update(label=f"⚡ Phase 2/3: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s_sell = []
             hit_codes_a_sell = []
-            total = len(target_codes)
-            
-            for i, code in enumerate(target_codes):
-                if i % 100 == 0:
-                    status.update(label=f"📡 索敵中: {i}/{total} 銘柄完了...", state="running")
-                
+
+            def worker_t2(code):
                 try:
                     df_fins = get_fundamentals(code)
                     if df_fins is None or df_fins.empty:
-                        continue
-                        
+                        return None, None
                     is_hit, rank = analyze_fundamental_momentum(df_fins, mode="sell")
-                    
                     if is_hit:
-                        if "S級" in rank:
-                            hit_codes_s_sell.append(str(code))
-                        else:
-                            hit_codes_a_sell.append(str(code))
-                            
-                except Exception as e:
+                        return str(code), rank
+                except Exception:
                     pass
-            
+                return None, None
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(worker_t2, c) for c in p_filtered_codes]
+                for future in as_completed(futures):
+                    c_res, r_res = future.result()
+                    if c_res:
+                        if "S級" in r_res:
+                            hit_codes_s_sell.append(c_res)
+                        else:
+                            hit_codes_a_sell.append(c_res)
+
             all_hits_sell = hit_codes_s_sell + hit_codes_a_sell
             status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。", state="complete", expanded=False)
             
@@ -2566,11 +2598,6 @@ with tab2:
         st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
         st.code(", ".join(all_hits_sell) if all_hits_sell else "条件に合致する銘柄はありませんでした。", language="text")
-
-# ==========================================
-# 📁 TAB7: 戦績ダッシュボード
-# ==========================================
-# (※この下には先ほど修正したTAB7のコードが続きます...)
 
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
