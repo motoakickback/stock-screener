@@ -1302,18 +1302,20 @@ def get_fundamentals(code):
     return res
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (直近2年・8四半期限定 超高速版)
+# 📊 時系列・決算データフェッチ関数 (キャッシュ装甲・超高速版)
 # ==========================================
+@st.cache_data(ttl=86400, max_entries=5000, show_spinner=False)
 def get_historical_statements(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     
     try:
-        r = api_session.get(url, timeout=5.0)
+        # ⚡ タイムアウトを2秒に短縮し、サーバー沈黙時の「フリーズ待機」を物理排除
+        r = api_session.get(url, timeout=2.0)
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if data:
-                # ⚡ 2年超の古いデータ（9件目以前）を物理パージ（直近8四半期分のみに限定）
+                # ⚡ 2年超の古いデータを物理パージ（直近8四半期分のみ）
                 data = data[-8:]
                 
                 import pandas as pd
@@ -2490,12 +2492,15 @@ with tab1:
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
 
     if btn_scan_t1:
+        import time
+        t_start_total = time.time()
+        
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
             # === 第1関門：価格帯による高速一括足切り ===
-            status.update(label="⚡ Phase 1/3: 価格帯フィルタによる高速一次足切り中...", state="running")
+            t_start_p1 = time.time()
+            status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            # 高速価格取得関数の呼出（既存関数を活用）
             prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
             
             p_filtered_codes = []
@@ -2506,11 +2511,15 @@ with tab1:
                     if float(t1_p_min) <= float(p) <= float(t1_p_max):
                         p_filtered_codes.append(code_str)
                 else:
-                    p_filtered_codes.append(code_str) # 価格不明銘柄は安全のため通過
+                    p_filtered_codes.append(code_str)
+                    
+            t_end_p1 = time.time()
+            time_p1 = t_end_p1 - t_start_p1
 
-            status.update(label=f"⚡ Phase 2/3: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
+            status.update(label=f"⚡ Phase 2: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
 
             # === 第2・第3関門：並列処理によるQoQモメンタム解析 ===
+            t_start_p2 = time.time()
             from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s = []
             hit_codes_a = []
@@ -2529,7 +2538,6 @@ with tab1:
                     pass
                 return None, None
 
-            # 8スレッドで並列処理を実行（速度激変）
             with ThreadPoolExecutor(max_workers=8) as executor:
                 futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
                 for future in as_completed(futures):
@@ -2539,15 +2547,22 @@ with tab1:
                             hit_codes_s.append(c_res)
                         else:
                             hit_codes_a.append(c_res)
+                            
+            t_end_p2 = time.time()
+            time_p2 = t_end_p2 - t_start_p2
+            t_end_total = time.time()
+            time_total = t_end_total - t_start_total
 
             all_hits = hit_codes_s + hit_codes_a
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。", state="complete", expanded=False)
+            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
             
         st.success(f"✅ 条件突破銘柄: {len(all_hits)}件 (S級🎯: {len(hit_codes_s)}件 / A級🟢: {len(hit_codes_a)}件)")
+        st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
         
         st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
         st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
+
 
 # ==========================================
 # 📉 TAB2: 売り銘柄広域スキャン (Growth / Standard / Prime)
@@ -2575,8 +2590,12 @@ with tab2:
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
 
     if btn_scan_t2:
+        import time
+        t_start_total = time.time()
+        
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
-            status.update(label="⚡ Phase 1/3: 価格帯および流動性フィルタによる足切り中...", state="running")
+            t_start_p1 = time.time()
+            status.update(label="⚡ Phase 1: 価格帯および流動性フィルタによる足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
             prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
@@ -2590,9 +2609,13 @@ with tab2:
                         p_filtered_codes.append(code_str)
                 else:
                     p_filtered_codes.append(code_str)
+                    
+            t_end_p1 = time.time()
+            time_p1 = t_end_p1 - t_start_p1
 
-            status.update(label=f"⚡ Phase 2/3: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
+            status.update(label=f"⚡ Phase 2: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
 
+            t_start_p2 = time.time()
             from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s_sell = []
             hit_codes_a_sell = []
@@ -2618,11 +2641,17 @@ with tab2:
                             hit_codes_s_sell.append(c_res)
                         else:
                             hit_codes_a_sell.append(c_res)
+                            
+            t_end_p2 = time.time()
+            time_p2 = t_end_p2 - t_start_p2
+            t_end_total = time.time()
+            time_total = t_end_total - t_start_total
 
             all_hits_sell = hit_codes_s_sell + hit_codes_a_sell
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。", state="complete", expanded=False)
+            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
             
         st.success(f"✅ 条件突破銘柄: {len(all_hits_sell)}件 (S級💀: {len(hit_codes_s_sell)}件 / A級📉: {len(hit_codes_a_sell)}件)")
+        st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
         
         st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
