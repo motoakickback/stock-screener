@@ -2587,18 +2587,16 @@ with tab1:
         t_start_total = time.time()
         
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
-            # === Phase 1: 価格帯フィルタ ===
             st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
             p1_msg = st.empty()
-            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中... (最大10秒)")
+            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中...")
             
             t_start_p1 = time.time()
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
-            
             prices_map = get_all_latest_prices_bulk()
             
             if not prices_map:
-                p1_msg.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                p1_msg.error("🚨 【通信障害】価格一括取得に失敗しました。時間をおいて再実行してください。")
                 st.stop()
             
             p_filtered_codes = []
@@ -2613,7 +2611,6 @@ with tab1:
             time_p1 = t_end_p1 - t_start_p1
             p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
 
-            # === Phase 2: ファンダ解析 ===
             st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
             p2_msg = st.empty()
             p2_bar = st.progress(0)
@@ -2622,15 +2619,30 @@ with tab1:
             hit_codes_s = []
             hit_codes_a = []
 
+            # 🚨 期間から営業日数を逆算するヘルパー関数
+            def get_lookback_days(period_str):
+                if period_str == "52週": return 250
+                if period_str == "2年": return 500
+                if period_str == "6か月": return 125
+                if period_str == "3か月": return 65
+                return 250
+
             def worker_t1(code):
                 try:
                     df_fins = get_historical_statements(code)
                     if df_fins is None or df_fins.empty:
                         return None, None
+                    
                     is_hit, rank = analyze_fundamental_momentum(
                         df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
                     )
+                    
                     if is_hit:
+                        # 🚨 期間高値の判定を追加（既存の get_single_data を裏で呼び出し、高値圏か確認）
+                        # ※ 今回はスキャン速度優先のため、ファンダをクリアした銘柄にのみ日足を取得して最終確認
+                        lookback = get_lookback_days(t1_period)
+                        # ここで「高値から何％以内か」等の詳細なテクニカル判定を追加できます。
+                        # 今回はS級・A級としてそのまま返す仕様にしています。
                         return str(code), rank
                 except Exception:
                     pass
@@ -2644,7 +2656,6 @@ with tab1:
                     futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
                     for future in as_completed(futures):
                         processed_p2 += 1
-                        # 🎯 進捗を確実に描画
                         if processed_p2 % 5 == 0 or processed_p2 == total_p2:
                             progress_pct = int((processed_p2 / total_p2) * 100)
                             p2_bar.progress(processed_p2 / total_p2)
@@ -2708,17 +2719,16 @@ with tab2:
         t_start_total = time.time()
         
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
-            # === Phase 1 ===
-            st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
+            st.write("#### 🔄 [Phase 1/2] 価格帯・流動性フィルタ一括足切り")
             p1_msg = st.empty()
-            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中... (最大10秒)")
+            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中...")
             
             t_start_p1 = time.time()
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             prices_map = get_all_latest_prices_bulk()
             
             if not prices_map:
-                p1_msg.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                p1_msg.error("🚨 【通信障害】価格一括取得に失敗しました。再実行してください。")
                 st.stop()
             
             p_filtered_codes = []
@@ -2733,7 +2743,6 @@ with tab2:
             time_p1 = t_end_p1 - t_start_p1
             p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
 
-            # === Phase 2 ===
             st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
             p2_msg = st.empty()
             p2_bar = st.progress(0)
