@@ -1394,8 +1394,19 @@ def load_master():
     except: pass
     return pd.DataFrame()
 
+# ==========================================
+# 📊 個別銘柄データ取得 (Lightプラン完全対応・防弾仕様)
+# ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_single_data(code, yrs=1):
+    import time
+    import threading
+    
+    # ⚡ グローバル空間に交通整理用のロックを配備（未定義の場合）
+    if 'jquants_api_lock' not in st.session_state:
+        st.session_state.jquants_api_lock = threading.Lock()
+        st.session_state.last_api_time = 0.0
+
     base = datetime.utcnow() + timedelta(hours=9)
     # 🚨 改修1：確実な営業日（兵站）を確保するため、365日ではなく「400日」を基準にする
     f_d = (base - timedelta(days=400*yrs)).strftime('%Y%m%d')
@@ -1407,21 +1418,42 @@ def get_single_data(code, yrs=1):
         clean_code = str(code).replace('.0', '').strip()
         api_code = clean_code if len(clean_code) >= 5 else clean_code + "0"
         
+        # --- 🛡️ 内部ヘルパー関数：Lightプラン専用の安全通信 ---
+        def safe_fetch(url, t_out=5.0):
+            for attempt in range(3):
+                with st.session_state.jquants_api_lock:
+                    now = time.time()
+                    elapsed = now - st.session_state.last_api_time
+                    if elapsed < 1.05: # 60回/分を厳守（1.05秒間隔）
+                        time.sleep(1.05 - elapsed)
+                    try:
+                        r = api_session.get(url, timeout=t_out)
+                        st.session_state.last_api_time = time.time()
+                        if r.status_code == 200:
+                            return r.json()
+                        elif r.status_code == 429: # 制限に引っかかったらペナルティ待機
+                            time.sleep(2.0)
+                            continue
+                    except Exception:
+                        st.session_state.last_api_time = time.time()
+                        pass
+            return {}
+
+        # 1. 株価データの取得
         url_bars = f"{BASE_URL}/equities/bars/daily?code={api_code}&from={f_d}&to={t_d}"
-        r_bars = api_session.get(url_bars, timeout=10.0)
-        if r_bars.status_code == 200: 
-            result["bars"] = r_bars.json().get("daily_quotes") or r_bars.json().get("data") or []
-            
+        bars_data = safe_fetch(url_bars, 10.0)
+        result["bars"] = bars_data.get("daily_quotes") or bars_data.get("data") or []
+        
+        # 2. 決算発表予定日の取得
         url_earn = f"{BASE_URL}/fins/announcement?code={api_code}"
-        r_earn = api_session.get(url_earn, timeout=5.0)
-        if r_earn.status_code == 200:
-            result["events"]["earnings"] = r_earn.json().get("announcement", [])
-            
+        earn_data = safe_fetch(url_earn, 5.0)
+        result["events"]["earnings"] = earn_data.get("announcement", [])
+        
+        # 3. 配当情報の取得
         url_div = f"{BASE_URL}/fins/dividend?code={api_code}"
-        r_div = api_session.get(url_div, timeout=5.0)
-        if r_div.status_code == 200:
-            result["events"]["dividend"] = r_div.json().get("dividend", [])
-            
+        div_data = safe_fetch(url_div, 5.0)
+        result["events"]["dividend"] = div_data.get("dividend", [])
+        
     except Exception as e: 
         pass
         
