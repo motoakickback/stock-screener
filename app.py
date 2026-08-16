@@ -2582,9 +2582,10 @@ with tab1:
             status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
+            # 🎯 【ここに配置】先ほど定義した一括取得エンジンを呼び出す
             prices_map = get_all_latest_prices_bulk()
             
-            # 🚨 防爆ロック：データが取れなかったら強制終了し、4000件の暴走を防ぐ
+            # 防爆ロック：データが取れなかったら強制終了
             if not prices_map:
                 st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
                 st.stop()
@@ -2593,8 +2594,8 @@ with tab1:
             for code in raw_codes:
                 code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
-                if p is not None: # 価格が存在する銘柄のみ判定（無いものは容認せず捨てる）
-                    if float(t1_p_min) <= float(p) <= float(t1_p_max):
+                if p is not None:
+                    if float(t1_p_min) <= float(p) <= float(t1_p_max): # (※TAB2は t2_p_min/max)
                         p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
@@ -2675,14 +2676,15 @@ with tab2:
         import time
         t_start_total = time.time()
         
-        with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
+        with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
             t_start_p1 = time.time()
-            status.update(label="⚡ Phase 1: 価格帯および流動性フィルタによる足切り中...", state="running")
+            status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
+            # 🎯 【ここに配置】先ほど定義した一括取得エンジンを呼び出す
             prices_map = get_all_latest_prices_bulk()
             
-            # 🚨 防爆ロック
+            # 防爆ロック：データが取れなかったら強制終了
             if not prices_map:
                 st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
                 st.stop()
@@ -2692,7 +2694,7 @@ with tab2:
                 code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
                 if p is not None:
-                    if float(t2_p_min) <= float(p) <= float(t2_p_max):
+                    if float(t1_p_min) <= float(p) <= float(t1_p_max): # (※TAB2は t2_p_min/max)
                         p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
