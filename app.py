@@ -2644,6 +2644,7 @@ with tab1:
     st.markdown('### 🌐 買い銘柄広域スキャン', unsafe_allow_html=True)
     st.caption("※直近2四半期の売上・利益成長率をベースに、大化け候補（S級・A級）を広域索敵します。")
     
+    # 1. フォームの定義（入力項目とスキャン実行ボタン）
     with st.form("tab1_buy_scan_form", clear_on_submit=False):
         col1_1, col1_2, col1_3 = st.columns(3)
         t1_period = col1_1.selectbox("期間フィルタ (高値判定基準)", ["52週", "2年", "6か月", "3か月"], index=0)
@@ -2662,6 +2663,34 @@ with tab1:
         
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
 
+    # 2. 【重要】st.form の【外側（インデントなし）】にスキャン実行時の処理を置く
+    if btn_scan_t1:
+        # (ここに先ほどまでの Phase 1 & Phase 2 のスキャン処理を書く)
+        pass
+
+    # ==========================================
+    # 3. 🛠️ X線検査装置は、フォームの【外側・下部】に独立させる
+    # ==========================================
+    st.divider()
+    with st.expander("🛠️ 【参謀用】特定銘柄のファンダ内部データ透視", expanded=False):
+        test_code = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="xray_code_t1")
+        if st.button("X線検査を実行", key="xray_btn_t1"):
+            st.info(f"📡 {test_code} の決算データをJ-Quantsから直接フェッチします...")
+            df_test = get_historical_statements(test_code)
+            
+            if df_test is None or df_test.empty:
+                st.error("❌ 【致命的異常】データが完全に『空』です！APIのURLエラー、または通信がJ-Quantsに弾かれています。")
+            else:
+                st.success("✅ データは無事に取得できています！以下がシステムの胃袋の中身です。")
+                st.dataframe(df_test)
+                
+                # 計算エンジンのテスト
+                is_hit, rank = analyze_fundamental_momentum(df_test, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r))
+                if is_hit:
+                    st.write(f"🎯 判定結果: 合格 ({rank})")
+                else:
+                    st.warning("⚠️ 判定結果: 不合格💀 (データはありますが、条件を満たしていません)")
+                        
     if btn_scan_t1:
         import time
         from concurrent.futures import ThreadPoolExecutor, as_completed
