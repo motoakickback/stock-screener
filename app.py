@@ -4865,7 +4865,8 @@ with tab7:
                                         avg_b = m_amt / m_qty
                                         records.append({"決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析", "買値": int(avg_b), "売値": int(s['price']), "株数": int(m_qty), "損益額(円)": int((s['price']-avg_b)*m_qty), "損益(%)": round(((s['price']/avg_b)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動取り込み"})
                             if records:
-                                st.session_state.aar_df_stable = pd.concat([st.session_state.aar_df_stable, pd.DataFrame(records)], ignore_index=True).drop_duplicates(subset=["決済日", "銘柄", "買値", "売値", "株数"]).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
+                                # ▼▼▼ 開発参謀パッチ：重複削除（drop_duplicates）を撤廃し、ダブり記録を全容認 ▼▼▼
+                                st.session_state.aar_df_stable = pd.concat([st.session_state.aar_df_stable, pd.DataFrame(records)], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
                                 save_aar_db(st.session_state.aar_df_stable); st.rerun()
                     except Exception as e: st.error(f"エラー: {e}")
 
@@ -4935,8 +4936,6 @@ with tab7:
                 hide_index=True, use_container_width=True, key="aar_editor_maintenance_fixed"
             )
 
-            # 🚨 瞬間オートセーブの地雷ブロック（try〜except）は完全削除済
-            
             # 保存ボタンをフォーム専用のボタンに変更
             save_aar_btn = st.form_submit_button("💾 戦績の変更を確定し、Google DBへ同期", use_container_width=True, type="primary")
         # ▲▲▲ フォーム隔離ここまで ▲▲▲
@@ -4947,6 +4946,19 @@ with tab7:
                 st.session_state.aar_df_stable[col] = pd.to_numeric(st.session_state.aar_df_stable[col], errors='coerce').fillna(0).astype(int)
             save_aar_db(st.session_state.aar_df_stable)
             st.success("✅ Google Sheetsへの完全同期・色彩規律の再適用を完了しました。")
+            st.rerun()
+
+        # ▼▼▼ 開発参謀パッチ：Google DB連動 一括全削除セクション（防爆ロック付） ▼▼▼
+        st.divider()
+        st.markdown("##### 🗑️ 全戦績データの一括全削除")
+        st.caption("※ Google DB（Google Sheets）上のすべての戦績ログを消去・初期化します。")
+        col_del1, col_del2 = st.columns([2, 1])
+        confirm_delete = col_del1.checkbox("⚠️ 全データ削除を了解し、防衛ロックを解除する", key="confirm_aar_delete")
+        if col_del2.button("🔥 全戦績データを一括削除", use_container_width=True, disabled=not confirm_delete):
+            cols = ["決済日", "銘柄", "規模", "戦術", "買値", "売値", "株数", "損益額(円)", "損益(%)", "規律", "敗因/勝因メモ"]
+            st.session_state.aar_df_stable = pd.DataFrame(columns=cols)
+            save_aar_db(st.session_state.aar_df_stable)
+            st.success("💥 全交戦記録を消去し、Google DBを初期化（完全同期）しました。")
             st.rerun()
 
 # ==========================================
