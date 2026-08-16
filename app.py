@@ -142,7 +142,7 @@ def analyze_fundamental_momentum(df_fins, mode="buy", sales_req=7.0, ord_req=15.
     return False, ""
 
 # ==========================================
-# ⚡ 全銘柄現在値・一括取得エンジン（J-Quants V2 正式仕様 / 強靭化パッチ）
+# ⚡ 全銘柄現在値・一括取得エンジン（J-Quants V2 正式仕様）
 # ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_all_latest_prices_bulk():
@@ -151,34 +151,84 @@ def get_all_latest_prices_bulk():
     import pandas as pd
     import time
 
-    # 🚨 修正1：確実に日本時間（JST）を基準にして過去の日付を探す
     base_time = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
 
-    for i in range(1, 10): # 過去9日間遡って最新の営業日を探す
+    for i in range(1, 10): 
         dt_str = (base_time - datetime.timedelta(days=i)).strftime('%Y%m%d')
-        url = f"{BASE_URL}/prices/daily_quotes?date={dt_str}"
+        # 🚨 V2の正式エンドポイントに完全修正！
+        url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
         
         try:
             time.sleep(1.05) # Lightプラン制限対策
-            
-            # 🚨 修正2：全市場のデータは非常に重いため、タイムアウトを5秒→15秒に大幅延長
             r = api_session.get(url, timeout=15.0)
             
             if r.status_code == 200:
-                data = r.json().get("daily_quotes", [])
+                raw_json = r.json()
+                # 🚨 V1/V2のキー名揺れを完全吸収
+                data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
                 if data:
                     df = pd.DataFrame(data)
                     prices_map = {}
                     for _, row in df.iterrows():
                         code_4digit = str(row['Code'])[:4]
-                        prices_map[code_4digit] = float(row['Close'])
+                        val = row.get('Close') or row.get('C') or row.get('AdjC')
+                        if pd.notna(val):
+                            prices_map[code_4digit] = float(val)
                     return prices_map
             elif r.status_code == 429:
-                time.sleep(2.0) # 弾かれたらペナルティ待機
+                time.sleep(2.0) 
         except Exception:
-            pass # タイムアウト時は次の日へ
+            pass 
             
     return {}
+
+# ==========================================
+# 📊 時系列・決算データフェッチ関数 (Lightプラン極限最適化・V2正式仕様)
+# ==========================================
+import threading
+import time
+
+if 'jquants_api_lock' not in st.session_state:
+    st.session_state.jquants_api_lock = threading.Lock()
+    st.session_state.last_api_time = 0.0
+
+@st.cache_data(ttl=604800, max_entries=5000, show_spinner=False)
+def get_historical_statements(code):
+    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    # 🚨 V2の財務情報正式エンドポイント（/fins/summary）に完全修正！
+    url = f"{BASE_URL}/fins/summary?code={api_code}"
+    
+    for attempt in range(3):
+        with st.session_state.jquants_api_lock:
+            now = time.time()
+            elapsed = now - st.session_state.last_api_time
+            if elapsed < 1.05: 
+                time.sleep(1.05 - elapsed)
+            
+            try:
+                r = api_session.get(url, timeout=10.0)
+                st.session_state.last_api_time = time.time() 
+            except Exception:
+                st.session_state.last_api_time = time.time()
+                continue
+                
+        if r.status_code == 200:
+            raw_json = r.json()
+            # 🚨 V1/V2のキー名揺れを完全吸収
+            data = raw_json.get("summary") or raw_json.get("statements") or raw_json.get("data") or raw_json.get("results") or []
+            if data:
+                data = data[-8:] # 直近8四半期（2年分）に極限圧縮
+                import pandas as pd
+                df = pd.DataFrame(data)
+                for col in df.columns:
+                    if col not in ['Date', 'DisclosedDate', 'LocalCode']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                return df
+            return None # 正常応答だがデータが空の場合はループを抜けてNoneを返す
+        elif r.status_code == 429:
+            time.sleep(2.0) 
+            
+    return None
     
 def inject_auth_script():
     if not st.session_state.js_injected:
@@ -1339,53 +1389,6 @@ def get_fundamentals(code):
         pass # 通信障害時も前段のJ-Quantsデータを死守して返す
         
     return res
-
-# ==========================================
-# 📊 時系列・決算データフェッチ関数 (Lightプラン極限最適化・防弾スロットル版)
-# ==========================================
-import threading
-import time
-
-# グローバル空間に交通整理用のロックとタイマーを配備
-if 'jquants_api_lock' not in st.session_state:
-    st.session_state.jquants_api_lock = threading.Lock()
-    st.session_state.last_api_time = 0.0
-
-@st.cache_data(ttl=604800, max_entries=5000, show_spinner=False) # ⚡キャッシュを「1週間」へ延長
-def get_historical_statements(code):
-    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    url = f"{BASE_URL}/fins/statements?code={api_code}"
-    
-    for attempt in range(3): # 最大3回のリトライ機構
-        # ⚡ スマート・スロットル機構（並列リクエストを1列に整列させる）
-        with st.session_state.jquants_api_lock:
-            now = time.time()
-            elapsed = now - st.session_state.last_api_time
-            if elapsed < 1.05: # Lightプランの60回/分を厳守 (安全マージンを取り1.05秒間隔)
-                time.sleep(1.05 - elapsed)
-            
-            try:
-                r = api_session.get(url, timeout=5.0)
-                st.session_state.last_api_time = time.time() # 最終通信時刻を更新
-            except Exception:
-                st.session_state.last_api_time = time.time()
-                continue
-                
-        # 通信結果の判定
-        if r.status_code == 200:
-            data = r.json().get("statements", [])
-            if data:
-                data = data[-8:] # 直近8四半期（2年分）に極限圧縮
-                import pandas as pd
-                df = pd.DataFrame(data)
-                for col in df.columns:
-                    if col not in ['Date', 'DisclosedDate', 'LocalCode']:
-                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                return df
-        elif r.status_code == 429: # レートリミット（Too Many Requests）に激突した場合
-            time.sleep(2.0) # ペナルティ待機をしてリトライ
-            
-    return None
 
 # =========================================================
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
