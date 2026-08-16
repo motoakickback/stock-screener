@@ -2575,19 +2575,22 @@ with tab1:
 
     if btn_scan_t1:
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         t_start_total = time.time()
         
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
+            # === Phase 1: 価格帯フィルタ ===
+            st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
+            p1_msg = st.empty()
+            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中... (最大10秒)")
+            
             t_start_p1 = time.time()
-            status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            # 🎯 【ここに配置】先ほど定義した一括取得エンジンを呼び出す
             prices_map = get_all_latest_prices_bulk()
             
-            # 防爆ロック：データが取れなかったら強制終了
             if not prices_map:
-                st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                p1_msg.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
                 st.stop()
             
             p_filtered_codes = []
@@ -2595,16 +2598,19 @@ with tab1:
                 code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
                 if p is not None:
-                    if float(t1_p_min) <= float(p) <= float(t1_p_max): # (※TAB2は t2_p_min/max)
+                    if float(t1_p_min) <= float(p) <= float(t1_p_max):
                         p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
             time_p1 = t_end_p1 - t_start_p1
+            p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
 
-            status.update(label=f"⚡ Phase 2: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
-
+            # === Phase 2: ファンダ解析 ===
+            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
+            p2_msg = st.empty()
+            p2_bar = st.progress(0)
+            
             t_start_p2 = time.time()
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s = []
             hit_codes_a = []
 
@@ -2622,20 +2628,36 @@ with tab1:
                     pass
                 return None, None
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
-                for future in as_completed(futures):
-                    c_res, r_res = future.result()
-                    if c_res:
-                        if "S級" in r_res:
-                            hit_codes_s.append(c_res)
-                        else:
-                            hit_codes_a.append(c_res)
+            total_p2 = len(p_filtered_codes)
+            processed_p2 = 0
+            
+            if total_p2 > 0:
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
+                    for future in as_completed(futures):
+                        processed_p2 += 1
+                        # 🎯 進捗を確実に描画
+                        if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                            progress_pct = int((processed_p2 / total_p2) * 100)
+                            p2_bar.progress(processed_p2 / total_p2)
+                            p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%)")
+
+                        c_res, r_res = future.result()
+                        if c_res:
+                            if "S級" in r_res:
+                                hit_codes_s.append(c_res)
+                            else:
+                                hit_codes_a.append(c_res)
+            else:
+                p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                             
             t_end_p2 = time.time()
             time_p2 = t_end_p2 - t_start_p2
             t_end_total = time.time()
             time_total = t_end_total - t_start_total
+
+            p2_msg.success(f"✅ [Phase 2 完了] すべての解析が終了しました。")
+            p2_bar.empty()
 
             all_hits = hit_codes_s + hit_codes_a
             status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
@@ -2674,19 +2696,21 @@ with tab2:
 
     if btn_scan_t2:
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         t_start_total = time.time()
         
-        with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
-            t_start_p1 = time.time()
-            status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
-            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
+        with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
+            # === Phase 1 ===
+            st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
+            p1_msg = st.empty()
+            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中... (最大10秒)")
             
-            # 🎯 【ここに配置】先ほど定義した一括取得エンジンを呼び出す
+            t_start_p1 = time.time()
+            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             prices_map = get_all_latest_prices_bulk()
             
-            # 防爆ロック：データが取れなかったら強制終了
             if not prices_map:
-                st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                p1_msg.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
                 st.stop()
             
             p_filtered_codes = []
@@ -2694,16 +2718,19 @@ with tab2:
                 code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
                 if p is not None:
-                    if float(t1_p_min) <= float(p) <= float(t1_p_max): # (※TAB2は t2_p_min/max)
+                    if float(t2_p_min) <= float(p) <= float(t2_p_max):
                         p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
             time_p1 = t_end_p1 - t_start_p1
+            p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
 
-            status.update(label=f"⚡ Phase 2: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
-
+            # === Phase 2 ===
+            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
+            p2_msg = st.empty()
+            p2_bar = st.progress(0)
+            
             t_start_p2 = time.time()
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s_sell = []
             hit_codes_a_sell = []
 
@@ -2719,20 +2746,35 @@ with tab2:
                     pass
                 return None, None
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(worker_t2, c) for c in p_filtered_codes]
-                for future in as_completed(futures):
-                    c_res, r_res = future.result()
-                    if c_res:
-                        if "S級" in r_res:
-                            hit_codes_s_sell.append(c_res)
-                        else:
-                            hit_codes_a_sell.append(c_res)
+            total_p2 = len(p_filtered_codes)
+            processed_p2 = 0
+            
+            if total_p2 > 0:
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    futures = [executor.submit(worker_t2, c) for c in p_filtered_codes]
+                    for future in as_completed(futures):
+                        processed_p2 += 1
+                        if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                            progress_pct = int((processed_p2 / total_p2) * 100)
+                            p2_bar.progress(processed_p2 / total_p2)
+                            p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%)")
+
+                        c_res, r_res = future.result()
+                        if c_res:
+                            if "S級" in r_res:
+                                hit_codes_s_sell.append(c_res)
+                            else:
+                                hit_codes_a_sell.append(c_res)
+            else:
+                p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                             
             t_end_p2 = time.time()
             time_p2 = t_end_p2 - t_start_p2
             t_end_total = time.time()
             time_total = t_end_total - t_start_total
+
+            p2_msg.success(f"✅ [Phase 2 完了] すべての解析が終了しました。")
+            p2_bar.empty()
 
             all_hits_sell = hit_codes_s_sell + hit_codes_a_sell
             status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
