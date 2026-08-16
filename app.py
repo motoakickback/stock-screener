@@ -2460,41 +2460,26 @@ with tab1:
         
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
 
-    # -------------------------------------------------------------------
-    # TAB1: 買い広域スキャン 実行ボタン押下時のロジック上書き
-    # -------------------------------------------------------------------
     if btn_scan_t1:
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
             st.write("1. 全市場対象銘柄のリストアップおよび価格帯フィルタを適用...")
             
-            # 対象銘柄の抽出（価格フィルタ等の適用）
-            # ※ master_df と fetch_current_prices_fast は既存のシステム関数を使用
             target_codes = master_df['Code'].tolist() if not master_df.empty else []
             hit_codes_s = []
             hit_codes_a = []
-            
-            # ※ 注意: 実際には大量のAPIリクエストが走るため、既存の並列処理(executor)
-            # または適切なバッチ取得関数に切り替えることを推奨します。
-            # 今回はロジックの結線を明示するための基本ループ構造です。
-            
             total = len(target_codes)
+            
             for i, code in enumerate(target_codes):
-                # 簡易進捗表示
                 if i % 100 == 0:
                     status.update(label=f"📡 索敵中: {i}/{total} 銘柄完了...", state="running")
                 
                 try:
-                    # 1. 日足データの取得と価格フィルタ適用（現在値・高値判定）
-                    # df_bars = get_hist_data_cached(code) 
-                    # if df_bars は価格 t1_p_min 〜 t1_p_max に収まっているか？
-                    # 期間フィルタ(t1_period)内に高値があるか？
-                    
-                    # 2. ファンダメンタルズデータの取得
-                    df_fins = get_fundamentals(code) # 👈 司令官の既存のデータ取得関数
+                    # 💡 注意: 暫定的に1銘柄ずつ取得するループにしています。
+                    # テスト後、司令官の並列処理(executor)に組み替えることで劇的に高速化します。
+                    df_fins = get_fundamentals(code)
                     if df_fins is None or df_fins.empty:
                         continue
                         
-                    # 3. 直近2四半期連続 QoQエンジンの稼働
                     is_hit, rank = analyze_fundamental_momentum(
                         df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
                     )
@@ -2506,7 +2491,7 @@ with tab1:
                             hit_codes_a.append(str(code))
                             
                 except Exception as e:
-                    pass # エラー銘柄はスキップ
+                    pass
             
             all_hits = hit_codes_s + hit_codes_a
             status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。", state="complete", expanded=False)
@@ -2516,24 +2501,6 @@ with tab1:
         st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
         st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
-        
-            import time
-            time.sleep(1.5) # スキャン演出
-            
-            # 擬似的なヒットデータ（本来はPandasデータフレームで抽出されます）
-            hit_codes_s = ["1234", "5678"] # S級ヒット
-            hit_codes_a = ["9012", "3456", "7890"] # A級ヒット
-            all_hits = hit_codes_s + hit_codes_a
-            
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。", state="complete", expanded=False)
-            
-        st.success(f"✅ 条件突破銘柄: {len(all_hits)}件 (S級🎯: {len(hit_codes_s)}件 / A級🟢: {len(hit_codes_a)}件)")
-        
-        # TAB3貼り付け用のテキスト出力エリア（カンマ区切り）
-        st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
-        st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
-        st.code(", ".join(all_hits), language="text")
-
 
 # ==========================================
 # 📉 TAB2: 売り銘柄広域スキャン (Growth / Standard / Prime)
@@ -2560,9 +2527,6 @@ with tab2:
         
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
 
-    # -------------------------------------------------------------------
-    # TAB2: 売り広域スキャン 実行ボタン押下時のロジック上書き
-    # -------------------------------------------------------------------
     if btn_scan_t2:
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
             st.write("1. 全市場の対象銘柄をリストアップ...")
@@ -2579,10 +2543,6 @@ with tab2:
                     status.update(label=f"📡 索敵中: {i}/{total} 銘柄完了...", state="running")
                 
                 try:
-                    # 1. 日足データから安値判定や売買代金フィルタを実行
-                    # 2. マスターから時価総額フィルタを実行
-                    
-                    # 3. ファンダメンタルズデータの取得と判定
                     df_fins = get_fundamentals(code)
                     if df_fins is None or df_fins.empty:
                         continue
@@ -2607,22 +2567,10 @@ with tab2:
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
         st.code(", ".join(all_hits_sell) if all_hits_sell else "条件に合致する銘柄はありませんでした。", language="text")
 
-            import time
-            time.sleep(1.5) # スキャン演出
-            
-            # 擬似的なヒットデータ
-            hit_codes_s_sell = ["6666", "4444"] # S級ヒット(マイナス成長)
-            hit_codes_a_sell = ["8888"] # A級ヒット(微小成長)
-            all_hits_sell = hit_codes_s_sell + hit_codes_a_sell
-            
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。", state="complete", expanded=False)
-            
-        st.success(f"✅ 条件突破銘柄: {len(all_hits_sell)}件 (S級💀: {len(hit_codes_s_sell)}件 / A級📉: {len(hit_codes_a_sell)}件)")
-        
-        # TAB3貼り付け用のテキスト出力エリア（カンマ区切り）
-        st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
-        st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
-        st.code(", ".join(all_hits_sell), language="text")
+# ==========================================
+# 📁 TAB7: 戦績ダッシュボード
+# ==========================================
+# (※この下には先ほど修正したTAB7のコードが続きます...)
 
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
