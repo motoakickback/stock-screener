@@ -2669,27 +2669,33 @@ with tab1:
         pass
 
     # ==========================================
-    # 3. 🛠️ X線検査装置は、フォームの【外側・下部】に独立させる
+    # 🛠️ 【緊急配備】ファンダメンタルズ生レスポンスX線検査装置
     # ==========================================
     st.divider()
-    with st.expander("🛠️ 【参謀用】特定銘柄のファンダ内部データ透視", expanded=False):
-        test_code = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="xray_code_t1")
-        if st.button("X線検査を実行", key="xray_btn_t1"):
-            st.info(f"📡 {test_code} の決算データをJ-Quantsから直接フェッチします...")
-            df_test = get_historical_statements(test_code)
+    with st.expander("🛠️ 【参謀用】J-Quants V2 生レスポンス直視デバッグ", expanded=True):
+        test_code = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="debug_code_xray")
+        if st.button("X線検査を実行", key="debug_btn_xray"):
+            api_code = str(test_code) if len(str(test_code)) >= 5 else str(test_code) + "0"
             
-            if df_test is None or df_test.empty:
-                st.error("❌ 【致命的異常】データが完全に『空』です！APIのURLエラー、または通信がJ-Quantsに弾かれています。")
-            else:
-                st.success("✅ データは無事に取得できています！以下がシステムの胃袋の中身です。")
-                st.dataframe(df_test)
+            # 試しに現在設定されているURLを直撃
+            url = f"{BASE_URL}/fins/statements?code={api_code}"
+            st.write(f"📡 接続先URL: `{url}`")
+            
+            try:
+                r = api_session.get(url, timeout=10.0)
+                st.write(f"📊 HTTPステータスコード: `{r.status_code}`")
                 
-                # 計算エンジンのテスト
-                is_hit, rank = analyze_fundamental_momentum(df_test, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r))
-                if is_hit:
-                    st.write(f"🎯 判定結果: 合格 ({rank})")
+                if r.status_code == 200:
+                    raw_json = r.json()
+                    st.success("✅ HTTP 200 応答成功！ 受信したJSONの構造を解析します：")
+                    st.write("📦 JSONのトップレベルのキー一覧:", list(raw_json.keys()))
+                    # 生データをそのまま画面に出力して中身を確認
+                    st.json(raw_json)
                 else:
-                    st.warning("⚠️ 判定結果: 不合格💀 (データはありますが、条件を満たしていません)")
+                    st.error(f"❌ サーバーから拒絶されました (HTTP {r.status_code})")
+                    st.text(r.text)
+            except Exception as e:
+                st.error(f"🚨 通信例外が発生しました: {str(e)}")
                         
     if btn_scan_t1:
         import time
