@@ -52,11 +52,11 @@ def analyze_fundamental_momentum(df_fins, mode="buy", sales_req=7.0, ord_req=15.
     if df_fins is None or len(df_fins) < 3:
         return False, ""
 
-    # J-Quantsの主要カラム（存在確認とフォールバック）
+    # J-Quantsの主要カラム（V1/V2の表記揺れを完全吸収）
     col_sales = next((c for c in ['NetSales', 'net_sales', 'Sales'] if c in df_fins.columns), None)
-    col_op = next((c for c in ['OperatingProfit', 'operating_profit', 'OpProfit'] if c in df_fins.columns), None)
-    col_ord = next((c for c in ['OrdinaryProfit', 'ordinary_profit', 'OrdProfit'] if c in df_fins.columns), None)
-    col_net = next((c for c in ['Profit', 'profit', 'NetProfit', 'EPS', 'eps'] if c in df_fins.columns), None)
+    col_op = next((c for c in ['OPnumber', 'OperatingProfit', 'operating_profit'] if c in df_fins.columns), None)
+    col_ord = next((c for c in ['OrdinaryProfit', 'ordinary_profit'] if c in df_fins.columns), None)
+    col_net = next((c for c in ['NPnumber', 'NetIncome', 'Profit', 'profit'] if c in df_fins.columns), None)
 
     if not all([col_sales, col_op, col_ord, col_net]):
         return False, "" # データ欠損
@@ -1301,6 +1301,33 @@ def get_fundamentals(code):
         
     return res
 
+# ==========================================
+# 📊 時系列・決算データフェッチ関数 (TAB1/TAB2 スキャン専用)
+# ==========================================
+def get_historical_statements(code):
+    api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+    url = f"{BASE_URL}/fins/statements?code={api_code}"
+    
+    try:
+        r = api_session.get(url, timeout=5.0)
+        if r.status_code == 200:
+            data = r.json().get("statements", [])
+            if data:
+                # 取得した過去の全決算履歴をPandasデータフレームに変換
+                import pandas as pd
+                df = pd.DataFrame(data)
+                
+                # 計算時にクラッシュしないよう、数値列を安全に変換
+                for col in df.columns:
+                    if col not in ['Date', 'DisclosedDate', 'LocalCode']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                        
+                return df
+    except Exception:
+        pass
+    
+    return None
+
 # =========================================================
 # 🛡️ 【共通関数】年間イベント（決算・権利落ち）の絶対検知ロジック
 # =========================================================
@@ -2488,7 +2515,7 @@ with tab1:
 
             def worker_t1(code):
                 try:
-                    df_fins = get_fundamentals(code)
+                    df_fins = get_historical_statements(code)
                     if df_fins is None or df_fins.empty:
                         return None, None
                     is_hit, rank = analyze_fundamental_momentum(
@@ -2570,7 +2597,7 @@ with tab2:
 
             def worker_t2(code):
                 try:
-                    df_fins = get_fundamentals(code)
+                    df_fins = get_historical_statements(code)
                     if df_fins is None or df_fins.empty:
                         return None, None
                     is_hit, rank = analyze_fundamental_momentum(df_fins, mode="sell")
