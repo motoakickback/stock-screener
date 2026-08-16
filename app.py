@@ -1302,34 +1302,50 @@ def get_fundamentals(code):
     return res
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (キャッシュ装甲・超高速版)
+# 📊 時系列・決算データフェッチ関数 (Lightプラン極限最適化・防弾スロットル版)
 # ==========================================
-@st.cache_data(ttl=86400, max_entries=5000, show_spinner=False)
+import threading
+import time
+
+# グローバル空間に交通整理用のロックとタイマーを配備
+if 'jquants_api_lock' not in st.session_state:
+    st.session_state.jquants_api_lock = threading.Lock()
+    st.session_state.last_api_time = 0.0
+
+@st.cache_data(ttl=604800, max_entries=5000, show_spinner=False) # ⚡キャッシュを「1週間」へ延長
 def get_historical_statements(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     url = f"{BASE_URL}/fins/statements?code={api_code}"
     
-    try:
-        # ⚡ タイムアウトを2秒に短縮し、サーバー沈黙時の「フリーズ待機」を物理排除
-        r = api_session.get(url, timeout=2.0)
+    for attempt in range(3): # 最大3回のリトライ機構
+        # ⚡ スマート・スロットル機構（並列リクエストを1列に整列させる）
+        with st.session_state.jquants_api_lock:
+            now = time.time()
+            elapsed = now - st.session_state.last_api_time
+            if elapsed < 1.05: # Lightプランの60回/分を厳守 (安全マージンを取り1.05秒間隔)
+                time.sleep(1.05 - elapsed)
+            
+            try:
+                r = api_session.get(url, timeout=5.0)
+                st.session_state.last_api_time = time.time() # 最終通信時刻を更新
+            except Exception:
+                st.session_state.last_api_time = time.time()
+                continue
+                
+        # 通信結果の判定
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if data:
-                # ⚡ 2年超の古いデータを物理パージ（直近8四半期分のみ）
-                data = data[-8:]
-                
+                data = data[-8:] # 直近8四半期（2年分）に極限圧縮
                 import pandas as pd
                 df = pd.DataFrame(data)
-                
-                # 計算時にクラッシュしないよう、数値列を安全に変換
                 for col in df.columns:
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                        
                 return df
-    except Exception:
-        pass
-    
+        elif r.status_code == 429: # レートリミット（Too Many Requests）に激突した場合
+            time.sleep(2.0) # ペナルティ待機をしてリトライ
+            
     return None
 
 # =========================================================
