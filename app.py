@@ -183,39 +183,42 @@ def get_all_latest_prices_bulk():
     return {}
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (Lightプラン極限最適化・V2正式仕様)
+# 📊 時系列・決算データフェッチ関数 (マルチスレッド完全防弾仕様)
 # ==========================================
 import threading
 import time
 
-if 'jquants_api_lock' not in st.session_state:
-    st.session_state.jquants_api_lock = threading.Lock()
-    st.session_state.last_api_time = 0.0
+# 🚨 st.session_stateを使わず、純粋なグローバル空間にロックを配備（スレッド即死を回避）
+if '_JQUANTS_API_LOCK' not in globals():
+    global _JQUANTS_API_LOCK, _LAST_API_TIME
+    _JQUANTS_API_LOCK = threading.Lock()
+    _LAST_API_TIME = [0.0]  # 配列にして参照を保持
 
 @st.cache_data(ttl=604800, max_entries=5000, show_spinner=False)
 def get_historical_statements(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    # 🚨 V2の財務情報正式エンドポイント（/fins/summary）に完全修正！
-    url = f"{BASE_URL}/fins/summary?code={api_code}"
     
-    for attempt in range(3):
-        with st.session_state.jquants_api_lock:
+    # 🚨 URLを司令官のオリジナル仕様に完全復元！
+    url = f"{BASE_URL}/fins/statements?code={api_code}"
+    
+    for attempt in range(3): # 最大3回のリトライ
+        with _JQUANTS_API_LOCK:
             now = time.time()
-            elapsed = now - st.session_state.last_api_time
-            if elapsed < 1.05: 
+            elapsed = now - _LAST_API_TIME[0]
+            if elapsed < 1.05: # Lightプラン制限を厳守
                 time.sleep(1.05 - elapsed)
             
             try:
                 r = api_session.get(url, timeout=10.0)
-                st.session_state.last_api_time = time.time() 
+                _LAST_API_TIME[0] = time.time() 
             except Exception:
-                st.session_state.last_api_time = time.time()
+                _LAST_API_TIME[0] = time.time()
                 continue
                 
         if r.status_code == 200:
             raw_json = r.json()
-            # 🚨 V1/V2のキー名揺れを完全吸収
-            data = raw_json.get("summary") or raw_json.get("statements") or raw_json.get("data") or raw_json.get("results") or []
+            # キーの揺れを全て吸収
+            data = raw_json.get("statements") or raw_json.get("data") or raw_json.get("results") or []
             if data:
                 data = data[-8:] # 直近8四半期（2年分）に極限圧縮
                 import pandas as pd
@@ -224,9 +227,9 @@ def get_historical_statements(code):
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 return df
-            return None # 正常応答だがデータが空の場合はループを抜けてNoneを返す
+            return None # 正常だがデータ空
         elif r.status_code == 429:
-            time.sleep(2.0) 
+            time.sleep(2.0) # ペナルティ待機
             
     return None
     
