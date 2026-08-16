@@ -2677,7 +2677,7 @@ with tab1:
             api_code = str(test_code) if len(str(test_code)) >= 5 else str(test_code) + "0"
             
             # 試しに現在設定されているURLを直撃
-            url = f"{BASE_URL}/fins/statements?code={api_code}"
+            url = f"{BASE_URL}/fins/summary?code={api_code}"
             st.write(f"📡 接続先URL: `{url}`")
             
             try:
