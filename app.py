@@ -140,6 +140,40 @@ def analyze_fundamental_momentum(df_fins, mode="buy", sales_req=7.0, ord_req=15.
             return True, "A級📉"
 
     return False, ""
+
+# ==========================================
+# ⚡ 全銘柄現在値・一括取得エンジン（J-Quants V2 正式仕様）
+# ==========================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_all_latest_prices_bulk():
+    """直近の営業日データを1回のリクエストで全銘柄分取得する防弾エンジン"""
+    import datetime
+    import pandas as pd
+    import time
+
+    for i in range(1, 10): # 過去9日間遡って最新の営業日を探す
+        dt_str = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime('%Y%m%d')
+        # 🚨 修正：J-Quants V2 APIの【正式な】一括取得エンドポイント
+        url = f"{BASE_URL}/prices/daily_quotes?date={dt_str}"
+        
+        try:
+            time.sleep(1.05) # Lightプラン制限対策
+            r = api_session.get(url, timeout=5.0)
+            if r.status_code == 200:
+                data = r.json().get("daily_quotes", [])
+                if data:
+                    df = pd.DataFrame(data)
+                    prices_map = {}
+                    for _, row in df.iterrows():
+                        # J-Quantsのコードから4桁を抽出
+                        code_4digit = str(row['Code'])[:4]
+                        prices_map[code_4digit] = float(row['Close'])
+                    return prices_map
+            elif r.status_code == 429:
+                time.sleep(2.0) # 弾かれたらペナルティ待機
+        except Exception:
+            pass
+    return {}
     
 def inject_auth_script():
     if not st.session_state.js_injected:
@@ -2544,29 +2578,30 @@ with tab1:
         t_start_total = time.time()
         
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
-            # === 第1関門：価格帯による高速一括足切り ===
             t_start_p1 = time.time()
             status.update(label="⚡ Phase 1: 価格帯フィルタによる高速一次足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
+            prices_map = get_all_latest_prices_bulk()
+            
+            # 🚨 防爆ロック：データが取れなかったら強制終了し、4000件の暴走を防ぐ
+            if not prices_map:
+                st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                st.stop()
             
             p_filtered_codes = []
             for code in raw_codes:
-                code_str = str(code).replace('.0', '').strip()
+                code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
-                if p is not None:
+                if p is not None: # 価格が存在する銘柄のみ判定（無いものは容認せず捨てる）
                     if float(t1_p_min) <= float(p) <= float(t1_p_max):
                         p_filtered_codes.append(code_str)
-                else:
-                    p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
             time_p1 = t_end_p1 - t_start_p1
 
             status.update(label=f"⚡ Phase 2: 価格適合 {len(p_filtered_codes)}/ {len(raw_codes)} 銘柄を捕捉。ファンダ並列解析中...", state="running")
 
-            # === 第2・第3関門：並列処理によるQoQモメンタム解析 ===
             t_start_p2 = time.time()
             from concurrent.futures import ThreadPoolExecutor, as_completed
             hit_codes_s = []
@@ -2611,7 +2646,6 @@ with tab1:
         st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
         st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
 
-
 # ==========================================
 # 📉 TAB2: 売り銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
@@ -2646,17 +2680,20 @@ with tab2:
             status.update(label="⚡ Phase 1: 価格帯および流動性フィルタによる足切り中...", state="running")
             raw_codes = master_df['Code'].tolist() if not master_df.empty else []
             
-            prices_map = fetch_current_prices_fast(raw_codes) if 'fetch_current_prices_fast' in globals() else {}
+            prices_map = get_all_latest_prices_bulk()
+            
+            # 🚨 防爆ロック
+            if not prices_map:
+                st.error("🚨 【通信障害】J-Quantsからの価格一括取得に失敗しました。数分時間をおいて再実行してください。")
+                st.stop()
             
             p_filtered_codes = []
             for code in raw_codes:
-                code_str = str(code).replace('.0', '').strip()
+                code_str = str(code).replace('.0', '').strip()[:4]
                 p = prices_map.get(code_str, None)
                 if p is not None:
                     if float(t2_p_min) <= float(p) <= float(t2_p_max):
                         p_filtered_codes.append(code_str)
-                else:
-                    p_filtered_codes.append(code_str)
                     
             t_end_p1 = time.time()
             time_p1 = t_end_p1 - t_start_p1
