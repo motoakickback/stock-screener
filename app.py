@@ -183,7 +183,7 @@ def get_all_latest_prices_bulk():
     return {}
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (J-Quants V2 正式仕様)
+# 📊 時系列・決算データフェッチ関数 (J-Quants V2 正式仕様・1.1秒防弾版)
 # ==========================================
 import threading
 import time
@@ -197,15 +197,16 @@ if '_JQUANTS_API_LOCK' not in globals():
 def get_historical_statements(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
     
-    # 🎯 V2の正しい正式エンドポイント（/fins/summary）に設定
+    # 🎯 V2の正しい正式エンドポイント
     url = f"{BASE_URL}/fins/summary?code={api_code}"
     
     for attempt in range(3):
         with _JQUANTS_API_LOCK:
             now = time.time()
             elapsed = now - _LAST_API_TIME[0]
-            if elapsed < 1.05: 
-                time.sleep(1.05 - elapsed)
+            # 🛡️ J-Quants Lightプラン防弾スロットル（1.1秒の絶対確保）
+            if elapsed < 1.1: 
+                time.sleep(1.1 - elapsed)
             
             try:
                 r = api_session.get(url, timeout=10.0)
@@ -216,7 +217,6 @@ def get_historical_statements(code):
                 
         if r.status_code == 200:
             raw_json = r.json()
-            # 🎯 V2のレスポンスキー（summary）および予備キーを網羅して安全に取得
             data = raw_json.get("summary") or raw_json.get("statements") or raw_json.get("data") or raw_json.get("results") or []
             if data:
                 data = data[-8:] # 直近8四半期（2年分）に圧縮
@@ -228,7 +228,8 @@ def get_historical_statements(code):
                 return df
             return None
         elif r.status_code == 429:
-            time.sleep(2.0) 
+            # 429を食らった場合は即座に3秒待機してリトライ
+            time.sleep(3.0) 
             
     return None
 
@@ -2664,8 +2665,89 @@ with tab1:
 
     # 2. 【重要】st.form の【外側（インデントなし）】にスキャン実行時の処理を置く
     if btn_scan_t1:
-        # (ここに先ほどまでの Phase 1 & Phase 2 のスキャン処理を書く)
-        pass
+        st.write("---")
+        # === Phase 1: 価格・流動性フィルタ ===
+        st.write("#### 🔄 [Phase 1/2] 市場全銘柄から価格条件でスクリーニング")
+        p1_msg = st.empty()
+        
+        all_codes = []
+        try:
+            # 最新株価一覧の一括取得（キャッシュ付き）
+            df_latest = get_all_latest_prices_bulk()
+            if df_latest is not None and not df_latest.empty:
+                # ユーザーが指定した価格帯で足切り
+                df_latest_filtered = df_latest[
+                    (df_latest['Price'] >= t1_p_min) & 
+                    (df_latest['Price'] <= t1_p_max)
+                ]
+                all_codes = df_latest_filtered['Code'].astype(str).tolist()
+            else:
+                all_codes = list(master_map.keys())
+        except Exception as e:
+            all_codes = list(master_map.keys())
+            
+        p_filtered_codes = []
+        for code in all_codes:
+            code_str = str(code).replace('.0', '')
+            p_filtered_codes.append(code_str)
+            
+        p1_msg.success(f"✅ Phase 1 完了: 対象 {len(p_filtered_codes)} 銘柄を抽出しました。")
+        
+        # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
+        st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
+        p2_msg = st.empty()
+        p2_bar = st.progress(0)
+        
+        import time
+        t_start_p2 = time.time()
+        hit_codes_s = []
+        hit_codes_a = []
+
+        total_p2 = len(p_filtered_codes)
+        processed_p2 = 0
+        
+        if total_p2 > 0:
+            for idx, code in enumerate(p_filtered_codes):
+                processed_p2 += 1
+                
+                # 🎯 描画負荷軽減のため5件に1回更新
+                if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                    progress_pct = int((processed_p2 / total_p2) * 100)
+                    p2_bar.progress(processed_p2 / total_p2)
+                    p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
+
+                try:
+                    df_fins = get_historical_statements(code)
+                    if df_fins is not None and not df_fins.empty:
+                        is_hit, rank = analyze_fundamental_momentum(
+                            df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
+                        )
+                        if is_hit:
+                            if "S級" in rank:
+                                hit_codes_s.append(str(code))
+                            else:
+                                hit_codes_a.append(str(code))
+                except Exception:
+                    pass
+            
+            p2_bar.progress(1.0)
+            p2_msg.success(f"✅ Phase 2 完了: 総スキャン時間 {time.time() - t_start_p2:.1f} 秒")
+            
+            st.divider()
+            st.write("### 🎯 スキャン結果")
+            st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
+            if hit_codes_s:
+                st.code(", ".join(hit_codes_s))
+            else:
+                st.info("S級条件に合致する銘柄はありませんでした。")
+                
+            st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
+            if hit_codes_a:
+                st.code(", ".join(hit_codes_a))
+            else:
+                st.info("A級条件に合致する銘柄はありませんでした。")
+        else:
+            p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
 
     # ==========================================
     # 🛠️ 【緊急配備】ファンダメンタルズ生レスポンスX線検査装置
@@ -2829,76 +2911,86 @@ with tab2:
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
 
     if btn_scan_t2:
-        import time
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        t_start_total = time.time()
+        st.write("---")
+        # === Phase 1: 価格・流動性フィルタ ===
+        st.write("#### 🔄 [Phase 1/2] 市場全銘柄から価格条件でスクリーニング")
+        p1_msg = st.empty()
         
-        with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
-            st.write("#### 🔄 [Phase 1/2] 価格帯・流動性フィルタ一括足切り")
-            p1_msg = st.empty()
-            p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中...")
+        all_codes = []
+        try:
+            df_latest = get_all_latest_prices_bulk()
+            if df_latest is not None and not df_latest.empty:
+                df_latest_filtered = df_latest[
+                    (df_latest['Price'] >= t2_p_min) & 
+                    (df_latest['Price'] <= t2_p_max)
+                ]
+                all_codes = df_latest_filtered['Code'].astype(str).tolist()
+            else:
+                all_codes = list(master_map.keys())
+        except Exception:
+            all_codes = list(master_map.keys())
             
-            t_start_p1 = time.time()
-            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
-            prices_map = get_all_latest_prices_bulk()
+        p_filtered_codes = []
+        for code in all_codes:
+            code_str = str(code).replace('.0', '')
+            p_filtered_codes.append(code_str)
             
-            if not prices_map:
-                p1_msg.error("🚨 【通信障害】価格一括取得に失敗しました。再実行してください。")
-                st.stop()
-            
-            p_filtered_codes = []
-            for code in raw_codes:
-                code_str = str(code).replace('.0', '').strip()[:4]
-                p = prices_map.get(code_str, None)
-                if p is not None:
-                    if float(t2_p_min) <= float(p) <= float(t2_p_max):
-                        p_filtered_codes.append(code_str)
-                    
-            t_end_p1 = time.time()
-            time_p1 = t_end_p1 - t_start_p1
-            p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
+        p1_msg.success(f"✅ Phase 1 完了: 対象 {len(p_filtered_codes)} 銘柄を抽出しました。")
+        
+        # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
+        st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
+        p2_msg = st.empty()
+        p2_bar = st.progress(0)
+        
+        import time
+        t_start_p2 = time.time()
+        hit_codes_s = []
+        hit_codes_a = []
 
-            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
-            p2_msg = st.empty()
-            p2_bar = st.progress(0)
-            
-            t_start_p2 = time.time()
-            hit_codes_s_sell = []
-            hit_codes_a_sell = []
+        total_p2 = len(p_filtered_codes)
+        processed_p2 = 0
+        
+        if total_p2 > 0:
+            for idx, code in enumerate(p_filtered_codes):
+                processed_p2 += 1
+                
+                if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                    progress_pct = int((processed_p2 / total_p2) * 100)
+                    p2_bar.progress(processed_p2 / total_p2)
+                    p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
 
-            def worker_t2(code):
                 try:
                     df_fins = get_historical_statements(code)
-                    if df_fins is None or df_fins.empty:
-                        return None, None
-                    is_hit, rank = analyze_fundamental_momentum(df_fins, mode="sell")
-                    if is_hit:
-                        return str(code), rank
+                    if df_fins is not None and not df_fins.empty:
+                        is_hit, rank = analyze_fundamental_momentum(
+                            df_fins, mode="sell"
+                        )
+                        if is_hit:
+                            if "S級" in rank:
+                                hit_codes_s.append(str(code))
+                            else:
+                                hit_codes_a.append(str(code))
                 except Exception:
                     pass
-                return None, None
-
-            total_p2 = len(p_filtered_codes)
-            processed_p2 = 0
             
-            if total_p2 > 0:
-                with ThreadPoolExecutor(max_workers=8) as executor:
-                    futures = [executor.submit(worker_t2, c) for c in p_filtered_codes]
-                    for future in as_completed(futures):
-                        processed_p2 += 1
-                        if processed_p2 % 5 == 0 or processed_p2 == total_p2:
-                            progress_pct = int((processed_p2 / total_p2) * 100)
-                            p2_bar.progress(processed_p2 / total_p2)
-                            p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%)")
-
-                        c_res, r_res = future.result()
-                        if c_res:
-                            if "S級" in r_res:
-                                hit_codes_s_sell.append(c_res)
-                            else:
-                                hit_codes_a_sell.append(c_res)
+            p2_bar.progress(1.0)
+            p2_msg.success(f"✅ Phase 2 完了: 総スキャン時間 {time.time() - t_start_p2:.1f} 秒")
+            
+            st.divider()
+            st.write("### 🎯 スキャン結果")
+            st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
+            if hit_codes_s:
+                st.code(", ".join(hit_codes_s))
             else:
-                p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
+                st.info("S級条件に合致する銘柄はありませんでした。")
+                
+            st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
+            if hit_codes_a:
+                st.code(", ".join(hit_codes_a))
+            else:
+                st.info("A級条件に合致する銘柄はありませんでした。")
+        else:
+            p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                             
             t_end_p2 = time.time()
             time_p2 = t_end_p2 - t_start_p2
