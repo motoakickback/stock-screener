@@ -1302,7 +1302,7 @@ def get_fundamentals(code):
     return res
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (TAB1/TAB2 スキャン専用)
+# 📊 時系列・決算データフェッチ関数 (直近2年・8四半期限定 超高速版)
 # ==========================================
 def get_historical_statements(code):
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
@@ -1313,7 +1313,9 @@ def get_historical_statements(code):
         if r.status_code == 200:
             data = r.json().get("statements", [])
             if data:
-                # 取得した過去の全決算履歴をPandasデータフレームに変換
+                # ⚡ 2年超の古いデータ（9件目以前）を物理パージ（直近8四半期分のみに限定）
+                data = data[-8:]
+                
                 import pandas as pd
                 df = pd.DataFrame(data)
                 
