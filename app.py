@@ -2679,13 +2679,13 @@ with tab1:
             
             all_codes = []
             try:
-                df_latest = get_all_latest_prices_bulk()
-                if df_latest is not None and not df_latest.empty:
-                    df_latest_filtered = df_latest[
-                        (df_latest['Price'] >= float(t1_p_min)) & 
-                        (df_latest['Price'] <= float(t1_p_max))
-                    ]
-                    all_codes = df_latest_filtered['Code'].astype(str).tolist()
+                # 🎯 修正：辞書(dict)仕様に合わせた抽出ロジック
+                prices_map = get_all_latest_prices_bulk()
+                if prices_map:
+                    for c_code, c_price in prices_map.items():
+                        # 指定価格帯で足切り
+                        if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
+                            all_codes.append(str(c_code))
                 else:
                     p1_msg.error("❌ J-Quantsからの株価取得に失敗しました（APIペナルティ中）。数分待ってから再度お試しください。")
                     st.stop()
@@ -2830,13 +2830,13 @@ with tab2:
             
             all_codes = []
             try:
-                df_latest = get_all_latest_prices_bulk()
-                if df_latest is not None and not df_latest.empty:
-                    df_latest_filtered = df_latest[
-                        (df_latest['Price'] >= float(t2_p_min)) & 
-                        (df_latest['Price'] <= float(t2_p_max))
-                    ]
-                    all_codes = df_latest_filtered['Code'].astype(str).tolist()
+                # 🎯 修正：辞書(dict)仕様に合わせた抽出ロジック
+                prices_map = get_all_latest_prices_bulk()
+                if prices_map:
+                    for c_code, c_price in prices_map.items():
+                        # 指定価格帯で足切り
+                        if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
+                            all_codes.append(str(c_code))
                 else:
                     p1_msg_t2.error("❌ J-Quantsからの株価取得に失敗しました（APIペナルティ中）。数分待ってから再度お試しください。")
                     st.stop()
