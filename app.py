@@ -142,7 +142,7 @@ def analyze_fundamental_momentum(df_fins, mode="buy", sales_req=7.0, ord_req=15.
     return False, ""
 
 # ==========================================
-# ⚡ 全銘柄現在値・一括取得エンジン（J-Quants V2 正式仕様）
+# ⚡ 全銘柄現在値・一括取得エンジン（J-Quants V2 正式仕様 / 強靭化パッチ）
 # ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_all_latest_prices_bulk():
@@ -151,28 +151,33 @@ def get_all_latest_prices_bulk():
     import pandas as pd
     import time
 
+    # 🚨 修正1：確実に日本時間（JST）を基準にして過去の日付を探す
+    base_time = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+
     for i in range(1, 10): # 過去9日間遡って最新の営業日を探す
-        dt_str = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime('%Y%m%d')
-        # 🚨 修正：J-Quants V2 APIの【正式な】一括取得エンドポイント
+        dt_str = (base_time - datetime.timedelta(days=i)).strftime('%Y%m%d')
         url = f"{BASE_URL}/prices/daily_quotes?date={dt_str}"
         
         try:
             time.sleep(1.05) # Lightプラン制限対策
-            r = api_session.get(url, timeout=5.0)
+            
+            # 🚨 修正2：全市場のデータは非常に重いため、タイムアウトを5秒→15秒に大幅延長
+            r = api_session.get(url, timeout=15.0)
+            
             if r.status_code == 200:
                 data = r.json().get("daily_quotes", [])
                 if data:
                     df = pd.DataFrame(data)
                     prices_map = {}
                     for _, row in df.iterrows():
-                        # J-Quantsのコードから4桁を抽出
                         code_4digit = str(row['Code'])[:4]
                         prices_map[code_4digit] = float(row['Close'])
                     return prices_map
             elif r.status_code == 429:
                 time.sleep(2.0) # 弾かれたらペナルティ待機
         except Exception:
-            pass
+            pass # タイムアウト時は次の日へ
+            
     return {}
     
 def inject_auth_script():
