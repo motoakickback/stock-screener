@@ -2663,152 +2663,42 @@ with tab1:
         
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
 
-    # 2. 【重要】st.form の【外側（インデントなし）】にスキャン実行時の処理を置く
+    # 2. スキャン実行処理（完全直列・防弾仕様）
     if btn_scan_t1:
+        import time
         st.write("---")
-        # === Phase 1: 価格・流動性フィルタ ===
-        st.write("#### 🔄 [Phase 1/2] 市場全銘柄から価格条件でスクリーニング")
-        p1_msg = st.empty()
-        
-        all_codes = []
-        try:
-            # 最新株価一覧の一括取得（キャッシュ付き）
-            df_latest = get_all_latest_prices_bulk()
-            if df_latest is not None and not df_latest.empty:
-                # ユーザーが指定した価格帯で足切り
-                df_latest_filtered = df_latest[
-                    (df_latest['Price'] >= t1_p_min) & 
-                    (df_latest['Price'] <= t1_p_max)
-                ]
-                all_codes = df_latest_filtered['Code'].astype(str).tolist()
-            else:
-                all_codes = list(master_map.keys())
-        except Exception as e:
-            all_codes = list(master_map.keys())
-            
-        p_filtered_codes = []
-        for code in all_codes:
-            code_str = str(code).replace('.0', '')
-            p_filtered_codes.append(code_str)
-            
-        p1_msg.success(f"✅ Phase 1 完了: 対象 {len(p_filtered_codes)} 銘柄を抽出しました。")
-        
-        # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
-        st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
-        p2_msg = st.empty()
-        p2_bar = st.progress(0)
-        
-        import time
-        t_start_p2 = time.time()
-        hit_codes_s = []
-        hit_codes_a = []
-
-        total_p2 = len(p_filtered_codes)
-        processed_p2 = 0
-        
-        if total_p2 > 0:
-            for idx, code in enumerate(p_filtered_codes):
-                processed_p2 += 1
-                
-                # 🎯 描画負荷軽減のため5件に1回更新
-                if processed_p2 % 5 == 0 or processed_p2 == total_p2:
-                    progress_pct = int((processed_p2 / total_p2) * 100)
-                    p2_bar.progress(processed_p2 / total_p2)
-                    p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
-
-                try:
-                    df_fins = get_historical_statements(code)
-                    if df_fins is not None and not df_fins.empty:
-                        is_hit, rank = analyze_fundamental_momentum(
-                            df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
-                        )
-                        if is_hit:
-                            if "S級" in rank:
-                                hit_codes_s.append(str(code))
-                            else:
-                                hit_codes_a.append(str(code))
-                except Exception:
-                    pass
-            
-            p2_bar.progress(1.0)
-            p2_msg.success(f"✅ Phase 2 完了: 総スキャン時間 {time.time() - t_start_p2:.1f} 秒")
-            
-            st.divider()
-            st.write("### 🎯 スキャン結果")
-            st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
-            if hit_codes_s:
-                st.code(", ".join(hit_codes_s))
-            else:
-                st.info("S級条件に合致する銘柄はありませんでした。")
-                
-            st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
-            if hit_codes_a:
-                st.code(", ".join(hit_codes_a))
-            else:
-                st.info("A級条件に合致する銘柄はありませんでした。")
-        else:
-            p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
-
-    # ==========================================
-    # 🛠️ 【緊急配備】ファンダメンタルズ生レスポンスX線検査装置
-    # ==========================================
-    st.divider()
-    with st.expander("🛠️ 【参謀用】J-Quants V2 生レスポンス直視デバッグ", expanded=True):
-        test_code = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="debug_code_xray")
-        if st.button("X線検査を実行", key="debug_btn_xray"):
-            api_code = str(test_code) if len(str(test_code)) >= 5 else str(test_code) + "0"
-            
-            # 試しに現在設定されているURLを直撃
-            url = f"{BASE_URL}/fins/summary?code={api_code}"
-            st.write(f"📡 接続先URL: `{url}`")
-            
-            try:
-                r = api_session.get(url, timeout=10.0)
-                st.write(f"📊 HTTPステータスコード: `{r.status_code}`")
-                
-                if r.status_code == 200:
-                    raw_json = r.json()
-                    st.success("✅ HTTP 200 応答成功！ 受信したJSONの構造を解析します：")
-                    st.write("📦 JSONのトップレベルのキー一覧:", list(raw_json.keys()))
-                    # 生データをそのまま画面に出力して中身を確認
-                    st.json(raw_json)
-                else:
-                    st.error(f"❌ サーバーから拒絶されました (HTTP {r.status_code})")
-                    st.text(r.text)
-            except Exception as e:
-                st.error(f"🚨 通信例外が発生しました: {str(e)}")
-                        
-    if btn_scan_t1:
-        import time
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        t_start_total = time.time()
         
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
+            t_start_total = time.time()
+            
+            # === Phase 1: 価格フィルタ ===
             st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
             p1_msg = st.empty()
             p1_msg.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中...")
-            
             t_start_p1 = time.time()
-            raw_codes = master_df['Code'].tolist() if not master_df.empty else []
-            prices_map = get_all_latest_prices_bulk()
             
-            if not prices_map:
-                p1_msg.error("🚨 【通信障害】価格一括取得に失敗しました。時間をおいて再実行してください。")
+            all_codes = []
+            try:
+                df_latest = get_all_latest_prices_bulk()
+                if df_latest is not None and not df_latest.empty:
+                    df_latest_filtered = df_latest[
+                        (df_latest['Price'] >= float(t1_p_min)) & 
+                        (df_latest['Price'] <= float(t1_p_max))
+                    ]
+                    all_codes = df_latest_filtered['Code'].astype(str).tolist()
+                else:
+                    p1_msg.error("❌ J-Quantsからの株価取得に失敗しました（APIペナルティ中）。数分待ってから再度お試しください。")
+                    st.stop()
+            except Exception as e:
+                p1_msg.error(f"❌ 株価取得エラー: {e}")
                 st.stop()
+                
+            p_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            time_p1 = time.time() - t_start_p1
+            p1_msg.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
             
-            p_filtered_codes = []
-            for code in raw_codes:
-                code_str = str(code).replace('.0', '').strip()[:4]
-                p = prices_map.get(code_str, None)
-                if p is not None:
-                    if float(t1_p_min) <= float(p) <= float(t1_p_max):
-                        p_filtered_codes.append(code_str)
-                    
-            t_end_p1 = time.time()
-            time_p1 = t_end_p1 - t_start_p1
-            p1_msg.success(f"✅ [Phase 1 完了] 適合銘柄: {len(p_filtered_codes)} / {len(raw_codes)} 件 ➔ Phase 2 へパスしました。")
-
-            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ並列解析")
+            # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
+            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
             p2_msg = st.empty()
             p2_bar = st.progress(0)
             
@@ -2816,199 +2706,239 @@ with tab1:
             hit_codes_s = []
             hit_codes_a = []
 
-            # 🚨 期間から営業日数を逆算するヘルパー関数
-            def get_lookback_days(period_str):
-                if period_str == "52週": return 250
-                if period_str == "2年": return 500
-                if period_str == "6か月": return 125
-                if period_str == "3か月": return 65
-                return 250
-
-            def worker_t1(code):
-                try:
-                    df_fins = get_historical_statements(code)
-                    if df_fins is None or df_fins.empty:
-                        return None, None
-                    
-                    is_hit, rank = analyze_fundamental_momentum(
-                        df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
-                    )
-                    
-                    if is_hit:
-                        # 🚨 期間高値の判定を追加（既存の get_single_data を裏で呼び出し、高値圏か確認）
-                        # ※ 今回はスキャン速度優先のため、ファンダをクリアした銘柄にのみ日足を取得して最終確認
-                        lookback = get_lookback_days(t1_period)
-                        # ここで「高値から何％以内か」等の詳細なテクニカル判定を追加できます。
-                        # 今回はS級・A級としてそのまま返す仕様にしています。
-                        return str(code), rank
-                except Exception:
-                    pass
-                return None, None
-
             total_p2 = len(p_filtered_codes)
             processed_p2 = 0
             
             if total_p2 > 0:
-                with ThreadPoolExecutor(max_workers=8) as executor:
-                    futures = [executor.submit(worker_t1, c) for c in p_filtered_codes]
-                    for future in as_completed(futures):
-                        processed_p2 += 1
-                        if processed_p2 % 5 == 0 or processed_p2 == total_p2:
-                            progress_pct = int((processed_p2 / total_p2) * 100)
-                            p2_bar.progress(processed_p2 / total_p2)
-                            p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%)")
+                for idx, code in enumerate(p_filtered_codes):
+                    processed_p2 += 1
+                    
+                    # 5件に1回更新（UI負荷軽減）
+                    if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                        progress_pct = int((processed_p2 / total_p2) * 100)
+                        p2_bar.progress(processed_p2 / total_p2)
+                        p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
 
-                        c_res, r_res = future.result()
-                        if c_res:
-                            if "S級" in r_res:
-                                hit_codes_s.append(c_res)
-                            else:
-                                hit_codes_a.append(c_res)
+                    try:
+                        df_fins = get_historical_statements(code)
+                        if df_fins is not None and not df_fins.empty:
+                            is_hit, rank = analyze_fundamental_momentum(
+                                df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r)
+                            )
+                            if is_hit:
+                                if "S級" in rank:
+                                    hit_codes_s.append(str(code))
+                                else:
+                                    hit_codes_a.append(str(code))
+                    except Exception:
+                        pass
+                
+                time_p2 = time.time() - t_start_p2
+                p2_bar.progress(1.0)
+                p2_msg.success(f"✅ Phase 2 完了: すべての解析が終了しました。")
+                
+                all_hits = hit_codes_s + hit_codes_a
+                time_total = time.time() - t_start_total
+                status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
+                
+                st.divider()
+                st.write("### 🎯 スキャン結果")
+                st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
+                if hit_codes_s:
+                    st.code(", ".join(hit_codes_s))
+                else:
+                    st.info("S級条件に合致する銘柄はありませんでした。")
+                    
+                st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
+                if hit_codes_a:
+                    st.code(", ".join(hit_codes_a))
+                else:
+                    st.info("A級条件に合致する銘柄はありませんでした。")
+                    
+                st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
+                st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
+                st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
+                st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
+
             else:
                 p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
-                            
-            t_end_p2 = time.time()
-            time_p2 = t_end_p2 - t_start_p2
-            t_end_total = time.time()
-            time_total = t_end_total - t_start_total
+                status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
-            p2_msg.success(f"✅ [Phase 2 完了] すべての解析が終了しました。")
-            p2_bar.empty()
-
-            all_hits = hit_codes_s + hit_codes_a
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
+    # ==========================================
+    # 🛠️ 【参謀用】ファンダメンタルズ生レスポンスX線検査装置
+    # ==========================================
+    st.divider()
+    with st.expander("🛠️ 【参謀用】J-Quants V2 生レスポンス直視デバッグ", expanded=False):
+        test_code = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="debug_code_xray")
+        if st.button("X線検査を実行", key="debug_btn_xray"):
+            api_code = str(test_code) if len(str(test_code)) >= 5 else str(test_code) + "0"
+            url = f"{BASE_URL}/fins/summary?code={api_code}"
+            st.write(f"📡 接続先URL: `{url}`")
             
-        st.success(f"✅ 条件突破銘柄: {len(all_hits)}件 (S級🎯: {len(hit_codes_s)}件 / A級🟢: {len(hit_codes_a)}件)")
-        st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
-        
-        st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
-        st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
-        st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
+            try:
+                r = api_session.get(url, timeout=10.0)
+                st.write(f"📊 HTTPステータスコード: `{r.status_code}`")
+                if r.status_code == 200:
+                    raw_json = r.json()
+                    st.success("✅ HTTP 200 応答成功！")
+                    st.json(raw_json)
+                else:
+                    st.error(f"❌ サーバーから拒絶されました (HTTP {r.status_code})")
+                    st.text(r.text)
+            except Exception as e:
+                st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
 # 📉 TAB2: 売り銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab2:
-    st.markdown('### 📉 売り銘柄広域スキャン', unsafe_allow_html=True)
-    st.caption("※直近2四半期の業績鈍化・衰退をベースに、空売り候補（S級・A級）を広域索敵します。")
+    st.markdown('### 📉 売り（空売り）銘柄広域スキャン', unsafe_allow_html=True)
+    st.caption("※直近2四半期の売上・利益の成長鈍化・衰退をベースに、空売り候補（S級・A級）を広域索敵します。")
     
+    # 1. フォームの定義（TAB2専用のKeyを設定）
     with st.form("tab2_sell_scan_form", clear_on_submit=False):
         col2_1, col2_2, col2_3 = st.columns(3)
+        # TAB2独自の期間フィルタ（デフォルト6ヶ月）
         t2_period = col2_1.selectbox("期間フィルタ (安値判定基準)", ["6か月", "3か月"], index=0)
-        t2_mcap = col2_2.selectbox("時価総額フィルタ (億円以上)", [1000, 750, 500], index=0)
-        t2_vol = col2_3.selectbox("売買代金フィルタ (億円以上)", [3, 2, 1], index=0)
         
         col2_4, col2_5, col2_6 = st.columns(3)
         t2_p_min = col2_4.number_input("価格下限 (円)", value=100, step=100, key="t2_p_min")
         t2_p_max = col2_5.number_input("価格上限 (円)", value=10000, step=100, key="t2_p_max")
         
-        st.markdown("**(固定スキャン条件: 直近2四半期連続クリア)** \n"
-                    f"・売上: 前四半期比 `5%`未満 (マイナスでS級💀)  \n"
-                    f"・営業利益: 前四半期比 `10%`未満 (マイナスでS級💀)  \n"
-                    f"・経常利益: 前四半期比 `5%`未満 (マイナスでS級💀)  \n"
-                    f"・一株利益: 前四半期比 `10%`未満 (マイナスでS級💀)")
+        st.markdown("**(固定スキャン条件: 直近2四半期連続で以下の衰退条件に合致)** \n"
+                    "・売上: 前四半期比 `5%`未満  \n"
+                    "・営業利益: 前四半期比 `10%`未満  \n"
+                    "・経常利益: 前四半期比 `5%`未満  \n"
+                    "・一株利益: 前四半期比 `10%`未満  \n"
+                    "*(※ 全てマイナス成長（赤字転落・大幅減益）の場合は S級💀)*")
         
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
 
+    # 2. スキャン実行処理（完全直列・防弾仕様）
     if btn_scan_t2:
-        st.write("---")
-        # === Phase 1: 価格・流動性フィルタ ===
-        st.write("#### 🔄 [Phase 1/2] 市場全銘柄から価格条件でスクリーニング")
-        p1_msg = st.empty()
-        
-        all_codes = []
-        try:
-            df_latest = get_all_latest_prices_bulk()
-            if df_latest is not None and not df_latest.empty:
-                df_latest_filtered = df_latest[
-                    (df_latest['Price'] >= t2_p_min) & 
-                    (df_latest['Price'] <= t2_p_max)
-                ]
-                all_codes = df_latest_filtered['Code'].astype(str).tolist()
-            else:
-                all_codes = list(master_map.keys())
-        except Exception:
-            all_codes = list(master_map.keys())
-            
-        p_filtered_codes = []
-        for code in all_codes:
-            code_str = str(code).replace('.0', '')
-            p_filtered_codes.append(code_str)
-            
-        p1_msg.success(f"✅ Phase 1 完了: 対象 {len(p_filtered_codes)} 銘柄を抽出しました。")
-        
-        # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
-        st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
-        p2_msg = st.empty()
-        p2_bar = st.progress(0)
-        
         import time
-        t_start_p2 = time.time()
-        hit_codes_s = []
-        hit_codes_a = []
-
-        total_p2 = len(p_filtered_codes)
-        processed_p2 = 0
+        st.write("---")
         
-        if total_p2 > 0:
-            for idx, code in enumerate(p_filtered_codes):
-                processed_p2 += 1
+        with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
+            t_start_total = time.time()
+            
+            # === Phase 1: 価格フィルタ ===
+            st.write("#### 🔄 [Phase 1/2] 価格帯フィルタ一括足切り")
+            p1_msg_t2 = st.empty()
+            p1_msg_t2.info("⏳ J-Quantsサーバーから全銘柄の最新価格データを一括取得中...")
+            t_start_p1 = time.time()
+            
+            all_codes = []
+            try:
+                df_latest = get_all_latest_prices_bulk()
+                if df_latest is not None and not df_latest.empty:
+                    df_latest_filtered = df_latest[
+                        (df_latest['Price'] >= float(t2_p_min)) & 
+                        (df_latest['Price'] <= float(t2_p_max))
+                    ]
+                    all_codes = df_latest_filtered['Code'].astype(str).tolist()
+                else:
+                    p1_msg_t2.error("❌ J-Quantsからの株価取得に失敗しました（APIペナルティ中）。数分待ってから再度お試しください。")
+                    st.stop()
+            except Exception as e:
+                p1_msg_t2.error(f"❌ 株価取得エラー: {e}")
+                st.stop()
                 
-                if processed_p2 % 5 == 0 or processed_p2 == total_p2:
-                    progress_pct = int((processed_p2 / total_p2) * 100)
-                    p2_bar.progress(processed_p2 / total_p2)
-                    p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
+            p_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            time_p1 = time.time() - t_start_p1
+            p1_msg_t2.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
+            
+            # === Phase 2: ファンダ解析（完全直列・防弾スロットル版） ===
+            st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析")
+            p2_msg_t2 = st.empty()
+            p2_bar_t2 = st.progress(0)
+            
+            t_start_p2 = time.time()
+            hit_codes_s = []
+            hit_codes_a = []
 
-                try:
-                    df_fins = get_historical_statements(code)
-                    if df_fins is not None and not df_fins.empty:
-                        is_hit, rank = analyze_fundamental_momentum(
-                            df_fins, mode="sell"
-                        )
-                        if is_hit:
-                            if "S級" in rank:
-                                hit_codes_s.append(str(code))
-                            else:
-                                hit_codes_a.append(str(code))
-                except Exception:
-                    pass
+            total_p2 = len(p_filtered_codes)
+            processed_p2 = 0
             
-            p2_bar.progress(1.0)
-            p2_msg.success(f"✅ Phase 2 完了: 総スキャン時間 {time.time() - t_start_p2:.1f} 秒")
-            
-            st.divider()
-            st.write("### 🎯 スキャン結果")
-            st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
-            if hit_codes_s:
-                st.code(", ".join(hit_codes_s))
-            else:
-                st.info("S級条件に合致する銘柄はありませんでした。")
+            if total_p2 > 0:
+                for idx, code in enumerate(p_filtered_codes):
+                    processed_p2 += 1
+                    
+                    # 5件に1回更新（UI負荷軽減）
+                    if processed_p2 % 5 == 0 or processed_p2 == total_p2:
+                        progress_pct = int((processed_p2 / total_p2) * 100)
+                        p2_bar_t2.progress(processed_p2 / total_p2)
+                        p2_msg_t2.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
+
+                    try:
+                        df_fins = get_historical_statements(code)
+                        if df_fins is not None and not df_fins.empty:
+                            # 🎯 TAB2専用: mode="sell" で呼び出し（閾値は関数内でハードコードされているため引数不要）
+                            is_hit, rank = analyze_fundamental_momentum(
+                                df_fins, mode="sell"
+                            )
+                            if is_hit:
+                                if "S級" in rank:
+                                    hit_codes_s.append(str(code))
+                                else:
+                                    hit_codes_a.append(str(code))
+                    except Exception:
+                        pass
                 
-            st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
-            if hit_codes_a:
-                st.code(", ".join(hit_codes_a))
+                time_p2 = time.time() - t_start_p2
+                p2_bar_t2.progress(1.0)
+                p2_msg_t2.success(f"✅ Phase 2 完了: すべての解析が終了しました。")
+                
+                all_hits = hit_codes_s + hit_codes_a
+                time_total = time.time() - t_start_total
+                status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
+                
+                st.divider()
+                st.write("### 🎯 スキャン結果")
+                st.write(f"**【S級】条件完全突破銘柄:** {len(hit_codes_s)} 件")
+                if hit_codes_s:
+                    st.code(", ".join(hit_codes_s))
+                else:
+                    st.info("S級条件に合致する銘柄はありませんでした。")
+                    
+                st.write(f"**【A級】条件突破銘柄:** {len(hit_codes_a)} 件")
+                if hit_codes_a:
+                    st.code(", ".join(hit_codes_a))
+                else:
+                    st.info("A級条件に合致する銘柄はありませんでした。")
+                    
+                st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
+                st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
+                st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
+                st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
+
             else:
-                st.info("A級条件に合致する銘柄はありませんでした。")
-        else:
-            p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
-                            
-            t_end_p2 = time.time()
-            time_p2 = t_end_p2 - t_start_p2
-            t_end_total = time.time()
-            time_total = t_end_total - t_start_total
+                p2_msg_t2.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
+                status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
-            p2_msg.success(f"✅ [Phase 2 完了] すべての解析が終了しました。")
-            p2_bar.empty()
-
-            all_hits_sell = hit_codes_s_sell + hit_codes_a_sell
-            status.update(label=f"🎯 スキャン完了！ 計 {len(all_hits_sell)} 銘柄を捕捉しました。 (総計: {time_total:.2f}秒)", state="complete", expanded=False)
+    # ==========================================
+    # 🛠️ 【参謀用】ファンダメンタルズ生レスポンスX線検査装置 (TAB2専用Key版)
+    # ==========================================
+    st.divider()
+    with st.expander("🛠️ 【参謀用】J-Quants V2 生レスポンス直視デバッグ (TAB2)", expanded=False):
+        test_code_t2 = st.text_input("透視する銘柄コード (例: 7203)", "7203", key="debug_code_xray_t2")
+        if st.button("X線検査を実行", key="debug_btn_xray_t2"):
+            api_code = str(test_code_t2) if len(str(test_code_t2)) >= 5 else str(test_code_t2) + "0"
+            url = f"{BASE_URL}/fins/summary?code={api_code}"
+            st.write(f"📡 接続先URL: `{url}`")
             
-        st.success(f"✅ 条件突破銘柄: {len(all_hits_sell)}件 (S級💀: {len(hit_codes_s_sell)}件 / A級📉: {len(hit_codes_a_sell)}件)")
-        st.caption(f"⏱️ **処理時間** ➔ [1. 価格足切り]: `{time_p1:.2f}秒` | [2. ファンダ解析]: `{time_p2:.2f}秒` | 🟢 **[総計]**: `{time_total:.2f}秒`")
-        
-        st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
-        st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
-        st.code(", ".join(all_hits_sell) if all_hits_sell else "条件に合致する銘柄はありませんでした。", language="text")
+            try:
+                r = api_session.get(url, timeout=10.0)
+                st.write(f"📊 HTTPステータスコード: `{r.status_code}`")
+                if r.status_code == 200:
+                    raw_json = r.json()
+                    st.success("✅ HTTP 200 応答成功！")
+                    st.json(raw_json)
+                else:
+                    st.error(f"❌ サーバーから拒絶されました (HTTP {r.status_code})")
+                    st.text(r.text)
+            except Exception as e:
+                st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
