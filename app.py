@@ -183,55 +183,29 @@ def get_all_latest_prices_bulk():
     return {}
 
 # ==========================================
-# 📊 時系列・決算データフェッチ関数 (J-Quants V2 正式仕様・1.1秒防弾版)
+# 📊 【新・爆速版】ローカルDBからのファンダメンタルズ読込エンジン
 # ==========================================
-import threading
-import time
+import pickle
+import os
 
-if '_JQUANTS_API_LOCK' not in globals():
-    global _JQUANTS_API_LOCK, _LAST_API_TIME
-    _JQUANTS_API_LOCK = threading.Lock()
-    _LAST_API_TIME = [0.0]
+@st.cache_resource(ttl=3600*24) # 1日キャッシュしてメモリに常駐させる
+def load_local_fundamentals_db():
+    """19時にBotが集めたデータを一瞬でメモリにロードする"""
+    db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl")
+    if os.path.exists(db_path):
+        with open(db_path, "rb") as f:
+            return pickle.load(f)
+    return {}
 
-@st.cache_data(ttl=604800, max_entries=5000, show_spinner=False)
 def get_historical_statements(code):
+    """API通信を一切行わず、ロード済みのローカルDBからデータを返すだけ"""
+    db = load_local_fundamentals_db()
+    
+    if not db:
+        return None
+        
     api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
-    
-    # 🎯 V2の正しい正式エンドポイント
-    url = f"{BASE_URL}/fins/summary?code={api_code}"
-    
-    for attempt in range(3):
-        with _JQUANTS_API_LOCK:
-            now = time.time()
-            elapsed = now - _LAST_API_TIME[0]
-            # 🛡️ J-Quants Lightプラン防弾スロットル（1.1秒の絶対確保）
-            if elapsed < 1.1: 
-                time.sleep(1.1 - elapsed)
-            
-            try:
-                r = api_session.get(url, timeout=10.0)
-                _LAST_API_TIME[0] = time.time() 
-            except Exception:
-                _LAST_API_TIME[0] = time.time()
-                continue
-                
-        if r.status_code == 200:
-            raw_json = r.json()
-            data = raw_json.get("summary") or raw_json.get("statements") or raw_json.get("data") or raw_json.get("results") or []
-            if data:
-                data = data[-8:] # 直近8四半期（2年分）に圧縮
-                import pandas as pd
-                df = pd.DataFrame(data)
-                for col in df.columns:
-                    if col not in ['Date', 'DisclosedDate', 'LocalCode']:
-                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                return df
-            return None
-        elif r.status_code == 429:
-            # 429を食らった場合は即座に3秒待機してリトライ
-            time.sleep(3.0) 
-            
-    return None
+    return db.get(api_code, None)
 
 # ==========================================
 # 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY 対応版）
