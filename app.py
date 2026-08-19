@@ -234,75 +234,120 @@ def get_historical_statements(code):
     return None
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（QoQ成長率判定）
+# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY 対応版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
-    """直近の四半期データから、売上・利益の連続成長率を厳格に判定する"""
     try:
-        # 最低3四半期のデータがないと、2四半期連続の比較ができないため足切り
-        if df is None or len(df) < 3:
+        # YoY計算のためには最低5四半期（1年と1四半期）のデータが必要
+        if df is None or len(df) < 5:
             return False, ""
         
-        # J-Quantsの財務カラムが存在しない場合の安全策
+        # 安全のため必要なカラムを確保
         for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare']:
             if col not in df.columns:
                 df[col] = 0.0
                 
-        # 古い順に並んでいる前提（iloc[-1]が最新四半期）
-        q0 = df.iloc[-1] # 最新
-        q1 = df.iloc[-2] # 1つ前
-        q2 = df.iloc[-3] # 2つ前
+        # 💡 累計決算を「四半期単体」に分解する
+        std_df = df.copy()
+        for i in range(1, len(df)):
+            try:
+                curr_sales = float(df['NetSales'].iloc[i])
+                prev_sales = float(df['NetSales'].iloc[i-1])
+            except:
+                curr_sales, prev_sales = 0.0, 0.0
+                
+            curr_type = str(df.get('TypeOfCurrentPeriod', pd.Series([''])).iloc[i])
+            
+            is_q1 = False
+            if '1Q' in curr_type:
+                is_q1 = True
+            elif curr_sales < prev_sales and prev_sales > 0:
+                is_q1 = True
+                
+            if not is_q1:
+                for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare']:
+                    try:
+                        c_val = float(df[col].iloc[i])
+                        p_val = float(df[col].iloc[i-1])
+                        std_df.iloc[i, std_df.columns.get_loc(col)] = c_val - p_val
+                    except Exception:
+                        pass
+                        
+        # 🎯 【超重要改修】 QoQ (前四半期比) ではなく YoY (前年同期比) で比較する
+        q0 = std_df.iloc[-1] # 最新四半期
+        q1 = std_df.iloc[-2] # 1つ前
+        
+        y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
+        
+        # 1つ前の四半期に対する前年同期が存在するか確認 (最低6四半期必要)
+        has_y1 = len(std_df) >= 6
+        if has_y1:
+            y1 = std_df.iloc[-6]
+        else:
+            y1 = None
         
         def calc_gr(cur, prev):
             try:
                 c, p = float(cur), float(prev)
-                if p == 0: return 0.0
+                if p <= 0: return 0.0 # 前期が赤字や0の場合は成長率測定不能
                 return ((c - p) / abs(p)) * 100.0
             except Exception:
                 return 0.0
                 
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            s_q0 = calc_gr(q0['NetSales'], q1['NetSales'])
-            op_q0 = calc_gr(q0['OperatingProfit'], q1['OperatingProfit'])
-            or_q0 = calc_gr(q0['OrdinaryProfit'], q1['OrdinaryProfit'])
-            ep_q0 = calc_gr(q0['EarningsPerShare'], q1['EarningsPerShare'])
+            s_q0 = calc_gr(q0['NetSales'], y0['NetSales'])
+            op_q0 = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
+            or_q0 = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
+            ep_q0 = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
             
-            s_q1 = calc_gr(q1['NetSales'], q2['NetSales'])
-            op_q1 = calc_gr(q1['OperatingProfit'], q2['OperatingProfit'])
-            or_q1 = calc_gr(q1['OrdinaryProfit'], q2['OrdinaryProfit'])
-            ep_q1 = calc_gr(q1['EarningsPerShare'], q2['EarningsPerShare'])
-            
-            # 【絶対条件】2四半期連続クリア
-            if not (s_q0 >= sales_req and s_q1 >= sales_req): return False, ""
-            if not (op_q0 >= 15.0 and op_q1 >= 15.0): return False, ""
-            if not (or_q0 >= ord_req and or_q1 >= ord_req): return False, ""
-            if not (ep_q0 >= 15.0 and ep_q1 >= 15.0): return False, ""
-            
-            # S級判定 (営業・経常・EPSがすべて20%以上)
+            # 1つ前の四半期の前年同期データがあれば2期連続判定、なければ最新1期のみで判定
+            if has_y1:
+                s_q1 = calc_gr(q1['NetSales'], y1['NetSales'])
+                op_q1 = calc_gr(q1['OperatingProfit'], y1['OperatingProfit'])
+                or_q1 = calc_gr(q1['OrdinaryProfit'], y1['OrdinaryProfit'])
+                ep_q1 = calc_gr(q1['EarningsPerShare'], y1['EarningsPerShare'])
+                
+                # 【絶対条件】直近2四半期連続で「前年同期比」クリア
+                if not (s_q0 >= sales_req and s_q1 >= sales_req): return False, ""
+                if not (op_q0 >= 15.0 and op_q1 >= 15.0): return False, ""
+                if not (or_q0 >= ord_req and or_q1 >= ord_req): return False, ""
+                if not (ep_q0 >= 15.0 and ep_q1 >= 15.0): return False, ""
+            else:
+                # 最新1期のみで判定
+                if not (s_q0 >= sales_req): return False, ""
+                if not (op_q0 >= 15.0): return False, ""
+                if not (or_q0 >= ord_req): return False, ""
+                if not (ep_q0 >= 15.0): return False, ""
+
+            # S級判定
             if op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0:
                 return True, "S級🎯"
             return True, "A級🟢"
             
         # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            s_q0 = calc_gr(q0['NetSales'], q1['NetSales'])
-            op_q0 = calc_gr(q0['OperatingProfit'], q1['OperatingProfit'])
-            or_q0 = calc_gr(q0['OrdinaryProfit'], q1['OrdinaryProfit'])
-            ep_q0 = calc_gr(q0['EarningsPerShare'], q1['EarningsPerShare'])
+            s_q0 = calc_gr(q0['NetSales'], y0['NetSales'])
+            op_q0 = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
+            or_q0 = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
+            ep_q0 = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
             
-            s_q1 = calc_gr(q1['NetSales'], q2['NetSales'])
-            op_q1 = calc_gr(q1['OperatingProfit'], q2['OperatingProfit'])
-            or_q1 = calc_gr(q1['OrdinaryProfit'], q2['OrdinaryProfit'])
-            ep_q1 = calc_gr(q1['EarningsPerShare'], q2['EarningsPerShare'])
+            if has_y1:
+                s_q1 = calc_gr(q1['NetSales'], y1['NetSales'])
+                op_q1 = calc_gr(q1['OperatingProfit'], y1['OperatingProfit'])
+                or_q1 = calc_gr(q1['OrdinaryProfit'], y1['OrdinaryProfit'])
+                ep_q1 = calc_gr(q1['EarningsPerShare'], y1['EarningsPerShare'])
+                
+                if not (s_q0 < 5.0 and s_q1 < 5.0): return False, ""
+                if not (op_q0 < 10.0 and op_q1 < 10.0): return False, ""
+                if not (or_q0 < 5.0 and or_q1 < 5.0): return False, ""
+                if not (ep_q0 < 10.0 and ep_q1 < 10.0): return False, ""
+            else:
+                if not (s_q0 < 5.0): return False, ""
+                if not (op_q0 < 10.0): return False, ""
+                if not (or_q0 < 5.0): return False, ""
+                if not (ep_q0 < 10.0): return False, ""
             
-            # 【絶対条件】2四半期連続の成長鈍化・衰退
-            if not (s_q0 < 5.0 and s_q1 < 5.0): return False, ""
-            if not (op_q0 < 10.0 and op_q1 < 10.0): return False, ""
-            if not (or_q0 < 5.0 and or_q1 < 5.0): return False, ""
-            if not (ep_q0 < 10.0 and ep_q1 < 10.0): return False, ""
-            
-            # S級判定 (すべてマイナス成長＝赤字転落・大幅減益)
             if s_q0 < 0 and op_q0 < 0 and or_q0 < 0 and ep_q0 < 0:
                 return True, "S級💀"
             return True, "A級📉"
