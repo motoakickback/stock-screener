@@ -1,0 +1,37 @@
+name: 🌙 19:00 Daily Fundamentals Fetch
+
+on:
+  schedule:
+    # 毎日 UTC 10:00 (日本時間 19:00) に自動実行
+    - cron: '0 10 * * *'
+  workflow_dispatch: # 手動で「今すぐ実行」ボタンを押せるようにする設定
+
+jobs:
+  fetch-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 リポジトリをチェックアウト
+        uses: actions/checkout@v3
+
+      - name: 🐍 Pythonのセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 📦 必要なライブラリのインストール
+        run: |
+          pip install requests pandas
+
+      - name: 🚀 兵站Botの実行（データ収集）
+        env:
+          JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
+          JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
+        run: python fetch_fundamentals_bot.py
+
+      - name: 💾 取得したデータをGitHubへ保存（プッシュ）
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add fundamentals_db.pkl
+          git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
+          git push
