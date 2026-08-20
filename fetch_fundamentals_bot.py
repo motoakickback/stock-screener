@@ -6,12 +6,12 @@ import os
 from datetime import datetime
 
 # ==========================================
-# ⚙️ J-Quants V2 API 設定（APIキー方式・完全修正版）
+# ⚙️ J-Quants V2 API 設定（全方位・自動適応版）
 # ==========================================
 JQUANTS_API_KEY = os.getenv("JQUANTS_API_KEY", "").strip()
 BASE_URL = "https://api.jquants.com/v2"
 
-print(f"[{datetime.now()}] 🌙 兵站部隊（ファンダメンタルズ収集・V2）出撃...")
+print(f"[{datetime.now()}] 🌙 兵站部隊（ファンダメンタルズ収集・V2自動適応版）出撃...")
 
 if not JQUANTS_API_KEY:
     print("❌ エラー: JQUANTS_API_KEY が設定されていません。GitHub Secretsを確認してください。")
@@ -21,14 +21,13 @@ headers = {'x-api-key': JQUANTS_API_KEY}
 session = requests.Session()
 session.headers.update(headers)
 
-# 1. 全銘柄コードの取得（V2正しいエンドポイント: /v2/equities/master）
+# 1. 全銘柄コードの取得
 try:
     print("📡 J-Quants V2 サーバーへ接続中（銘柄マスター取得）...")
     r_info = session.get(f"{BASE_URL}/equities/master", timeout=10.0)
     r_info.raise_for_status()
     
     res_json = r_info.json()
-    # V2のレスポンス構造（equities または data キーに対応）
     info_data = res_json.get("equities") or res_json.get("data") or res_json.get("info") or []
     
     all_codes = []
@@ -44,10 +43,11 @@ except Exception as e:
         print(f"📝 サーバー応答: {r_info.text}")
     exit(1)
 
-# 2. 1.1秒の絶対防弾行進で全件取得（リアルタイム実況結線版）
+# 2. 1.1秒の絶対防弾行進で全件取得（全方位キー自動適応型）
 fundamentals_db = {}
 total = len(all_codes)
 start_time = time.time()
+success_count = 0
 
 print(f"🚀 全 {total} 銘柄のファンダメンタルズ強襲索敵を開始します...")
 
@@ -60,8 +60,17 @@ for i, code in enumerate(all_codes):
     try:
         r = session.get(url, timeout=10.0)
         if r.status_code == 200:
-            data = r.json().get("summary", [])
+            res_data = r.json()
+            # 💡 レスポンスのキー名（summary, statements, data, fins 等）のどれであっても自動キャッチ
+            data = (
+                res_data.get("summary") or 
+                res_data.get("statements") or 
+                res_data.get("data") or 
+                res_data.get("fins") or []
+            )
+            
             if data:
+                success_count += 1
                 df = pd.DataFrame(data[-8:])
                 for col in df.columns:
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
@@ -72,13 +81,14 @@ for i, code in enumerate(all_codes):
             print(f"⚠️ [429検知] サーバー負荷警報。10秒間、息を潜めます...", flush=True)
             time.sleep(10.0)
             
-        # 🎯【超重要】flush=True を指定することで、待機せず即座に画面へログを叩き出します
         elapsed = time.time() - start_time
         percent = ((i + 1) / total) * 100
-        print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄コード: {api_code} 確保完了 (経過: {elapsed:.1f}秒)", flush=True)
+        
+        # 100銘柄ごと、または最初の数銘柄で状況を可視化
+        if (i + 1) <= 5 or (i + 1) % 100 == 0:
+            print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄: {api_code} 確保完了 (有効データ: {success_count}件, 経過: {elapsed:.1f}秒)", flush=True)
             
     except Exception as e:
-        print(f"⚠️ 銘柄 {api_code} 取得スキップ (理由: {e})", flush=True)
         continue
 
 # 3. ローカルDBとして保存
@@ -86,4 +96,4 @@ db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl")
 with open(db_path, "wb") as f:
     pickle.dump(fundamentals_db, f)
 
-print(f"[{datetime.now()}] ✅ 全ミッション完了！ {len(fundamentals_db)} 件の決算データを焼き付けました。")
+print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 {len(fundamentals_db)} 件の決算データを焼き付けました。")
