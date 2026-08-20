@@ -106,33 +106,25 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（デバッグ・プローブ搭載版）
+# 🧠 ファンダメンタルズ解析エンジン（画面直結デバッグ版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
-    import os
+    import streamlit as st
     import pandas as pd
 
     try:
-        if df is None or len(df) == 0:
+        if df is None or len(df) < 1:
             return False, ""
             
-        # 🛠️ 【緊急デバッグ】最初の1件の生データをCSVとターミナルに強制出力する
-        debug_file = "debug_fundamental_data.csv"
-        if not os.path.exists(debug_file):
-            try:
-                df.to_csv(debug_file, index=False, encoding="utf-8-sig")
-            except:
-                pass
-                
-        # ターミナル（黒い画面）に実際のカラム名と中身を出力
-        if "DEBUG_PRINTED" not in os.environ:
-            print("\n" + "="*50)
-            print("🐛 【緊急デバッグ】J-Quantsから届いている実際のデータ構造")
-            print("カラム一覧:", df.columns.tolist())
-            print("最新四半期データ:", df.iloc[-1].to_dict() if len(df) > 0 else "None")
-            print("="*50 + "\n")
-            os.environ["DEBUG_PRINTED"] = "1"
-        # ------------------------------------------------
+        # 🚨 【絶対画面に出すデバッグ】最初の1件目で強制的にブラウザ画面へ表示
+        if "debug_ui_shown" not in st.session_state:
+            st.session_state.debug_ui_shown = True
+            st.error("🚨 【緊急デバッグ】J-Quants生データの正体")
+            st.code(f"カラム一覧: {df.columns.tolist()}")
+            st.write("▼ 最新のデータ5件")
+            st.dataframe(df.tail(5)) 
+            # ↓ 確実に画面に残すため、無条件で1件だけ合格にしてリストに載せる
+            return True, "🐛 デバッグ強制合格"
 
         # カラム名を動的に特定（大文字・小文字・V1/V2の揺れを完全吸収）
         cols = [str(c).lower() for c in df.columns]
@@ -223,10 +215,8 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
 
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            # S級判定
             if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
-            # A級判定
             if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
                 return True, "A級🟢"
             return False, ""
@@ -243,9 +233,9 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             return True, "A級📉"
             
     except Exception as e:
-        if "DEBUG_ERR_PRINTED" not in os.environ:
-            print(f"🚨 ファンダ解析エラー: {e}")
-            os.environ["DEBUG_ERR_PRINTED"] = "1"
+        if "DEBUG_ERR_PRINTED" not in st.session_state:
+            st.error(f"🚨 ファンダ解析エラー: {e}")
+            st.session_state["DEBUG_ERR_PRINTED"] = True
         pass
     return False, ""
     
