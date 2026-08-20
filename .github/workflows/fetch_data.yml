@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: read    # 🎯 追加: Secrets等へのアクセス権限を強化
 
 jobs:
   fetch-and-update:
@@ -26,14 +27,14 @@ jobs:
           pip install requests pandas
 
       - name: 🚀 兵站Botの実行（データ収集）
-        env:
-          JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
-          JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
-        run: python fetch_fundamentals_bot.py
+        # 🎯 変更: コマンドラインの直前で変数を注入する最も確実な手法
+        run: |
+          export JQUANTS_MAIL="${{ secrets.JQUANTS_MAIL }}"
+          export JQUANTS_PASS="${{ secrets.JQUANTS_PASS }}"
+          python fetch_fundamentals_bot.py
 
       - name: 💾 取得したデータをGitHubへ保存（プッシュ）
         run: |
-          # 🚨 ファイルが無事に作られた時だけ保存処理を行う防弾ロジック
           if [ -f fundamentals_db.pkl ]; then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
