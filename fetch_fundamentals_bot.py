@@ -44,9 +44,12 @@ except Exception as e:
         print(f"📝 サーバー応答: {r_info.text}")
     exit(1)
 
-# 2. 1.1秒の絶対防弾行進で全件取得
+# 2. 1.1秒の絶対防弾行進で全件取得（リアルタイム実況結線版）
 fundamentals_db = {}
 total = len(all_codes)
+start_time = time.time()
+
+print(f"🚀 全 {total} 銘柄のファンダメンタルズ強襲索敵を開始します...")
 
 for i, code in enumerate(all_codes):
     api_code = code if len(code) >= 5 else code + "0"
@@ -64,14 +67,18 @@ for i, code in enumerate(all_codes):
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 fundamentals_db[api_code] = df
+                
         elif r.status_code == 429:
-            print(f"⚠️ 429エラー検知。5秒待機します...")
-            time.sleep(5.0)
+            print(f"⚠️ [429検知] サーバー負荷警報。10秒間、息を潜めます...", flush=True)
+            time.sleep(10.0)
             
-        if (i + 1) % 100 == 0:
-            print(f"📡 進捗: {i + 1} / {total} 銘柄完了...")
+        # 🎯【超重要】flush=True を指定することで、待機せず即座に画面へログを叩き出します
+        elapsed = time.time() - start_time
+        percent = ((i + 1) / total) * 100
+        print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄コード: {api_code} 確保完了 (経過: {elapsed:.1f}秒)", flush=True)
             
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ 銘柄 {api_code} 取得スキップ (理由: {e})", flush=True)
         continue
 
 # 3. ローカルDBとして保存
