@@ -2959,12 +2959,30 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # TAB1, TAB2の結果からデフォルトの銘柄コードリストを自動生成
+    # 🚨 【修正】正しいセッション変数名から抽出し、あらゆるデータ型に対応
     default_codes = []
-    if st.session_state.get('tab1_results'):
-        default_codes.extend([str(r['Code']) for r in st.session_state['tab1_results']])
-    if st.session_state.get('tab2_results'):
-        default_codes.extend([str(r['Code']) for r in st.session_state['tab2_results']])
+    
+    # TAB1からの抽出
+    t1_res = st.session_state.get('tab1_scan_results', [])
+    if t1_res:
+        for r in t1_res:
+            if isinstance(r, dict) and 'Code' in r:
+                default_codes.append(str(r['Code']))
+            elif isinstance(r, dict) and 'code' in r:
+                default_codes.append(str(r['code']))
+            else:
+                default_codes.append(str(r)) # 文字列等の直入りの場合
+
+    # TAB2からの抽出
+    t2_res = st.session_state.get('tab2_scan_results', [])
+    if t2_res:
+        for r in t2_res:
+            if isinstance(r, dict) and 'Code' in r:
+                default_codes.append(str(r['Code']))
+            elif isinstance(r, dict) and 'code' in r:
+                default_codes.append(str(r['code']))
+            else:
+                default_codes.append(str(r))
     
     # 重複排除してカンマ区切りの文字列に
     default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
@@ -2987,6 +3005,7 @@ with tab3:
             target_codes = []
             for c in raw_codes:
                 try:
+                    # 数字のみを抽出（文字列混入対策）
                     target_codes.append(int(c[:4]))
                 except:
                     pass
