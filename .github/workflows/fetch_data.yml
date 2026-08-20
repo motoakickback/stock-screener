@@ -6,7 +6,6 @@ on:
     - cron: '0 10 * * *'
   workflow_dispatch: # 手動で「今すぐ実行」ボタンを押せるようにする設定
 
-# 🚨 【重要追加】Botにリポジトリへの上書き保存（Push）権限を付与する
 permissions:
   contents: write
 
@@ -34,8 +33,14 @@ jobs:
 
       - name: 💾 取得したデータをGitHubへ保存（プッシュ）
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add fundamentals_db.pkl
-          git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
-          git push
+          # 🚨 ファイルが無事に作られた時だけ保存処理を行う防弾ロジック
+          if [ -f fundamentals_db.pkl ]; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add fundamentals_db.pkl
+            git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
+            git push
+          else
+            echo "❌ エラー: fundamentals_db.pkl が生成されていません。Botのログイン等に失敗した可能性があります。"
+            exit 1
+          fi
