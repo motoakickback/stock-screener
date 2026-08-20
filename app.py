@@ -2996,7 +2996,6 @@ with tab3:
     )
 
     # スキャン実行ボタン
-    # スキャン実行ボタン
     if st.button("🚀 TAB3 精密スキャン開始", key="btn_scan_tab3"):
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
