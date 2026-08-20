@@ -2862,6 +2862,189 @@ with tab2:
                 st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
+# 🧠 TAB3：精密スキャンエンジン（完全版・3日間フォーメーション）
+# ==========================================
+def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
+    """
+    司令官指定の「3日間フォーメーション」絶対判定エンジン
+    """
+    import pandas as pd
+    try:
+        # 日足データが最低4日分（前日比の確認に必要）ない場合は弾く
+        if df is None or len(df) < 4:
+            return False, ""
+
+        # 安全なカラム抽出（大文字小文字・V1/V2のブレ吸収）
+        cols = [str(c).lower() for c in df.columns]
+        def get_col(*names):
+            for n in names:
+                if n.lower() in cols:
+                    return df.columns[cols.index(n.lower())]
+            return None
+
+        c_o = get_col('open', 'o')
+        c_h = get_col('high', 'h')
+        c_l = get_col('low', 'l')
+        c_c = get_col('close', 'adjc', 'c')
+
+        if not all([c_o, c_h, c_l, c_c]):
+            return False, ""
+
+        # 直近4日間のローソク足データを取得（絶対参照）
+        m3 = df.iloc[-4] # 3日前（基準日）
+        m2 = df.iloc[-3] # 2日前（1日目の条件用）
+        m1 = df.iloc[-2] # 1日前（2日目の条件用）
+        q0 = df.iloc[-1] # 最新日（3日目の条件用）
+
+        def safe_flt(val):
+            try: return float(val)
+            except: return 0.0
+
+        # 各日の数値をパース
+        m3_h, m3_l, m3_c = safe_flt(m3[c_h]), safe_flt(m3[c_l]), safe_flt(m3[c_c])
+        m2_h, m2_l, m2_c = safe_flt(m2[c_h]), safe_flt(m2[c_l]), safe_flt(m2[c_c])
+        m1_h, m1_l, m1_c = safe_flt(m1[c_h]), safe_flt(m1[c_l]), safe_flt(m1[c_c])
+        q0_c = safe_flt(q0[c_c])
+
+        # ----------------------------------------
+        # 📈 モード1：買い（押し目からの反転）
+        # ----------------------------------------
+        if mode == "buy":
+            # 1日目：終値が前日の安値を下回る
+            cond1 = (m2_c < m3_l)
+            # 2日目：終値が前日の高値を上回る
+            cond2 = (m1_c > m2_h)
+            # 3日目：終値が前日の終値を上回る
+            cond3 = (q0_c > m1_c)
+
+            if cond1 and cond2 and cond3:
+                return True, "S級🎯【反転上昇陣形】"
+            return False, ""
+
+        # ----------------------------------------
+        # 📉 モード2：空売り（戻り高値からの崩れ）
+        # ----------------------------------------
+        elif mode == "sell":
+            # 【地合い条件】市場が下げ相場になっている（日経乖離率がマイナス）
+            if nikkei_div_rate >= 0.0:
+                return False, "" # 地合いがプラスなら空売りは強制パージ
+
+            # 1日目：終値が前日の高値を上回る
+            cond1 = (m2_c > m3_h)
+            # 2日目：終値が前日の安値を下回る
+            cond2 = (m1_c < m2_l)
+            # 3日目：終値が前日の終値を下回る
+            cond3 = (q0_c < m1_c)
+
+            if cond1 and cond2 and cond3:
+                return True, "S級💀【奈落崩壊陣形】"
+            return False, ""
+
+    except Exception:
+        return False, ""
+
+# ==========================================
+# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック
+# ==========================================
+with tab3:
+    st.markdown("### 🎯 【照準】精密スコープ（3日間フォーメーション）")
+    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、完全な価格アクション陣形を検証します。")
+
+    # モード選択UI
+    tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
+    scan_mode = "buy" if "買い" in tab3_mode else "sell"
+
+    # TAB1, TAB2の結果からデフォルトの銘柄コードリストを自動生成
+    default_codes = []
+    if st.session_state.get('tab1_results'):
+        default_codes.extend([str(r['Code']) for r in st.session_state['tab1_results']])
+    if st.session_state.get('tab2_results'):
+        default_codes.extend([str(r['Code']) for r in st.session_state['tab2_results']])
+    
+    # 重複排除してカンマ区切りの文字列に
+    default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
+
+    st.markdown("#### 📡 スキャン対象銘柄")
+    target_codes_input = st.text_area(
+        "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
+        value=default_codes_str,
+        height=100,
+        key="tab3_target_codes"
+    )
+
+    # スキャン実行ボタン
+    if st.button("🚀 TAB3 精密スキャン開始", key="btn_scan_tab3"):
+        if not target_codes_input.strip():
+            st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
+        else:
+            # 入力文字列をリスト化して重複排除
+            raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
+            target_codes = []
+            for c in raw_codes:
+                try:
+                    target_codes.append(int(c[:4]))
+                except:
+                    pass
+            target_codes = list(dict.fromkeys(target_codes))
+
+            st.write(f"📡 解析対象: {len(target_codes)} 銘柄")
+            
+            # 日経平均の地合いを取得（空売りモード用）
+            current_div_rate = 0.0
+            try:
+                macro_info = get_nikkei_macro_status()
+                current_div_rate = float(macro_info.get("div_rate", 0.0))
+            except:
+                pass
+
+            # 空売りモード時に地合いがプラスなら警告して中止
+            if scan_mode == "sell" and current_div_rate >= 0.0:
+                st.error(f"⚠️ 現在の日経平均乖離率（{current_div_rate:+.2f}%）はプラス圏です。空売りの「下げ相場」条件を満たさないためスキャンを中止します。")
+            else:
+                results_tab3 = []
+                p_bar = st.progress(0, text="🎯 フォーメーション解析中...")
+
+                for i, code in enumerate(target_codes):
+                    p_bar.progress((i + 1) / len(target_codes), text=f"🎯 フォーメーション解析中... ({i+1}/{len(target_codes)})")
+                    
+                    try:
+                        # ローカルDBまたはAPIから日足データを取得
+                        data_payload = get_single_data(code, yrs=0.5)
+                        if data_payload and "bars" in data_payload:
+                            df_bars = data_payload["bars"]
+                            if isinstance(df_bars, list) and len(df_bars) > 0:
+                                df = pd.DataFrame(df_bars)
+                            elif isinstance(df_bars, pd.DataFrame):
+                                df = df_bars
+                            else:
+                                continue
+                                
+                            # 判定エンジンに投下
+                            is_hit, rank = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
+                            
+                            if is_hit:
+                                results_tab3.append({"Code": code, "Rank": rank, "Mode": scan_mode})
+                    except Exception:
+                        pass # 個別のエラーはスキップして次へ
+
+                p_bar.empty()
+                
+                # 結果表示
+                if results_tab3:
+                    st.success(f"🎯 {len(results_tab3)} 件の陣形形成を確認しました！")
+                    st.dataframe(pd.DataFrame(results_tab3))
+                    
+                    # 次のステップ（TAB4等）へのコピペ用
+                    hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
+                    st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
+                    
+                    # セッションに保存
+                    st.session_state['tab3_results'] = results_tab3
+                else:
+                    st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。")
+                    st.session_state['tab3_results'] = []
+                    
+# ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
 # ==========================================
 with tab7:
