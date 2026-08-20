@@ -6,15 +6,19 @@ on:
     - cron: '0 10 * * *'
   workflow_dispatch: # 手動で「今すぐ実行」ボタンを押せるようにする設定
 
+# 🚨 【重要追加】Botにリポジトリへの上書き保存（Push）権限を付与する
+permissions:
+  contents: write
+
 jobs:
   fetch-and-update:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 リポジトリをチェックアウト
-        uses: actions/checkout@v4  # 🎯 v4 にアップデート（警告排除）
+        uses: actions/checkout@v4
 
       - name: 🐍 Pythonのセットアップ
-        uses: actions/setup-python@v5 # 🎯 v5 にアップデート（警告排除）
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
