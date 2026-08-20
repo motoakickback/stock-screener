@@ -3082,7 +3082,7 @@ with tab3:
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
-            # 💡 【改善1】ボタンを押した瞬間にプログレスバーを表示させ、フリーズ感をなくす
+            # 💡 ボタン押下直後にプログレスバーを表示し、ユーザーを待たせない
             p_bar = st.progress(0, text="🚀 システム初期化・準備中...")
 
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
@@ -3094,29 +3094,31 @@ with tab3:
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
             
-            # 日経地合いのみ取得（短時間で終わる）
+            # 💡 【真因解消1】フリーズの原因となっていたAPI通信をパージし、最新関数を使用
             current_div_rate = 0.0
             try:
-                macro_info = get_nikkei_macro_status()
+                macro_info = get_macro_weather()
                 current_div_rate = float(macro_info.get("div_rate", 0.0))
             except: pass
             
             analyzed_data = {}
             total_cnt = len(target_codes)
 
-            # 💡 【改善2】ファイルロック渋滞を起こす並列化を廃止し、直列で爆速処理する
-            for i, code in enumerate(target_codes):
-                p_bar.progress((i + 1) / total_cnt, text=f"🚀 フェーズ1：全件の価格データ取得と陣形判定を高速実行中... ({i+1}/{total_cnt} 完了)")
+            import concurrent.futures
+
+            def process_phase1(code):
+                """外部APIを叩かず、インメモリキャッシュから一瞬で取得するワーカー"""
                 try:
-                    data_payload = get_single_data(code, yrs=0.5)
-                    if data_payload and "bars" in data_payload:
-                        df_bars = data_payload["bars"]
+                    # 💡 【真因解消2】遅延の元凶get_single_dataを捨て、引数なしの高速キャッシュ関数を使用
+                    df_bars = get_hist_data_cached(str(code))
+                    
+                    if df_bars is not None:
                         if isinstance(df_bars, list) and len(df_bars) > 0:
                             df = pd.DataFrame(df_bars)
-                        elif isinstance(df_bars, pd.DataFrame):
+                        elif isinstance(df_bars, pd.DataFrame) and not df_bars.empty:
                             df = df_bars.copy()
                         else:
-                            continue
+                            return code, None
                         
                         turnover = 0.0
                         try:
@@ -3131,23 +3133,31 @@ with tab3:
                         is_hit = res_hit[0] if isinstance(res_hit, tuple) else res_hit
                         rank = res_hit[1] if isinstance(res_hit, tuple) else ("🎯 陣形検知" if is_hit else "")
 
-                        analyzed_data[code] = {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
+                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
                 except Exception:
                     pass
+                return code, None
+
+            # ⚡ キャッシュからの呼び出しならファイルロックは起きないため、マルチスレッドで爆速化
+            completed_cnt = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_code = {executor.submit(process_phase1, code): code for code in target_codes}
+                for future in concurrent.futures.as_completed(future_to_code):
+                    completed_cnt += 1
+                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 フェーズ1：全件の価格データ取得と陣形判定を高速実行中... ({completed_cnt}/{total_cnt} 完了)")
+                    c, res = future.result()
+                    if res: analyzed_data[c] = res
 
             # ==========================================
             # 📊 最強の30件選出 ＆ フェーズ2（重い分析処理）
             # ==========================================
             p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
             
-            # ソートロジック：「①陣形合致(Trueが上)」「②直近売買代金(流動性)が高い順」で全件をソート
             sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
             sortable_results.sort(key=lambda x: (x['is_hit'], x['turnover']), reverse=True)
             
-            # 画面表示用に上位30件をスライス
             display_targets = sortable_results[:30]
 
-            # 💡 【改善3】上位30件に絞った「後」で、初めて激重な全銘柄DBをロードする
             name_map = {}
             try:
                 m_df = load_master()
@@ -3157,7 +3167,6 @@ with tab3:
             try: local_fund_db = load_local_fundamentals_db()
             except: local_fund_db = None
             
-            # ⚡ 絞り込んだ上位30件に対してのみ、ファンダとシグナルの詳細計算を行う
             for i, data in enumerate(display_targets):
                 p_bar.progress((i + 1) / len(display_targets), text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
                 code = data['code']
@@ -3184,11 +3193,9 @@ with tab3:
                 df = data["df"]
                 c_name = name_map.get(str(code)[:4], "名称不明")
                 
-                # ヘッダー表示
                 hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
                 st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                 
-                # 直近四本値
                 q0 = df.iloc[-1]
                 c_o = q0.get('Open', q0.get('AdjO', 0))
                 c_h = q0.get('High', q0.get('AdjH', 0))
@@ -3201,7 +3208,6 @@ with tab3:
                 c3.metric("安値", f"{c_l:,.1f}円")
                 c4.metric("終値", f"{c_c:,.1f}円")
                 
-                # チャート描画（オートフォーカス搭載版）
                 if len(df) > 0:
                     df_c = df.copy()
                     c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
@@ -3219,7 +3225,6 @@ with tab3:
                     fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                     fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                     
-                    # 過去のシグナルプロット
                     if data.get("buy_sigs"):
                         sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
                         if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
@@ -3227,7 +3232,6 @@ with tab3:
                         sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
                         if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                    # 🔍 オートフォーカス（直近65日間にベストピントを合わせる）
                     x_min = df_c[date_col].iloc[-65] if len(df_c) > 65 else df_c[date_col].iloc[0]
                     x_max = df_c[date_col].iloc[-1]
                     fig.update_xaxes(range=[x_min, x_max], rangeslider_visible=False)
@@ -3236,7 +3240,6 @@ with tab3:
                     fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0))
                     st.plotly_chart(fig, use_container_width=True)
 
-                # ファンダメンタルズ表示
                 if data.get("fund") is not None and not data["fund"].empty:
                     st.markdown("##### 📊 業績成長率（四半期・通年）")
                     st.dataframe(data["fund"].style.format({
@@ -3250,7 +3253,6 @@ with tab3:
                     
                 st.divider()
 
-            # コピペ用出力（合致した銘柄のみ全件出力）
             results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
