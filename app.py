@@ -106,7 +106,7 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（画面直結デバッグ版）
+# 🧠 ファンダメンタルズ解析エンジン（V2短縮キー完全適応・YoY版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import streamlit as st
@@ -115,32 +115,14 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     try:
         if df is None or len(df) < 1:
             return False, ""
-            
-        # 🚨 【絶対画面に出すデバッグ】最初の1件目で強制的にブラウザ画面へ表示
-        if "debug_ui_shown" not in st.session_state:
-            st.session_state.debug_ui_shown = True
-            st.error("🚨 【緊急デバッグ】J-Quants生データの正体")
-            st.code(f"カラム一覧: {df.columns.tolist()}")
-            st.write("▼ 最新のデータ5件")
-            st.dataframe(df.tail(5)) 
-            # ↓ 確実に画面に残すため、無条件で1件だけ合格にしてリストに載せる
-            return True, "🐛 デバッグ強制合格"
 
-        # カラム名を動的に特定（大文字・小文字・V1/V2の揺れを完全吸収）
-        cols = [str(c).lower() for c in df.columns]
-        
-        def find_col(*names):
-            for name in names:
-                if name.lower() in cols:
-                    return df.columns[cols.index(name.lower())]
-            return None
-            
-        c_sales = find_col('NetSales', 'Sales', 'net_sales')
-        c_op = find_col('OperatingProfit', 'OP', 'operating_profit')
-        c_ord = find_col('OrdinaryProfit', 'OrdinaryIncome', 'ordinary_profit')
-        c_eps = find_col('EarningsPerShare', 'EPS', 'eps')
-        c_profit = find_col('Profit', 'NetIncome', 'profit')
-        c_type = find_col('TypeOfCurrentPeriod', 'Quarter', 'type_of_current_period')
+        # V2の真のカラム名を指定
+        c_sales = 'Sales'
+        c_op = 'OP'
+        c_ord = 'OdP'
+        c_eps = 'EPS'
+        c_profit = 'NP'
+        c_type = 'CurPerType'
 
         # データが5四半期（1年＋直近）未満ならYoY計算不能なので足切り
         if len(df) < 5:
@@ -155,40 +137,47 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
 
         # 💡 累計決算を「四半期単体」に分解する
         std_df = df.copy()
+        
+        # 安全のため、カラムが存在しない場合は0で埋める
+        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
+            if col not in std_df.columns:
+                std_df[col] = 0.0 if col != c_type else ""
+
         for i in range(1, len(df)):
             try:
-                curr_sales = to_float(df[c_sales].iloc[i]) if c_sales else 0.0
-                prev_sales = to_float(df[c_sales].iloc[i-1]) if c_sales else 0.0
+                curr_sales = to_float(df[c_sales].iloc[i])
+                prev_sales = to_float(df[c_sales].iloc[i-1])
             except:
                 curr_sales, prev_sales = 0.0, 0.0
                 
-            curr_type = str(df[c_type].iloc[i]) if c_type else ""
+            curr_type = str(df[c_type].iloc[i])
             
             is_q1 = False
+            # 1Q、または売上が前回より減っている（年度が変わった）場合は単体とみなす
             if '1Q' in curr_type or 'Q1' in curr_type:
                 is_q1 = True
             elif curr_sales < prev_sales and prev_sales > 0:
                 is_q1 = True
                 
             if not is_q1:
+                # 2Q〜4Qの場合、前回の累計を引いて単体にする
                 for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
-                    if col:
-                        try:
-                            c_val = to_float(df[col].iloc[i])
-                            p_val = to_float(df[col].iloc[i-1])
-                            col_idx = std_df.columns.get_loc(col)
-                            std_df.iat[i, col_idx] = c_val - p_val
-                        except Exception:
-                            pass
+                    try:
+                        c_val = to_float(df[col].iloc[i])
+                        p_val = to_float(df[col].iloc[i-1])
+                        col_idx = std_df.columns.get_loc(col)
+                        std_df.iat[i, col_idx] = c_val - p_val
+                    except Exception:
+                        pass
 
         # 🎯 YoY (前年同期比) 比較用データの抽出
         q0 = std_df.iloc[-1] # 最新実績
         y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
 
         def get_val(row, primary_col, fallback_col=None):
-            v = to_float(row[primary_col]) if primary_col else 0.0
+            v = to_float(row.get(primary_col, 0.0))
             if v == 0.0 and fallback_col:
-                v = to_float(row[fallback_col])
+                v = to_float(row.get(fallback_col, 0.0))
             return v
 
         def calc_gr(c, p):
@@ -215,8 +204,10 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
 
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
+            # 🥇 【S級判定】売上10%以上、他20%以上
             if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
+            # 🥈 【A級判定】売上7%以上、他15%以上
             if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
                 return True, "A級🟢"
             return False, ""
@@ -233,9 +224,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             return True, "A級📉"
             
     except Exception as e:
-        if "DEBUG_ERR_PRINTED" not in st.session_state:
-            st.error(f"🚨 ファンダ解析エラー: {e}")
-            st.session_state["DEBUG_ERR_PRINTED"] = True
         pass
     return False, ""
     
