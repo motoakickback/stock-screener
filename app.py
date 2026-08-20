@@ -2867,11 +2867,11 @@ with tab2:
                 st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
-# 🧠 TAB3：精密スキャンエンジン（完全版・3日間フォーメーション）
+# 🧠 TAB3：精密スキャンエンジン（完全ローカル完結・超高速版）
 # ==========================================
 def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
     """
-    司令官指定の「3日間フォーメーション」絶対判定エンジン
+    司令官指定の「3日間フォーメーション」絶対判定エンジン（API通信完全排除）
     """
     import pandas as pd
     try:
@@ -2949,42 +2949,36 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         return False, ""
 
 # ==========================================
-# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック
+# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（完全ローカル高速化版）
 # ==========================================
 with tab3:
     st.markdown("### 🎯 【照準】精密スコープ（3日間フォーメーション）")
-    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、完全な価格アクション陣形を検証します。")
+    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、ローカルキャッシュを用いた完全並列・高速の価格アクション検証を行います。")
 
     # モード選択UI
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # 🚨 【修正】正しいセッション変数名から抽出し、あらゆるデータ型に対応
+    # TAB1・TAB2の結果からセッション変数を安全に回収
     default_codes = []
-    
-    # TAB1からの抽出
     t1_res = st.session_state.get('tab1_scan_results', [])
     if t1_res:
         for r in t1_res:
-            if isinstance(r, dict) and 'Code' in r:
-                default_codes.append(str(r['Code']))
-            elif isinstance(r, dict) and 'code' in r:
-                default_codes.append(str(r['code']))
+            if isinstance(r, dict):
+                c = r.get('Code') or r.get('code')
+                if c: default_codes.append(str(c))
             else:
-                default_codes.append(str(r)) # 文字列等の直入りの場合
+                default_codes.append(str(r))
 
-    # TAB2からの抽出
     t2_res = st.session_state.get('tab2_scan_results', [])
     if t2_res:
         for r in t2_res:
-            if isinstance(r, dict) and 'Code' in r:
-                default_codes.append(str(r['Code']))
-            elif isinstance(r, dict) and 'code' in r:
-                default_codes.append(str(r['code']))
+            if isinstance(r, dict):
+                c = r.get('Code') or r.get('code')
+                if c: default_codes.append(str(c))
             else:
                 default_codes.append(str(r))
     
-    # 重複排除してカンマ区切りの文字列に
     default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
 
     st.markdown("#### 📡 スキャン対象銘柄")
@@ -3000,7 +2994,6 @@ with tab3:
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
         else:
-            # 入力文字列をリスト化して重複排除
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
             target_codes = []
             for c in raw_codes:
@@ -3010,9 +3003,9 @@ with tab3:
                     pass
             target_codes = list(dict.fromkeys(target_codes))
 
-            st.write(f"📡 爆速並列・解析対象: {len(target_codes)} 銘柄")
+            st.write(f"📡 ローカル爆速並列・解析対象: {len(target_codes)} 銘柄")
             
-            # 日経平均の地合いを取得（空売りモード用）
+            # 日経平均の地合いを取得
             current_div_rate = 0.0
             try:
                 macro_info = get_nikkei_macro_status()
@@ -3020,29 +3013,30 @@ with tab3:
             except:
                 pass
 
-            # 空売りモード時に地合いがプラスなら警告して中止
             if scan_mode == "sell" and current_div_rate >= 0.0:
                 st.error(f"⚠️ 現在の日経平均乖離率（{current_div_rate:+.2f}%）はプラス圏です。空売りの「下げ相場」条件を満たさないためスキャンを中止します。")
             else:
                 results_tab3 = []
-                p_bar = st.progress(0, text="🚀 3日間フォーメーション超高速並列索敵中...")
+                p_bar = st.progress(0, text="🚀 ローカルキャッシュ超高速並列索敵中...")
 
                 import concurrent.futures
 
-                def process_single_stock(code):
-                    """1銘柄分のデータ取得とフォーメーション判定を行うワーカー関数"""
+                def process_single_stock_local(code):
+                    """
+                    【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュ（get_hist_data_cached等）から
+                    一瞬でローカルデータを取得して判定するワーカー
+                    """
                     try:
-                        data_payload = get_single_data(code, yrs=0.5)
-                        if data_payload and "bars" in data_payload:
-                            df_bars = data_payload["bars"]
-                            if isinstance(df_bars, list) and len(df_bars) > 0:
+                        # 💡 外部APIフェッチではなく、システム既定の高速キャッシュ関数を使用
+                        df_bars = get_hist_data_cached(code, days=30)
+                        if df_bars is not None and not df_bars.empty:
+                            if isinstance(df_bars, list):
                                 df = pd.DataFrame(df_bars)
                             elif isinstance(df_bars, pd.DataFrame):
-                                df = df_bars
+                                df = df_bars.copy()
                             else:
                                 return None
                                 
-                            # 判定エンジンに投下
                             is_hit, rank = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
                             if is_hit:
                                 return {"Code": code, "Rank": rank, "Mode": scan_mode}
@@ -3053,13 +3047,13 @@ with tab3:
                 total_cnt = len(target_codes)
                 completed_cnt = 0
 
-                # ⚡ スレッドプールによる完全並列化（最大5スレッドで同時ハント）
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                    future_to_code = {executor.submit(process_single_stock, code): code for code in target_codes}
+                # ⚡ マルチスレッドによる完全並列化（ローカルキャッシュ参照のため渋滞なし）
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                    future_to_code = {executor.submit(process_single_stock_local, code): code for code in target_codes}
                     
                     for future in concurrent.futures.as_completed(future_to_code):
                         completed_cnt += 1
-                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 爆速並列索敵中... ({completed_cnt}/{total_cnt} 完了)")
+                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 ローカル爆速索敵中... ({completed_cnt}/{total_cnt} 完了)")
                         
                         res = future.result()
                         if res:
@@ -3067,16 +3061,13 @@ with tab3:
 
                 p_bar.empty()
                 
-                # 結果表示
                 if results_tab3:
                     st.success(f"🎯 {len(results_tab3)} 件の陣形形成を確認しました！")
                     st.dataframe(pd.DataFrame(results_tab3))
                     
-                    # 次のステップへのコピペ用
                     hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
                     st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
                     
-                    # セッションに保存
                     st.session_state['tab3_results'] = results_tab3
                 else:
                     st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。")
