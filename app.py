@@ -106,11 +106,11 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・S/A級改修版）
+# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・最新1四半期完全特化版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     try:
-        # YoY計算のためには最低5四半期（1年と1四半期）のデータが必要
+        # 🚨 YoY計算のためには最低5四半期（1年＋直近1四半期）のデータが必要
         if df is None or len(df) < 5:
             return False, ""
         
@@ -145,89 +145,54 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
                         
-        # 🎯 YoY (前年同期比) 比較用データの抽出
+        # 🎯 YoY (前年同期比) 比較用データの抽出 (最新 vs 1年前の同四半期)
         q0 = std_df.iloc[-1] # 最新四半期(単体)
-        q1 = std_df.iloc[-2] # 1つ前(単体)
-        
-        y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
-        
-        # 1つ前の四半期に対する前年同期が存在するか確認 (最低6四半期必要)
-        has_y1 = len(std_df) >= 6
-        if has_y1:
-            y1 = std_df.iloc[-6]
-        else:
-            y1 = None
+        y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前・単体)
         
         def calc_gr(cur, prev):
             try:
                 c, p = float(cur), float(prev)
-                if p <= 0: return 0.0 # 前期が赤字や0の場合は成長率測定不能
+                # 💡 前年同期が赤字(0以下)で、今期黒字(プラス)になった場合は「黒字転換」として最大評価(999%)
+                if p <= 0:
+                    if c > 0: return 999.0 
+                    return -999.0 # 赤字拡大、または0以下のままなら不合格
                 return ((c - p) / abs(p)) * 100.0
             except Exception:
-                return 0.0
+                return -999.0
                 
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            s_q0 = calc_gr(q0['NetSales'], y0['NetSales'])
-            op_q0 = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
-            or_q0 = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
-            ep_q0 = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
+            # 成長率の算出
+            s_yoy = calc_gr(q0['NetSales'], y0['NetSales'])
+            op_yoy = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
+            or_yoy = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
+            ep_yoy = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
             
-            # 【A級足切り条件】売上7%以上、各利益15%以上
-            if has_y1:
-                s_q1 = calc_gr(q1['NetSales'], y1['NetSales'])
-                op_q1 = calc_gr(q1['OperatingProfit'], y1['OperatingProfit'])
-                or_q1 = calc_gr(q1['OrdinaryProfit'], y1['OrdinaryProfit'])
-                ep_q1 = calc_gr(q1['EarningsPerShare'], y1['EarningsPerShare'])
+            # 🥇 【S級判定】売上10%以上、他20%以上
+            if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
+                return True, "S級🎯"
                 
-                # 直近2四半期連続でA級基準をクリアしているかチェック
-                if not (s_q0 >= sales_req and s_q1 >= sales_req): return False, ""
-                if not (op_q0 >= 15.0 and op_q1 >= 15.0): return False, ""
-                if not (or_q0 >= ord_req and or_q1 >= ord_req): return False, ""
-                if not (ep_q0 >= 15.0 and ep_q1 >= 15.0): return False, ""
+            # 🥈 【A級判定】売上7%以上、他15%以上（S級に届かなかった場合）
+            if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
+                return True, "A級🟢"
                 
-                # 【S級判定】売上10%以上 かつ 各利益20%以上 (2期連続)
-                is_s_q0 = (s_q0 >= 10.0 and op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0)
-                is_s_q1 = (s_q1 >= 10.0 and op_q1 >= 20.0 and or_q1 >= 20.0 and ep_q1 >= 20.0)
-                
-                if is_s_q0 and is_s_q1:
-                    return True, "S級🎯"
-            else:
-                # 最新1期のみデータがある場合
-                if not (s_q0 >= sales_req): return False, ""
-                if not (op_q0 >= 15.0): return False, ""
-                if not (or_q0 >= ord_req): return False, ""
-                if not (ep_q0 >= 15.0): return False, ""
-                
-                if s_q0 >= 10.0 and op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0:
-                    return True, "S級🎯"
-
-            return True, "A級🟢"
+            # どちらも満たさなければ弾く
+            return False, ""
             
         # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            s_q0 = calc_gr(q0['NetSales'], y0['NetSales'])
-            op_q0 = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
-            or_q0 = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
-            ep_q0 = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
+            s_yoy = calc_gr(q0['NetSales'], y0['NetSales'])
+            op_yoy = calc_gr(q0['OperatingProfit'], y0['OperatingProfit'])
+            or_yoy = calc_gr(q0['OrdinaryProfit'], y0['OrdinaryProfit'])
+            ep_yoy = calc_gr(q0['EarningsPerShare'], y0['EarningsPerShare'])
             
-            if has_y1:
-                s_q1 = calc_gr(q1['NetSales'], y1['NetSales'])
-                op_q1 = calc_gr(q1['OperatingProfit'], y1['OperatingProfit'])
-                or_q1 = calc_gr(q1['OrdinaryProfit'], y1['OrdinaryProfit'])
-                ep_q1 = calc_gr(q1['EarningsPerShare'], y1['EarningsPerShare'])
-                
-                if not (s_q0 < 5.0 and s_q1 < 5.0): return False, ""
-                if not (op_q0 < 10.0 and op_q1 < 10.0): return False, ""
-                if not (or_q0 < 5.0 and or_q1 < 5.0): return False, ""
-                if not (ep_q0 < 10.0 and ep_q1 < 10.0): return False, ""
-            else:
-                if not (s_q0 < 5.0): return False, ""
-                if not (op_q0 < 10.0): return False, ""
-                if not (or_q0 < 5.0): return False, ""
-                if not (ep_q0 < 10.0): return False, ""
+            # 売り条件（成長鈍化・マイナス圏）
+            if not (s_yoy < 5.0): return False, ""
+            if not (op_yoy < 10.0): return False, ""
+            if not (or_yoy < 5.0): return False, ""
+            if not (ep_yoy < 10.0): return False, ""
             
-            if s_q0 < 0 and op_q0 < 0 and or_q0 < 0 and ep_q0 < 0:
+            if s_yoy < 0 and op_yoy < 0 and or_yoy < 0 and ep_yoy < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
