@@ -2876,10 +2876,8 @@ def analyze_formation_history(df):
     buy_signals = []
     sell_signals = []
     
-    if df is None or len(df) < 65:
-        # データが足りない場合でもスキャンできる分だけ回す
-        if df is None or len(df) < 4:
-            return buy_signals, sell_signals
+    if df is None or len(df) < 4:
+        return buy_signals, sell_signals
         
     cols = [str(c).lower() for c in df.columns]
     def get_c(*names):
@@ -2916,25 +2914,19 @@ def analyze_formation_history(df):
     return buy_signals, sell_signals
 
 def fetch_fundamental_history_local(code, local_db):
-    """
-    【通信完全ゼロ】ローカルDBから対象銘柄の四半期推移・通年業績（YoY%）を抽出・計算する
-    """
+    """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（防弾仕様）"""
     import pandas as pd
     try:
-        if local_db is None or len(local_db) == 0:
-            return None
+        if local_db is None or len(local_db) == 0: return None
 
-        str_code = str(code).strip()
+        str_code = str(code).strip()[:4]
         c_code_col = 'Code' if 'Code' in local_db.columns else ('code' if 'code' in local_db.columns else None)
-        if not c_code_col:
-            return None
+        if not c_code_col: return None
 
-        # コードによるローカルフィルタリング
-        mask = local_db[c_code_col].astype(str).str.startswith(str_code[:4])
+        mask = local_db[c_code_col].astype(str).str.startswith(str_code)
         df_target = local_db[mask].copy().reset_index(drop=True)
 
-        if len(df_target) == 0:
-            return None
+        if len(df_target) == 0: return None
 
         cols = [str(c).lower() for c in df_target.columns]
         def find_c(*names):
@@ -2942,24 +2934,23 @@ def fetch_fundamental_history_local(code, local_db):
                 if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
             return None
 
-        c_sales = find_c('Sales', 'NetSales')
-        c_op = find_c('OP', 'OperatingProfit')
-        c_ord = find_c('OdP', 'OrdinaryProfit')
-        c_eps = find_c('EPS', 'EarningsPerShare')
-        c_profit = find_c('NP', 'Profit')
+        c_sales = find_c('Sales', 'NetSales', 'net_sales')
+        c_op = find_c('OP', 'OperatingProfit', 'operating_profit')
+        c_ord = find_c('OdP', 'OrdinaryProfit', 'ordinary_profit')
+        c_eps = find_c('EPS', 'EarningsPerShare', 'eps')
+        c_profit = find_c('NP', 'Profit', 'netincome')
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
 
         def to_flt(v):
-            try: return float(v)
+            try: return float(str(v).replace(',', '').strip())
             except: return 0.0
 
         # 実績のみ抽出
         actual_mask = df_target[c_sales].apply(to_flt) > 0 if c_sales else pd.Series([True]*len(df_target))
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
-        if len(actual_df) < 5:
-            return None
+        if len(actual_df) < 2: return None
 
         # 累計を四半期単体に分解
         std_df = actual_df.copy()
@@ -2967,14 +2958,12 @@ def fetch_fundamental_history_local(code, local_db):
             curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
             c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
             p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
-
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
                 for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
                     if col and col in std_df.columns:
-                        try:
-                            std_df.iat[i, std_df.columns.get_loc(col)] = to_flt(actual_df[col].iloc[i]) - to_flt(actual_df[col].iloc[i-1])
+                        try: std_df.iat[i, std_df.columns.get_loc(col)] = to_flt(actual_df[col].iloc[i]) - to_flt(actual_df[col].iloc[i-1])
                         except: pass
 
         def calc_yoy(c, p):
@@ -2988,16 +2977,20 @@ def fetch_fundamental_history_local(code, local_db):
             return v
 
         results = []
-        # 直近4四半期のYoYを計算
+        # 直近4四半期のYoYを計算 (データ不足時はハイフン)
         for i in range(1, 5):
-            if len(std_df) < i + 4: break
+            if len(std_df) < i + 4:
+                if len(std_df) >= i:
+                    q_cur = std_df.iloc[-i]
+                    dis_date = str(q_cur.get(c_date, '-')) if c_date else '-'
+                    results.append({"期間": f"直近 Q{i}", "開示日": dis_date, "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "EPS(%)": "-"})
+                continue
+                
             q_cur = std_df.iloc[-i]
             q_prv = std_df.iloc[-(i+4)]
-
             dis_date = str(q_cur.get(c_date, '-')) if c_date else '-'
             results.append({
-                "期間": f"直近 Q{i}",
-                "開示日": dis_date,
+                "期間": f"直近 Q{i}", "開示日": dis_date,
                 "売上(%)": calc_yoy(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
                 "営業益(%)": calc_yoy(get_v(q_cur, c_op), get_v(q_prv, c_op)),
                 "経常益(%)": calc_yoy(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
@@ -3006,44 +2999,35 @@ def fetch_fundamental_history_local(code, local_db):
 
         # 通年計算（直近4四半期の合計 vs その前の4四半期の合計）
         if len(std_df) >= 8:
-            y_cur = std_df.iloc[-4:].sum(numeric_only=True)
-            y_prv = std_df.iloc[-8:-4].sum(numeric_only=True)
+            y_cur = std_df.iloc[-4:].apply(pd.to_numeric, errors='coerce').sum(numeric_only=True)
+            y_prv = std_df.iloc[-8:-4].apply(pd.to_numeric, errors='coerce').sum(numeric_only=True)
             results.append({
-                "期間": "🌟 通年(直近1年)",
-                "開示日": "-",
+                "期間": "🌟 通年(直近1年)", "開示日": "-",
                 "売上(%)": calc_yoy(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
                 "営業益(%)": calc_yoy(get_v(y_cur, c_op), get_v(y_prv, c_op)),
                 "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
                 "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
             })
+        else:
+            results.append({"期間": "🌟 通年(直近1年)", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "EPS(%)": "-"})
 
         return pd.DataFrame(results[::-1])
     except:
         return None
 
 def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
-    """
-    司令官指定の「3日間フォーメーション」絶対判定エンジン（API通信完全排除）
-    """
-    import pandas as pd
+    """3日間フォーメーションの判定エンジン"""
     try:
-        if df is None or len(df) < 4:
-            return False, ""
+        if df is None or len(df) < 4: return False, ""
 
         cols = [str(c).lower() for c in df.columns]
         def get_col(*names):
             for n in names:
-                if n.lower() in cols:
-                    return df.columns[cols.index(n.lower())]
+                if n.lower() in cols: return df.columns[cols.index(n.lower())]
             return None
 
-        c_o = get_col('open', 'o')
-        c_h = get_col('high', 'h')
-        c_l = get_col('low', 'l')
-        c_c = get_col('close', 'adjc', 'c')
-
-        if not all([c_o, c_h, c_l, c_c]):
-            return False, ""
+        c_h, c_l, c_c = get_col('high', 'h'), get_col('low', 'l'), get_col('close', 'adjc', 'c')
+        if not all([c_h, c_l, c_c]): return False, ""
 
         m3 = df.iloc[-4]
         m2 = df.iloc[-3]
@@ -3054,60 +3038,44 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
             try: return float(val)
             except: return 0.0
 
-        m3_h, m3_l, m3_c = safe_flt(m3[c_h]), safe_flt(m3[c_l]), safe_flt(m3[c_c])
+        m3_h, m3_l = safe_flt(m3[c_h]), safe_flt(m3[c_l])
         m2_h, m2_l, m2_c = safe_flt(m2[c_h]), safe_flt(m2[c_l]), safe_flt(m2[c_c])
         m1_h, m1_l, m1_c = safe_flt(m1[c_h]), safe_flt(m1[c_l]), safe_flt(m1[c_c])
         q0_c = safe_flt(q0[c_c])
 
         if mode == "buy":
-            cond1 = (m2_c < m3_l)
-            cond2 = (m1_c > m2_h)
-            cond3 = (q0_c > m1_c)
-            if cond1 and cond2 and cond3:
+            if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
                 return True, "S級🎯【反転上昇陣形】"
             return False, ""
         elif mode == "sell":
-            if nikkei_div_rate >= 0.0:
-                return False, ""
-            cond1 = (m2_c > m3_h)
-            cond2 = (m1_c < m2_l)
-            cond3 = (q0_c < m1_c)
-            if cond1 and cond2 and cond3:
+            if nikkei_div_rate >= 0.0: return False, ""
+            if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
                 return True, "S級💀【奈落崩壊陣形】"
             return False, ""
     except Exception:
         return False, ""
 
 # ==========================================
-# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（完全ローカル高速化・分析強制表示版）
+# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック
 # ==========================================
 with tab3:
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
-    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータのみで出力します。")
+    st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
 
     # モード選択UI
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # TAB1・TAB2の結果からセッション変数を安全に回収
+    # TAB1・TAB2の結果からセッション変数を回収
     default_codes = []
-    t1_res = st.session_state.get('tab1_scan_results', [])
-    if t1_res:
-        for r in t1_res:
-            if isinstance(r, dict):
-                c = r.get('Code') or r.get('code')
-                if c: default_codes.append(str(c))
-            else:
-                default_codes.append(str(r))
-
-    t2_res = st.session_state.get('tab2_scan_results', [])
-    if t2_res:
-        for r in t2_res:
-            if isinstance(r, dict):
-                c = r.get('Code') or r.get('code')
-                if c: default_codes.append(str(c))
-            else:
-                default_codes.append(str(r))
+    for t_res in [st.session_state.get('tab1_scan_results', []), st.session_state.get('tab2_scan_results', [])]:
+        if t_res:
+            for r in t_res:
+                if isinstance(r, dict):
+                    c = r.get('Code') or r.get('code')
+                    if c: default_codes.append(str(c)[:4])
+                else:
+                    default_codes.append(str(r)[:4])
     
     default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
 
@@ -3119,50 +3087,44 @@ with tab3:
         key="tab3_target_codes"
     )
 
-    # スキャン実行ボタン
     if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
         if not target_codes_input.strip():
-            st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
+            st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
+            # 入力されたコードを全件取得（ここでは切り捨てない！）
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
             target_codes = []
             for c in raw_codes:
-                try:
-                    target_codes.append(int(c[:4]))
-                except:
-                    pass
-            target_codes = list(dict.fromkeys(target_codes))[:30] # 上位30件に絞る
+                try: target_codes.append(int(c[:4]))
+                except: pass
+            target_codes = list(dict.fromkeys(target_codes))
 
-            st.write(f"📡 実行対象: {len(target_codes)} 銘柄（上位30件抽出）")
+            st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
             
-            # 日経平均の地合いを取得
+            # 日経地合い・マスターデータ・ローカルDB取得
             current_div_rate = 0.0
             try:
                 macro_info = get_nikkei_macro_status()
                 current_div_rate = float(macro_info.get("div_rate", 0.0))
-            except:
-                pass
-
-            # 💡 ローカルのファンダメンタルズDBを事前ロード（API通信は一切しない）
+            except: pass
+            
+            name_map = {}
             try:
-                local_fund_db = load_local_fundamentals_db()
-            except Exception:
-                local_fund_db = None
+                m_df = load_master()
+                name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
+            except: pass
 
-            results_tab3 = []
+            try: local_fund_db = load_local_fundamentals_db()
+            except: local_fund_db = None
+
             analyzed_data = {}
-            # プログレスバーを生成
-            p_bar = st.progress(0, text="🚀 ローカルデータ構築中...")
+            p_bar = st.progress(0, text="🚀 ローカルデータ全件解析中...")
 
             import concurrent.futures
 
             def process_single_stock_local(code):
-                """
-                【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュ(get_single_data)からデータを取得し
-                フォーメーション判定、シグナル履歴、ファンダ推移を全て構築する
-                """
+                """外部APIを叩かず、全件スキャン＆情報構築を行うワーカー"""
                 try:
-                    # 💡 司令官の設計した正しいローカルデータ抽出関数を利用する
                     data_payload = get_single_data(code, yrs=1.0)
                     if data_payload and "bars" in data_payload:
                         df_bars = data_payload["bars"]
@@ -3172,24 +3134,25 @@ with tab3:
                             df = df_bars.copy()
                         else:
                             return code, None
-                            
-                        # ① フォーメーション判定
+                        
+                        # 売買代金の計算（ソート用）
+                        turnover = 0.0
+                        try:
+                            q0 = df.iloc[-1]
+                            v_col = 'Volume' if 'Volume' in df.columns else ('Vo' if 'Vo' in df.columns else None)
+                            c_col = 'AdjC' if 'AdjC' in df.columns else ('Close' if 'Close' in df.columns else None)
+                            if v_col and c_col:
+                                turnover = float(q0[v_col]) * float(q0[c_col])
+                        except: pass
+
                         res_hit = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
-                        is_hit = False
-                        rank = ""
-                        if isinstance(res_hit, tuple):
-                            is_hit, rank = res_hit
-                        elif isinstance(res_hit, bool):
-                            is_hit = res_hit
-                            rank = "🎯 陣形検知" if is_hit else ""
+                        is_hit = res_hit[0] if isinstance(res_hit, tuple) else res_hit
+                        rank = res_hit[1] if isinstance(res_hit, tuple) else ("🎯 陣形検知" if is_hit else "")
 
-                        # ② チャートへのシグナル描画用（過去3ヶ月）
                         b_sigs, s_sigs = analyze_formation_history(df)
-
-                        # ③ ファンダメンタルズ情報（完全ローカル）
                         fund_df = fetch_fundamental_history_local(code, local_fund_db)
 
-                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": fund_df}
+                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover, "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": fund_df}
                 except Exception:
                     pass
                 return code, None
@@ -3197,42 +3160,44 @@ with tab3:
             total_cnt = len(target_codes)
             completed_cnt = 0
 
-            # ⚡ マルチスレッドによる完全並列化
+            # ⚡ 全件並列処理（180件でも一瞬で完了）
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 future_to_code = {executor.submit(process_single_stock_local, code): code for code in target_codes}
-                
                 for future in concurrent.futures.as_completed(future_to_code):
                     completed_cnt += 1
-                    # 進捗バーを確実に更新
                     p_bar.progress(completed_cnt / total_cnt, text=f"🚀 データを解析・構築中... ({completed_cnt}/{total_cnt} 完了)")
-                    
                     c, res = future.result()
-                    if res:
-                        analyzed_data[c] = res
-                        if res["is_hit"]:
-                            results_tab3.append({"Code": c, "Rank": res["rank"], "Mode": scan_mode})
+                    if res: analyzed_data[c] = res
 
             p_bar.empty()
             st.divider()
 
             # ==========================================
-            # 📊 分析結果の強制出力（ループ描画）
+            # 📊 最強の30件選出 ＆ レンダリング
             # ==========================================
             import plotly.graph_objects as go
             
-            if results_tab3:
-                st.success(f"🎯 フォーメーション合致銘柄: {len(results_tab3)}件 確認！")
+            # ソートロジック：「①陣形合致(Trueが上)」「②直近売買代金(流動性)が高い順」で全件をソート
+            sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
+            sortable_results.sort(key=lambda x: (x['is_hit'], x['turnover']), reverse=True)
+            
+            # 画面表示用に上位30件をスライス
+            display_targets = sortable_results[:30]
+            hit_count = sum(1 for d in sortable_results if d["is_hit"])
+            
+            if hit_count > 0:
+                st.success(f"🎯 陣形合致銘柄: {hit_count}件 確認！ （上位30件まで表示します）")
             else:
-                st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。分析データを表示します。")
+                st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。流動性上位の分析データを表示します。")
 
-            for code in target_codes:
-                if code not in analyzed_data: continue
-                data = analyzed_data[code]
+            for data in display_targets:
+                code = data['code']
                 df = data["df"]
+                c_name = name_map.get(str(code)[:4], "名称不明")
                 
                 # ヘッダー表示
                 hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
-                st.markdown(f"### 📦 {code} | {hit_badge}")
+                st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                 
                 # 直近四本値
                 q0 = df.iloc[-1]
@@ -3247,7 +3212,7 @@ with tab3:
                 c3.metric("安値", f"{c_l:,.1f}円")
                 c4.metric("終値", f"{c_c:,.1f}円")
                 
-                # チャート描画（1年間、MA18/50、シグナルプロット）
+                # チャート描画（オートフォーカス搭載版）
                 if len(df) > 0:
                     df_c = df.copy()
                     c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
@@ -3255,49 +3220,53 @@ with tab3:
                     if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
                     
                     fig = go.Figure()
-                    
-                    # 日付カラムの特定
                     date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                     
                     fig.add_trace(go.Candlestick(
-                        x=df_c[date_col], 
-                        open=df_c.get('AdjO', df_c.get('Open')), 
-                        high=df_c.get('AdjH', df_c.get('High')), 
-                        low=df_c.get('AdjL', df_c.get('Low')), 
-                        close=df_c[c_col], 
-                        name='価格'
+                        x=df_c[date_col], open=df_c.get('AdjO', df_c.get('Open')), 
+                        high=df_c.get('AdjH', df_c.get('High')), low=df_c.get('AdjL', df_c.get('Low')), 
+                        close=df_c[c_col], name='価格'
                     ))
                     fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                     fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                     
-                    # 過去のシグナルをプロット
+                    # 過去のシグナルプロット
                     if data["buy_sigs"]:
                         sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
-                        if not sig_df.empty:
-                            fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                        if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                     if data["sell_sigs"]:
                         sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
-                        if not sig_df.empty:
-                            fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                        if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                    fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False)
+                    # 🔍 オートフォーカス（直近65日間にベストピントを合わせる）
+                    x_min = df_c[date_col].iloc[-65] if len(df_c) > 65 else df_c[date_col].iloc[0]
+                    x_max = df_c[date_col].iloc[-1]
+                    fig.update_xaxes(range=[x_min, x_max], rangeslider_visible=False)
+                    fig.update_yaxes(autorange=True, fixedrange=False)
+
+                    fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0))
                     st.plotly_chart(fig, use_container_width=True)
 
                 # ファンダメンタルズ表示
                 if data["fund"] is not None and not data["fund"].empty:
                     st.markdown("##### 📊 業績成長率（四半期・通年）")
+                    # ハイフン混じりのデータを綺麗に%フォーマット
                     st.dataframe(data["fund"].style.format({
-                        "売上(%)": "{:.1f}%", "営業益(%)": "{:.1f}%", "経常益(%)": "{:.1f}%", "EPS(%)": "{:.1f}%"
+                        "売上(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                        "営業益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                        "経常益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                        "EPS(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
                     }), use_container_width=True)
                 else:
                     st.warning("業績データの取得に失敗しました（ローカルデータ不足）。")
                     
                 st.divider()
 
-            # コピペ用出力（合致した銘柄のみ）
+            # コピペ用出力（合致した銘柄のみ全件出力）
+            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
+                st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
                 
             st.session_state['tab3_results'] = results_tab3
                     
