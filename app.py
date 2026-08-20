@@ -2889,25 +2889,49 @@ def analyze_formation_history(df):
     c_d = get_c('date', 'd')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
-    scan_len = min(len(df), 65)
-    df_recent = df.tail(scan_len).reset_index(drop=True)
+    # 🚨 ルール②判定用に18日移動平均線を算出
+    df_calc = df.copy()
+    if 'MA18' not in df_calc.columns:
+        df_calc['MA18'] = df_calc[c_c].rolling(window=18).mean()
+
+    scan_len = min(len(df_calc), 65)
+    df_recent = df_calc.tail(scan_len).reset_index(drop=True)
     
     for i in range(3, len(df_recent)):
         try:
             m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
             m2_h, m2_l, m2_c = float(df_recent.loc[i-2, c_h]), float(df_recent.loc[i-2, c_l]), float(df_recent.loc[i-2, c_c])
             m1_h, m1_l, m1_c = float(df_recent.loc[i-1, c_h]), float(df_recent.loc[i-1, c_l]), float(df_recent.loc[i-1, c_c])
-            q0_c = float(df_recent.loc[i, c_c])
+            q0_h, q0_l, q0_c = float(df_recent.loc[i, c_h]), float(df_recent.loc[i, c_l]), float(df_recent.loc[i, c_c])
+            
+            ma18_m2 = float(df_recent.loc[i-2, 'MA18'])
+            ma18_m1 = float(df_recent.loc[i-1, 'MA18'])
+            ma18_q0 = float(df_recent.loc[i, 'MA18'])
             curr_date = df_recent.loc[i, c_d]
 
+            buy_hit = False
+            sell_hit = False
+
+            # --- ルール①（3日間反転陣形） ---
             if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
-                buy_signals.append(curr_date)
+                buy_hit = True
             if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
-                sell_signals.append(curr_date)
+                sell_hit = True
+
+            # --- ルール②（18日線 支持/拒絶） ---
+            # ※チャートがマーカーだらけになるのを防ぐため、2日前は条件外だった「初動」のみチャートに打つ
+            if pd.notna(ma18_q0) and pd.notna(ma18_m1) and pd.notna(ma18_m2):
+                if (q0_l > ma18_q0) and (m1_l > ma18_m1) and (m2_l <= ma18_m2):
+                    buy_hit = True
+                if (q0_h < ma18_q0) and (m1_h < ma18_m1) and (m2_h >= ma18_m2):
+                    sell_hit = True
+
+            if buy_hit: buy_signals.append(curr_date)
+            if sell_hit: sell_signals.append(curr_date)
         except Exception:
             pass
             
-    return buy_signals, sell_signals
+    return list(dict.fromkeys(buy_signals)), list(dict.fromkeys(sell_signals))
 
 def fetch_fundamental_history_local(code, local_db):
     """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（防弾仕様）"""
@@ -3008,7 +3032,7 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
-    """3日間フォーメーションの判定エンジン"""
+    """3日間フォーメーション＆18日線ブレイク判定エンジン"""
     try:
         if df is None or len(df) < 4: return False, ""
 
@@ -3021,7 +3045,12 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         c_h, c_l, c_c = get_col('high', 'h'), get_col('low', 'l'), get_col('close', 'adjc', 'c')
         if not all([c_h, c_l, c_c]): return False, ""
 
-        m3 = df.iloc[-4]; m2 = df.iloc[-3]; m1 = df.iloc[-2]; q0 = df.iloc[-1]
+        # 🚨 ルール②判定用に18日移動平均線を算出
+        df_calc = df.copy()
+        if 'MA18' not in df_calc.columns:
+            df_calc['MA18'] = df_calc[c_c].rolling(window=18).mean()
+
+        m3 = df_calc.iloc[-4]; m2 = df_calc.iloc[-3]; m1 = df_calc.iloc[-2]; q0 = df_calc.iloc[-1]
 
         def safe_flt(val):
             try: return float(val)
@@ -3030,17 +3059,48 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         m3_h, m3_l = safe_flt(m3[c_h]), safe_flt(m3[c_l])
         m2_h, m2_l, m2_c = safe_flt(m2[c_h]), safe_flt(m2[c_l]), safe_flt(m2[c_c])
         m1_h, m1_l, m1_c = safe_flt(m1[c_h]), safe_flt(m1[c_l]), safe_flt(m1[c_c])
-        q0_c = safe_flt(q0[c_c])
+        q0_h, q0_l, q0_c = safe_flt(q0[c_h]), safe_flt(q0[c_l]), safe_flt(q0[c_c])
+        
+        ma18_q0 = safe_flt(q0['MA18'])
+        ma18_m1 = safe_flt(m1['MA18'])
+
+        hit_msgs = []
+        is_hit = False
 
         if mode == "buy":
+            # ルール①：反転上昇陣形
             if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
-                return True, "S級🎯【反転上昇陣形】"
+                is_hit = True
+                hit_msgs.append("S級🎯【反転上昇陣形①】")
+            
+            # ルール②：18日線支持
+            if (ma18_q0 > 0) and (q0_l > ma18_q0) and (m1_l > ma18_m1):
+                is_hit = True
+                trig_p = max(q0_h, m1_h)
+                hit_msgs.append(f"A級🎯【18日線支持②】目標買値:{trig_p:,.0f}円")
+
+            if is_hit:
+                return True, " ＋ ".join(hit_msgs)
             return False, ""
+
         elif mode == "sell":
             if nikkei_div_rate >= 0.0: return False, ""
+            
+            # ルール①：奈落崩壊陣形
             if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
-                return True, "S級💀【奈落崩壊陣形】"
+                is_hit = True
+                hit_msgs.append("S級💀【奈落崩壊陣形①】")
+            
+            # ルール②：18日線拒絶
+            if (ma18_q0 > 0) and (q0_h < ma18_q0) and (m1_h < ma18_m1):
+                is_hit = True
+                trig_p = min(q0_l, m1_l)
+                hit_msgs.append(f"A級💀【18日線拒絶②】目標売値:{trig_p:,.0f}円")
+
+            if is_hit:
+                return True, " ＋ ".join(hit_msgs)
             return False, ""
+            
     except Exception:
         return False, ""
 
@@ -3179,7 +3239,8 @@ with tab3:
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
                         
-                        hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
+                        # 💡 どちらのルールで合致したかを詳細表示（目標価格も自動出力）
+                        hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
                         q0 = df.iloc[-1]
