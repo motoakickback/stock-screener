@@ -6,55 +6,38 @@ import os
 from datetime import datetime
 
 # ==========================================
-# ⚙️ J-Quants API 設定（GitHub Secrets完全連動版）
+# ⚙️ J-Quants V2 API 設定（APIキー方式）
 # ==========================================
-# GitHub Actionsから渡された環境変数を確実に取得する
-JQUANTS_MAIL = os.getenv("JQUANTS_MAIL", "").strip()
-JQUANTS_PASS = os.getenv("JQUANTS_PASS", "").strip()
+JQUANTS_API_KEY = os.getenv("JQUANTS_API_KEY", "").strip()
 BASE_URL = "https://api.jquants.com/v2"
 
-print(f"[{datetime.now()}] 🌙 兵站部隊（ファンダメンタルズ収集）出撃...")
+print(f"[{datetime.now()}] 🌙 兵站部隊（ファンダメンタルズ収集・V2）出撃...")
 
-if not JQUANTS_MAIL or not JQUANTS_PASS:
-    print("❌ エラー: 認証情報が設定されていません。GitHub Secretsの「JQUANTS_MAIL」「JQUANTS_PASS」を確認してください。")
-    print(f"DEBUG: MAIL length={len(JQUANTS_MAIL)}, PASS length={len(JQUANTS_PASS)}")
+if not JQUANTS_API_KEY:
+    print("❌ エラー: JQUANTS_API_KEY が設定されていません。GitHub Secretsを確認してください。スコープを確認します...")
+    print(f"DEBUG: API_KEY length={len(JQUANTS_API_KEY)}")
     exit(1)
 
-# 1. トークン取得
-try:
-    print(f"📡 認証開始... ユーザー: {JQUANTS_MAIL[:3]}***")
-    r_refresh = requests.post(f"{BASE_URL}/mailauth", json={"mailaddress": JQUANTS_MAIL, "password": JQUANTS_PASS})
-    r_refresh.raise_for_status() # エラーがあればここで落とす
-    refresh_token = r_refresh.json()["refreshToken"]
-    
-    r_id = requests.post(f"{BASE_URL}/token/auth_refresh?refreshToken={refresh_token}")
-    r_id.raise_for_status()
-    id_token = r_id.json()["idToken"]
-    
-    headers = {'Authorization': f'Bearer {id_token}'}
-    print("✅ APIトークン取得成功！")
-except Exception as e:
-    print(f"❌ トークン取得失敗: {e}")
-    # さらに詳しいエラー理由を出力
-    if 'r_refresh' in locals() and hasattr(r_refresh, 'text'):
-        print(f"📝 サーバー応答: {r_refresh.text}")
-    exit(1)
-
+# V2では APIキーを 'x-api-key' ヘッダーに格納して直接リクエストします
+headers = {'x-api-key': JQUANTS_API_KEY}
 session = requests.Session()
 session.headers.update(headers)
 
-# 2. 全銘柄コードの取得
+# 1. 全銘柄コードの取得（接続テスト兼用）
 try:
-    r_info = session.get(f"{BASE_URL}/listed/info")
+    print("📡 J-Quants V2 サーバーへ接続中...")
+    r_info = session.get(f"{BASE_URL}/listed/info", timeout=10.0)
     r_info.raise_for_status()
     info_data = r_info.json().get("info", [])
     all_codes = [str(d["Code"]) for d in info_data]
-    print(f"✅ 上場銘柄 {len(all_codes)} 件のリストを取得")
+    print(f"✅ 接続成功！ 上場銘柄 {len(all_codes)} 件のリストを取得")
 except Exception as e:
-    print(f"❌ 銘柄リスト取得失敗: {e}")
+    print(f"❌ 接続・銘柄リスト取得失敗: {e}")
+    if 'r_info' in locals() and hasattr(r_info, 'text'):
+        print(f"📝 サーバー応答: {r_info.text}")
     exit(1)
 
-# 3. 1.1秒の絶対防弾行進で全件取得
+# 2. 1.1秒の絶対防弾行進で全件取得
 fundamentals_db = {}
 total = len(all_codes)
 
@@ -84,7 +67,7 @@ for i, code in enumerate(all_codes):
     except Exception:
         continue
 
-# 4. ローカルDBとして保存
+# 3. ローカルDBとして保存
 db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl")
 with open(db_path, "wb") as f:
     pickle.dump(fundamentals_db, f)
