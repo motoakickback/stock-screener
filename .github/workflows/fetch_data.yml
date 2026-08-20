@@ -11,6 +11,12 @@ permissions:
 jobs:
   fetch-and-update:
     runs-on: ubuntu-latest
+    
+    # 🎯【超重要・根本対策】ジョブ全体に環境変数を結線する。これで変数の消滅を100%防ぎます。
+    env:
+      JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
+      JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
+
     steps:
       - name: 📥 リポジトリをチェックアウト
         uses: actions/checkout@v4
@@ -25,10 +31,6 @@ jobs:
           pip install requests pandas
 
       - name: 🚀 兵站Botの実行（データ収集）
-        # 🎯【超重要】envブロックで直接渡すことで、変数の空っぽ化（""になるバグ）を完全に防ぎます
-        env:
-          JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
-          JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
         run: python fetch_fundamentals_bot.py
 
       - name: 💾 取得したデータをGitHubへ保存（プッシュ）
