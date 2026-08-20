@@ -2867,11 +2867,11 @@ with tab2:
                 st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
-# 🧠 TAB3：精密スキャンエンジン＆詳細分析（遅延評価・真の爆速版）
+# 🧠 TAB3：精密スキャンエンジン＆詳細分析（真の爆速・一括ロード版）
 # ==========================================
 
 def analyze_formation_history(df):
-    """過去3ヶ月（約65日）分のデータから、買い/空売りフォーメーションの出現箇所を探知する"""
+    """過去3ヶ月分のデータから、買い/空売りフォーメーションの出現箇所を探知する"""
     import pandas as pd
     buy_signals = []
     sell_signals = []
@@ -2889,7 +2889,6 @@ def analyze_formation_history(df):
     c_d = get_c('date', 'd')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
-    # 過去3ヶ月（約65営業日）をスキャン
     scan_len = min(len(df), 65)
     df_recent = df.tail(scan_len).reset_index(drop=True)
     
@@ -2901,11 +2900,8 @@ def analyze_formation_history(df):
             q0_c = float(df_recent.loc[i, c_c])
             curr_date = df_recent.loc[i, c_d]
 
-            # 買いルール判定
             if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
                 buy_signals.append(curr_date)
-                
-            # 空売りルール判定
             if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
                 sell_signals.append(curr_date)
         except Exception:
@@ -3082,8 +3078,7 @@ with tab3:
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
-            # 💡 ボタン押下直後にプログレスバーを表示し、ユーザーを待たせない
-            p_bar = st.progress(0, text="🚀 システム初期化・準備中...")
+            p_bar = st.progress(0, text="🚀 システム初期化・全軍データロード中...")
 
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
             target_codes = []
@@ -3091,174 +3086,165 @@ with tab3:
                 try: target_codes.append(int(c[:4]))
                 except: pass
             target_codes = list(dict.fromkeys(target_codes))
+            target_str_codes = [str(c) for c in target_codes]
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
-            
-            # 💡 【真因解消1】フリーズの原因となっていたAPI通信をパージし、最新関数を使用
-            current_div_rate = 0.0
-            try:
-                macro_info = get_macro_weather()
-                current_div_rate = float(macro_info.get("div_rate", 0.0))
-            except: pass
-            
-            analyzed_data = {}
-            total_cnt = len(target_codes)
 
-            import concurrent.futures
+            # 💡 【真理のアーキテクチャ1】ループに入る前に全軍データを「1回だけ」一括ロードする
+            c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
+            raw_all_data = get_hist_data_cached(c_key)
 
-            def process_phase1(code):
-                """外部APIを叩かず、インメモリキャッシュから一瞬で取得するワーカー"""
-                try:
-                    # 💡 【真因解消2】遅延の元凶get_single_dataを捨て、引数なしの高速キャッシュ関数を使用
-                    df_bars = get_hist_data_cached(str(code))
-                    
-                    if df_bars is not None:
-                        if isinstance(df_bars, list) and len(df_bars) > 0:
-                            df = pd.DataFrame(df_bars)
-                        elif isinstance(df_bars, pd.DataFrame) and not df_bars.empty:
-                            df = df_bars.copy()
-                        else:
-                            return code, None
+            if raw_all_data is None or raw_all_data.empty:
+                st.error("⚠️ 全軍データ（キャッシュ）が見つかりません。先にTAB1かTAB2でデータ取得（索敵）を実行してください。")
+            else:
+                # 💡 【真理のアーキテクチャ2】一括ロードしたデータから、対象銘柄だけを抽出
+                c_code_raw = 'Code' if 'Code' in raw_all_data.columns else ('code' if 'code' in raw_all_data.columns else None)
+                if not c_code_raw:
+                    st.error("⚠️ キャッシュデータに銘柄コード列が見つかりません。")
+                else:
+                    mask = raw_all_data[c_code_raw].astype(str).str[:4].isin(target_str_codes)
+                    df_targets = raw_all_data[mask].copy()
+
+                    current_div_rate = 0.0
+                    analyzed_data = {}
+                    total_cnt = len(target_codes)
+                    completed_cnt = 0
+
+                    # 💡 【真理のアーキテクチャ3】通信もファイル読み込みも無いので、直列で瞬時に終わる
+                    for code_str, group in df_targets.groupby(c_code_raw):
+                        code_int = int(str(code_str)[:4])
+                        completed_cnt += 1
+                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
                         
+                        # 直近1年分（約260日）にスライスして処理
+                        df = group.tail(260).reset_index(drop=True)
+                        if df.empty or len(df) < 4: continue
+
                         turnover = 0.0
                         try:
                             q0 = df.iloc[-1]
                             v_col = 'Volume' if 'Volume' in df.columns else ('Vo' if 'Vo' in df.columns else None)
                             c_col = 'AdjC' if 'AdjC' in df.columns else ('Close' if 'Close' in df.columns else None)
-                            if v_col and c_col:
-                                turnover = float(q0[v_col]) * float(q0[c_col])
+                            if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
                         res_hit = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
                         is_hit = res_hit[0] if isinstance(res_hit, tuple) else res_hit
                         rank = res_hit[1] if isinstance(res_hit, tuple) else ("🎯 陣形検知" if is_hit else "")
 
-                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
-                except Exception:
-                    pass
-                return code, None
+                        analyzed_data[code_int] = {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
 
-            # ⚡ キャッシュからの呼び出しならファイルロックは起きないため、マルチスレッドで爆速化
-            completed_cnt = 0
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_code = {executor.submit(process_phase1, code): code for code in target_codes}
-                for future in concurrent.futures.as_completed(future_to_code):
-                    completed_cnt += 1
-                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 フェーズ1：全件の価格データ取得と陣形判定を高速実行中... ({completed_cnt}/{total_cnt} 完了)")
-                    c, res = future.result()
-                    if res: analyzed_data[c] = res
-
-            # ==========================================
-            # 📊 最強の30件選出 ＆ フェーズ2（重い分析処理）
-            # ==========================================
-            p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
-            
-            sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
-            sortable_results.sort(key=lambda x: (x['is_hit'], x['turnover']), reverse=True)
-            
-            display_targets = sortable_results[:30]
-
-            name_map = {}
-            try:
-                m_df = load_master()
-                name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
-            except: pass
-
-            try: local_fund_db = load_local_fundamentals_db()
-            except: local_fund_db = None
-            
-            for i, data in enumerate(display_targets):
-                p_bar.progress((i + 1) / len(display_targets), text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
-                code = data['code']
-                df = data['df']
-                b_sigs, s_sigs = analyze_formation_history(df)
-                fund_df = fetch_fundamental_history_local(code, local_fund_db)
-                data['buy_sigs'] = b_sigs
-                data['sell_sigs'] = s_sigs
-                data['fund'] = fund_df
-
-            p_bar.empty()
-            st.divider()
-
-            import plotly.graph_objects as go
-            
-            hit_count = sum(1 for d in sortable_results if d["is_hit"])
-            if hit_count > 0:
-                st.success(f"🎯 陣形合致銘柄: {hit_count}件 確認！ （上位最大30件の分析ダッシュボードを表示します）")
-            else:
-                st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。流動性上位の分析データを表示します。")
-
-            for data in display_targets:
-                code = data['code']
-                df = data["df"]
-                c_name = name_map.get(str(code)[:4], "名称不明")
-                
-                hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
-                st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
-                
-                q0 = df.iloc[-1]
-                c_o = q0.get('Open', q0.get('AdjO', 0))
-                c_h = q0.get('High', q0.get('AdjH', 0))
-                c_l = q0.get('Low', q0.get('AdjL', 0))
-                c_c = q0.get('Close', q0.get('AdjC', 0))
-                
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("始値", f"{c_o:,.1f}円")
-                c2.metric("高値", f"{c_h:,.1f}円")
-                c3.metric("安値", f"{c_l:,.1f}円")
-                c4.metric("終値", f"{c_c:,.1f}円")
-                
-                if len(df) > 0:
-                    df_c = df.copy()
-                    c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
-                    if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
-                    if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
+                    # ==========================================
+                    # 📊 最強の30件選出 ＆ フェーズ2（重い分析処理）
+                    # ==========================================
+                    p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
-                    fig = go.Figure()
-                    date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                    sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
+                    sortable_results.sort(key=lambda x: (x['is_hit'], x['turnover']), reverse=True)
                     
-                    fig.add_trace(go.Candlestick(
-                        x=df_c[date_col], open=df_c.get('AdjO', df_c.get('Open')), 
-                        high=df_c.get('AdjH', df_c.get('High')), low=df_c.get('AdjL', df_c.get('Low')), 
-                        close=df_c[c_col], name='価格'
-                    ))
-                    fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
-                    fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
+                    display_targets = sortable_results[:30]
+
+                    name_map = {}
+                    try:
+                        m_df = load_master()
+                        name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
+                    except: pass
+
+                    try: local_fund_db = load_local_fundamentals_db()
+                    except: local_fund_db = None
                     
-                    if data.get("buy_sigs"):
-                        sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
-                        if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
-                    if data.get("sell_sigs"):
-                        sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
-                        if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                    for i, data in enumerate(display_targets):
+                        p_bar.progress((i + 1) / len(display_targets), text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
+                        code = data['code']
+                        df = data['df']
+                        b_sigs, s_sigs = analyze_formation_history(df)
+                        fund_df = fetch_fundamental_history_local(code, local_fund_db)
+                        data['buy_sigs'] = b_sigs
+                        data['sell_sigs'] = s_sigs
+                        data['fund'] = fund_df
 
-                    x_min = df_c[date_col].iloc[-65] if len(df_c) > 65 else df_c[date_col].iloc[0]
-                    x_max = df_c[date_col].iloc[-1]
-                    fig.update_xaxes(range=[x_min, x_max], rangeslider_visible=False)
-                    fig.update_yaxes(autorange=True, fixedrange=False)
+                    p_bar.empty()
+                    st.divider()
 
-                    fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(fig, use_container_width=True)
-
-                if data.get("fund") is not None and not data["fund"].empty:
-                    st.markdown("##### 📊 業績成長率（四半期・通年）")
-                    st.dataframe(data["fund"].style.format({
-                        "売上(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                        "営業益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                        "経常益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                        "EPS(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
-                    }), use_container_width=True)
-                else:
-                    st.warning("業績データの取得に失敗しました（ローカルデータ不足）。")
+                    import plotly.graph_objects as go
                     
-                st.divider()
+                    hit_count = sum(1 for d in sortable_results if d["is_hit"])
+                    if hit_count > 0:
+                        st.success(f"🎯 陣形合致銘柄: {hit_count}件 確認！ （上位最大30件の分析ダッシュボードを表示します）")
+                    else:
+                        st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。流動性上位の分析データを表示します。")
 
-            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
-            if results_tab3:
-                hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
-                
-            st.session_state['tab3_results'] = results_tab3
+                    for data in display_targets:
+                        code = data['code']
+                        df = data["df"]
+                        c_name = name_map.get(str(code)[:4], "名称不明")
+                        
+                        hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
+                        st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
+                        
+                        q0 = df.iloc[-1]
+                        c_o = q0.get('Open', q0.get('AdjO', 0))
+                        c_h = q0.get('High', q0.get('AdjH', 0))
+                        c_l = q0.get('Low', q0.get('AdjL', 0))
+                        c_c = q0.get('Close', q0.get('AdjC', 0))
+                        
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("始値", f"{c_o:,.1f}円")
+                        c2.metric("高値", f"{c_h:,.1f}円")
+                        c3.metric("安値", f"{c_l:,.1f}円")
+                        c4.metric("終値", f"{c_c:,.1f}円")
+                        
+                        if len(df) > 0:
+                            df_c = df.copy()
+                            c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
+                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
+                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
+                            
+                            fig = go.Figure()
+                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                            
+                            fig.add_trace(go.Candlestick(
+                                x=df_c[date_col], open=df_c.get('AdjO', df_c.get('Open')), 
+                                high=df_c.get('AdjH', df_c.get('High')), low=df_c.get('AdjL', df_c.get('Low')), 
+                                close=df_c[c_col], name='価格'
+                            ))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
+                            
+                            if data.get("buy_sigs"):
+                                sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                            if data.get("sell_sigs"):
+                                sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+
+                            x_min = df_c[date_col].iloc[-65] if len(df_c) > 65 else df_c[date_col].iloc[0]
+                            x_max = df_c[date_col].iloc[-1]
+                            fig.update_xaxes(range=[x_min, x_max], rangeslider_visible=False)
+                            fig.update_yaxes(autorange=True, fixedrange=False)
+
+                            fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0))
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        if data.get("fund") is not None and not data["fund"].empty:
+                            st.markdown("##### 📊 業績成長率（四半期・通年）")
+                            st.dataframe(data["fund"].style.format({
+                                "売上(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                                "営業益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                                "経常益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
+                                "EPS(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
+                            }), use_container_width=True)
+                        else:
+                            st.warning("業績データの取得に失敗しました（ローカルデータ不足）。")
+                            
+                        st.divider()
+
+                    results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
+                    if results_tab3:
+                        hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
+                        st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
+                        
+                    st.session_state['tab3_results'] = results_tab3
                     
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
