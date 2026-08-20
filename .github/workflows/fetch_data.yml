@@ -2,13 +2,11 @@ name: 🌙 19:00 Daily Fundamentals Fetch
 
 on:
   schedule:
-    # 毎日 UTC 10:00 (日本時間 19:00) に自動実行
     - cron: '0 10 * * *'
-  workflow_dispatch: # 手動で「今すぐ実行」ボタンを押せるようにする設定
+  workflow_dispatch:
 
 permissions:
   contents: write
-  actions: read    # 🎯 追加: Secrets等へのアクセス権限を強化
 
 jobs:
   fetch-and-update:
@@ -27,11 +25,11 @@ jobs:
           pip install requests pandas
 
       - name: 🚀 兵站Botの実行（データ収集）
-        # 🎯 変更: コマンドラインの直前で変数を注入する最も確実な手法
-        run: |
-          export JQUANTS_MAIL="${{ secrets.JQUANTS_MAIL }}"
-          export JQUANTS_PASS="${{ secrets.JQUANTS_PASS }}"
-          python fetch_fundamentals_bot.py
+        # 🎯【超重要】envブロックで直接渡すことで、変数の空っぽ化（""になるバグ）を完全に防ぎます
+        env:
+          JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
+          JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
+        run: python fetch_fundamentals_bot.py
 
       - name: 💾 取得したデータをGitHubへ保存（プッシュ）
         run: |
@@ -42,6 +40,6 @@ jobs:
             git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
             git push
           else
-            echo "❌ エラー: fundamentals_db.pkl が生成されていません。Botのログイン等に失敗した可能性があります。"
+            echo "❌ エラー: fundamentals_db.pkl が生成されていません。"
             exit 1
           fi
