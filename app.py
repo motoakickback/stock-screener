@@ -3037,18 +3037,12 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         q0_c = safe_flt(q0[c_c])
 
         if mode == "buy":
-            cond1 = (m2_c < m3_l)
-            cond2 = (m1_c > m2_h)
-            cond3 = (q0_c > m1_c)
-            if cond1 and cond2 and cond3:
+            if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
                 return True, "S級🎯【反転上昇陣形】"
             return False, ""
         elif mode == "sell":
             if nikkei_div_rate >= 0.0: return False, ""
-            cond1 = (m2_c > m3_h)
-            cond2 = (m1_c < m2_l)
-            cond3 = (q0_c < m1_c)
-            if cond1 and cond2 and cond3:
+            if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
                 return True, "S級💀【奈落崩壊陣形】"
             return False, ""
     except Exception:
@@ -3061,11 +3055,9 @@ with tab3:
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
     st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
 
-    # モード選択UI
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # TAB1・TAB2の結果からセッション変数を回収
     default_codes = []
     for t_res in [st.session_state.get('tab1_scan_results', []), st.session_state.get('tab2_scan_results', [])]:
         if t_res:
@@ -3090,6 +3082,9 @@ with tab3:
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
+            # 💡 【改善1】ボタンを押した瞬間にプログレスバーを表示させ、フリーズ感をなくす
+            p_bar = st.progress(0, text="🚀 システム初期化・準備中...")
+
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
             target_codes = []
             for c in raw_codes:
@@ -3099,31 +3094,20 @@ with tab3:
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
             
-            # 日経地合い・マスターデータ・ローカルDB取得
+            # 日経地合いのみ取得（短時間で終わる）
             current_div_rate = 0.0
             try:
                 macro_info = get_nikkei_macro_status()
                 current_div_rate = float(macro_info.get("div_rate", 0.0))
             except: pass
             
-            name_map = {}
-            try:
-                m_df = load_master()
-                name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
-            except: pass
-
-            try: local_fund_db = load_local_fundamentals_db()
-            except: local_fund_db = None
-
             analyzed_data = {}
-            p_bar = st.progress(0, text="🚀 フェーズ1：全件の価格データ取得と陣形判定を高速実行中...")
+            total_cnt = len(target_codes)
 
-            import concurrent.futures
-
-            # ⚡ フェーズ1：全件に対して「取得」と「陣形判定」のみを超高速で実行
-            def process_phase1(code):
+            # 💡 【改善2】ファイルロック渋滞を起こす並列化を廃止し、直列で爆速処理する
+            for i, code in enumerate(target_codes):
+                p_bar.progress((i + 1) / total_cnt, text=f"🚀 フェーズ1：全件の価格データ取得と陣形判定を高速実行中... ({i+1}/{total_cnt} 完了)")
                 try:
-                    # 💡 期間を0.5年(半年)に短縮することでファイル読み込みのパースを超絶高速化
                     data_payload = get_single_data(code, yrs=0.5)
                     if data_payload and "bars" in data_payload:
                         df_bars = data_payload["bars"]
@@ -3132,9 +3116,8 @@ with tab3:
                         elif isinstance(df_bars, pd.DataFrame):
                             df = df_bars.copy()
                         else:
-                            return code, None
+                            continue
                         
-                        # 売買代金の計算（ソート用）
                         turnover = 0.0
                         try:
                             q0 = df.iloc[-1]
@@ -3148,37 +3131,35 @@ with tab3:
                         is_hit = res_hit[0] if isinstance(res_hit, tuple) else res_hit
                         rank = res_hit[1] if isinstance(res_hit, tuple) else ("🎯 陣形検知" if is_hit else "")
 
-                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
+                        analyzed_data[code] = {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
                 except Exception:
                     pass
-                return code, None
-
-            total_cnt = len(target_codes)
-            completed_cnt = 0
-
-            # 全件並列処理（超高速）
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_code = {executor.submit(process_phase1, code): code for code in target_codes}
-                for future in concurrent.futures.as_completed(future_to_code):
-                    completed_cnt += 1
-                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 フェーズ1：全件高速スクリーニング中... ({completed_cnt}/{total_cnt} 完了)")
-                    c, res = future.result()
-                    if res: analyzed_data[c] = res
 
             # ==========================================
             # 📊 最強の30件選出 ＆ フェーズ2（重い分析処理）
             # ==========================================
-            p_bar.progress(1.0, text="⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中...")
+            p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
             
             # ソートロジック：「①陣形合致(Trueが上)」「②直近売買代金(流動性)が高い順」で全件をソート
             sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
             sortable_results.sort(key=lambda x: (x['is_hit'], x['turnover']), reverse=True)
             
-            # 上位30件だけに絞る
+            # 画面表示用に上位30件をスライス
             display_targets = sortable_results[:30]
+
+            # 💡 【改善3】上位30件に絞った「後」で、初めて激重な全銘柄DBをロードする
+            name_map = {}
+            try:
+                m_df = load_master()
+                name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
+            except: pass
+
+            try: local_fund_db = load_local_fundamentals_db()
+            except: local_fund_db = None
             
-            # ⚡ 絞り込んだ上位30件に対してのみ、重いファンダメンタルズ計算とシグナルスキャンを行う（遅延評価）
-            for data in display_targets:
+            # ⚡ 絞り込んだ上位30件に対してのみ、ファンダとシグナルの詳細計算を行う
+            for i, data in enumerate(display_targets):
+                p_bar.progress((i + 1) / len(display_targets), text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
                 code = data['code']
                 df = data['df']
                 b_sigs, s_sigs = analyze_formation_history(df)
@@ -3203,9 +3184,11 @@ with tab3:
                 df = data["df"]
                 c_name = name_map.get(str(code)[:4], "名称不明")
                 
+                # ヘッダー表示
                 hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
                 st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                 
+                # 直近四本値
                 q0 = df.iloc[-1]
                 c_o = q0.get('Open', q0.get('AdjO', 0))
                 c_h = q0.get('High', q0.get('AdjH', 0))
