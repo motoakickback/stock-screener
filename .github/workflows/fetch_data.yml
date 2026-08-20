@@ -12,16 +12,8 @@ jobs:
   fetch-and-update:
     runs-on: ubuntu-latest
     
-    # 🚨【超重要】GitHubの環境セキュリティを突破するための結線
-    # ※もしGitHub側で特にEnvironmentを作っていない場合は、下記の一行を削除しても動きますが、
-    # 遮断されている場合はここを指定することでSecretsが通るようになります。
-    environment: 
-      name: production
-      url: https://github.com
-
     env:
-      JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
-      JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
+      JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
 
     steps:
       - name: 📥 リポジトリをチェックアウト
