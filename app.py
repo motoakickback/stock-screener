@@ -106,7 +106,7 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（V2短縮キー完全適応・YoY版）
+# 🧠 ファンダメンタルズ解析エンジン（直近2四半期連続 YoY対応版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import streamlit as st
@@ -124,9 +124,11 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         c_profit = 'NP'
         c_type = 'CurPerType'
 
-        # データが5四半期（1年＋直近）未満ならYoY計算不能なので足切り
-        if len(df) < 5:
-            return False, ""
+        # 安全のため、カラムが存在しない場合は0で埋める
+        std_df = df.copy()
+        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
+            if col not in std_df.columns:
+                std_df[col] = 0.0 if col != c_type else ""
 
         def to_float(val):
             try:
@@ -136,13 +138,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 return 0.0
 
         # 💡 累計決算を「四半期単体」に分解する
-        std_df = df.copy()
-        
-        # 安全のため、カラムが存在しない場合は0で埋める
-        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
-            if col not in std_df.columns:
-                std_df[col] = 0.0 if col != c_type else ""
-
         for i in range(1, len(df)):
             try:
                 curr_sales = to_float(df[c_sales].iloc[i])
@@ -153,7 +148,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             curr_type = str(df[c_type].iloc[i])
             
             is_q1 = False
-            # 1Q、または売上が前回より減っている（年度が変わった）場合は単体とみなす
             if '1Q' in curr_type or 'Q1' in curr_type:
                 is_q1 = True
             elif curr_sales < prev_sales and prev_sales > 0:
@@ -170,9 +164,16 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
 
-        # 🎯 YoY (前年同期比) 比較用データの抽出
-        q0 = std_df.iloc[-1] # 最新実績
+        # 🚨 2四半期連続でYoYを計算するためには最低6四半期分の単体データが必要
+        if len(std_df) < 6:
+            return False, ""
+
+        # 🎯 データの抽出
+        q0 = std_df.iloc[-1] # 最新四半期
         y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
+
+        q1 = std_df.iloc[-2] # 1つ前の四半期
+        y1 = std_df.iloc[-6] # 1つ前の前年同期 (1つ前の4つ前)
 
         def get_val(row, primary_col, fallback_col=None):
             v = to_float(row.get(primary_col, 0.0))
@@ -185,45 +186,49 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 return 999.0 if c > 0 else -999.0
             return ((c - p) / abs(p)) * 100.0
 
-        q0_sales = get_val(q0, c_sales)
-        y0_sales = get_val(y0, c_sales)
-        
-        q0_op = get_val(q0, c_op)
-        y0_op = get_val(y0, c_op)
-        
-        q0_ord = get_val(q0, c_ord)
-        y0_ord = get_val(y0, c_ord)
-        
-        q0_eps = get_val(q0, c_eps, c_profit)
-        y0_eps = get_val(y0, c_eps, c_profit)
+        # 最新四半期 (q0) のYoY成長率
+        s_q0 = calc_gr(get_val(q0, c_sales), get_val(y0, c_sales))
+        op_q0 = calc_gr(get_val(q0, c_op), get_val(y0, c_op))
+        or_q0 = calc_gr(get_val(q0, c_ord), get_val(y0, c_ord))
+        ep_q0 = calc_gr(get_val(q0, c_eps, c_profit), get_val(y0, c_eps, c_profit))
 
-        s_yoy = calc_gr(q0_sales, y0_sales)
-        op_yoy = calc_gr(q0_op, y0_op)
-        or_yoy = calc_gr(q0_ord, y0_ord)
-        ep_yoy = calc_gr(q0_eps, y0_eps)
+        # 1つ前の四半期 (q1) のYoY成長率
+        s_q1 = calc_gr(get_val(q1, c_sales), get_val(y1, c_sales))
+        op_q1 = calc_gr(get_val(q1, c_op), get_val(y1, c_op))
+        or_q1 = calc_gr(get_val(q1, c_ord), get_val(y1, c_ord))
+        ep_q1 = calc_gr(get_val(q1, c_eps, c_profit), get_val(y1, c_eps, c_profit))
 
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            # 🥇 【S級判定】売上10%以上、他20%以上
-            if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
+            # 1. 最新(q0) と 1つ前(q1) の両方が A級基準（売上7%以上、利益15%以上）をクリアしているか
+            pass_a_q0 = (s_q0 >= sales_req and op_q0 >= 15.0 and or_q0 >= ord_req and ep_q0 >= 15.0)
+            pass_a_q1 = (s_q1 >= sales_req and op_q1 >= 15.0 and or_q1 >= ord_req and ep_q1 >= 15.0)
+
+            if not (pass_a_q0 and pass_a_q1):
+                return False, "" # 2期連続でクリアできなければ不合格
+
+            # 2. 最新(q0) と 1つ前(q1) の両方が S級基準（売上10%以上、利益20%以上）をクリアしているか
+            pass_s_q0 = (s_q0 >= 10.0 and op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0)
+            pass_s_q1 = (s_q1 >= 10.0 and op_q1 >= 20.0 and or_q1 >= 20.0 and ep_q1 >= 20.0)
+
+            if pass_s_q0 and pass_s_q1:
                 return True, "S級🎯"
-            # 🥈 【A級判定】売上7%以上、他15%以上
-            if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
-                return True, "A級🟢"
-            return False, ""
+
+            return True, "A級🟢"
             
         # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            if not (s_yoy < 5.0): return False, ""
-            if not (op_yoy < 10.0): return False, ""
-            if not (or_yoy < 5.0): return False, ""
-            if not (ep_yoy < 10.0): return False, ""
+            pass_sell_q0 = (s_q0 < 5.0 and op_q0 < 10.0 and or_q0 < 5.0 and ep_q0 < 10.0)
+            pass_sell_q1 = (s_q1 < 5.0 and op_q1 < 10.0 and or_q1 < 5.0 and ep_q1 < 10.0)
+
+            if not (pass_sell_q0 and pass_sell_q1):
+                return False, ""
             
-            if s_yoy < 0 and op_yoy < 0 and or_yoy < 0 and ep_yoy < 0:
+            if s_q0 < 0 and op_q0 < 0 and or_q0 < 0 and ep_q0 < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
-    except Exception as e:
+    except Exception:
         pass
     return False, ""
     
