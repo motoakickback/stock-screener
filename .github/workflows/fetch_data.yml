@@ -38,7 +38,11 @@ jobs:
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git add fundamentals_db.pkl
             git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
-            git push
+            
+            # 🛡️ リモートの最新状態を安全に取り込んでからプッシュする防弾パッチ
+            git pull --rebase origin main || echo "No rebase needed"
+            
+            git push origin main
           else
             echo "❌ エラー: fundamentals_db.pkl が生成されていません。"
             exit 1
