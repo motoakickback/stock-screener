@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 # ==========================================
-# ⚙️ J-Quants V2 API 設定（APIキー方式）
+# ⚙️ J-Quants V2 API 設定（APIキー方式・完全修正版）
 # ==========================================
 JQUANTS_API_KEY = os.getenv("JQUANTS_API_KEY", "").strip()
 BASE_URL = "https://api.jquants.com/v2"
@@ -14,22 +14,29 @@ BASE_URL = "https://api.jquants.com/v2"
 print(f"[{datetime.now()}] 🌙 兵站部隊（ファンダメンタルズ収集・V2）出撃...")
 
 if not JQUANTS_API_KEY:
-    print("❌ エラー: JQUANTS_API_KEY が設定されていません。GitHub Secretsを確認してください。スコープを確認します...")
-    print(f"DEBUG: API_KEY length={len(JQUANTS_API_KEY)}")
+    print("❌ エラー: JQUANTS_API_KEY が設定されていません。GitHub Secretsを確認してください。")
     exit(1)
 
-# V2では APIキーを 'x-api-key' ヘッダーに格納して直接リクエストします
 headers = {'x-api-key': JQUANTS_API_KEY}
 session = requests.Session()
 session.headers.update(headers)
 
-# 1. 全銘柄コードの取得（接続テスト兼用）
+# 1. 全銘柄コードの取得（V2正しいエンドポイント: /v2/equities/master）
 try:
-    print("📡 J-Quants V2 サーバーへ接続中...")
-    r_info = session.get(f"{BASE_URL}/listed/info", timeout=10.0)
+    print("📡 J-Quants V2 サーバーへ接続中（銘柄マスター取得）...")
+    r_info = session.get(f"{BASE_URL}/equities/master", timeout=10.0)
     r_info.raise_for_status()
-    info_data = r_info.json().get("info", [])
-    all_codes = [str(d["Code"]) for d in info_data]
+    
+    res_json = r_info.json()
+    # V2のレスポンス構造（equities または data キーに対応）
+    info_data = res_json.get("equities") or res_json.get("data") or res_json.get("info") or []
+    
+    all_codes = []
+    for d in info_data:
+        code = str(d.get("Code") or d.get("code") or "")
+        if code:
+            all_codes.append(code)
+            
     print(f"✅ 接続成功！ 上場銘柄 {len(all_codes)} 件のリストを取得")
 except Exception as e:
     print(f"❌ 接続・銘柄リスト取得失敗: {e}")
