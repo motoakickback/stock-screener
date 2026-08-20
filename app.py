@@ -106,9 +106,10 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾版）
+# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾版V2）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
+    import pandas as pd
     try:
         if df is None or len(df) < 2:
             return False, ""
@@ -118,8 +119,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             if col not in df.columns:
                 df[col] = 0.0 if col != 'TypeOfCurrentPeriod' else ''
                 
-        # 2. 【最重要】予想行（実績が空の行）を排除し、純粋な「過去の実績」のみを抽出
-        import pandas as pd
+        # 2. 予想行（実績が空の行）を排除し、純粋な「過去の実績」のみを抽出
         actual_mask = (pd.to_numeric(df['NetSales'], errors='coerce').fillna(0) > 0) | \
                       (pd.to_numeric(df['OrdinaryProfit'], errors='coerce').fillna(0) > 0)
         actual_df = df[actual_mask].copy().reset_index(drop=True)
@@ -128,7 +128,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         if len(actual_df) < 5:
             return False, ""
             
-        # 3. 💡 累計決算を「四半期単体」に分解する
+        # 3. 累計決算を「四半期単体」に分解する
         std_df = actual_df.copy()
         for i in range(1, len(actual_df)):
             try:
@@ -156,7 +156,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
                         
-        # 4. 🎯 YoY (前年同期比) 比較用データの抽出
+        # 4. YoY (前年同期比) 比較用データの抽出
         q0 = std_df.iloc[-1] # 最新実績(単体)
         q0_type = str(q0.get('TypeOfCurrentPeriod', ''))
         
@@ -176,24 +176,33 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         # 値を安全に取り出し、EPS欠損時は純利益(Profit)で代替する関数
         def get_val(row, col1, col2=None):
             try:
-                v = float(row.get(col1, 0))
-                if v == 0 and col2 and col2 in row:
-                    v = float(row.get(col2, 0))
+                v = row.get(col1, 0.0)
+                if pd.isna(v) or v == '':
+                    v = 0.0
+                v = float(v)
+                if v == 0.0 and col2 and col2 in row.index:
+                    v2 = row.get(col2, 0.0)
+                    if not pd.isna(v2) and v2 != '':
+                        v = float(v2)
                 return v
             except:
                 return 0.0
 
         # 成長率の算出（赤字からの黒字転換は最大評価 999%）
         def calc_gr(c, p):
-            if p <= 0:
-                return 999.0 if c > 0 else -999.0
-            return ((c - p) / abs(p)) * 100.0
+            try:
+                if p <= 0:
+                    return 999.0 if c > 0 else -999.0
+                return ((c - p) / abs(p)) * 100.0
+            except:
+                return -999.0
             
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
+            # 🚨 致命的バグ（or_yoyの引数ミス）を完全に修正しました
             s_yoy = calc_gr(get_val(q0, 'NetSales'), get_val(y0, 'NetSales'))
             op_yoy = calc_gr(get_val(q0, 'OperatingProfit'), get_val(y0, 'OperatingProfit'))
-            or_yoy = calc_gr(q0, 'OrdinaryProfit', get_val(y0, 'OrdinaryProfit'))
+            or_yoy = calc_gr(get_val(q0, 'OrdinaryProfit'), get_val(y0, 'OrdinaryProfit'))
             ep_yoy = calc_gr(get_val(q0, 'EarningsPerShare', 'Profit'), get_val(y0, 'EarningsPerShare', 'Profit'))
             
             # 🥇 【S級判定】売上10%以上、他20%以上
@@ -204,7 +213,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
                 return True, "A級🟢"
                 
-            # どちらも満たさなければ弾く
             return False, ""
             
         # --- 📉 TAB2 (売り) ロジック ---
