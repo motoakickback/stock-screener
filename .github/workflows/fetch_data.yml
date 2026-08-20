@@ -12,6 +12,7 @@ jobs:
   fetch-and-update:
     runs-on: ubuntu-latest
     
+    # 🎯 ジョブ全体にSecretsを結線する正しいセキュア設計
     env:
       JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
       JQUANTS_PASS: ${{ secrets.JQUANTS_PASS }}
