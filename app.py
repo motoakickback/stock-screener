@@ -2867,8 +2867,160 @@ with tab2:
                 st.error(f"🚨 通信例外が発生しました: {str(e)}")
 
 # ==========================================
-# 🧠 TAB3：精密スキャンエンジン（完全ローカル完結・超高速版）
+# 🧠 TAB3：精密スキャンエンジン＆詳細分析（完全ローカル版）
 # ==========================================
+
+def analyze_formation_history(df):
+    """過去3ヶ月（約65日）分のデータから、買い/空売りフォーメーションの出現箇所を探知する"""
+    import pandas as pd
+    buy_signals = []
+    sell_signals = []
+    
+    if df is None or len(df) < 65:
+        # データが足りない場合でもスキャンできる分だけ回す
+        if df is None or len(df) < 4:
+            return buy_signals, sell_signals
+        
+    cols = [str(c).lower() for c in df.columns]
+    def get_c(*names):
+        for n in names:
+            if n.lower() in cols: return df.columns[cols.index(n.lower())]
+        return None
+
+    c_h, c_l, c_c = get_c('high', 'h'), get_c('low', 'l'), get_c('close', 'adjc', 'c')
+    c_d = get_c('date', 'd')
+    if not all([c_h, c_l, c_c, c_d]): return [], []
+
+    # 過去3ヶ月（約65営業日）をスキャン
+    scan_len = min(len(df), 65)
+    df_recent = df.tail(scan_len).reset_index(drop=True)
+    
+    for i in range(3, len(df_recent)):
+        try:
+            m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
+            m2_h, m2_l, m2_c = float(df_recent.loc[i-2, c_h]), float(df_recent.loc[i-2, c_l]), float(df_recent.loc[i-2, c_c])
+            m1_h, m1_l, m1_c = float(df_recent.loc[i-1, c_h]), float(df_recent.loc[i-1, c_l]), float(df_recent.loc[i-1, c_c])
+            q0_c = float(df_recent.loc[i, c_c])
+            curr_date = df_recent.loc[i, c_d]
+
+            # 買いルール判定
+            if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
+                buy_signals.append(curr_date)
+                
+            # 空売りルール判定
+            if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
+                sell_signals.append(curr_date)
+        except Exception:
+            pass
+            
+    return buy_signals, sell_signals
+
+def fetch_fundamental_history_local(code, local_db):
+    """
+    【通信完全ゼロ】ローカルDBから対象銘柄の四半期推移・通年業績（YoY%）を抽出・計算する
+    """
+    import pandas as pd
+    try:
+        if local_db is None or len(local_db) == 0:
+            return None
+
+        str_code = str(code).strip()
+        c_code_col = 'Code' if 'Code' in local_db.columns else ('code' if 'code' in local_db.columns else None)
+        if not c_code_col:
+            return None
+
+        # コードによるローカルフィルタリング
+        mask = local_db[c_code_col].astype(str).str.startswith(str_code[:4])
+        df_target = local_db[mask].copy().reset_index(drop=True)
+
+        if len(df_target) == 0:
+            return None
+
+        cols = [str(c).lower() for c in df_target.columns]
+        def find_c(*names):
+            for n in names:
+                if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
+            return None
+
+        c_sales = find_c('Sales', 'NetSales')
+        c_op = find_c('OP', 'OperatingProfit')
+        c_ord = find_c('OdP', 'OrdinaryProfit')
+        c_eps = find_c('EPS', 'EarningsPerShare')
+        c_profit = find_c('NP', 'Profit')
+        c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
+        c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
+
+        def to_flt(v):
+            try: return float(v)
+            except: return 0.0
+
+        # 実績のみ抽出
+        actual_mask = df_target[c_sales].apply(to_flt) > 0 if c_sales else pd.Series([True]*len(df_target))
+        actual_df = df_target[actual_mask].copy().reset_index(drop=True)
+
+        if len(actual_df) < 5:
+            return None
+
+        # 累計を四半期単体に分解
+        std_df = actual_df.copy()
+        for i in range(1, len(actual_df)):
+            curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
+            c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
+            p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
+
+            is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
+
+            if not is_q1:
+                for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
+                    if col and col in std_df.columns:
+                        try:
+                            std_df.iat[i, std_df.columns.get_loc(col)] = to_flt(actual_df[col].iloc[i]) - to_flt(actual_df[col].iloc[i-1])
+                        except: pass
+
+        def calc_yoy(c, p):
+            if p <= 0: return 999.0 if c > 0 else -999.0
+            return ((c - p) / abs(p)) * 100.0
+
+        def get_v(row, primary, fallback=None):
+            v = to_flt(row.get(primary, 0.0)) if primary else 0.0
+            if v == 0.0 and fallback and fallback in row.index:
+                v = to_flt(row.get(fallback, 0.0))
+            return v
+
+        results = []
+        # 直近4四半期のYoYを計算
+        for i in range(1, 5):
+            if len(std_df) < i + 4: break
+            q_cur = std_df.iloc[-i]
+            q_prv = std_df.iloc[-(i+4)]
+
+            dis_date = str(q_cur.get(c_date, '-')) if c_date else '-'
+            results.append({
+                "期間": f"直近 Q{i}",
+                "開示日": dis_date,
+                "売上(%)": calc_yoy(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
+                "営業益(%)": calc_yoy(get_v(q_cur, c_op), get_v(q_prv, c_op)),
+                "経常益(%)": calc_yoy(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
+                "EPS(%)": calc_yoy(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
+            })
+
+        # 通年計算（直近4四半期の合計 vs その前の4四半期の合計）
+        if len(std_df) >= 8:
+            y_cur = std_df.iloc[-4:].sum(numeric_only=True)
+            y_prv = std_df.iloc[-8:-4].sum(numeric_only=True)
+            results.append({
+                "期間": "🌟 通年(直近1年)",
+                "開示日": "-",
+                "売上(%)": calc_yoy(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
+                "営業益(%)": calc_yoy(get_v(y_cur, c_op), get_v(y_prv, c_op)),
+                "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
+                "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
+            })
+
+        return pd.DataFrame(results[::-1])
+    except:
+        return None
+
 def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
     """
     司令官指定の「3日間フォーメーション」絶対判定エンジン（API通信完全排除）
@@ -2949,11 +3101,11 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         return False, ""
 
 # ==========================================
-# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（完全ローカル高速化版）
+# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（完全ローカル高速化・分析強制表示版）
 # ==========================================
 with tab3:
-    st.markdown("### 🎯 【照準】精密スコープ（3日間フォーメーション）")
-    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、ローカルキャッシュを用いた完全並列・高速の価格アクション検証を行います。")
+    st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
+    st.info("TAB1・TAB2で抽出されたファンダメンタルズ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータのみで出力します。")
 
     # モード選択UI
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
@@ -2981,7 +3133,7 @@ with tab3:
     
     default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
 
-    st.markdown("#### 📡 スキャン対象銘柄")
+    st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
         value=default_codes_str,
@@ -2990,7 +3142,7 @@ with tab3:
     )
 
     # スキャン実行ボタン
-    if st.button("🚀 TAB3 精密スキャン開始", key="btn_scan_tab3"):
+    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
         else:
@@ -3001,9 +3153,9 @@ with tab3:
                     target_codes.append(int(c[:4]))
                 except:
                     pass
-            target_codes = list(dict.fromkeys(target_codes))
+            target_codes = list(dict.fromkeys(target_codes))[:30] # 上位30件に絞る
 
-            st.write(f"📡 ローカル爆速並列・解析対象: {len(target_codes)} 銘柄")
+            st.write(f"📡 実行対象: {len(target_codes)} 銘柄（上位30件抽出）")
             
             # 日経平均の地合いを取得
             current_div_rate = 0.0
@@ -3013,65 +3165,161 @@ with tab3:
             except:
                 pass
 
-            if scan_mode == "sell" and current_div_rate >= 0.0:
-                st.error(f"⚠️ 現在の日経平均乖離率（{current_div_rate:+.2f}%）はプラス圏です。空売りの「下げ相場」条件を満たさないためスキャンを中止します。")
-            else:
-                results_tab3 = []
-                p_bar = st.progress(0, text="🚀 ローカルキャッシュ超高速並列索敵中...")
+            # 💡 ローカルのファンダメンタルズDBを事前ロード（API通信は一切しない）
+            try:
+                local_fund_db = load_local_fundamentals_db()
+            except Exception:
+                local_fund_db = None
 
-                import concurrent.futures
+            results_tab3 = []
+            analyzed_data = {}
+            p_bar = st.progress(0, text="🚀 ローカルデータ構築中...")
 
-                def process_single_stock_local(code):
-                    """
-                    【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュ（get_hist_data_cached等）から
-                    一瞬でローカルデータを取得して判定するワーカー
-                    """
-                    try:
-                        # 💡 外部APIフェッチではなく、システム既定の高速キャッシュ関数を使用
-                        df_bars = get_hist_data_cached(code, days=30)
-                        if df_bars is not None and not df_bars.empty:
-                            if isinstance(df_bars, list):
-                                df = pd.DataFrame(df_bars)
-                            elif isinstance(df_bars, pd.DataFrame):
-                                df = df_bars.copy()
-                            else:
-                                return None
-                                
-                            is_hit, rank = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
-                            if is_hit:
-                                return {"Code": code, "Rank": rank, "Mode": scan_mode}
-                    except Exception:
-                        pass
-                    return None
+            import concurrent.futures
 
-                total_cnt = len(target_codes)
-                completed_cnt = 0
+            def process_single_stock_local(code):
+                """
+                【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュからデータを取得し
+                フォーメーション判定、シグナル履歴、ファンダ推移を全て構築する
+                """
+                try:
+                    # 💡 外部APIフェッチではなく、システム既定の高速キャッシュ関数を使用
+                    # チャートを1年分表示するため、days=300程度を要求
+                    df_bars = get_hist_data_cached(code, days=300)
+                    if df_bars is not None and not df_bars.empty:
+                        if isinstance(df_bars, list):
+                            df = pd.DataFrame(df_bars)
+                        elif isinstance(df_bars, pd.DataFrame):
+                            df = df_bars.copy()
+                        else:
+                            return code, None
+                            
+                        # ① フォーメーション判定
+                        res_hit = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
+                        is_hit = False
+                        rank = ""
+                        if isinstance(res_hit, tuple):
+                            is_hit, rank = res_hit
+                        elif isinstance(res_hit, bool):
+                            is_hit = res_hit
+                            rank = "🎯 陣形検知" if is_hit else ""
 
-                # ⚡ マルチスレッドによる完全並列化（ローカルキャッシュ参照のため渋滞なし）
-                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                    future_to_code = {executor.submit(process_single_stock_local, code): code for code in target_codes}
-                    
-                    for future in concurrent.futures.as_completed(future_to_code):
-                        completed_cnt += 1
-                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 ローカル爆速索敵中... ({completed_cnt}/{total_cnt} 完了)")
-                        
-                        res = future.result()
-                        if res:
-                            results_tab3.append(res)
+                        # ② チャートへのシグナル描画用（過去3ヶ月）
+                        b_sigs, s_sigs = analyze_formation_history(df)
 
-                p_bar.empty()
+                        # ③ ファンダメンタルズ情報（完全ローカル）
+                        fund_df = fetch_fundamental_history_local(code, local_fund_db)
+
+                        return code, {"df": df, "is_hit": is_hit, "rank": rank, "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": fund_df}
+                except Exception:
+                    pass
+                return code, None
+
+            total_cnt = len(target_codes)
+            completed_cnt = 0
+
+            # ⚡ マルチスレッドによる完全並列化
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_code = {executor.submit(process_single_stock_local, code): code for code in target_codes}
                 
-                if results_tab3:
-                    st.success(f"🎯 {len(results_tab3)} 件の陣形形成を確認しました！")
-                    st.dataframe(pd.DataFrame(results_tab3))
+                for future in concurrent.futures.as_completed(future_to_code):
+                    completed_cnt += 1
+                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 ローカルデータ構築中... ({completed_cnt}/{total_cnt} 完了)")
                     
-                    hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                    st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
+                    c, res = future.result()
+                    if res:
+                        analyzed_data[c] = res
+                        if res["is_hit"]:
+                            results_tab3.append({"Code": c, "Rank": res["rank"], "Mode": scan_mode})
+
+            p_bar.empty()
+            st.divider()
+
+            # ==========================================
+            # 📊 分析結果の強制出力（ループ描画）
+            # ==========================================
+            import plotly.graph_objects as go
+            
+            if results_tab3:
+                st.success(f"🎯 フォーメーション合致銘柄: {len(results_tab3)}件 確認！")
+            else:
+                st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。分析データを表示します。")
+
+            for code in target_codes:
+                if code not in analyzed_data: continue
+                data = analyzed_data[code]
+                df = data["df"]
+                
+                # ヘッダー表示
+                hit_badge = "🎯 【陣形合致！】" if data["is_hit"] else "⬜ 待機"
+                st.markdown(f"### 📦 {code} | {hit_badge}")
+                
+                # 直近四本値
+                q0 = df.iloc[-1]
+                c_o = q0.get('Open', q0.get('AdjO', 0))
+                c_h = q0.get('High', q0.get('AdjH', 0))
+                c_l = q0.get('Low', q0.get('AdjL', 0))
+                c_c = q0.get('Close', q0.get('AdjC', 0))
+                
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("始値", f"{c_o:,.1f}円")
+                c2.metric("高値", f"{c_h:,.1f}円")
+                c3.metric("安値", f"{c_l:,.1f}円")
+                c4.metric("終値", f"{c_c:,.1f}円")
+                
+                # チャート描画（1年間、MA18/50、シグナルプロット）
+                if len(df) > 0:
+                    df_c = df.copy()
+                    c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
+                    if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
+                    if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
                     
-                    st.session_state['tab3_results'] = results_tab3
+                    fig = go.Figure()
+                    
+                    # 日付カラムの特定
+                    date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                    
+                    fig.add_trace(go.Candlestick(
+                        x=df_c[date_col], 
+                        open=df_c.get('AdjO', df_c.get('Open')), 
+                        high=df_c.get('AdjH', df_c.get('High')), 
+                        low=df_c.get('AdjL', df_c.get('Low')), 
+                        close=df_c[c_col], 
+                        name='価格'
+                    ))
+                    fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
+                    fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
+                    
+                    # 過去のシグナルをプロット
+                    if data["buy_sigs"]:
+                        sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
+                        if not sig_df.empty:
+                            fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                    if data["sell_sigs"]:
+                        sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
+                        if not sig_df.empty:
+                            fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+
+                    fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # ファンダメンタルズ表示
+                if data["fund"] is not None and not data["fund"].empty:
+                    st.markdown("##### 📊 業績成長率（四半期・通年）")
+                    st.dataframe(data["fund"].style.format({
+                        "売上(%)": "{:.1f}%", "営業益(%)": "{:.1f}%", "経常益(%)": "{:.1f}%", "EPS(%)": "{:.1f}%"
+                    }), use_container_width=True)
                 else:
-                    st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。")
-                    st.session_state['tab3_results'] = []
+                    st.warning("業績データの取得に失敗しました（ローカルデータ不足）。")
+                    
+                st.divider()
+
+            # コピペ用出力（合致した銘柄のみ）
+            if results_tab3:
+                hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
+                st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
+                
+            st.session_state['tab3_results'] = results_tab3
                     
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
