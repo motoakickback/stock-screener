@@ -2996,6 +2996,7 @@ with tab3:
     )
 
     # スキャン実行ボタン
+    # スキャン実行ボタン
     if st.button("🚀 TAB3 精密スキャン開始", key="btn_scan_tab3"):
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。TAB1かTAB2で対象銘柄を抽出してください。")
@@ -3005,13 +3006,12 @@ with tab3:
             target_codes = []
             for c in raw_codes:
                 try:
-                    # 数字のみを抽出（文字列混入対策）
                     target_codes.append(int(c[:4]))
                 except:
                     pass
             target_codes = list(dict.fromkeys(target_codes))
 
-            st.write(f"📡 解析対象: {len(target_codes)} 銘柄")
+            st.write(f"📡 爆速並列・解析対象: {len(target_codes)} 銘柄")
             
             # 日経平均の地合いを取得（空売りモード用）
             current_div_rate = 0.0
@@ -3026,13 +3026,13 @@ with tab3:
                 st.error(f"⚠️ 現在の日経平均乖離率（{current_div_rate:+.2f}%）はプラス圏です。空売りの「下げ相場」条件を満たさないためスキャンを中止します。")
             else:
                 results_tab3 = []
-                p_bar = st.progress(0, text="🎯 フォーメーション解析中...")
+                p_bar = st.progress(0, text="🚀 3日間フォーメーション超高速並列索敵中...")
 
-                for i, code in enumerate(target_codes):
-                    p_bar.progress((i + 1) / len(target_codes), text=f"🎯 フォーメーション解析中... ({i+1}/{len(target_codes)})")
-                    
+                import concurrent.futures
+
+                def process_single_stock(code):
+                    """1銘柄分のデータ取得とフォーメーション判定を行うワーカー関数"""
                     try:
-                        # ローカルDBまたはAPIから日足データを取得
                         data_payload = get_single_data(code, yrs=0.5)
                         if data_payload and "bars" in data_payload:
                             df_bars = data_payload["bars"]
@@ -3041,15 +3041,30 @@ with tab3:
                             elif isinstance(df_bars, pd.DataFrame):
                                 df = df_bars
                             else:
-                                continue
+                                return None
                                 
                             # 判定エンジンに投下
                             is_hit, rank = analyze_tab3_precision_scope(df, mode=scan_mode, nikkei_div_rate=current_div_rate)
-                            
                             if is_hit:
-                                results_tab3.append({"Code": code, "Rank": rank, "Mode": scan_mode})
+                                return {"Code": code, "Rank": rank, "Mode": scan_mode}
                     except Exception:
-                        pass # 個別のエラーはスキップして次へ
+                        pass
+                    return None
+
+                total_cnt = len(target_codes)
+                completed_cnt = 0
+
+                # ⚡ スレッドプールによる完全並列化（最大5スレッドで同時ハント）
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_code = {executor.submit(process_single_stock, code): code for code in target_codes}
+                    
+                    for future in concurrent.futures.as_completed(future_to_code):
+                        completed_cnt += 1
+                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 爆速並列索敵中... ({completed_cnt}/{total_cnt} 完了)")
+                        
+                        res = future.result()
+                        if res:
+                            results_tab3.append(res)
 
                 p_bar.empty()
                 
@@ -3058,7 +3073,7 @@ with tab3:
                     st.success(f"🎯 {len(results_tab3)} 件の陣形形成を確認しました！")
                     st.dataframe(pd.DataFrame(results_tab3))
                     
-                    # 次のステップ（TAB4等）へのコピペ用
+                    # 次のステップへのコピペ用
                     hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
                     st.text_area("📋 最終突破銘柄（コピペ用）", value=hit_codes_str, height=70)
                     
