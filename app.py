@@ -106,123 +106,133 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾版V2）
+# 🧠 ファンダメンタルズ解析エンジン（デバッグ・プローブ搭載版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
+    import os
     import pandas as pd
+
     try:
-        if df is None or len(df) < 2:
-            return False, ""
-        
-        # 1. 必要なカラムを安全に確保
-        for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit', 'TypeOfCurrentPeriod']:
-            if col not in df.columns:
-                df[col] = 0.0 if col != 'TypeOfCurrentPeriod' else ''
-                
-        # 2. 予想行（実績が空の行）を排除し、純粋な「過去の実績」のみを抽出
-        actual_mask = (pd.to_numeric(df['NetSales'], errors='coerce').fillna(0) > 0) | \
-                      (pd.to_numeric(df['OrdinaryProfit'], errors='coerce').fillna(0) > 0)
-        actual_df = df[actual_mask].copy().reset_index(drop=True)
-        
-        # YoY計算のためには最低5四半期（1年と最新四半期）の実績が必要
-        if len(actual_df) < 5:
+        if df is None or len(df) == 0:
             return False, ""
             
-        # 3. 累計決算を「四半期単体」に分解する
-        std_df = actual_df.copy()
-        for i in range(1, len(actual_df)):
+        # 🛠️ 【緊急デバッグ】最初の1件の生データをCSVとターミナルに強制出力する
+        debug_file = "debug_fundamental_data.csv"
+        if not os.path.exists(debug_file):
             try:
-                curr_sales = float(actual_df['NetSales'].iloc[i])
-                prev_sales = float(actual_df['NetSales'].iloc[i-1])
+                df.to_csv(debug_file, index=False, encoding="utf-8-sig")
+            except:
+                pass
+                
+        # ターミナル（黒い画面）に実際のカラム名と中身を出力
+        if "DEBUG_PRINTED" not in os.environ:
+            print("\n" + "="*50)
+            print("🐛 【緊急デバッグ】J-Quantsから届いている実際のデータ構造")
+            print("カラム一覧:", df.columns.tolist())
+            print("最新四半期データ:", df.iloc[-1].to_dict() if len(df) > 0 else "None")
+            print("="*50 + "\n")
+            os.environ["DEBUG_PRINTED"] = "1"
+        # ------------------------------------------------
+
+        # カラム名を動的に特定（大文字・小文字・V1/V2の揺れを完全吸収）
+        cols = [str(c).lower() for c in df.columns]
+        
+        def find_col(*names):
+            for name in names:
+                if name.lower() in cols:
+                    return df.columns[cols.index(name.lower())]
+            return None
+            
+        c_sales = find_col('NetSales', 'Sales', 'net_sales')
+        c_op = find_col('OperatingProfit', 'OP', 'operating_profit')
+        c_ord = find_col('OrdinaryProfit', 'OrdinaryIncome', 'ordinary_profit')
+        c_eps = find_col('EarningsPerShare', 'EPS', 'eps')
+        c_profit = find_col('Profit', 'NetIncome', 'profit')
+        c_type = find_col('TypeOfCurrentPeriod', 'Quarter', 'type_of_current_period')
+
+        # データが5四半期（1年＋直近）未満ならYoY計算不能なので足切り
+        if len(df) < 5:
+            return False, ""
+
+        def to_float(val):
+            try:
+                if pd.isna(val) or str(val).strip() == '': return 0.0
+                return float(str(val).replace(',', ''))
+            except:
+                return 0.0
+
+        # 💡 累計決算を「四半期単体」に分解する
+        std_df = df.copy()
+        for i in range(1, len(df)):
+            try:
+                curr_sales = to_float(df[c_sales].iloc[i]) if c_sales else 0.0
+                prev_sales = to_float(df[c_sales].iloc[i-1]) if c_sales else 0.0
             except:
                 curr_sales, prev_sales = 0.0, 0.0
                 
-            curr_type = str(actual_df['TypeOfCurrentPeriod'].iloc[i])
+            curr_type = str(df[c_type].iloc[i]) if c_type else ""
             
             is_q1 = False
-            if '1Q' in curr_type:
+            if '1Q' in curr_type or 'Q1' in curr_type:
                 is_q1 = True
             elif curr_sales < prev_sales and prev_sales > 0:
                 is_q1 = True
                 
             if not is_q1:
-                # 2Q〜4Qの場合、前回の累計を引いて単体にする
-                for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit']:
-                    try:
-                        c_val = float(actual_df[col].iloc[i])
-                        p_val = float(actual_df[col].iloc[i-1])
-                        col_idx = std_df.columns.get_loc(col)
-                        std_df.iat[i, col_idx] = c_val - p_val
-                    except Exception:
-                        pass
-                        
-        # 4. YoY (前年同期比) 比較用データの抽出
-        q0 = std_df.iloc[-1] # 最新実績(単体)
-        q0_type = str(q0.get('TypeOfCurrentPeriod', ''))
-        
-        y0 = None
-        # 型枠（例: '2Q'）が取得できている場合、過去に遡って同じ'2Q'を探す（ズレ防止）
-        if q0_type and q0_type != "nan" and q0_type != "0.0":
-            for i in range(len(std_df)-2, -1, -1):
-                past_type = str(std_df.iloc[i].get('TypeOfCurrentPeriod', ''))
-                if past_type == q0_type:
-                    y0 = std_df.iloc[i]
-                    break
-                    
-        # マッチしなかった場合、または型枠情報が無い場合は純粋に「4つ前の実績」を参照
-        if y0 is None:
-            y0 = std_df.iloc[-5]
-            
-        # 値を安全に取り出し、EPS欠損時は純利益(Profit)で代替する関数
-        def get_val(row, col1, col2=None):
-            try:
-                v = row.get(col1, 0.0)
-                if pd.isna(v) or v == '':
-                    v = 0.0
-                v = float(v)
-                if v == 0.0 and col2 and col2 in row.index:
-                    v2 = row.get(col2, 0.0)
-                    if not pd.isna(v2) and v2 != '':
-                        v = float(v2)
-                return v
-            except:
-                return 0.0
+                for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
+                    if col:
+                        try:
+                            c_val = to_float(df[col].iloc[i])
+                            p_val = to_float(df[col].iloc[i-1])
+                            col_idx = std_df.columns.get_loc(col)
+                            std_df.iat[i, col_idx] = c_val - p_val
+                        except Exception:
+                            pass
 
-        # 成長率の算出（赤字からの黒字転換は最大評価 999%）
+        # 🎯 YoY (前年同期比) 比較用データの抽出
+        q0 = std_df.iloc[-1] # 最新実績
+        y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
+
+        def get_val(row, primary_col, fallback_col=None):
+            v = to_float(row[primary_col]) if primary_col else 0.0
+            if v == 0.0 and fallback_col:
+                v = to_float(row[fallback_col])
+            return v
+
         def calc_gr(c, p):
-            try:
-                if p <= 0:
-                    return 999.0 if c > 0 else -999.0
-                return ((c - p) / abs(p)) * 100.0
-            except:
-                return -999.0
-            
+            if p <= 0:
+                return 999.0 if c > 0 else -999.0
+            return ((c - p) / abs(p)) * 100.0
+
+        q0_sales = get_val(q0, c_sales)
+        y0_sales = get_val(y0, c_sales)
+        
+        q0_op = get_val(q0, c_op)
+        y0_op = get_val(y0, c_op)
+        
+        q0_ord = get_val(q0, c_ord)
+        y0_ord = get_val(y0, c_ord)
+        
+        q0_eps = get_val(q0, c_eps, c_profit)
+        y0_eps = get_val(y0, c_eps, c_profit)
+
+        s_yoy = calc_gr(q0_sales, y0_sales)
+        op_yoy = calc_gr(q0_op, y0_op)
+        or_yoy = calc_gr(q0_ord, y0_ord)
+        ep_yoy = calc_gr(q0_eps, y0_eps)
+
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            # 🚨 致命的バグ（or_yoyの引数ミス）を完全に修正しました
-            s_yoy = calc_gr(get_val(q0, 'NetSales'), get_val(y0, 'NetSales'))
-            op_yoy = calc_gr(get_val(q0, 'OperatingProfit'), get_val(y0, 'OperatingProfit'))
-            or_yoy = calc_gr(get_val(q0, 'OrdinaryProfit'), get_val(y0, 'OrdinaryProfit'))
-            ep_yoy = calc_gr(get_val(q0, 'EarningsPerShare', 'Profit'), get_val(y0, 'EarningsPerShare', 'Profit'))
-            
-            # 🥇 【S級判定】売上10%以上、他20%以上
+            # S級判定
             if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
-                
-            # 🥈 【A級判定】売上7%以上、他15%以上（S級に届かなかった場合）
+            # A級判定
             if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
                 return True, "A級🟢"
-                
             return False, ""
             
         # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            s_yoy = calc_gr(get_val(q0, 'NetSales'), get_val(y0, 'NetSales'))
-            op_yoy = calc_gr(get_val(q0, 'OperatingProfit'), get_val(y0, 'OperatingProfit'))
-            or_yoy = calc_gr(get_val(q0, 'OrdinaryProfit'), get_val(y0, 'OrdinaryProfit'))
-            ep_yoy = calc_gr(get_val(q0, 'EarningsPerShare', 'Profit'), get_val(y0, 'EarningsPerShare', 'Profit'))
-            
-            # 売り条件（成長鈍化・マイナス圏）
             if not (s_yoy < 5.0): return False, ""
             if not (op_yoy < 10.0): return False, ""
             if not (or_yoy < 5.0): return False, ""
@@ -232,7 +242,10 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 return True, "S級💀"
             return True, "A級📉"
             
-    except Exception:
+    except Exception as e:
+        if "DEBUG_ERR_PRINTED" not in os.environ:
+            print(f"🚨 ファンダ解析エラー: {e}")
+            os.environ["DEBUG_ERR_PRINTED"] = "1"
         pass
     return False, ""
     
