@@ -3027,11 +3027,9 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
     """
     import pandas as pd
     try:
-        # 日足データが最低4日分（前日比の確認に必要）ない場合は弾く
         if df is None or len(df) < 4:
             return False, ""
 
-        # 安全なカラム抽出（大文字小文字・V1/V2のブレ吸収）
         cols = [str(c).lower() for c in df.columns]
         def get_col(*names):
             for n in names:
@@ -3047,56 +3045,36 @@ def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
         if not all([c_o, c_h, c_l, c_c]):
             return False, ""
 
-        # 直近4日間のローソク足データを取得（絶対参照）
-        m3 = df.iloc[-4] # 3日前（基準日）
-        m2 = df.iloc[-3] # 2日前（1日目の条件用）
-        m1 = df.iloc[-2] # 1日前（2日目の条件用）
-        q0 = df.iloc[-1] # 最新日（3日目の条件用）
+        m3 = df.iloc[-4]
+        m2 = df.iloc[-3]
+        m1 = df.iloc[-2]
+        q0 = df.iloc[-1]
 
         def safe_flt(val):
             try: return float(val)
             except: return 0.0
 
-        # 各日の数値をパース
         m3_h, m3_l, m3_c = safe_flt(m3[c_h]), safe_flt(m3[c_l]), safe_flt(m3[c_c])
         m2_h, m2_l, m2_c = safe_flt(m2[c_h]), safe_flt(m2[c_l]), safe_flt(m2[c_c])
         m1_h, m1_l, m1_c = safe_flt(m1[c_h]), safe_flt(m1[c_l]), safe_flt(m1[c_c])
         q0_c = safe_flt(q0[c_c])
 
-        # ----------------------------------------
-        # 📈 モード1：買い（押し目からの反転）
-        # ----------------------------------------
         if mode == "buy":
-            # 1日目：終値が前日の安値を下回る
             cond1 = (m2_c < m3_l)
-            # 2日目：終値が前日の高値を上回る
             cond2 = (m1_c > m2_h)
-            # 3日目：終値が前日の終値を上回る
             cond3 = (q0_c > m1_c)
-
             if cond1 and cond2 and cond3:
                 return True, "S級🎯【反転上昇陣形】"
             return False, ""
-
-        # ----------------------------------------
-        # 📉 モード2：空売り（戻り高値からの崩れ）
-        # ----------------------------------------
         elif mode == "sell":
-            # 【地合い条件】市場が下げ相場になっている（日経乖離率がマイナス）
             if nikkei_div_rate >= 0.0:
-                return False, "" # 地合いがプラスなら空売りは強制パージ
-
-            # 1日目：終値が前日の高値を上回る
+                return False, ""
             cond1 = (m2_c > m3_h)
-            # 2日目：終値が前日の安値を下回る
             cond2 = (m1_c < m2_l)
-            # 3日目：終値が前日の終値を下回る
             cond3 = (q0_c < m1_c)
-
             if cond1 and cond2 and cond3:
                 return True, "S級💀【奈落崩壊陣形】"
             return False, ""
-
     except Exception:
         return False, ""
 
@@ -3173,21 +3151,22 @@ with tab3:
 
             results_tab3 = []
             analyzed_data = {}
+            # プログレスバーを生成
             p_bar = st.progress(0, text="🚀 ローカルデータ構築中...")
 
             import concurrent.futures
 
             def process_single_stock_local(code):
                 """
-                【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュからデータを取得し
+                【鉄の掟】外部APIを一切叩かず、既存の高速キャッシュ(get_single_data)からデータを取得し
                 フォーメーション判定、シグナル履歴、ファンダ推移を全て構築する
                 """
                 try:
-                    # 💡 外部APIフェッチではなく、システム既定の高速キャッシュ関数を使用
-                    # チャートを1年分表示するため、days=300程度を要求
-                    df_bars = get_hist_data_cached(code, days=300)
-                    if df_bars is not None and not df_bars.empty:
-                        if isinstance(df_bars, list):
+                    # 💡 司令官の設計した正しいローカルデータ抽出関数を利用する
+                    data_payload = get_single_data(code, yrs=1.0)
+                    if data_payload and "bars" in data_payload:
+                        df_bars = data_payload["bars"]
+                        if isinstance(df_bars, list) and len(df_bars) > 0:
                             df = pd.DataFrame(df_bars)
                         elif isinstance(df_bars, pd.DataFrame):
                             df = df_bars.copy()
@@ -3224,7 +3203,8 @@ with tab3:
                 
                 for future in concurrent.futures.as_completed(future_to_code):
                     completed_cnt += 1
-                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 ローカルデータ構築中... ({completed_cnt}/{total_cnt} 完了)")
+                    # 進捗バーを確実に更新
+                    p_bar.progress(completed_cnt / total_cnt, text=f"🚀 データを解析・構築中... ({completed_cnt}/{total_cnt} 完了)")
                     
                     c, res = future.result()
                     if res:
