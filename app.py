@@ -106,111 +106,98 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（V2短縮キー完全適応・YoY版・日付ソート追加）
+# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
-    import pandas as pd
-
     try:
-        if df is None or len(df) < 1:
+        if df is None or len(df) < 2:
             return False, ""
-
-        c_sales = 'Sales'
-        c_op = 'OP'
-        c_ord = 'OdP'
-        c_eps = 'EPS'
-        c_profit = 'NP'
-        c_type = 'CurPerType'
-
-        # 💡 【真の原因修正1】日付順ソートの追加（これを忘れていたため、順番がバラバラで比較されていた）
-        cols = [str(c).lower() for c in df.columns]
-        def find_c(*names):
-            for n in names:
-                if n.lower() in cols: return df.columns[cols.index(n.lower())]
-            return None
-            
-        c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
-        if c_date:
-            df[c_date] = pd.to_datetime(df[c_date], errors='coerce')
-            df = df.sort_values(by=c_date).reset_index(drop=True)
-
-        def to_float(val):
-            try:
-                if pd.isna(val) or str(val).strip() == '': return 0.0
-                return float(str(val).replace(',', ''))
-            except:
-                return 0.0
-
-        # 💡 【真の原因修正2】売上0以下の「未来の予定データ」を排除（これがないと予想データを最新実績と勘違いする）
-        if c_sales in df.columns:
-            actual_mask = df[c_sales].apply(to_float) > 0
-            df = df[actual_mask].copy().reset_index(drop=True)
-
-        if len(df) < 5:
-            return False, ""
-
-        std_df = df.copy()
         
-        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
-            if col not in std_df.columns:
-                std_df[col] = 0.0 if col != c_type else ""
-
-        for i in range(1, len(df)):
+        for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit', 'TypeOfCurrentPeriod']:
+            if col not in df.columns:
+                df[col] = 0.0 if col != 'TypeOfCurrentPeriod' else ''
+                
+        import pandas as pd
+        actual_mask = (pd.to_numeric(df['NetSales'], errors='coerce').fillna(0) > 0) | \
+                      (pd.to_numeric(df['OrdinaryProfit'], errors='coerce').fillna(0) > 0)
+        actual_df = df[actual_mask].copy().reset_index(drop=True)
+        
+        if len(actual_df) < 5:
+            return False, ""
+            
+        std_df = actual_df.copy()
+        for i in range(1, len(actual_df)):
             try:
-                curr_sales = to_float(df[c_sales].iloc[i])
-                prev_sales = to_float(df[c_sales].iloc[i-1])
+                curr_sales = float(actual_df['NetSales'].iloc[i])
+                prev_sales = float(actual_df['NetSales'].iloc[i-1])
             except:
                 curr_sales, prev_sales = 0.0, 0.0
                 
-            curr_type = str(df[c_type].iloc[i])
+            curr_type = str(actual_df['TypeOfCurrentPeriod'].iloc[i])
             
             is_q1 = False
-            if '1Q' in curr_type or 'Q1' in curr_type:
+            if '1Q' in curr_type:
                 is_q1 = True
             elif curr_sales < prev_sales and prev_sales > 0:
                 is_q1 = True
                 
             if not is_q1:
-                for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
+                for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit']:
                     try:
-                        c_val = to_float(df[col].iloc[i])
-                        p_val = to_float(df[col].iloc[i-1])
+                        c_val = float(actual_df[col].iloc[i])
+                        p_val = float(actual_df[col].iloc[i-1])
                         col_idx = std_df.columns.get_loc(col)
                         std_df.iat[i, col_idx] = c_val - p_val
                     except Exception:
                         pass
-
+                        
         q0 = std_df.iloc[-1] 
-        y0 = std_df.iloc[-5] 
+        q0_type = str(q0.get('TypeOfCurrentPeriod', ''))
+        
+        y0 = None
+        if q0_type and q0_type != "nan" and q0_type != "0.0":
+            for i in range(len(std_df)-2, -1, -1):
+                past_type = str(std_df.iloc[i].get('TypeOfCurrentPeriod', ''))
+                if past_type == q0_type:
+                    y0 = std_df.iloc[i]
+                    break
+                    
+        if y0 is None:
+            y0 = std_df.iloc[-5]
+            
+        def get_val(row, col1, col2=None):
+            try:
+                v = float(row.get(col1, 0))
+                if v == 0 and col2 and col2 in row:
+                    v = float(row.get(col2, 0))
+                return v
+            except:
+                return 0.0
 
-        def get_val(row, primary_col, fallback_col=None):
-            v = to_float(row.get(primary_col, 0.0))
-            if v == 0.0 and fallback_col:
-                v = to_float(row.get(fallback_col, 0.0))
-            return v
+        q0_sales = get_val(q0, 'NetSales')
+        y0_sales = get_val(y0, 'NetSales')
+        q0_op = get_val(q0, 'OperatingProfit')
+        y0_op = get_val(y0, 'OperatingProfit')
+        q0_ord = get_val(q0, 'OrdinaryProfit')
+        y0_ord = get_val(y0, 'OrdinaryProfit')
+        q0_eps = get_val(q0, 'EarningsPerShare', 'Profit')
+        y0_eps = get_val(y0, 'EarningsPerShare', 'Profit')
 
+        # 🚨 【修正】0（データ欠損）の場合はダミー値をやめ、即座に「計算不能(None)」とする
         def calc_gr(c, p):
-            if p <= 0:
-                return 999.0 if c > 0 else -999.0
+            if c == 0.0 or p == 0.0:
+                return None
             return ((c - p) / abs(p)) * 100.0
-
-        q0_sales = get_val(q0, c_sales)
-        y0_sales = get_val(y0, c_sales)
-        
-        q0_op = get_val(q0, c_op)
-        y0_op = get_val(y0, c_op)
-        
-        q0_ord = get_val(q0, c_ord)
-        y0_ord = get_val(y0, c_ord)
-        
-        q0_eps = get_val(q0, c_eps, c_profit)
-        y0_eps = get_val(y0, c_eps, c_profit)
 
         s_yoy = calc_gr(q0_sales, y0_sales)
         op_yoy = calc_gr(q0_op, y0_op)
         or_yoy = calc_gr(q0_ord, y0_ord)
         ep_yoy = calc_gr(q0_eps, y0_eps)
 
+        # 🚨 【修正】データ欠損（0値による計算不可）が1つでもあればノイズとして除外
+        if None in (s_yoy, op_yoy, or_yoy, ep_yoy):
+            return False, ""
+            
         if mode == "buy":
             if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
@@ -228,7 +215,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 return True, "S級💀"
             return True, "A級📉"
             
-    except Exception as e:
+    except Exception:
         pass
     return False, ""
     
@@ -3004,8 +2991,14 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
+        # 🚨 【修正】表での「-100」やダミー値「999」を廃止。状態に応じて数学的に正確な数値とステータスを返す。
         def calc_yoy(c, p):
-            if p <= 0: return 999.0 if c > 0 else -999.0
+            if c == 0.0 or p == 0.0:
+                return "-"
+            if p < 0 and c < 0:
+                return "赤字拡大" if c < p else "赤字縮小" if c > p else "赤字継続"
+            if p < 0 and c >= 0:
+                return "黒字転換"
             return ((c - p) / abs(p)) * 100.0
 
         def get_v(row, primary, fallback=None):
@@ -3020,7 +3013,6 @@ def fetch_fundamental_history_local(code, local_db):
                 if len(std_df) >= i:
                     q_cur = std_df.iloc[-i]
                     dis_date = q_cur.get(c_date, '-')
-                    # 💡 1970年の亡霊を関数内で直接破壊する
                     if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                         dis_date = dis_date.strftime('%Y-%m-%d')
                         if dis_date == '1970-01-01': dis_date = '-'
