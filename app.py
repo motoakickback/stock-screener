@@ -111,7 +111,7 @@ def get_historical_statements(code):
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import pandas as pd
     try:
-        if df is None or len(df) < 3: # 2期連続QoQには最低3四半期必要
+        if df is None or len(df) < 3:
             return False, ""
         
         cols = [str(c).lower() for c in df.columns]
@@ -223,16 +223,11 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             return True, "A級🟢"
             
         elif mode == "sell":
-            # 利益がマイナス（赤字）なら、成長率に関わらず「空売りのターゲット条件クリア」とみなす
-            def check_sell(c_val, p_val, limit):
-                if c_val < 0: return True
-                gr = calc_gr(c_val, p_val)
-                return gr < limit
-
-            if not (calc_gr(q0_sales, q1_sales) < 5.0 and calc_gr(q1_sales, q2_sales) < 5.0): return False, ""
-            if not (check_sell(q0_op, q1_op, 10.0) and check_sell(q1_op, q2_op, 10.0)): return False, ""
-            if not (check_sell(q0_ord, q1_ord, 5.0) and check_sell(q1_ord, q2_ord, 5.0)): return False, ""
-            if not (check_sell(q0_eps, q1_eps, 10.0) and check_sell(q1_eps, q2_eps, 10.0)): return False, ""
+            # 🚨 修正：赤字なら無条件合格とする小細工を排除。純粋に計算されたパーセンテージだけで判定する。
+            if not (s_q0 < 5.0 and s_q1 < 5.0): return False, ""
+            if not (op_q0 < 10.0 and op_q1 < 10.0): return False, ""
+            if not (or_q0 < 5.0 and or_q1 < 5.0): return False, ""
+            if not (ep_q0 < 10.0 and ep_q1 < 10.0): return False, ""
             
             if q0_op < 0 and q0_ord < 0 and q0_eps < 0 and q1_op < 0 and q1_ord < 0 and q1_eps < 0:
                 return True, "S級💀"
