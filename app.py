@@ -3433,14 +3433,14 @@ with tab3:
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                             
-                            # 🔗 ルール①・ルール②のシグナルをチャート上に完全描画
+                            # 🔗 ルール①・ルール②のシグナルをチャート上に完全描画（型エラー修正版）
                             if scan_mode == "buy" and data.get("buy_sigs"):
-                                sig_dates = pd.to_datetime(data["buy_sigs"], errors='coerce').dt.date
+                                sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
-                                sig_dates = pd.to_datetime(data["sell_sigs"], errors='coerce').dt.date
+                                sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
