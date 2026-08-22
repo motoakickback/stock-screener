@@ -97,3 +97,53 @@ with open(db_path, "wb") as f:
     pickle.dump(fundamentals_db, f)
 
 print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 {len(fundamentals_db)} 件の決算データを焼き付けました。")
+
+# ==========================================
+# 📈 4. 株価データ（過去約400日分）の一括収集
+# ==========================================
+from datetime import timedelta
+
+print("\n--- 📈 株価データ（日足）一括収集開始 ---")
+prices_db = {}
+base_date_jst = datetime.utcnow() + timedelta(hours=9)
+days_to_fetch = 400
+fetched_days = 0
+
+for i in range(days_to_fetch):
+    target_date = base_date_jst - timedelta(days=i)
+    # 土日は市場休場のためスキップ
+    if target_date.weekday() >= 5:
+        continue
+        
+    dt_str = target_date.strftime('%Y%m%d')
+    # 🎯 指定した1日分の全銘柄データを一括で返すAPIを使用[cite: 7]
+    url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
+    
+    time.sleep(1.1) # 🛡️ 1.1秒の絶対待機
+    
+    try:
+        r = session.get(url, timeout=10.0)
+        if r.status_code == 200:
+            res_json = r.json()
+            data = (
+                res_json.get("daily_quotes") or 
+                res_json.get("data") or 
+                res_json.get("results") or []
+            )
+            if data:
+                prices_db[dt_str] = data
+                fetched_days += 1
+                
+                if fetched_days % 20 == 0:
+                    print(f"📡 株価進捗: {fetched_days} 営業日分を取得完了...", flush=True)
+        elif r.status_code == 429:
+            print(f"⚠️ [429検知] 株価取得中にサーバー負荷警報。10秒間待機...", flush=True)
+            time.sleep(10.0)
+    except Exception as e:
+        continue
+
+prices_db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+with open(prices_db_path, "wb") as f:
+    pickle.dump(prices_db, f)
+
+print(f"[{datetime.now()}] ✅ 株価データ全ミッション完了！ {fetched_days}営業日分の株価データを焼き付けました。")
