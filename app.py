@@ -2569,6 +2569,53 @@ tab1, tab2, tab3, tab7 = st.tabs([
 ])
 
 # ==========================================
+# 🛠️ 流動性・時価総額フィルター用 実体エンジン（TAB1/TAB2用）
+# ==========================================
+def get_all_market_caps_bulk():
+    """ローカルDBの最新決算から発行済株式数を取得し、最新株価と掛けて時価総額(億円)を算出"""
+    mcap_map = {}
+    try:
+        prices = get_all_latest_prices_bulk() if 'get_all_latest_prices_bulk' in globals() else {}
+        fund_db = load_local_fundamentals_db() if 'load_local_fundamentals_db' in globals() else {}
+        if prices and fund_db:
+            for code, p in prices.items():
+                api_code = str(code) if len(str(code)) >= 5 else str(code) + "0"
+                df = fund_db.get(api_code)
+                if df is not None and not df.empty:
+                    shares = 0.0
+                    for col in df.columns:
+                        if 'NumberOfIssuedAndOutstandingShares' in str(col) or 'Shares' in str(col):
+                            val = df.iloc[-1][col]
+                            if pd.notna(val) and float(val) > 0:
+                                shares = float(val)
+                                break
+                    if shares > 0:
+                        mcap_map[str(code)] = (float(p) * shares) / 100000000.0
+    except:
+        pass
+    return mcap_map
+
+def get_all_volumes_bulk():
+    """ローカルの株価DB(prices_db.pkl)から最新日の売買代金(億円)を抽出"""
+    vol_map = {}
+    try:
+        import os, pickle
+        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+        if os.path.exists(db_path):
+            with open(db_path, "rb") as f:
+                prices_db = pickle.load(f)
+            if prices_db:
+                latest_date = sorted(prices_db.keys())[-1]
+                for d in prices_db[latest_date]:
+                    code = str(d.get("Code", "")).replace(".0", "")[:4]
+                    t_val = float(d.get("TurnoverValue", 0.0))
+                    vol_map[code] = t_val / 100000000.0
+    except:
+        pass
+    return vol_map
+
+
+# ==========================================
 # 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab1:
@@ -2609,15 +2656,15 @@ with tab1:
             all_codes = []
             try:
                 prices_map = get_all_latest_prices_bulk()
-                mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
+                mcap_map = get_all_market_caps_bulk()
                 
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         # 価格フィルタ
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
-                            # 時価総額フィルタ（データがある場合のみチェック、単位は億円換算を想定）
+                            # 時価総額フィルタ（億円換算の厳格評価）
                             c_mcap = float(mcap_map.get(str(c_code), 0))
-                            if c_mcap == 0 or (c_mcap >= float(t1_mcap)):
+                            if c_mcap >= float(t1_mcap):
                                 all_codes.append(str(c_code))
                 else:
                     p1_msg.error("❌ J-Quantsからの株価取得に失敗しました。")
@@ -2653,7 +2700,7 @@ with tab1:
                     if processed_p2 % 5 == 0 or processed_p2 == total_p2:
                         progress_pct = int((processed_p2 / total_p2) * 100)
                         p2_bar.progress(processed_p2 / total_p2)
-                        p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標적: {code}]")
+                        p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... ({progress_pct}%) [標的: {code}]")
 
                     try:
                         df_fins = fetch_fundamental_history_local(code, local_fund_db) if 'fetch_fundamental_history_local' in globals() else get_historical_statements(code)
@@ -2739,8 +2786,8 @@ with tab2:
             all_codes = []
             try:
                 prices_map = get_all_latest_prices_bulk()
-                mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
-                vol_map = get_all_volumes_bulk() if 'get_all_volumes_bulk' in globals() else {}
+                mcap_map = get_all_market_caps_bulk()
+                vol_map = get_all_volumes_bulk()
                 
                 if prices_map:
                     for c_code, c_price in prices_map.items():
@@ -2748,10 +2795,10 @@ with tab2:
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
                             # 時価総額フィルタ (億円)
                             c_mcap = float(mcap_map.get(str(c_code), 0))
-                            if c_mcap == 0 or (c_mcap >= float(t2_mcap)):
+                            if c_mcap >= float(t2_mcap):
                                 # 売買代金フィルタ (億円)
                                 c_vol = float(vol_map.get(str(c_code), 0))
-                                if c_vol == 0 or (c_vol >= float(t2_vol)):
+                                if c_vol >= float(t2_vol):
                                     all_codes.append(str(c_code))
                 else:
                     p1_msg_t2.error("❌ 株価データの取得に失敗しました。")
