@@ -106,15 +106,14 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾・カラム完全吸収版）
+# 🧠 ファンダメンタルズ解析エンジン（QoQ・直近2期連続・絶対防弾版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import pandas as pd
     try:
-        if df is None or len(df) < 2:
+        if df is None or len(df) < 3: # 2期連続QoQには最低3四半期必要
             return False, ""
-            
-        # 💡 【真の原因修正】ローカルDBの短い名前（Sales等）とAPIの長い名前（NetSales等）の揺れを完全吸収
+        
         cols = [str(c).lower() for c in df.columns]
         def find_c(*names):
             for n in names:
@@ -128,20 +127,9 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         c_profit = find_c('NP', 'Profit', 'netincome')
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod', 'type')
         
-        # 売上または経常利益の項目が存在しない場合は処理不可
         if not c_sales or not c_ord:
             return False, ""
 
-        # 予想行（実績が空の行）を排除し、過去の実績のみ抽出
-        actual_mask = (pd.to_numeric(df[c_sales], errors='coerce').fillna(0) > 0) | \
-                      (pd.to_numeric(df[c_ord], errors='coerce').fillna(0) > 0)
-        actual_df = df[actual_mask].copy().reset_index(drop=True)
-        
-        if len(actual_df) < 5:
-            return False, ""
-            
-        std_df = actual_df.copy()
-        
         def to_flt(v):
             try:
                 if pd.isna(v) or str(v).strip() == '': return 0.0
@@ -149,11 +137,17 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             except:
                 return 0.0
 
-        # 累計を四半期単体に分解
+        actual_mask = (df[c_sales].apply(to_flt) > 0) | (df[c_ord].apply(to_flt) > 0)
+        actual_df = df[actual_mask].copy().reset_index(drop=True)
+        
+        if len(actual_df) < 3:
+            return False, ""
+            
+        std_df = actual_df.copy()
+        
         for i in range(1, len(actual_df)):
             curr_sales = to_flt(actual_df[c_sales].iloc[i])
             prev_sales = to_flt(actual_df[c_sales].iloc[i-1])
-                
             curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
             
             is_q1 = False
@@ -172,19 +166,9 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                         pass
                         
         q0 = std_df.iloc[-1] 
-        q0_type = str(q0.get(c_type, '')) if c_type else ''
+        q1 = std_df.iloc[-2]
+        q2 = std_df.iloc[-3]
         
-        y0 = None
-        if q0_type and q0_type != "nan" and q0_type != "0.0":
-            for i in range(len(std_df)-2, -1, -1):
-                past_type = str(std_df.iloc[i].get(c_type, '')) if c_type else ''
-                if past_type == q0_type:
-                    y0 = std_df.iloc[i]
-                    break
-                    
-        if y0 is None:
-            y0 = std_df.iloc[-5]
-            
         def get_val(row, primary_col, fallback_col=None):
             v = to_flt(row.get(primary_col, 0.0)) if primary_col else 0.0
             if v == 0.0 and fallback_col:
@@ -192,70 +176,65 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             return v
 
         q0_sales = get_val(q0, c_sales)
-        y0_sales = get_val(y0, c_sales)
+        q1_sales = get_val(q1, c_sales)
+        q2_sales = get_val(q2, c_sales)
+        
         q0_op = get_val(q0, c_op)
-        y0_op = get_val(y0, c_op)
+        q1_op = get_val(q1, c_op)
+        q2_op = get_val(q2, c_op)
+        
         q0_ord = get_val(q0, c_ord)
-        y0_ord = get_val(y0, c_ord)
+        q1_ord = get_val(q1, c_ord)
+        q2_ord = get_val(q2, c_ord)
+        
         q0_eps = get_val(q0, c_eps, c_profit)
-        y0_eps = get_val(y0, c_eps, c_profit)
+        q1_eps = get_val(q1, c_eps, c_profit)
+        q2_eps = get_val(q2, c_eps, c_profit)
 
-        # 売上データが0以下の場合は事業実態なし・データ異常として確実にはじく
-        if q0_sales <= 0 or y0_sales <= 0:
+        if q0_sales <= 0 or q1_sales <= 0 or q2_sales <= 0:
             return False, ""
 
-        # 🚨 【公約の実装】単純な割り算をやめ、赤字継続・黒字転換を正確にステータス化する
-        def get_status(c, p):
-            if p < 0 and c < 0:
-                return "赤字継続"
-            if p < 0 and c >= 0:
-                return "黒字転換"
-            if p == 0:
-                return "計算不能"
+        def calc_gr(c, p):
+            if p == 0: return 0.0
             return ((c - p) / abs(p)) * 100.0
 
-        s_stat = get_status(q0_sales, y0_sales)
-        op_stat = get_status(q0_op, y0_op)
-        or_stat = get_status(q0_ord, y0_ord)
-        ep_stat = get_status(q0_eps, y0_eps)
+        s_q0 = calc_gr(q0_sales, q1_sales)
+        op_q0 = calc_gr(q0_op, q1_op)
+        or_q0 = calc_gr(q0_ord, q1_ord)
+        ep_q0 = calc_gr(q0_eps, q1_eps)
 
-        if "計算不能" in (s_stat, op_stat, or_stat, ep_stat):
-            return False, ""
-            
-        # --- 📈 TAB1 (買い) ロジック ---
+        s_q1 = calc_gr(q1_sales, q2_sales)
+        op_q1 = calc_gr(q1_op, q2_op)
+        or_q1 = calc_gr(q1_ord, q2_ord)
+        ep_q1 = calc_gr(q1_eps, q2_eps)
+        
         if mode == "buy":
-            # 買いの場合、赤字継続や黒字転換(保守的)等のステータスは弾く
-            for stat in [s_stat, op_stat, or_stat, ep_stat]:
-                if isinstance(stat, str): 
-                    return False, "" 
+            # 利益がマイナスなら不合格（成長率がプラスでも赤字なら買わない）
+            if q0_op < 0 or q0_ord < 0 or q0_eps < 0 or q1_op < 0 or q1_ord < 0 or q1_eps < 0:
+                return False, ""
                 
-            if s_stat >= 10.0 and op_stat >= 20.0 and or_stat >= 20.0 and ep_stat >= 20.0:
+            if not (s_q0 >= sales_req and s_q1 >= sales_req): return False, ""
+            if not (op_q0 >= 15.0 and op_q1 >= 15.0): return False, ""
+            if not (or_q0 >= ord_req and or_q1 >= ord_req): return False, ""
+            if not (ep_q0 >= 15.0 and ep_q1 >= 15.0): return False, ""
+            
+            if op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0:
                 return True, "S級🎯"
-            if s_stat >= sales_req and op_stat >= 15.0 and or_stat >= ord_req and ep_stat >= 15.0:
-                return True, "A級🟢"
-            return False, ""
+            return True, "A級🟢"
             
-        # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            def check_sell_cond(stat, limit):
-                if isinstance(stat, str):
-                    if stat == "赤字継続": return True   # 赤字が続いているボロ株は合格
-                    if stat == "黒字転換": return False  # 黒字転換した株は不合格
-                else:
-                    if stat < limit: return True       # プラスでも成長率が低い、または赤字転落は合格
-                return False
+            # 利益がマイナス（赤字）なら、成長率に関わらず「空売りのターゲット条件クリア」とみなす
+            def check_sell(c_val, p_val, limit):
+                if c_val < 0: return True
+                gr = calc_gr(c_val, p_val)
+                return gr < limit
 
-            if not check_sell_cond(s_stat, 5.0): return False, ""
-            if not check_sell_cond(op_stat, 10.0): return False, ""
-            if not check_sell_cond(or_stat, 5.0): return False, ""
-            if not check_sell_cond(ep_stat, 10.0): return False, ""
+            if not (calc_gr(q0_sales, q1_sales) < 5.0 and calc_gr(q1_sales, q2_sales) < 5.0): return False, ""
+            if not (check_sell(q0_op, q1_op, 10.0) and check_sell(q1_op, q2_op, 10.0)): return False, ""
+            if not (check_sell(q0_ord, q1_ord, 5.0) and check_sell(q1_ord, q2_ord, 5.0)): return False, ""
+            if not (check_sell(q0_eps, q1_eps, 10.0) and check_sell(q1_eps, q2_eps, 10.0)): return False, ""
             
-            def is_severe(stat):
-                if isinstance(stat, str):
-                    return stat == "赤字継続"
-                return stat < 0
-
-            if is_severe(s_stat) and is_severe(op_stat) and is_severe(or_stat) and is_severe(ep_stat):
+            if q0_op < 0 and q0_ord < 0 and q0_eps < 0 and q1_op < 0 and q1_ord < 0 and q1_eps < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
@@ -3027,18 +3006,17 @@ def fetch_fundamental_history_local(code, local_db):
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
-                for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
-                    if col and col in std_df.columns:
+                for col in filter(None, [c_sales, c_op, c_ord, c_eps, c_profit]):
+                    if col in std_df.columns:
                         try: 
                             val_c = to_flt(actual_df[col].iloc[i])
                             val_p = to_flt(actual_df[col].iloc[i-1])
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
-        # 🚨 ダミー値を完全排除し、前期マイナスでも正確なパーセントを算出する
-        def calc_yoy(c, p):
-            if p == 0.0:
-                return "-"
+        # 🚨 ダミー文字を廃止。数学的に正確なパーセンテージを計算。
+        def calc_qoq(c, p):
+            if p == 0.0: return "-"
             return ((c - p) / abs(p)) * 100.0
 
         def get_v(row, primary, fallback=None):
@@ -3049,20 +3027,18 @@ def fetch_fundamental_history_local(code, local_db):
 
         results = []
         for i in range(1, 5):
-            if len(std_df) < i + 4:
-                if len(std_df) >= i:
-                    q_cur = std_df.iloc[-i]
+            # QoQ(前四半期比)のため、i期前と i+1期前 を比較する
+            if len(std_df) < i + 1:
+                q_cur = std_df.iloc[-i] if len(std_df) >= i else None
+                if q_cur is not None:
                     dis_date = q_cur.get(c_date, '-')
                     if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                         dis_date = dis_date.strftime('%Y-%m-%d')
-                        if dis_date == '1970-01-01': dis_date = '-'
-                    else:
-                        dis_date = '-'
                     results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "EPS(%)": "-"})
                 continue
                 
             q_cur = std_df.iloc[-i]
-            q_prv = std_df.iloc[-(i+4)]
+            q_prv = std_df.iloc[-(i+1)]
             
             dis_date = q_cur.get(c_date, '-')
             if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
@@ -3073,21 +3049,22 @@ def fetch_fundamental_history_local(code, local_db):
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
-                "売上(%)": calc_yoy(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
-                "営業益(%)": calc_yoy(get_v(q_cur, c_op), get_v(q_prv, c_op)),
-                "経常益(%)": calc_yoy(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
-                "EPS(%)": calc_yoy(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
+                "売上(%)": calc_qoq(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
+                "営業益(%)": calc_qoq(get_v(q_cur, c_op), get_v(q_prv, c_op)),
+                "経常益(%)": calc_qoq(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
+                "EPS(%)": calc_qoq(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
             })
 
+        # 通年(直近1年)の計算はYoYのため、4つ前と比較
         if len(std_df) >= 8:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             results.append({
                 "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(%)": calc_yoy(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
-                "営業益(%)": calc_yoy(get_v(y_cur, c_op), get_v(y_prv, c_op)),
-                "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
-                "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
+                "売上(%)": calc_qoq(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
+                "営業益(%)": calc_qoq(get_v(y_cur, c_op), get_v(y_prv, c_op)),
+                "経常益(%)": calc_qoq(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
+                "EPS(%)": calc_qoq(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
             })
         
         if len(results) == 0: return None
@@ -3410,12 +3387,15 @@ with tab3:
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                             
+                            # 🔗 シグナルの日付を確実にdatetime型に変換して描画バグを修正
                             if scan_mode == "buy" and data.get("buy_sigs"):
-                                sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
+                                sig_dates = pd.to_datetime(data["buy_sigs"], errors='coerce')
+                                sig_df = df_c[df_c[date_col].isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
-                                sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
+                                sig_dates = pd.to_datetime(data["sell_sigs"], errors='coerce')
+                                sig_df = df_c[df_c[date_col].isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
                             if len(df_c) > 65:
