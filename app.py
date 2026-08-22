@@ -2968,15 +2968,14 @@ def fetch_fundamental_history_local(code, local_db):
                 return float(str(v).replace(',', '').strip())
             except: return 0.0
 
-        # 💡 APIのV2仕様対応：日付でソートして時系列を整える
         if c_date:
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        # 💡 防弾処理：実績値が0以下の「予想行」や「空行」を除外
         actual_mask = (df_target[c_sales].apply(to_flt) > 0) if c_sales else pd.Series([True]*len(df_target))
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
+        # 💡 【修正】5未満で全捨てしていた厳しすぎる足切りを「2」に緩和
         if len(actual_df) < 2: return None
 
         std_df = actual_df.copy()
@@ -2985,7 +2984,6 @@ def fetch_fundamental_history_local(code, local_db):
             c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
             p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
             
-            # 1Q、または売上がリセット(減少)された場合は単体決算とみなす
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
@@ -3041,9 +3039,8 @@ def fetch_fundamental_history_local(code, local_db):
                 "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
                 "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
             })
-        else:
-            results.append({"期間": "🌟 通年(直近1年)", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "EPS(%)": "-"})
-
+        
+        if len(results) == 0: return None
         return pd.DataFrame(results[::-1])
     except Exception as e:
         return None
@@ -3131,9 +3128,6 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # ==========================================
-    # 🔗 要件7: TAB1/2スキャン結果の自動連携 ＆ 要件6: モード別独立保持
-    # ==========================================
     t1_codes = []
     for key in ['tab1_scan_results', 'tab1_scan_results_raw', 'hit_codes_s', 'hit_codes_a', 'all_hits']:
         t_res = st.session_state.get(key)
@@ -3158,7 +3152,6 @@ with tab3:
                     if c: t2_codes.append(str(c)[:4])
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
 
-    # セッションステート初期化
     if "tab3_codes_buy" not in st.session_state:
         st.session_state["tab3_codes_buy"] = t1_codes_str
     if "tab3_codes_sell" not in st.session_state:
@@ -3276,6 +3269,7 @@ with tab3:
                     st.divider()
 
                     import plotly.graph_objects as go
+                    import pandas as pd
                     
                     hit_count = sum(1 for d in sortable_results if d["is_hit"])
                     if hit_count > 0:
@@ -3311,11 +3305,16 @@ with tab3:
                             
                             fig = go.Figure()
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                            # 💡 【修正】日付を正確なdatetime型に変換（Plotlyの日付認識バグ回避）
+                            df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
                             fig.add_trace(go.Candlestick(
-                                x=df_c[date_col], open=df_c.get('AdjO', df_c.get('Open')), 
-                                high=df_c.get('AdjH', df_c.get('High')), low=df_c.get('AdjL', df_c.get('Low')), 
-                                close=df_c[c_col], name='価格'
+                                x=df_c[date_col], 
+                                open=df_c.get('AdjO', df_c.get('Open')), 
+                                high=df_c.get('AdjH', df_c.get('High')), 
+                                low=df_c.get('AdjL', df_c.get('Low')), 
+                                close=df_c[c_col], 
+                                name='価格'
                             ))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
@@ -3328,19 +3327,40 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 💡 修正：文字列(str)に変換してPlotlyに確実なオートフォーカスを強制させる
-                            x_min = str(df_c[date_col].iloc[-65]) if len(df_c) > 65 else str(df_c[date_col].iloc[0])
-                            x_max = str(df_c[date_col].iloc[-1])
+                            # 💡 【修正】X軸とY軸の両方を直近65日間のデータに合わせてズームする（ペチャンコ防止）
+                            if len(df_c) > 65:
+                                df_recent = df_c.tail(65)
+                                x_min = df_recent[date_col].iloc[0]
+                                x_max = df_recent[date_col].iloc[-1]
+                                
+                                # Y軸も直近65日間の高値/安値に合わせて初期設定
+                                max_h = df_recent.get('AdjH', df_recent.get('High')).max()
+                                min_l = df_recent.get('AdjL', df_recent.get('Low')).min()
+                                y_min = min_l * 0.95
+                                y_max = max_h * 1.05
+                            else:
+                                x_min = df_c[date_col].iloc[0]
+                                x_max = df_c[date_col].iloc[-1]
+                                y_min, y_max = None, None
                             
-                            fig.update_layout(
-                                height=400, 
-                                margin=dict(l=0, r=0, t=30, b=0),
-                                xaxis=dict(range=[x_min, x_max], rangeslider=dict(visible=False))
-                            )
-                            fig.update_yaxes(autorange=True, fixedrange=False)
+                            layout_args = {
+                                'height': 400,
+                                'margin': dict(l=0, r=0, t=30, b=0),
+                                'xaxis': dict(
+                                    range=[x_min, x_max], 
+                                    rangeslider=dict(visible=False),
+                                    type='date' # 確実に日付軸として認識させる
+                                )
+                            }
+                            # Y軸のオートスケールを無効化し、直近のデータにピントを合わせる
+                            if y_min and y_max:
+                                layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
+                            else:
+                                layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
+                                
+                            fig.update_layout(**layout_args)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        # 💡 修正：DB状態を判別できるデバッグインフォを追加
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（四半期・通年）")
                             try:
