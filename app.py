@@ -3146,6 +3146,9 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
+    # ==========================================
+    # 🔗 要件7: TAB1/2スキャン結果の自動連携 ＆ 要件6: モード別独立保持
+    # ==========================================
     t1_codes = []
     for key in ['tab1_scan_results', 'tab1_scan_results_raw', 'hit_codes_s', 'hit_codes_a', 'all_hits']:
         t_res = st.session_state.get(key)
@@ -3170,6 +3173,7 @@ with tab3:
                     if c: t2_codes.append(str(c)[:4])
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
 
+    # セッションステート初期化
     if "tab3_codes_buy" not in st.session_state:
         st.session_state["tab3_codes_buy"] = t1_codes_str
     if "tab3_codes_sell" not in st.session_state:
@@ -3227,13 +3231,22 @@ with tab3:
 
                     current_div_rate = 0.0
                     analyzed_data = {}
-                    total_cnt = len(target_codes)
+                    
+                    try: local_fund_db = load_local_fundamentals_db()
+                    except: local_fund_db = None
+
+                    # 💡 修正：進行度（total_cnt）を実際のグループ数から取得し、1.0（100%）超えを防止
+                    total_cnt = df_targets[c_code_raw].nunique() if not df_targets.empty else 1
+                    if total_cnt == 0: total_cnt = 1
                     completed_cnt = 0
 
                     for code_str, group in df_targets.groupby(c_code_raw):
                         code_int = int(str(code_str)[:4])
                         completed_cnt += 1
-                        p_bar.progress(completed_cnt / total_cnt, text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
+                        
+                        # 💡 修正：万が一completed_cntが超えてもmin()で1.0に抑え込む（防弾仕様）
+                        prog_val = min(completed_cnt / total_cnt, 1.0)
+                        p_bar.progress(prog_val, text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
                         
                         df = group.tail(260).reset_index(drop=True)
                         if df.empty or len(df) < 4: continue
@@ -3250,7 +3263,29 @@ with tab3:
                         is_hit = res_hit[0] if isinstance(res_hit, tuple) else res_hit
                         rank = res_hit[1] if isinstance(res_hit, tuple) else ("🎯 陣形検知" if is_hit else "")
 
-                        analyzed_data[code_int] = {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover}
+                        f_df = None
+                        if is_hit:
+                            f_df = fetch_fundamental_history_local(code_int, local_fund_db)
+                            if f_df is not None and not f_df.empty:
+                                q1_row = f_df[f_df["期間"] == "直近 Q1"]
+                                if not q1_row.empty:
+                                    op_yoy = q1_row["営業益(%)"].iloc[0]
+                                    ord_yoy = q1_row["経常益(%)"].iloc[0]
+                                    ep_yoy = q1_row["EPS(%)"].iloc[0]
+                                    
+                                    def is_neg(v): return isinstance(v, (int, float)) and v < 0
+                                    def is_pos(v): return isinstance(v, (int, float)) and v > 0
+                                    
+                                    if scan_mode == "buy":
+                                        if is_neg(op_yoy) or is_neg(ord_yoy) or is_neg(ep_yoy):
+                                            is_hit = False
+                                            rank = ""
+                                    elif scan_mode == "sell":
+                                        if is_pos(op_yoy) and is_pos(ord_yoy) and is_pos(ep_yoy):
+                                            is_hit = False
+                                            rank = ""
+
+                        analyzed_data[code_int] = {"df": df, "is_hit": is_hit, "rank": rank, "turnover": turnover, "fund": f_df}
 
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
@@ -3269,19 +3304,26 @@ with tab3:
                         m_df = load_master()
                         name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
                     except: pass
-
-                    try: local_fund_db = load_local_fundamentals_db()
-                    except: local_fund_db = None
                     
                     for i, data in enumerate(display_targets):
-                        p_bar.progress((i + 1) / len(display_targets), text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
+                        # フェーズ2も念のため安全化
+                        prog_val = min((i + 1) / len(display_targets), 1.0)
+                        p_bar.progress(prog_val, text=f"⚙️ フェーズ2：上位30件の詳細分析（ファンダ・シグナル履歴）を実行中... ({i+1}/{len(display_targets)})")
                         code = data['code']
                         df = data['df']
                         b_sigs, s_sigs = analyze_formation_history(df)
-                        fund_df = fetch_fundamental_history_local(code, local_fund_db)
+                        
+                        fund_df = data.get('fund')
+                        if fund_df is None:
+                            fund_df = fetch_fundamental_history_local(code, local_fund_db)
+                            
+                        if fund_df is not None and not fund_df.empty:
+                            if '開示日' in fund_df.columns:
+                                fund_df['開示日'] = fund_df['開示日'].astype(str).replace({'1970-01-01': '-', '1970-01-01 00:00:00': '-'})
+                        
+                        data['fund'] = fund_df
                         data['buy_sigs'] = b_sigs
                         data['sell_sigs'] = s_sigs
-                        data['fund'] = fund_df
 
                     p_bar.empty()
                     st.divider()
@@ -3291,9 +3333,9 @@ with tab3:
                     
                     hit_count = sum(1 for d in sortable_results if d["is_hit"])
                     if hit_count > 0:
-                        st.success(f"🎯 陣形合致銘柄: {hit_count}件 確認！ （上位最大30件の分析ダッシュボードを表示します）")
+                        st.success(f"🎯 陣形合致（かつファンダ基準突破）銘柄: {hit_count}件 確認！ （上位最大30件のダッシュボードを表示します）")
                     else:
-                        st.error("📉 条件に合致する陣形を形成した銘柄はありませんでした。流動性上位の分析データを表示します。")
+                        st.error("📉 条件とファンダ基準に合致する陣形を形成した銘柄はありませんでした。流動性上位の分析データを表示します。")
 
                     for data in display_targets:
                         code = data['code']
@@ -3323,7 +3365,6 @@ with tab3:
                             
                             fig = go.Figure()
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
-                            # 💡 【修正】日付を正確なdatetime型に変換（Plotlyの日付認識バグ回避）
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
                             fig.add_trace(go.Candlestick(
@@ -3345,13 +3386,11 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 💡 【修正】X軸とY軸の両方を直近65日間のデータに合わせてズームする（ペチャンコ防止）
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 x_min = df_recent[date_col].iloc[0]
                                 x_max = df_recent[date_col].iloc[-1]
                                 
-                                # Y軸も直近65日間の高値/安値に合わせて初期設定
                                 max_h = df_recent.get('AdjH', df_recent.get('High')).max()
                                 min_l = df_recent.get('AdjL', df_recent.get('Low')).min()
                                 y_min = min_l * 0.95
@@ -3367,10 +3406,9 @@ with tab3:
                                 'xaxis': dict(
                                     range=[x_min, x_max], 
                                     rangeslider=dict(visible=False),
-                                    type='date' # 確実に日付軸として認識させる
+                                    type='date'
                                 )
                             }
-                            # Y軸のオートスケールを無効化し、直近のデータにピントを合わせる
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
