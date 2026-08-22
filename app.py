@@ -5,7 +5,7 @@ import os
 import re
 import json
 import datetime
-from datetime import datetime, timedeltaF
+from datetime import datetime, timedelta
 from io import BytesIO
 import plotly.graph_objects as go
 import numpy as np
