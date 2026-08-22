@@ -106,17 +106,15 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（直近2四半期連続 YoY対応版）
+# 🧠 ファンダメンタルズ解析エンジン（V2短縮キー完全適応・YoY版・日付ソート追加）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
-    import streamlit as st
     import pandas as pd
 
     try:
         if df is None or len(df) < 1:
             return False, ""
 
-        # V2の真のカラム名を指定
         c_sales = 'Sales'
         c_op = 'OP'
         c_ord = 'OdP'
@@ -124,11 +122,17 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         c_profit = 'NP'
         c_type = 'CurPerType'
 
-        # 安全のため、カラムが存在しない場合は0で埋める
-        std_df = df.copy()
-        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
-            if col not in std_df.columns:
-                std_df[col] = 0.0 if col != c_type else ""
+        # 💡 【真の原因修正1】日付順ソートの追加（これを忘れていたため、順番がバラバラで比較されていた）
+        cols = [str(c).lower() for c in df.columns]
+        def find_c(*names):
+            for n in names:
+                if n.lower() in cols: return df.columns[cols.index(n.lower())]
+            return None
+            
+        c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
+        if c_date:
+            df[c_date] = pd.to_datetime(df[c_date], errors='coerce')
+            df = df.sort_values(by=c_date).reset_index(drop=True)
 
         def to_float(val):
             try:
@@ -137,7 +141,20 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             except:
                 return 0.0
 
-        # 💡 累計決算を「四半期単体」に分解する
+        # 💡 【真の原因修正2】売上0以下の「未来の予定データ」を排除（これがないと予想データを最新実績と勘違いする）
+        if c_sales in df.columns:
+            actual_mask = df[c_sales].apply(to_float) > 0
+            df = df[actual_mask].copy().reset_index(drop=True)
+
+        if len(df) < 5:
+            return False, ""
+
+        std_df = df.copy()
+        
+        for col in [c_sales, c_op, c_ord, c_eps, c_profit, c_type]:
+            if col not in std_df.columns:
+                std_df[col] = 0.0 if col != c_type else ""
+
         for i in range(1, len(df)):
             try:
                 curr_sales = to_float(df[c_sales].iloc[i])
@@ -154,7 +171,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 is_q1 = True
                 
             if not is_q1:
-                # 2Q〜4Qの場合、前回の累計を引いて単体にする
                 for col in [c_sales, c_op, c_ord, c_eps, c_profit]:
                     try:
                         c_val = to_float(df[col].iloc[i])
@@ -164,16 +180,8 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
 
-        # 🚨 2四半期連続でYoYを計算するためには最低6四半期分の単体データが必要
-        if len(std_df) < 6:
-            return False, ""
-
-        # 🎯 データの抽出
-        q0 = std_df.iloc[-1] # 最新四半期
-        y0 = std_df.iloc[-5] # 最新の前年同期 (4つ前)
-
-        q1 = std_df.iloc[-2] # 1つ前の四半期
-        y1 = std_df.iloc[-6] # 1つ前の前年同期 (1つ前の4つ前)
+        q0 = std_df.iloc[-1] 
+        y0 = std_df.iloc[-5] 
 
         def get_val(row, primary_col, fallback_col=None):
             v = to_float(row.get(primary_col, 0.0))
@@ -186,49 +194,41 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                 return 999.0 if c > 0 else -999.0
             return ((c - p) / abs(p)) * 100.0
 
-        # 最新四半期 (q0) のYoY成長率
-        s_q0 = calc_gr(get_val(q0, c_sales), get_val(y0, c_sales))
-        op_q0 = calc_gr(get_val(q0, c_op), get_val(y0, c_op))
-        or_q0 = calc_gr(get_val(q0, c_ord), get_val(y0, c_ord))
-        ep_q0 = calc_gr(get_val(q0, c_eps, c_profit), get_val(y0, c_eps, c_profit))
+        q0_sales = get_val(q0, c_sales)
+        y0_sales = get_val(y0, c_sales)
+        
+        q0_op = get_val(q0, c_op)
+        y0_op = get_val(y0, c_op)
+        
+        q0_ord = get_val(q0, c_ord)
+        y0_ord = get_val(y0, c_ord)
+        
+        q0_eps = get_val(q0, c_eps, c_profit)
+        y0_eps = get_val(y0, c_eps, c_profit)
 
-        # 1つ前の四半期 (q1) のYoY成長率
-        s_q1 = calc_gr(get_val(q1, c_sales), get_val(y1, c_sales))
-        op_q1 = calc_gr(get_val(q1, c_op), get_val(y1, c_op))
-        or_q1 = calc_gr(get_val(q1, c_ord), get_val(y1, c_ord))
-        ep_q1 = calc_gr(get_val(q1, c_eps, c_profit), get_val(y1, c_eps, c_profit))
+        s_yoy = calc_gr(q0_sales, y0_sales)
+        op_yoy = calc_gr(q0_op, y0_op)
+        or_yoy = calc_gr(q0_ord, y0_ord)
+        ep_yoy = calc_gr(q0_eps, y0_eps)
 
-        # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            # 1. 最新(q0) と 1つ前(q1) の両方が A級基準（売上7%以上、利益15%以上）をクリアしているか
-            pass_a_q0 = (s_q0 >= sales_req and op_q0 >= 15.0 and or_q0 >= ord_req and ep_q0 >= 15.0)
-            pass_a_q1 = (s_q1 >= sales_req and op_q1 >= 15.0 and or_q1 >= ord_req and ep_q1 >= 15.0)
-
-            if not (pass_a_q0 and pass_a_q1):
-                return False, "" # 2期連続でクリアできなければ不合格
-
-            # 2. 最新(q0) と 1つ前(q1) の両方が S級基準（売上10%以上、利益20%以上）をクリアしているか
-            pass_s_q0 = (s_q0 >= 10.0 and op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0)
-            pass_s_q1 = (s_q1 >= 10.0 and op_q1 >= 20.0 and or_q1 >= 20.0 and ep_q1 >= 20.0)
-
-            if pass_s_q0 and pass_s_q1:
+            if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
-
-            return True, "A級🟢"
+            if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
+                return True, "A級🟢"
+            return False, ""
             
-        # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            pass_sell_q0 = (s_q0 < 5.0 and op_q0 < 10.0 and or_q0 < 5.0 and ep_q0 < 10.0)
-            pass_sell_q1 = (s_q1 < 5.0 and op_q1 < 10.0 and or_q1 < 5.0 and ep_q1 < 10.0)
-
-            if not (pass_sell_q0 and pass_sell_q1):
-                return False, ""
+            if not (s_yoy < 5.0): return False, ""
+            if not (op_yoy < 10.0): return False, ""
+            if not (or_yoy < 5.0): return False, ""
+            if not (ep_yoy < 10.0): return False, ""
             
-            if s_q0 < 0 and op_q0 < 0 and or_q0 < 0 and ep_q0 < 0:
+            if s_yoy < 0 and op_yoy < 0 and or_yoy < 0 and ep_yoy < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
-    except Exception:
+    except Exception as e:
         pass
     return False, ""
     
@@ -2942,16 +2942,14 @@ def fetch_fundamental_history_local(code, local_db):
         str_code = str(code).strip()[:4]
         df_target = None
         
-        # 💡 【真の修正】ローカルDBが「辞書(dict)」だった場合の確実なデータ抽出（J-Quants仕様）
         if isinstance(local_db, dict):
             api_code = str_code if len(str_code) >= 5 else str_code + "0"
             df_target = local_db.get(api_code)
             if df_target is None:
-                df_target = local_db.get(str_code) # 4桁でのフォールバック
+                df_target = local_db.get(str_code) 
             if df_target is None or len(df_target) == 0: return None
             df_target = df_target.copy().reset_index(drop=True)
             
-        # ローカルDBが「DataFrame」だった場合の抽出（従来の念のため残す）
         elif isinstance(local_db, pd.DataFrame):
             c_code_col = 'Code' if 'Code' in local_db.columns else ('code' if 'code' in local_db.columns else None)
             if not c_code_col: return None
@@ -2966,7 +2964,6 @@ def fetch_fundamental_history_local(code, local_db):
                 if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
             return None
 
-        # J-Quantsのカラムに対応
         c_sales = find_c('Sales', 'NetSales', 'net_sales')
         c_op = find_c('OP', 'OperatingProfit', 'operating_profit')
         c_ord = find_c('OdP', 'OrdinaryProfit', 'ordinary_profit')
@@ -2988,7 +2985,6 @@ def fetch_fundamental_history_local(code, local_db):
         actual_mask = (df_target[c_sales].apply(to_flt) > 0) if c_sales else pd.Series([True]*len(df_target))
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
-        # 最低2四半期のデータがないと成長率が出せない
         if len(actual_df) < 2: return None
 
         std_df = actual_df.copy()
@@ -2997,7 +2993,6 @@ def fetch_fundamental_history_local(code, local_db):
             c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
             p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
             
-            # 累計を四半期単体に分解
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
@@ -3025,7 +3020,12 @@ def fetch_fundamental_history_local(code, local_db):
                 if len(std_df) >= i:
                     q_cur = std_df.iloc[-i]
                     dis_date = q_cur.get(c_date, '-')
-                    if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): dis_date = dis_date.strftime('%Y-%m-%d')
+                    # 💡 1970年の亡霊を関数内で直接破壊する
+                    if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
+                        dis_date = dis_date.strftime('%Y-%m-%d')
+                        if dis_date == '1970-01-01': dis_date = '-'
+                    else:
+                        dis_date = '-'
                     results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "EPS(%)": "-"})
                 continue
                 
@@ -3033,7 +3033,11 @@ def fetch_fundamental_history_local(code, local_db):
             q_prv = std_df.iloc[-(i+4)]
             
             dis_date = q_cur.get(c_date, '-')
-            if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): dis_date = dis_date.strftime('%Y-%m-%d')
+            if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
+                dis_date = dis_date.strftime('%Y-%m-%d')
+                if dis_date == '1970-01-01': dis_date = '-'
+            else:
+                dis_date = '-'
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
