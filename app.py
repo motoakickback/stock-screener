@@ -2940,13 +2940,25 @@ def fetch_fundamental_history_local(code, local_db):
         if local_db is None or len(local_db) == 0: return None
 
         str_code = str(code).strip()[:4]
-        c_code_col = 'Code' if 'Code' in local_db.columns else ('code' if 'code' in local_db.columns else None)
-        if not c_code_col: return None
+        df_target = None
+        
+        # 💡 【真の修正】ローカルDBが「辞書(dict)」だった場合の確実なデータ抽出（J-Quants仕様）
+        if isinstance(local_db, dict):
+            api_code = str_code if len(str_code) >= 5 else str_code + "0"
+            df_target = local_db.get(api_code)
+            if df_target is None:
+                df_target = local_db.get(str_code) # 4桁でのフォールバック
+            if df_target is None or len(df_target) == 0: return None
+            df_target = df_target.copy().reset_index(drop=True)
+            
+        # ローカルDBが「DataFrame」だった場合の抽出（従来の念のため残す）
+        elif isinstance(local_db, pd.DataFrame):
+            c_code_col = 'Code' if 'Code' in local_db.columns else ('code' if 'code' in local_db.columns else None)
+            if not c_code_col: return None
+            mask = local_db[c_code_col].astype(str).str.startswith(str_code)
+            df_target = local_db[mask].copy().reset_index(drop=True)
 
-        mask = local_db[c_code_col].astype(str).str.startswith(str_code)
-        df_target = local_db[mask].copy().reset_index(drop=True)
-
-        if len(df_target) == 0: return None
+        if df_target is None or len(df_target) == 0: return None
 
         cols = [str(c).lower() for c in df_target.columns]
         def find_c(*names):
@@ -2954,6 +2966,7 @@ def fetch_fundamental_history_local(code, local_db):
                 if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
             return None
 
+        # J-Quantsのカラムに対応
         c_sales = find_c('Sales', 'NetSales', 'net_sales')
         c_op = find_c('OP', 'OperatingProfit', 'operating_profit')
         c_ord = find_c('OdP', 'OrdinaryProfit', 'ordinary_profit')
@@ -2975,7 +2988,7 @@ def fetch_fundamental_history_local(code, local_db):
         actual_mask = (df_target[c_sales].apply(to_flt) > 0) if c_sales else pd.Series([True]*len(df_target))
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
-        # 💡 【修正】5未満で全捨てしていた厳しすぎる足切りを「2」に緩和
+        # 最低2四半期のデータがないと成長率が出せない
         if len(actual_df) < 2: return None
 
         std_df = actual_df.copy()
@@ -2984,6 +2997,7 @@ def fetch_fundamental_history_local(code, local_db):
             c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
             p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
             
+            # 累計を四半期単体に分解
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
