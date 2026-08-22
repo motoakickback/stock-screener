@@ -183,35 +183,64 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         q0_eps = get_val(q0, 'EarningsPerShare', 'Profit')
         y0_eps = get_val(y0, 'EarningsPerShare', 'Profit')
 
-        # 🚨 【修正】0（データ欠損）の場合はダミー値をやめ、即座に「計算不能(None)」とする
-        def calc_gr(c, p):
-            if c == 0.0 or p == 0.0:
-                return None
+        # 売上データが0以下の場合は事業実態なし・データ異常として確実にはじく
+        if q0_sales <= 0 or y0_sales <= 0:
+            return False, ""
+
+        # 🚨 【真の原因修正】単純な割り算をやめ、赤字継続・黒字転換を正確にステータス化する
+        def get_status(c, p):
+            if p < 0 and c < 0:
+                return "赤字継続"
+            if p < 0 and c >= 0:
+                return "黒字転換"
+            if p == 0:
+                return "計算不能"
             return ((c - p) / abs(p)) * 100.0
 
-        s_yoy = calc_gr(q0_sales, y0_sales)
-        op_yoy = calc_gr(q0_op, y0_op)
-        or_yoy = calc_gr(q0_ord, y0_ord)
-        ep_yoy = calc_gr(q0_eps, y0_eps)
+        s_stat = get_status(q0_sales, y0_sales)
+        op_stat = get_status(q0_op, y0_op)
+        or_stat = get_status(q0_ord, y0_ord)
+        ep_stat = get_status(q0_eps, y0_eps)
 
-        # 🚨 【修正】データ欠損（0値による計算不可）が1つでもあればノイズとして除外
-        if None in (s_yoy, op_yoy, or_yoy, ep_yoy):
+        if "計算不能" in (s_stat, op_stat, or_stat, ep_stat):
             return False, ""
             
+        # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            if s_yoy >= 10.0 and op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
+            # 買いの場合、赤字継続や黒字転換(今回は保守的に)等の異常ステータスは弾く
+            for stat in [s_stat, op_stat, or_stat, ep_stat]:
+                if isinstance(stat, str): 
+                    return False, "" 
+                
+            if s_stat >= 10.0 and op_stat >= 20.0 and or_stat >= 20.0 and ep_stat >= 20.0:
                 return True, "S級🎯"
-            if s_yoy >= sales_req and op_yoy >= 15.0 and or_yoy >= ord_req and ep_yoy >= 15.0:
+            if s_stat >= sales_req and op_stat >= 15.0 and or_stat >= ord_req and ep_stat >= 15.0:
                 return True, "A級🟢"
             return False, ""
             
+        # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            if not (s_yoy < 5.0): return False, ""
-            if not (op_yoy < 10.0): return False, ""
-            if not (or_yoy < 5.0): return False, ""
-            if not (ep_yoy < 10.0): return False, ""
+            # ステータスごとに空売りの合格条件を判定する
+            def check_sell_cond(stat, limit):
+                if isinstance(stat, str):
+                    if stat == "赤字継続": return True   # 赤字が続いているボロ株は合格
+                    if stat == "黒字転換": return False  # 黒字転換した株は不合格
+                else:
+                    if stat < limit: return True       # プラスでも成長率が低い、または赤字転落は合格
+                return False
+
+            if not check_sell_cond(s_stat, 5.0): return False, ""
+            if not check_sell_cond(op_stat, 10.0): return False, ""
+            if not check_sell_cond(or_stat, 5.0): return False, ""
+            if not check_sell_cond(ep_stat, 10.0): return False, ""
             
-            if s_yoy < 0 and op_yoy < 0 and or_yoy < 0 and ep_yoy < 0:
+            def is_severe(stat):
+                if isinstance(stat, str):
+                    return stat == "赤字継続"
+                return stat < 0
+
+            # すべてがマイナス成長、または赤字継続ならS級
+            if is_severe(s_stat) and is_severe(op_stat) and is_severe(or_stat) and is_severe(ep_stat):
                 return True, "S級💀"
             return True, "A級📉"
             
