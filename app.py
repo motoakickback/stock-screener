@@ -3114,46 +3114,43 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # ==========================================
-    # 🔗 要件7: TAB1・TAB2 からの自動連動
-    # ==========================================
-    auto_codes = []
-    for key in ['tab1_scan_results', 'tab2_scan_results']:
-        t_res = st.session_state.get(key, [])
+    # 🔗 要件7: TAB1/2のスキャン結果自動連携 ＆ 要件6: モード別銘柄コード保持
+    default_codes = []
+    for t_res in [st.session_state.get('tab1_scan_results', []), st.session_state.get('tab2_scan_results', [])]:
         if t_res:
             for r in t_res:
                 if isinstance(r, dict):
                     c = r.get('Code') or r.get('code')
-                    if c: auto_codes.append(str(c)[:4])
+                    if c: default_codes.append(str(c)[:4])
                 else:
-                    auto_codes.append(str(r)[:4])
+                    default_codes.append(str(r)[:4])
     
-    auto_codes_str = ",".join(list(dict.fromkeys(auto_codes)))
+    default_codes_str = ",".join(list(dict.fromkeys(default_codes)))
 
-    # TAB1/2の結果が前回と変わった場合のみ、入力バッファを強制上書き
-    if st.session_state.get("tab3_last_auto_codes") != auto_codes_str:
-        st.session_state["tab3_codes_buy"] = auto_codes_str
-        st.session_state["tab3_codes_sell"] = auto_codes_str
-        st.session_state["tab3_last_auto_codes"] = auto_codes_str
-
-    # ==========================================
-    # 🔗 要件6: モード別の銘柄記憶回路
-    # ==========================================
+    # セッションステート初期化
     if "tab3_codes_buy" not in st.session_state:
-        st.session_state["tab3_codes_buy"] = auto_codes_str
+        st.session_state["tab3_codes_buy"] = default_codes_str
     if "tab3_codes_sell" not in st.session_state:
-        st.session_state["tab3_codes_sell"] = auto_codes_str
+        st.session_state["tab3_codes_sell"] = default_codes_str
+    if "tab3_last_default" not in st.session_state:
+        st.session_state["tab3_last_default"] = default_codes_str
 
-    text_area_key = f"tab3_codes_{scan_mode}"
+    # TAB1/2で新たな結果が出た場合のみバッファを強制上書き
+    if st.session_state["tab3_last_default"] != default_codes_str:
+        st.session_state["tab3_codes_buy"] = default_codes_str
+        st.session_state["tab3_codes_sell"] = default_codes_str
+        st.session_state["tab3_last_default"] = default_codes_str
+
+    text_key = f"tab3_codes_{scan_mode}"
 
     st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
-        key=text_area_key,
+        key=text_key,
         height=100
     )
 
-    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key=f"btn_scan_tab3_{scan_mode}"):
+    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
@@ -3169,14 +3166,14 @@ with tab3:
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
 
-            # ループに入る前に全軍データを「1回だけ」一括ロードする
+            # 💡 【真理のアーキテクチャ1】ループに入る前に全軍データを「1回だけ」一括ロードする
             c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
             raw_all_data = get_hist_data_cached(c_key)
 
             if raw_all_data is None or raw_all_data.empty:
                 st.error("⚠️ 全軍データ（キャッシュ）が見つかりません。先にTAB1かTAB2でデータ取得（索敵）を実行してください。")
             else:
-                # 一括ロードしたデータから、対象銘柄だけを抽出
+                # 💡 【真理のアーキテクチャ2】一括ロードしたデータから、対象銘柄だけを抽出
                 c_code_raw = 'Code' if 'Code' in raw_all_data.columns else ('code' if 'code' in raw_all_data.columns else None)
                 if not c_code_raw:
                     st.error("⚠️ キャッシュデータに銘柄コード列が見つかりません。")
@@ -3189,6 +3186,7 @@ with tab3:
                     total_cnt = len(target_codes)
                     completed_cnt = 0
 
+                    # 💡 【真理のアーキテクチャ3】通信もファイル読み込みも無いので、直列で瞬時に終わる
                     for code_str, group in df_targets.groupby(c_code_raw):
                         code_int = int(str(code_str)[:4])
                         completed_cnt += 1
@@ -3218,19 +3216,13 @@ with tab3:
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
                     # 🔗 要件3: 判定結果の高い順で上位から並べる
-                    def get_sort_val(data):
-                        """陣形の有無とランクに基づくソート用の評価値を算出"""
-                        is_hit = data.get("is_hit", False)
-                        rank_str = data.get("rank", "")
-                        r_val = 0
-                        if "S級" in rank_str: r_val = 4
-                        elif "A級" in rank_str: r_val = 3
-                        elif is_hit: r_val = 1
-                        return (1 if is_hit else 0, r_val, data.get("turnover", 0))
-
-                    # ターゲットを評価値の高い順（合致 ＞ ランク高 ＞ 売買代金）に並べ替え
+                    def get_rank_score(r_str):
+                        if "S級" in r_str: return 2
+                        if "A級" in r_str: return 1
+                        return 0
+                        
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
-                    sortable_results.sort(key=get_sort_val, reverse=True)
+                    sortable_results.sort(key=lambda x: (x['is_hit'], get_rank_score(x['rank']), x['turnover']), reverse=True)
                     
                     display_targets = sortable_results[:30]
 
@@ -3269,7 +3261,7 @@ with tab3:
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
                         
-                        # どちらのルールで合致したかを詳細表示
+                        # 💡 どちらのルールで合致したかを詳細表示（目標価格も自動出力）
                         hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
@@ -3302,7 +3294,7 @@ with tab3:
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                             
-                            # 🔗 要件1, 2: モード別シグナルのプロット制御（完全分離）
+                            # 🔗 要件1 & 2: モードによって表示するシグナルを完全に分離
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_df = df_c[df_c[date_col].isin(data["buy_sigs"])]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
@@ -3311,21 +3303,18 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].isin(data["sell_sigs"])]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 🔗 要件5: 1年分保持しつつ、初期表示を直近3ヶ月（約65日）にフォーカス
-                            start_idx = max(0, len(df_c) - 65)
-                            x_min = df_c[date_col].iloc[start_idx]
+                            # 🔗 要件5: 1年分のデータを持たせつつ初期表示のフォーカスを直近3ヶ月に
+                            x_min = df_c[date_col].iloc[-65] if len(df_c) > 65 else df_c[date_col].iloc[0]
                             x_max = df_c[date_col].iloc[-1]
-                            
                             fig.update_layout(
                                 height=400, 
                                 margin=dict(l=0, r=0, t=30, b=0),
-                                xaxis_rangeslider_visible=False,
-                                xaxis=dict(range=[x_min, x_max]) # 初期表示範囲を指定
+                                xaxis=dict(range=[x_min, x_max], rangeslider=dict(visible=False))
                             )
                             fig.update_yaxes(autorange=True, fixedrange=False)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        # 🔗 要件4: ファンダ情報が取れていない場合の防護
+                        # 🔗 要件4: ファンダ情報エラーの防護（落ちないように処理）
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（四半期・通年）")
                             try:
@@ -3336,10 +3325,9 @@ with tab3:
                                     "EPS(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
                                 }), use_container_width=True)
                             except Exception:
-                                # 万が一フォーマットエラーが起きた場合のフォールバック
                                 st.dataframe(data["fund"], use_container_width=True)
                         else:
-                            st.info("ℹ️ 業績データが取得できませんでした（ローカルDB未収録、または計算不可）。")
+                            st.info("ℹ️ 業績データがローカルDBに存在しない、または計算要件に満たないため表示をスキップしました。")
                             
                         st.divider()
 
