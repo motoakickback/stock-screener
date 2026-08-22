@@ -3020,14 +3020,10 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
-        # 🚨 【修正】表での「-100」やダミー値「999」を廃止。状態に応じて数学的に正確な数値とステータスを返す。
+        # 🚨 ダミー値を完全排除し、前期マイナスでも正確なパーセントを算出する
         def calc_yoy(c, p):
-            if c == 0.0 or p == 0.0:
+            if p == 0.0:
                 return "-"
-            if p < 0 and c < 0:
-                return "赤字拡大" if c < p else "赤字縮小" if c > p else "赤字継続"
-            if p < 0 and c >= 0:
-                return "黒字転換"
             return ((c - p) / abs(p)) * 100.0
 
         def get_v(row, primary, fallback=None):
