@@ -106,58 +106,78 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾版）
+# 🧠 ファンダメンタルズ解析エンジン（前年同期比 YoY・絶対防弾・カラム完全吸収版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
+    import pandas as pd
     try:
         if df is None or len(df) < 2:
             return False, ""
+            
+        # 💡 【真の原因修正】ローカルDBの短い名前（Sales等）とAPIの長い名前（NetSales等）の揺れを完全吸収
+        cols = [str(c).lower() for c in df.columns]
+        def find_c(*names):
+            for n in names:
+                if n.lower() in cols: return df.columns[cols.index(n.lower())]
+            return None
+
+        c_sales = find_c('Sales', 'NetSales', 'net_sales')
+        c_op = find_c('OP', 'OperatingProfit', 'operating_profit')
+        c_ord = find_c('OdP', 'OrdinaryProfit', 'ordinary_profit')
+        c_eps = find_c('EPS', 'EarningsPerShare', 'eps')
+        c_profit = find_c('NP', 'Profit', 'netincome')
+        c_type = find_c('CurPerType', 'TypeOfCurrentPeriod', 'type')
         
-        for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit', 'TypeOfCurrentPeriod']:
-            if col not in df.columns:
-                df[col] = 0.0 if col != 'TypeOfCurrentPeriod' else ''
-                
-        import pandas as pd
-        actual_mask = (pd.to_numeric(df['NetSales'], errors='coerce').fillna(0) > 0) | \
-                      (pd.to_numeric(df['OrdinaryProfit'], errors='coerce').fillna(0) > 0)
+        # 売上または経常利益の項目が存在しない場合は処理不可
+        if not c_sales or not c_ord:
+            return False, ""
+
+        # 予想行（実績が空の行）を排除し、過去の実績のみ抽出
+        actual_mask = (pd.to_numeric(df[c_sales], errors='coerce').fillna(0) > 0) | \
+                      (pd.to_numeric(df[c_ord], errors='coerce').fillna(0) > 0)
         actual_df = df[actual_mask].copy().reset_index(drop=True)
         
         if len(actual_df) < 5:
             return False, ""
             
         std_df = actual_df.copy()
-        for i in range(1, len(actual_df)):
+        
+        def to_flt(v):
             try:
-                curr_sales = float(actual_df['NetSales'].iloc[i])
-                prev_sales = float(actual_df['NetSales'].iloc[i-1])
+                if pd.isna(v) or str(v).strip() == '': return 0.0
+                return float(str(v).replace(',', ''))
             except:
-                curr_sales, prev_sales = 0.0, 0.0
+                return 0.0
+
+        # 累計を四半期単体に分解
+        for i in range(1, len(actual_df)):
+            curr_sales = to_flt(actual_df[c_sales].iloc[i])
+            prev_sales = to_flt(actual_df[c_sales].iloc[i-1])
                 
-            curr_type = str(actual_df['TypeOfCurrentPeriod'].iloc[i])
+            curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
             
             is_q1 = False
-            if '1Q' in curr_type:
+            if '1Q' in curr_type or 'Q1' in curr_type:
                 is_q1 = True
             elif curr_sales < prev_sales and prev_sales > 0:
                 is_q1 = True
                 
             if not is_q1:
-                for col in ['NetSales', 'OperatingProfit', 'OrdinaryProfit', 'EarningsPerShare', 'Profit']:
+                for col in filter(None, [c_sales, c_op, c_ord, c_eps, c_profit]):
                     try:
-                        c_val = float(actual_df[col].iloc[i])
-                        p_val = float(actual_df[col].iloc[i-1])
-                        col_idx = std_df.columns.get_loc(col)
-                        std_df.iat[i, col_idx] = c_val - p_val
+                        c_val = to_flt(actual_df[col].iloc[i])
+                        p_val = to_flt(actual_df[col].iloc[i-1])
+                        std_df.iat[i, std_df.columns.get_loc(col)] = c_val - p_val
                     except Exception:
                         pass
                         
         q0 = std_df.iloc[-1] 
-        q0_type = str(q0.get('TypeOfCurrentPeriod', ''))
+        q0_type = str(q0.get(c_type, '')) if c_type else ''
         
         y0 = None
         if q0_type and q0_type != "nan" and q0_type != "0.0":
             for i in range(len(std_df)-2, -1, -1):
-                past_type = str(std_df.iloc[i].get('TypeOfCurrentPeriod', ''))
+                past_type = str(std_df.iloc[i].get(c_type, '')) if c_type else ''
                 if past_type == q0_type:
                     y0 = std_df.iloc[i]
                     break
@@ -165,29 +185,26 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         if y0 is None:
             y0 = std_df.iloc[-5]
             
-        def get_val(row, col1, col2=None):
-            try:
-                v = float(row.get(col1, 0))
-                if v == 0 and col2 and col2 in row:
-                    v = float(row.get(col2, 0))
-                return v
-            except:
-                return 0.0
+        def get_val(row, primary_col, fallback_col=None):
+            v = to_flt(row.get(primary_col, 0.0)) if primary_col else 0.0
+            if v == 0.0 and fallback_col:
+                v = to_flt(row.get(fallback_col, 0.0))
+            return v
 
-        q0_sales = get_val(q0, 'NetSales')
-        y0_sales = get_val(y0, 'NetSales')
-        q0_op = get_val(q0, 'OperatingProfit')
-        y0_op = get_val(y0, 'OperatingProfit')
-        q0_ord = get_val(q0, 'OrdinaryProfit')
-        y0_ord = get_val(y0, 'OrdinaryProfit')
-        q0_eps = get_val(q0, 'EarningsPerShare', 'Profit')
-        y0_eps = get_val(y0, 'EarningsPerShare', 'Profit')
+        q0_sales = get_val(q0, c_sales)
+        y0_sales = get_val(y0, c_sales)
+        q0_op = get_val(q0, c_op)
+        y0_op = get_val(y0, c_op)
+        q0_ord = get_val(q0, c_ord)
+        y0_ord = get_val(y0, c_ord)
+        q0_eps = get_val(q0, c_eps, c_profit)
+        y0_eps = get_val(y0, c_eps, c_profit)
 
         # 売上データが0以下の場合は事業実態なし・データ異常として確実にはじく
         if q0_sales <= 0 or y0_sales <= 0:
             return False, ""
 
-        # 🚨 【真の原因修正】単純な割り算をやめ、赤字継続・黒字転換を正確にステータス化する
+        # 🚨 【公約の実装】単純な割り算をやめ、赤字継続・黒字転換を正確にステータス化する
         def get_status(c, p):
             if p < 0 and c < 0:
                 return "赤字継続"
@@ -207,7 +224,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             
         # --- 📈 TAB1 (買い) ロジック ---
         if mode == "buy":
-            # 買いの場合、赤字継続や黒字転換(今回は保守的に)等の異常ステータスは弾く
+            # 買いの場合、赤字継続や黒字転換(保守的)等のステータスは弾く
             for stat in [s_stat, op_stat, or_stat, ep_stat]:
                 if isinstance(stat, str): 
                     return False, "" 
@@ -220,7 +237,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             
         # --- 📉 TAB2 (売り) ロジック ---
         elif mode == "sell":
-            # ステータスごとに空売りの合格条件を判定する
             def check_sell_cond(stat, limit):
                 if isinstance(stat, str):
                     if stat == "赤字継続": return True   # 赤字が続いているボロ株は合格
@@ -239,7 +255,6 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     return stat == "赤字継続"
                 return stat < 0
 
-            # すべてがマイナス成長、または赤字継続ならS級
             if is_severe(s_stat) and is_severe(op_stat) and is_severe(or_stat) and is_severe(ep_stat):
                 return True, "S級💀"
             return True, "A級📉"
