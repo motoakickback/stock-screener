@@ -2935,7 +2935,7 @@ def analyze_formation_history(df):
     return list(set(buy_signals)), list(set(sell_signals))
 
 def fetch_fundamental_history_local(code, local_db):
-    """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（純利益追加版）"""
+    """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（QoQ & YoY 併記版）"""
     import pandas as pd
     try:
         if local_db is None or len(local_db) == 0: return None
@@ -3005,11 +3005,13 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
-        def calc_qoq(c, p):
-            if p == 0.0: return "-"
+        # 🚨 計算ロジック
+        def calc_gr(c, p):
+            if p == 0.0 or p is None: return "-"
             return ((c - p) / abs(p)) * 100.0
 
         def get_v(row, primary, fallback=None):
+            if row is None: return 0.0
             v = to_flt(row.get(primary, 0.0)) if primary else 0.0
             if v == 0.0 and fallback and fallback in row.index:
                 v = to_flt(row.get(fallback, 0.0))
@@ -3017,123 +3019,72 @@ def fetch_fundamental_history_local(code, local_db):
 
         results = []
         for i in range(1, 5):
+            # QoQ(前四半期)とYoY(4つ前)のデータを取得
             if len(std_df) < i + 1:
                 q_cur = std_df.iloc[-i] if len(std_df) >= i else None
+                dis_date = '-'
                 if q_cur is not None:
                     dis_date = q_cur.get(c_date, '-')
                     if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                         dis_date = dis_date.strftime('%Y-%m-%d')
-                    results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
+                results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), 
+                                "売上(QoQ)": "-", "売上(YoY)": "-",
+                                "営業益(QoQ)": "-", "営業益(YoY)": "-",
+                                "経常益(QoQ)": "-", "経常益(YoY)": "-",
+                                "純利益(QoQ)": "-", "純利益(YoY)": "-",
+                                "EPS(QoQ)": "-", "EPS(YoY)": "-"})
                 continue
                 
             q_cur = std_df.iloc[-i]
             q_prv = std_df.iloc[-(i+1)]
+            q_yoy = std_df.iloc[-(i+4)] if len(std_df) >= i + 4 else None
             
             dis_date = q_cur.get(c_date, '-')
             if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                 dis_date = dis_date.strftime('%Y-%m-%d')
-                if dis_date == '1970-01-01': dis_date = '-'
             else:
                 dis_date = '-'
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
-                "売上(%)": calc_qoq(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
-                "営業益(%)": calc_qoq(get_v(q_cur, c_op), get_v(q_prv, c_op)),
-                "経常益(%)": calc_qoq(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
-                "純利益(%)": calc_qoq(get_v(q_cur, c_profit, c_eps), get_v(q_prv, c_profit, c_eps)),
-                "EPS(%)": calc_qoq(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
+                "売上(QoQ)": calc_gr(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
+                "売上(YoY)": calc_gr(get_v(q_cur, c_sales), get_v(q_yoy, c_sales)) if q_yoy is not None else "-",
+                "営業益(QoQ)": calc_gr(get_v(q_cur, c_op), get_v(q_prv, c_op)),
+                "営業益(YoY)": calc_gr(get_v(q_cur, c_op), get_v(q_yoy, c_op)) if q_yoy is not None else "-",
+                "経常益(QoQ)": calc_gr(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
+                "経常益(YoY)": calc_gr(get_v(q_cur, c_ord), get_v(q_yoy, c_ord)) if q_yoy is not None else "-",
+                "純利益(QoQ)": calc_gr(get_v(q_cur, c_profit, c_eps), get_v(q_prv, c_profit, c_eps)),
+                "純利益(YoY)": calc_gr(get_v(q_cur, c_profit, c_eps), get_v(q_yoy, c_profit, c_eps)) if q_yoy is not None else "-",
+                "EPS(QoQ)": calc_gr(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
+                "EPS(YoY)": calc_gr(get_v(q_cur, c_eps, c_profit), get_v(q_yoy, c_eps, c_profit)) if q_yoy is not None else "-",
             })
 
+        # 通年データはYoYのみ意味を持つ
         if len(std_df) >= 8:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             results.append({
                 "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(%)": calc_qoq(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
-                "営業益(%)": calc_qoq(get_v(y_cur, c_op), get_v(y_prv, c_op)),
-                "経常益(%)": calc_qoq(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
-                "純利益(%)": calc_qoq(get_v(y_cur, c_profit, c_eps), get_v(y_prv, c_profit, c_eps)),
-                "EPS(%)": calc_qoq(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
+                "売上(QoQ)": "-", "売上(YoY)": calc_gr(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
+                "営業益(QoQ)": "-", "営業益(YoY)": calc_gr(get_v(y_cur, c_op), get_v(y_prv, c_op)),
+                "経常益(QoQ)": "-", "経常益(YoY)": calc_gr(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
+                "純利益(QoQ)": "-", "純利益(YoY)": calc_gr(get_v(y_cur, c_profit, c_eps), get_v(y_prv, c_profit, c_eps)),
+                "EPS(QoQ)": "-", "EPS(YoY)": calc_gr(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
+            })
+        else:
+            results.append({
+                "期間": "🌟 通年(直近1年)", "開示日": "-",
+                "売上(QoQ)": "-", "売上(YoY)": "-",
+                "営業益(QoQ)": "-", "営業益(YoY)": "-",
+                "経常益(QoQ)": "-", "経常益(YoY)": "-",
+                "純利益(QoQ)": "-", "純利益(YoY)": "-",
+                "EPS(QoQ)": "-", "EPS(YoY)": "-"
             })
         
         if len(results) == 0: return None
         return pd.DataFrame(results[::-1])
     except Exception as e:
         return None
-
-def analyze_tab3_precision_scope(df, mode="buy", nikkei_div_rate=0.0):
-    """3日間フォーメーション＆18日線ブレイク判定エンジン"""
-    try:
-        if df is None or len(df) < 4: return False, ""
-
-        cols = [str(c).lower() for c in df.columns]
-        def get_col(*names):
-            for n in names:
-                if n.lower() in cols: return df.columns[cols.index(n.lower())]
-            return None
-
-        c_h, c_l, c_c = get_col('high', 'h'), get_col('low', 'l'), get_col('close', 'adjc', 'c')
-        if not all([c_h, c_l, c_c]): return False, ""
-
-        # 🚨 ルール②判定用に18日移動平均線を算出
-        df_calc = df.copy()
-        if 'MA18' not in df_calc.columns:
-            df_calc['MA18'] = df_calc[c_c].rolling(window=18).mean()
-
-        m3 = df_calc.iloc[-4]; m2 = df_calc.iloc[-3]; m1 = df_calc.iloc[-2]; q0 = df_calc.iloc[-1]
-
-        def safe_flt(val):
-            try: return float(val)
-            except: return 0.0
-
-        m3_h, m3_l = safe_flt(m3[c_h]), safe_flt(m3[c_l])
-        m2_h, m2_l, m2_c = safe_flt(m2[c_h]), safe_flt(m2[c_l]), safe_flt(m2[c_c])
-        m1_h, m1_l, m1_c = safe_flt(m1[c_h]), safe_flt(m1[c_l]), safe_flt(m1[c_c])
-        q0_h, q0_l, q0_c = safe_flt(q0[c_h]), safe_flt(q0[c_l]), safe_flt(q0[c_c])
-        
-        ma18_q0 = safe_flt(q0['MA18'])
-        ma18_m1 = safe_flt(m1['MA18'])
-
-        hit_msgs = []
-        is_hit = False
-
-        if mode == "buy":
-            # ルール①：反転上昇陣形
-            if (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c):
-                is_hit = True
-                hit_msgs.append("S級🎯【反転上昇陣形①】")
-            
-            # ルール②：18日線支持
-            if (ma18_q0 > 0) and (q0_l > ma18_q0) and (m1_l > ma18_m1):
-                is_hit = True
-                trig_p = max(q0_h, m1_h)
-                hit_msgs.append(f"A級🎯【18日線支持②】目標買値:{trig_p:,.0f}円")
-
-            if is_hit:
-                return True, " ＋ ".join(hit_msgs)
-            return False, ""
-
-        elif mode == "sell":
-            if nikkei_div_rate >= 0.0: return False, ""
-            
-            # ルール①：奈落崩壊陣形
-            if (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c):
-                is_hit = True
-                hit_msgs.append("S級💀【奈落崩壊陣形①】")
-            
-            # ルール②：18日線拒絶
-            if (ma18_q0 > 0) and (q0_h < ma18_q0) and (m1_h < ma18_m1):
-                is_hit = True
-                trig_p = min(q0_l, m1_l)
-                hit_msgs.append(f"A級💀【18日線拒絶②】目標売値:{trig_p:,.0f}円")
-
-            if is_hit:
-                return True, " ＋ ".join(hit_msgs)
-            return False, ""
-            
-    except Exception:
-        return False, ""
 
 # ==========================================
 # 🎯 TAB3 UI構築 ＆ スキャン実行ブロック
@@ -3271,9 +3222,9 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                if days_ago <= 2: rank_signal = "S"    # 本日含め3日以内
-                                elif days_ago == 3: rank_signal = "A"  # 4日以内
-                                elif days_ago == 4: rank_signal = "B"  # 5日以内
+                                if days_ago <= 2: rank_signal = "S"
+                                elif days_ago == 3: rank_signal = "A"
+                                elif days_ago == 4: rank_signal = "B"
                         
                         elif scan_mode == "sell" and s_sigs:
                             s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
@@ -3298,17 +3249,18 @@ with tab3:
                                 except: return None
 
                             if scan_mode == "buy":
-                                q1_s = get_val(q1_row, "売上(%)")
-                                q1_op = get_val(q1_row, "営業益(%)")
-                                q1_ord = get_val(q1_row, "経常益(%)")
-                                q1_np = get_val(q1_row, "純利益(%)")
-                                q1_eps = get_val(q1_row, "EPS(%)")
+                                # 🚨 現在のスキャン基準である QoQ を参照
+                                q1_s = get_val(q1_row, "売上(QoQ)")
+                                q1_op = get_val(q1_row, "営業益(QoQ)")
+                                q1_ord = get_val(q1_row, "経常益(QoQ)")
+                                q1_np = get_val(q1_row, "純利益(QoQ)")
+                                q1_eps = get_val(q1_row, "EPS(QoQ)")
                                 
-                                q2_s = get_val(q2_row, "売上(%)")
-                                q2_op = get_val(q2_row, "営業益(%)")
-                                q2_ord = get_val(q2_row, "経常益(%)")
-                                q2_np = get_val(q2_row, "純利益(%)")
-                                q2_eps = get_val(q2_row, "EPS(%)")
+                                q2_s = get_val(q2_row, "売上(QoQ)")
+                                q2_op = get_val(q2_row, "営業益(QoQ)")
+                                q2_ord = get_val(q2_row, "経常益(QoQ)")
+                                q2_np = get_val(q2_row, "純利益(QoQ)")
+                                q2_eps = get_val(q2_row, "EPS(QoQ)")
                                 
                                 def count_misses(s, op, ord_p, np_p, eps):
                                     if None in [s, op, ord_p, np_p, eps]: return 99 # データ欠損は即アウト
@@ -3329,17 +3281,17 @@ with tab3:
                                     elif 2 <= q2_miss <= 4: rank_funda = "B"
                                 
                             elif scan_mode == "sell":
-                                # 💡 修正：空売りもQ1・Q2の両方（合計8項目）を対象とする
+                                # 🚨 Q1とQ2の QoQ 8項目を参照
                                 if not q1_row.empty and not q2_row.empty:
-                                    q1_op = get_val(q1_row, "営業益(%)")
-                                    q1_ord = get_val(q1_row, "経常益(%)")
-                                    q1_np = get_val(q1_row, "純利益(%)")
-                                    q1_eps = get_val(q1_row, "EPS(%)")
+                                    q1_op = get_val(q1_row, "営業益(QoQ)")
+                                    q1_ord = get_val(q1_row, "経常益(QoQ)")
+                                    q1_np = get_val(q1_row, "純利益(QoQ)")
+                                    q1_eps = get_val(q1_row, "EPS(QoQ)")
                                     
-                                    q2_op = get_val(q2_row, "営業益(%)")
-                                    q2_ord = get_val(q2_row, "経常益(%)")
-                                    q2_np = get_val(q2_row, "純利益(%)")
-                                    q2_eps = get_val(q2_row, "EPS(%)")
+                                    q2_op = get_val(q2_row, "営業益(QoQ)")
+                                    q2_ord = get_val(q2_row, "経常益(QoQ)")
+                                    q2_np = get_val(q2_row, "純利益(QoQ)")
+                                    q2_eps = get_val(q2_row, "EPS(QoQ)")
                                     
                                     vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
                                     if None not in vals:
@@ -3348,7 +3300,6 @@ with tab3:
                                         ge_10 = sum(1 for v in vals if v >= 10.0)
                                         
                                         if ge_10 == 0:
-                                            # 8項目で判定
                                             if lt_5 == 8: rank_funda = "S"
                                             elif lt_5 == 7 and lt_10 == 1: rank_funda = "A"
                                             elif lt_5 == 6 and lt_10 == 2: rank_funda = "B"
@@ -3370,7 +3321,6 @@ with tab3:
 
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
-                    # 💡 スコアによるソート機能
                     def get_rank_score(data):
                         if not data["is_hit"]: return -1
                         score = 0
@@ -3447,7 +3397,6 @@ with tab3:
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                             
-                            # 🔗 ルール①・ルール②のシグナルをチャート上に完全描画（型エラー修正版を維持）
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
@@ -3485,15 +3434,20 @@ with tab3:
                             fig.update_layout(**layout_args)
                             st.plotly_chart(fig, use_container_width=True)
 
+                        # 📊 QoQとYoYを並列表示する新・業績表
                         if data.get("fund") is not None and not data["fund"].empty:
-                            st.markdown("##### 📊 業績成長率（四半期・通年）")
+                            st.markdown("##### 📊 業績成長率（QoQ / YoY 並列比較）")
                             try:
+                                def fmt_pct(x):
+                                    if isinstance(x, str): return x
+                                    return f"{x:.1f}%"
+                                    
                                 st.dataframe(data["fund"].style.format({
-                                    "売上(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                                    "営業益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                                    "経常益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                                    "純利益(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x,
-                                    "EPS(%)": lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
+                                    "売上(QoQ)": fmt_pct, "売上(YoY)": fmt_pct,
+                                    "営業益(QoQ)": fmt_pct, "営業益(YoY)": fmt_pct,
+                                    "経常益(QoQ)": fmt_pct, "経常益(YoY)": fmt_pct,
+                                    "純利益(QoQ)": fmt_pct, "純利益(YoY)": fmt_pct,
+                                    "EPS(QoQ)": fmt_pct, "EPS(YoY)": fmt_pct
                                 }), use_container_width=True)
                             except Exception:
                                 st.dataframe(data["fund"], use_container_width=True)
