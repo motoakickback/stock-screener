@@ -2935,7 +2935,7 @@ def analyze_formation_history(df):
     return list(set(buy_signals)), list(set(sell_signals))
 
 def fetch_fundamental_history_local(code, local_db):
-    """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（QoQ & YoY 併記版）"""
+    """【通信完全ゼロ】ローカルDBから四半期推移・通年業績を抽出・計算する（YoY統一版）"""
     import pandas as pd
     try:
         if local_db is None or len(local_db) == 0: return None
@@ -3005,8 +3005,7 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
-        # 🚨 計算ロジック
-        def calc_gr(c, p):
+        def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
             return ((c - p) / abs(p)) * 100.0
 
@@ -3019,8 +3018,8 @@ def fetch_fundamental_history_local(code, local_db):
 
         results = []
         for i in range(1, 5):
-            # QoQ(前四半期)とYoY(4つ前)のデータを取得
-            if len(std_df) < i + 1:
+            # YoY（4つ前＝前年同期との比較）
+            if len(std_df) < i + 4:
                 q_cur = std_df.iloc[-i] if len(std_df) >= i else None
                 dis_date = '-'
                 if q_cur is not None:
@@ -3028,57 +3027,39 @@ def fetch_fundamental_history_local(code, local_db):
                     if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                         dis_date = dis_date.strftime('%Y-%m-%d')
                 results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), 
-                                "売上(QoQ)": "-", "売上(YoY)": "-",
-                                "営業益(QoQ)": "-", "営業益(YoY)": "-",
-                                "経常益(QoQ)": "-", "経常益(YoY)": "-",
-                                "純利益(QoQ)": "-", "純利益(YoY)": "-",
-                                "EPS(QoQ)": "-", "EPS(YoY)": "-"})
+                                "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
                 continue
                 
             q_cur = std_df.iloc[-i]
-            q_prv = std_df.iloc[-(i+1)]
-            q_yoy = std_df.iloc[-(i+4)] if len(std_df) >= i + 4 else None
+            q_yoy = std_df.iloc[-(i+4)]
             
             dis_date = q_cur.get(c_date, '-')
             if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                 dis_date = dis_date.strftime('%Y-%m-%d')
+                if dis_date == '1970-01-01': dis_date = '-'
             else:
                 dis_date = '-'
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
-                "売上(QoQ)": calc_gr(get_v(q_cur, c_sales), get_v(q_prv, c_sales)),
-                "売上(YoY)": calc_gr(get_v(q_cur, c_sales), get_v(q_yoy, c_sales)) if q_yoy is not None else "-",
-                "営業益(QoQ)": calc_gr(get_v(q_cur, c_op), get_v(q_prv, c_op)),
-                "営業益(YoY)": calc_gr(get_v(q_cur, c_op), get_v(q_yoy, c_op)) if q_yoy is not None else "-",
-                "経常益(QoQ)": calc_gr(get_v(q_cur, c_ord), get_v(q_prv, c_ord)),
-                "経常益(YoY)": calc_gr(get_v(q_cur, c_ord), get_v(q_yoy, c_ord)) if q_yoy is not None else "-",
-                "純利益(QoQ)": calc_gr(get_v(q_cur, c_profit, c_eps), get_v(q_prv, c_profit, c_eps)),
-                "純利益(YoY)": calc_gr(get_v(q_cur, c_profit, c_eps), get_v(q_yoy, c_profit, c_eps)) if q_yoy is not None else "-",
-                "EPS(QoQ)": calc_gr(get_v(q_cur, c_eps, c_profit), get_v(q_prv, c_eps, c_profit)),
-                "EPS(YoY)": calc_gr(get_v(q_cur, c_eps, c_profit), get_v(q_yoy, c_eps, c_profit)) if q_yoy is not None else "-",
+                "売上(%)": calc_yoy(get_v(q_cur, c_sales), get_v(q_yoy, c_sales)),
+                "営業益(%)": calc_yoy(get_v(q_cur, c_op), get_v(q_yoy, c_op)),
+                "経常益(%)": calc_yoy(get_v(q_cur, c_ord), get_v(q_yoy, c_ord)),
+                "純利益(%)": calc_yoy(get_v(q_cur, c_profit, c_eps), get_v(q_yoy, c_profit, c_eps)),
+                "EPS(%)": calc_yoy(get_v(q_cur, c_eps, c_profit), get_v(q_yoy, c_eps, c_profit)),
             })
 
-        # 通年データはYoYのみ意味を持つ
+        # 通年データ（YoY）
         if len(std_df) >= 8:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             results.append({
                 "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(QoQ)": "-", "売上(YoY)": calc_gr(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
-                "営業益(QoQ)": "-", "営業益(YoY)": calc_gr(get_v(y_cur, c_op), get_v(y_prv, c_op)),
-                "経常益(QoQ)": "-", "経常益(YoY)": calc_gr(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
-                "純利益(QoQ)": "-", "純利益(YoY)": calc_gr(get_v(y_cur, c_profit, c_eps), get_v(y_prv, c_profit, c_eps)),
-                "EPS(QoQ)": "-", "EPS(YoY)": calc_gr(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
-            })
-        else:
-            results.append({
-                "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(QoQ)": "-", "売上(YoY)": "-",
-                "営業益(QoQ)": "-", "営業益(YoY)": "-",
-                "経常益(QoQ)": "-", "経常益(YoY)": "-",
-                "純利益(QoQ)": "-", "純利益(YoY)": "-",
-                "EPS(QoQ)": "-", "EPS(YoY)": "-"
+                "売上(%)": calc_yoy(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
+                "営業益(%)": calc_yoy(get_v(y_cur, c_op), get_v(y_prv, c_op)),
+                "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
+                "純利益(%)": calc_yoy(get_v(y_cur, c_profit, c_eps), get_v(y_prv, c_profit, c_eps)),
+                "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
             })
         
         if len(results) == 0: return None
@@ -3087,7 +3068,7 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック
+# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
 # ==========================================
 with tab3:
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
@@ -3206,7 +3187,7 @@ with tab3:
                         b_sigs, s_sigs = analyze_formation_history(df)
                         
                         # ------------------------------------
-                        # 🎯 TAB3 独自の S/A/B 判定ロジック
+                        # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
                         # ------------------------------------
                         is_hit = False
                         rank_str = ""
@@ -3235,7 +3216,7 @@ with tab3:
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
-                        # ② ファンダメンタルズ（業績％）判定
+                        # ② ファンダメンタルズ（YoY成長率）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
                         if f_df is not None and not f_df.empty:
                             q1_row = f_df[f_df["期間"] == "直近 Q1"]
@@ -3249,21 +3230,21 @@ with tab3:
                                 except: return None
 
                             if scan_mode == "buy":
-                                # 🚨 現在のスキャン基準である QoQ を参照
-                                q1_s = get_val(q1_row, "売上(QoQ)")
-                                q1_op = get_val(q1_row, "営業益(QoQ)")
-                                q1_ord = get_val(q1_row, "経常益(QoQ)")
-                                q1_np = get_val(q1_row, "純利益(QoQ)")
-                                q1_eps = get_val(q1_row, "EPS(QoQ)")
+                                # YoY基準の数値を参照
+                                q1_s = get_val(q1_row, "売上(%)")
+                                q1_op = get_val(q1_row, "営業益(%)")
+                                q1_ord = get_val(q1_row, "経常益(%)")
+                                q1_np = get_val(q1_row, "純利益(%)")
+                                q1_eps = get_val(q1_row, "EPS(%)")
                                 
-                                q2_s = get_val(q2_row, "売上(QoQ)")
-                                q2_op = get_val(q2_row, "営業益(QoQ)")
-                                q2_ord = get_val(q2_row, "経常益(QoQ)")
-                                q2_np = get_val(q2_row, "純利益(QoQ)")
-                                q2_eps = get_val(q2_row, "EPS(QoQ)")
+                                q2_s = get_val(q2_row, "売上(%)")
+                                q2_op = get_val(q2_row, "営業益(%)")
+                                q2_ord = get_val(q2_row, "経常益(%)")
+                                q2_np = get_val(q2_row, "純利益(%)")
+                                q2_eps = get_val(q2_row, "EPS(%)")
                                 
                                 def count_misses(s, op, ord_p, np_p, eps):
-                                    if None in [s, op, ord_p, np_p, eps]: return 99 # データ欠損は即アウト
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 
                                     m = 0
                                     if s < 7.0: m += 1
                                     if op < 20.0: m += 1
@@ -3281,17 +3262,16 @@ with tab3:
                                     elif 2 <= q2_miss <= 4: rank_funda = "B"
                                 
                             elif scan_mode == "sell":
-                                # 🚨 Q1とQ2の QoQ 8項目を参照
                                 if not q1_row.empty and not q2_row.empty:
-                                    q1_op = get_val(q1_row, "営業益(QoQ)")
-                                    q1_ord = get_val(q1_row, "経常益(QoQ)")
-                                    q1_np = get_val(q1_row, "純利益(QoQ)")
-                                    q1_eps = get_val(q1_row, "EPS(QoQ)")
+                                    q1_op = get_val(q1_row, "営業益(%)")
+                                    q1_ord = get_val(q1_row, "経常益(%)")
+                                    q1_np = get_val(q1_row, "純利益(%)")
+                                    q1_eps = get_val(q1_row, "EPS(%)")
                                     
-                                    q2_op = get_val(q2_row, "営業益(QoQ)")
-                                    q2_ord = get_val(q2_row, "経常益(QoQ)")
-                                    q2_np = get_val(q2_row, "純利益(QoQ)")
-                                    q2_eps = get_val(q2_row, "EPS(QoQ)")
+                                    q2_op = get_val(q2_row, "営業益(%)")
+                                    q2_ord = get_val(q2_row, "経常益(%)")
+                                    q2_np = get_val(q2_row, "純利益(%)")
+                                    q2_eps = get_val(q2_row, "EPS(%)")
                                     
                                     vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
                                     if None not in vals:
@@ -3434,20 +3414,20 @@ with tab3:
                             fig.update_layout(**layout_args)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        # 📊 QoQとYoYを並列表示する新・業績表
+                        # 📊 YoY統一の業績表
                         if data.get("fund") is not None and not data["fund"].empty:
-                            st.markdown("##### 📊 業績成長率（QoQ / YoY 並列比較）")
+                            st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
                             try:
                                 def fmt_pct(x):
                                     if isinstance(x, str): return x
                                     return f"{x:.1f}%"
                                     
                                 st.dataframe(data["fund"].style.format({
-                                    "売上(QoQ)": fmt_pct, "売上(YoY)": fmt_pct,
-                                    "営業益(QoQ)": fmt_pct, "営業益(YoY)": fmt_pct,
-                                    "経常益(QoQ)": fmt_pct, "経常益(YoY)": fmt_pct,
-                                    "純利益(QoQ)": fmt_pct, "純利益(YoY)": fmt_pct,
-                                    "EPS(QoQ)": fmt_pct, "EPS(YoY)": fmt_pct
+                                    "売上(%)": fmt_pct,
+                                    "営業益(%)": fmt_pct,
+                                    "経常益(%)": fmt_pct,
+                                    "純利益(%)": fmt_pct,
+                                    "EPS(%)": fmt_pct
                                 }), use_container_width=True)
                             except Exception:
                                 st.dataframe(data["fund"], use_container_width=True)
