@@ -3251,7 +3251,7 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # チャート陣形の検知
+                        # 📊 チャート陣形の検知
                         b_sigs, s_sigs = analyze_formation_history(df)
                         
                         # ------------------------------------
@@ -3262,23 +3262,28 @@ with tab3:
                         rank_funda = "対象外"
                         rank_signal = "対象外"
 
-                        # ① シグナル発生日（経過日数）判定
+                        # ① シグナル発生日（鮮度）判定
                         date_col = 'Date' if 'Date' in df.columns else df.columns[0]
                         df_dates = df[date_col].dt.date.tolist() if pd.api.types.is_datetime64_any_dtype(df[date_col]) else pd.to_datetime(df[date_col]).dt.date.tolist()
                         
                         if scan_mode == "buy" and b_sigs:
-                            b_sig_dates = [pd.to_datetime(d).date() for d in b_sigs]
+                            b_sig_dates = [pd.to_datetime(d).date() for d in b_sigs if pd.notna(d)]
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
                                 if days_ago <= 2: rank_signal = "S"    # 本日含め3日以内
                                 elif days_ago == 3: rank_signal = "A"  # 4日以内
                                 elif days_ago == 4: rank_signal = "B"  # 5日以内
+                        
                         elif scan_mode == "sell" and s_sigs:
-                            s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs]
+                            s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
                             sig_indices = [i for i, d in enumerate(df_dates) if d in s_sig_dates]
                             if sig_indices:
-                                rank_signal = "確認済"
+                                days_ago = (len(df_dates) - 1) - max(sig_indices)
+                                # 💡 【司令官指定ロジック】空売りシグナルのS/A/B判定
+                                if days_ago == 0: rank_signal = "S"    # 本日(0日以内)に出現
+                                elif days_ago == 1: rank_signal = "A"  # 1日以内に出現
+                                elif days_ago <= 3: rank_signal = "B"  # 3日以内に出現
 
                         # ② ファンダメンタルズ（業績％）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
@@ -3287,57 +3292,59 @@ with tab3:
                             q2_row = f_df[f_df["期間"] == "直近 Q2"]
                             
                             def get_val(r, col):
-                                v = r[col].iloc[0] if not r.empty else "-"
-                                if isinstance(v, str): return -999.0
-                                return float(v)
+                                if r.empty: return None
+                                v = r[col].iloc[0]
+                                if isinstance(v, str) and v == "-": return None
+                                try: return float(v)
+                                except: return None
 
                             if scan_mode == "buy":
-                                if not q1_row.empty and not q2_row.empty:
-                                    q1_s = get_val(q1_row, "売上(%)")
-                                    q1_op = get_val(q1_row, "営業益(%)")
-                                    q1_ord = get_val(q1_row, "経常益(%)")
-                                    q1_np = get_val(q1_row, "純利益(%)")
-                                    q1_eps = get_val(q1_row, "EPS(%)")
+                                q1_s = get_val(q1_row, "売上(%)")
+                                q1_op = get_val(q1_row, "営業益(%)")
+                                q1_ord = get_val(q1_row, "経常益(%)")
+                                q1_np = get_val(q1_row, "純利益(%)")
+                                q1_eps = get_val(q1_row, "EPS(%)")
+                                
+                                q2_s = get_val(q2_row, "売上(%)")
+                                q2_op = get_val(q2_row, "営業益(%)")
+                                q2_ord = get_val(q2_row, "経常益(%)")
+                                q2_np = get_val(q2_row, "純利益(%)")
+                                q2_eps = get_val(q2_row, "EPS(%)")
+                                
+                                def count_misses(s, op, ord_p, np_p, eps):
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 # データ欠損は対象外
+                                    m = 0
+                                    if s < 7.0: m += 1
+                                    if op < 20.0: m += 1
+                                    if ord_p < 20.0: m += 1
+                                    if np_p < 20.0: m += 1
+                                    if eps < 20.0: m += 1
+                                    return m
                                     
-                                    q2_s = get_val(q2_row, "売上(%)")
-                                    q2_op = get_val(q2_row, "営業益(%)")
-                                    q2_ord = get_val(q2_row, "経常益(%)")
-                                    q2_np = get_val(q2_row, "純利益(%)")
-                                    q2_eps = get_val(q2_row, "EPS(%)")
-                                    
-                                    def count_misses(s, op, ord_p, np_p, eps):
-                                        m = 0
-                                        if s < 7.0: m += 1
-                                        if op < 20.0: m += 1
-                                        if ord_p < 20.0: m += 1
-                                        if np_p < 20.0: m += 1
-                                        if eps < 20.0: m += 1
-                                        return m
-                                        
-                                    q1_miss = count_misses(q1_s, q1_op, q1_ord, q1_np, q1_eps)
-                                    q2_miss = count_misses(q2_s, q2_op, q2_ord, q2_np, q2_eps)
-                                    
-                                    if q1_miss == 0:
-                                        if q2_miss == 0: rank_funda = "S"
-                                        elif q2_miss == 1: rank_funda = "A"
-                                        elif q2_miss >= 2: rank_funda = "B"
-                            
+                                q1_miss = count_misses(q1_s, q1_op, q1_ord, q1_np, q1_eps)
+                                q2_miss = count_misses(q2_s, q2_op, q2_ord, q2_np, q2_eps)
+                                
+                                if q1_miss == 0:
+                                    if q2_miss == 0: rank_funda = "S"
+                                    elif q2_miss == 1: rank_funda = "A"
+                                    elif 2 <= q2_miss <= 4: rank_funda = "B"
+                                
                             elif scan_mode == "sell":
-                                if not q1_row.empty:
-                                    q1_op = get_val(q1_row, "営業益(%)")
-                                    q1_ord = get_val(q1_row, "経常益(%)")
-                                    q1_np = get_val(q1_row, "純利益(%)")
-                                    q1_eps = get_val(q1_row, "EPS(%)")
-                                    
-                                    vals = [q1_op, q1_ord, q1_np, q1_eps]
+                                q1_op = get_val(q1_row, "営業益(%)")
+                                q1_ord = get_val(q1_row, "経常益(%)")
+                                q1_np = get_val(q1_row, "純利益(%)")
+                                q1_eps = get_val(q1_row, "EPS(%)")
+                                
+                                vals = [q1_op, q1_ord, q1_np, q1_eps]
+                                if None not in vals:
                                     lt_5 = sum(1 for v in vals if v < 5.0)
                                     lt_10 = sum(1 for v in vals if 5.0 <= v < 10.0)
                                     ge_10 = sum(1 for v in vals if v >= 10.0)
                                     
                                     if ge_10 == 0:
-                                        if lt_10 == 0: rank_funda = "S"
-                                        elif lt_10 == 1: rank_funda = "A"
-                                        elif lt_10 == 2: rank_funda = "B"
+                                        if lt_5 == 4: rank_funda = "S"
+                                        elif lt_10 == 1 and lt_5 == 3: rank_funda = "A"
+                                        elif lt_10 == 2 and lt_5 == 2: rank_funda = "B"
 
                         # ③ 総合ヒット判定の結合
                         if scan_mode == "buy":
@@ -3347,7 +3354,7 @@ with tab3:
                         elif scan_mode == "sell":
                             if rank_funda != "対象外" and rank_signal != "対象外":
                                 is_hit = True
-                                rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}"
+                                rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
                         analyzed_data[code_int] = {
                             "df": df, "is_hit": is_hit, "rank": rank_str, "turnover": turnover,
