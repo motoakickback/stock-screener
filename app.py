@@ -3280,10 +3280,9 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in s_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                # 💡 【司令官指定ロジック】空売りシグナルのS/A/B判定
-                                if days_ago == 0: rank_signal = "S"    # 本日(0日以内)に出現
-                                elif days_ago == 1: rank_signal = "A"  # 1日以内に出現
-                                elif days_ago <= 3: rank_signal = "B"  # 3日以内に出現
+                                if days_ago == 0: rank_signal = "S"
+                                elif days_ago == 1: rank_signal = "A"
+                                elif days_ago <= 3: rank_signal = "B"
 
                         # ② ファンダメンタルズ（業績％）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
@@ -3312,7 +3311,7 @@ with tab3:
                                 q2_eps = get_val(q2_row, "EPS(%)")
                                 
                                 def count_misses(s, op, ord_p, np_p, eps):
-                                    if None in [s, op, ord_p, np_p, eps]: return 99 # データ欠損は対象外
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 # データ欠損は即アウト
                                     m = 0
                                     if s < 7.0: m += 1
                                     if op < 20.0: m += 1
@@ -3330,21 +3329,29 @@ with tab3:
                                     elif 2 <= q2_miss <= 4: rank_funda = "B"
                                 
                             elif scan_mode == "sell":
-                                q1_op = get_val(q1_row, "営業益(%)")
-                                q1_ord = get_val(q1_row, "経常益(%)")
-                                q1_np = get_val(q1_row, "純利益(%)")
-                                q1_eps = get_val(q1_row, "EPS(%)")
-                                
-                                vals = [q1_op, q1_ord, q1_np, q1_eps]
-                                if None not in vals:
-                                    lt_5 = sum(1 for v in vals if v < 5.0)
-                                    lt_10 = sum(1 for v in vals if 5.0 <= v < 10.0)
-                                    ge_10 = sum(1 for v in vals if v >= 10.0)
+                                # 💡 修正：空売りもQ1・Q2の両方（合計8項目）を対象とする
+                                if not q1_row.empty and not q2_row.empty:
+                                    q1_op = get_val(q1_row, "営業益(%)")
+                                    q1_ord = get_val(q1_row, "経常益(%)")
+                                    q1_np = get_val(q1_row, "純利益(%)")
+                                    q1_eps = get_val(q1_row, "EPS(%)")
                                     
-                                    if ge_10 == 0:
-                                        if lt_5 == 4: rank_funda = "S"
-                                        elif lt_10 == 1 and lt_5 == 3: rank_funda = "A"
-                                        elif lt_10 == 2 and lt_5 == 2: rank_funda = "B"
+                                    q2_op = get_val(q2_row, "営業益(%)")
+                                    q2_ord = get_val(q2_row, "経常益(%)")
+                                    q2_np = get_val(q2_row, "純利益(%)")
+                                    q2_eps = get_val(q2_row, "EPS(%)")
+                                    
+                                    vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
+                                    if None not in vals:
+                                        lt_5 = sum(1 for v in vals if v < 5.0)
+                                        lt_10 = sum(1 for v in vals if 5.0 <= v < 10.0)
+                                        ge_10 = sum(1 for v in vals if v >= 10.0)
+                                        
+                                        if ge_10 == 0:
+                                            # 8項目で判定
+                                            if lt_5 == 8: rank_funda = "S"
+                                            elif lt_5 == 7 and lt_10 == 1: rank_funda = "A"
+                                            elif lt_5 == 6 and lt_10 == 2: rank_funda = "B"
 
                         # ③ 総合ヒット判定の結合
                         if scan_mode == "buy":
@@ -3363,7 +3370,7 @@ with tab3:
 
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
-                    # 💡 スコアによるソート機能（S・A級が確実に上位に来る機構）
+                    # 💡 スコアによるソート機能
                     def get_rank_score(data):
                         if not data["is_hit"]: return -1
                         score = 0
@@ -3440,7 +3447,7 @@ with tab3:
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
                             
-                            # 🔗 ルール①・ルール②のシグナルをチャート上に完全描画（型エラー修正版）
+                            # 🔗 ルール①・ルール②のシグナルをチャート上に完全描画（型エラー修正版を維持）
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
@@ -3478,7 +3485,6 @@ with tab3:
                             fig.update_layout(**layout_args)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        # 📊 純利益(%)を追加したファンダメンタルズ表の表示
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（四半期・通年）")
                             try:
