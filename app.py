@@ -2596,8 +2596,11 @@ def get_all_market_caps_bulk():
         pass
     return mcap_map
 
+# ==========================================
+# 🛠️ 売買代金フィルター用 実体エンジン（完全ローカル完結版）
+# ==========================================
 def get_all_volumes_bulk():
-    """ローカルの株価DB(prices_db.pkl)から最新日の売買代金(億円)を抽出"""
+    """ローカルの株価DB(prices_db.pkl)から最新日の売買代金(億円)を抽出（API通信一切なし）"""
     vol_map = {}
     try:
         import os, pickle
@@ -2606,12 +2609,14 @@ def get_all_volumes_bulk():
             with open(db_path, "rb") as f:
                 prices_db = pickle.load(f)
             if prices_db:
+                # 記録されている最新営業日のデータを抽出
                 latest_date = sorted(prices_db.keys())[-1]
                 for d in prices_db[latest_date]:
                     code = str(d.get("Code", "")).replace(".0", "")[:4]
                     t_val = float(d.get("TurnoverValue", 0.0))
-                    vol_map[code] = t_val / 100000000.0
-    except:
+                    if t_val > 0:
+                        vol_map[code] = t_val / 100000000.0
+    except Exception:
         pass
     return vol_map
 
