@@ -106,12 +106,13 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（QoQ・直近2期連続・絶対防弾版）
+# 🧠 ファンダメンタルズ解析エンジン（YoY・直近1Q単発判定・完全適応版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import pandas as pd
     try:
-        if df is None or len(df) < 3:
+        # 🚨 YoY（前年同期比）計算のためには最低5四半期分のデータが必要
+        if df is None or len(df) < 5:
             return False, ""
         
         cols = [str(c).lower() for c in df.columns]
@@ -140,11 +141,12 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         actual_mask = (df[c_sales].apply(to_flt) > 0) | (df[c_ord].apply(to_flt) > 0)
         actual_df = df[actual_mask].copy().reset_index(drop=True)
         
-        if len(actual_df) < 3:
+        if len(actual_df) < 5:
             return False, ""
             
         std_df = actual_df.copy()
         
+        # 累計値を単独四半期に分解
         for i in range(1, len(actual_df)):
             curr_sales = to_flt(actual_df[c_sales].iloc[i])
             prev_sales = to_flt(actual_df[c_sales].iloc[i-1])
@@ -165,9 +167,9 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
                         
+        # 🎯 直近1Q(q0) と 4つ前＝1年前の同Q(y0) を抽出
         q0 = std_df.iloc[-1] 
-        q1 = std_df.iloc[-2]
-        q2 = std_df.iloc[-3]
+        y0 = std_df.iloc[-5]
         
         def get_val(row, primary_col, fallback_col=None):
             v = to_flt(row.get(primary_col, 0.0)) if primary_col else 0.0
@@ -176,60 +178,54 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             return v
 
         q0_sales = get_val(q0, c_sales)
-        q1_sales = get_val(q1, c_sales)
-        q2_sales = get_val(q2, c_sales)
+        y0_sales = get_val(y0, c_sales)
         
         q0_op = get_val(q0, c_op)
-        q1_op = get_val(q1, c_op)
-        q2_op = get_val(q2, c_op)
+        y0_op = get_val(y0, c_op)
         
         q0_ord = get_val(q0, c_ord)
-        q1_ord = get_val(q1, c_ord)
-        q2_ord = get_val(q2, c_ord)
+        y0_ord = get_val(y0, c_ord)
         
         q0_eps = get_val(q0, c_eps, c_profit)
-        q1_eps = get_val(q1, c_eps, c_profit)
-        q2_eps = get_val(q2, c_eps, c_profit)
+        y0_eps = get_val(y0, c_eps, c_profit)
 
-        if q0_sales <= 0 or q1_sales <= 0 or q2_sales <= 0:
+        # 買いモード時：売上が0以下の場合は計算不可として除外
+        if mode == "buy" and (q0_sales <= 0 or y0_sales <= 0):
             return False, ""
 
-        def calc_gr(c, p):
+        # YoY（前年同期比）のパーセンテージ計算
+        def calc_yoy(c, p):
             if p == 0: return 0.0
             return ((c - p) / abs(p)) * 100.0
 
-        s_q0 = calc_gr(q0_sales, q1_sales)
-        op_q0 = calc_gr(q0_op, q1_op)
-        or_q0 = calc_gr(q0_ord, q1_ord)
-        ep_q0 = calc_gr(q0_eps, q1_eps)
-
-        s_q1 = calc_gr(q1_sales, q2_sales)
-        op_q1 = calc_gr(q1_op, q2_op)
-        or_q1 = calc_gr(q1_ord, q2_ord)
-        ep_q1 = calc_gr(q1_eps, q2_eps)
+        s_yoy = calc_yoy(q0_sales, y0_sales)
+        op_yoy = calc_yoy(q0_op, y0_op)
+        or_yoy = calc_yoy(q0_ord, y0_ord)
+        ep_yoy = calc_yoy(q0_eps, y0_eps)
         
         if mode == "buy":
             # 利益がマイナスなら不合格（成長率がプラスでも赤字なら買わない）
-            if q0_op < 0 or q0_ord < 0 or q0_eps < 0 or q1_op < 0 or q1_ord < 0 or q1_eps < 0:
+            if q0_op < 0 or q0_ord < 0 or q0_eps < 0:
                 return False, ""
                 
-            if not (s_q0 >= sales_req and s_q1 >= sales_req): return False, ""
-            if not (op_q0 >= 15.0 and op_q1 >= 15.0): return False, ""
-            if not (or_q0 >= ord_req and or_q1 >= ord_req): return False, ""
-            if not (ep_q0 >= 15.0 and ep_q1 >= 15.0): return False, ""
+            # 🚨 直近1Qの YoY のみで一発判定（2期連続縛りを撤廃）
+            if s_yoy < sales_req: return False, ""
+            if op_yoy < 15.0: return False, ""
+            if or_yoy < ord_req: return False, ""
+            if ep_yoy < 15.0: return False, ""
             
-            if op_q0 >= 20.0 and or_q0 >= 20.0 and ep_q0 >= 20.0:
+            if op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
             return True, "A級🟢"
             
         elif mode == "sell":
-            # 🚨 修正：赤字なら無条件合格とする小細工を排除。純粋に計算されたパーセンテージだけで判定する。
-            if not (s_q0 < 5.0 and s_q1 < 5.0): return False, ""
-            if not (op_q0 < 10.0 and op_q1 < 10.0): return False, ""
-            if not (or_q0 < 5.0 and or_q1 < 5.0): return False, ""
-            if not (ep_q0 < 10.0 and ep_q1 < 10.0): return False, ""
+            # 🚨 売りモード: 直近1Qの YoY が8%未満（売上条件はUIに合わせて撤廃）
+            if op_yoy >= 8.0: return False, ""
+            if or_yoy >= 8.0: return False, ""
+            if ep_yoy >= 8.0: return False, ""
             
-            if q0_op < 0 and q0_ord < 0 and q0_eps < 0 and q1_op < 0 and q1_ord < 0 and q1_eps < 0:
+            # 営業・経常・純利益(EPS)がすべてマイナスならS級
+            if q0_op < 0 and q0_ord < 0 and q0_eps < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
