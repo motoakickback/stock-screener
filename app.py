@@ -1543,7 +1543,7 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
-# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン
+# 🚀 260日分株価データ・完全ローカル読込エンジン（API通信ゼロ）
 # ==========================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
@@ -1557,7 +1557,7 @@ def get_hist_data_cached(key):
     
     # 🚨 1. ファイルが無い場合は「絶対にAPIへ行かず」警告を出して空データを返す
     if not os.path.exists(db_path):
-        st.error("🚨 ローカル株価DB（prices_db.pkl）が見つかりません。先にバッチ処理を実行してください。")
+        st.error("🚨 ローカル株価DB（prices_db.pkl）が見つかりません。先にバッチ処理が完了しているか確認してください。")
         return pd.DataFrame()
         
     # 2. バッチが焼き付けたローカルDBの読み込み
@@ -1571,30 +1571,30 @@ def get_hist_data_cached(key):
     if not prices_db:
         return pd.DataFrame()
         
-    # 3. 日付ごとの辞書データを、フラットな表（DataFrame）に一括変換
-    all_rows = []
-    for dt_str, records in prices_db.items():
-        try:
-            date_val = pd.to_datetime(dt_str)
-            for r in records:
-                r['Date'] = date_val
-                r['Code'] = str(r.get('Code', '')).replace('.0', '')[:4]
-                all_rows.append(r)
-        except Exception:
-            continue
+    # 3. 日付キーごとの辞書データを、フラットな表（DataFrame）に爆速結合
+    all_dfs = []
+    for dt_str, data in prices_db.items():
+        if data:
+            df = pd.DataFrame(data)
+            all_dfs.append(df)
             
-    if not all_rows:
+    if not all_dfs:
         return pd.DataFrame()
         
-    df = pd.DataFrame(all_rows)
+    full_df = pd.concat(all_dfs, ignore_index=True)
     
-    # 4. 銘柄コードと日付で綺麗に並び替えて返す
-    if 'Code' in df.columns and 'Date' in df.columns:
-        df.sort_values(by=['Code', 'Date'], inplace=True)
-        df.reset_index(drop=True, inplace=True)
+    # 4. データの浄化と型変換
+    if 'Code' in full_df.columns:
+        full_df['Code'] = full_df['Code'].astype(str).str.replace('.0', '', regex=False).str[:4]
+    if 'Date' in full_df.columns:
+        full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
+        
+    # 5. 銘柄コードと日付で綺麗に並び替えて返す
+    full_df.sort_values(by=['Code', 'Date'], inplace=True)
+    full_df.reset_index(drop=True, inplace=True)
     
-    return df
-
+    return full_df
+    
 def fetch_and_compress_single_day(dt):
     # 🚨 開発参謀パッチ適用：無条件突撃から「GC息継ぎ型の戦術巡航」へ移行
     for attempt in range(4):
