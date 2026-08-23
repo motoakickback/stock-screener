@@ -1542,49 +1542,58 @@ def get_nikkei_macro_status():
     else:
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
-# =========================================================
-# 🚀 共通エンジン：進捗バー・件数表示 完全復旧版
-# =========================================================
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False, persist="disk") # 🚨 ディスク退避をON
+# ==========================================
+# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン
+# ==========================================
+@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    base = datetime.now(pytz.timezone('Asia/Tokyo'))
-    dates, days = [], 0
-    while len(dates) < 260:
-        d = base - timedelta(days=days)
-        if d.weekday() < 5: dates.append(d.strftime('%Y%m%d'))
-        days += 1
-        if days > 400: break
+    """API通信を完全に物理遮断し、バッチが生成した prices_db.pkl のみを読み込む。"""
+    import os
+    import pickle
+    import pandas as pd
+    import streamlit as st
 
-    dfs = []
-    # 🚨 OOMを回避するため、並列数を「2」に抑制し、メモリの過剰な同時展開を防ぐ
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exe:
-        futs = {exe.submit(fetch_and_compress_single_day, dt): dt for dt in dates}
-        for i, f in enumerate(concurrent.futures.as_completed(futs)):
-            res = f.result()
-            if isinstance(res, pd.DataFrame):
-                dfs.append(res)
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    
+    # 🚨 1. ファイルが無い場合は「絶対にAPIへ行かず」警告を出して空データを返す
+    if not os.path.exists(db_path):
+        st.error("🚨 ローカル株価DB（prices_db.pkl）が見つかりません。先にバッチ処理を実行してください。")
+        return pd.DataFrame()
+        
+    # 2. バッチが焼き付けたローカルDBの読み込み
+    try:
+        with open(db_path, "rb") as f:
+            prices_db = pickle.load(f)
+    except Exception as e:
+        st.error(f"🚨 株価DB読み込みエラー: {e}")
+        return pd.DataFrame()
+        
+    if not prices_db:
+        return pd.DataFrame()
+        
+    # 3. 日付ごとの辞書データを、フラットな表（DataFrame）に一括変換
+    all_rows = []
+    for dt_str, records in prices_db.items():
+        try:
+            date_val = pd.to_datetime(dt_str)
+            for r in records:
+                r['Date'] = date_val
+                r['Code'] = str(r.get('Code', '')).replace('.0', '')[:4]
+                all_rows.append(r)
+        except Exception:
+            continue
             
-            p_val = (i + 1) / len(dates)
-            progress_bar.progress(min(p_val, 1.0))
-            status_text.text(f"📡 索敵中: {i+1}/{len(dates)}日完了")
-
-    progress_bar.empty()
-    status_text.empty()
-
-    if not dfs:
-        raise ValueError("🚨 兵站断絶: データ取得失敗")
-
-    full_df = pd.concat(dfs, ignore_index=True)
-    full_df['Code'] = full_df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+    if not all_rows:
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(all_rows)
     
-    # 🚨 結合直後の巨大データフレームを強制圧縮（ここでRAM消費を半減させます）
-    full_df = compress_memory(full_df)
+    # 4. 銘柄コードと日付で綺麗に並び替えて返す
+    if 'Code' in df.columns and 'Date' in df.columns:
+        df.sort_values(by=['Code', 'Date'], inplace=True)
+        df.reset_index(drop=True, inplace=True)
     
-    gc.collect()
-    return full_df.dropna(subset=['AdjC']).sort_values(['Code', 'Date']).reset_index(drop=True)
+    return df
 
 def fetch_and_compress_single_day(dt):
     # 🚨 開発参謀パッチ適用：無条件突撃から「GC息継ぎ型の戦術巡航」へ移行
@@ -3074,6 +3083,52 @@ def fetch_fundamental_history_local(code, local_db):
     except Exception as e:
         return None
 
+# ==========================================
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# ==========================================
+@st.cache_data(show_spinner=False)
+def get_local_stock_data(code):
+    """API通信を物理的に遮断し、バッチが作った prices_db.pkl から指定銘柄の時系列を抽出する"""
+    import os, pickle
+    import pandas as pd
+    
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+        
+    try:
+        with open(db_path, "rb") as f:
+            prices_db = pickle.load(f)
+            
+        all_records = []
+        target_code = str(code).replace('.0', '')[:4]
+        
+        # 辞書(日付キー)から対象銘柄だけを抽出
+        for dt_str, records in prices_db.items():
+            for r in records:
+                c = str(r.get("Code", "")).replace(".0", "")[:4]
+                if c == target_code:
+                    all_records.append({
+                        "Date": pd.to_datetime(dt_str),
+                        "Code": c,
+                        "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
+                        "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
+                        "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
+                        "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
+                        "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+                    })
+                    break 
+        
+        if not all_records:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(all_records)
+        df.sort_values(by="Date", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
+    except Exception:
+        return pd.DataFrame()
+        
 # ==========================================
 # 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
 # ==========================================
