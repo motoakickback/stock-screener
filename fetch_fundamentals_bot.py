@@ -4,6 +4,7 @@ import pandas as pd
 import pickle
 import os
 from datetime import datetime
+import gzip
 
 # ==========================================
 # ⚙️ J-Quants V2 API 設定（全方位・自動適応版）
@@ -91,12 +92,12 @@ for i, code in enumerate(all_codes):
     except Exception as e:
         continue
 
-# 3. ローカルDBとして保存
-db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl")
-with open(db_path, "wb") as f:
+# 3. ローカルDBとして保存（🚨 gzip圧縮化）
+db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl.gz")
+with gzip.open(db_path, "wb") as f:
     pickle.dump(fundamentals_db, f)
 
-print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 {len(fundamentals_db)} 件の決算データを焼き付けました。")
+print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 {len(fundamentals_db)} 件の決算データを圧縮して焼き付けました。")
 
 # ==========================================
 # 📈 4. 株価データ（過去約400日分）の一括収集
@@ -116,7 +117,7 @@ for i in range(days_to_fetch):
         continue
         
     dt_str = target_date.strftime('%Y%m%d')
-    # 🎯 指定した1日分の全銘柄データを一括で返すAPIを使用[cite: 7]
+    # 🎯 指定した1日分の全銘柄データを一括で返すAPIを使用
     url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
     
     time.sleep(1.1) # 🛡️ 1.1秒の絶対待機
@@ -142,8 +143,9 @@ for i in range(days_to_fetch):
     except Exception as e:
         continue
 
-prices_db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
-with open(prices_db_path, "wb") as f:
+# 🚨 株価データもgzip圧縮化して保存
+prices_db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
+with gzip.open(prices_db_path, "wb") as f:
     pickle.dump(prices_db, f)
 
-print(f"[{datetime.now()}] ✅ 株価データ全ミッション完了！ {fetched_days}営業日分の株価データを焼き付けました。")
+print(f"[{datetime.now()}] ✅ 株価データ全ミッション完了！ {fetched_days}営業日分の株価データを圧縮して焼き付けました。")
