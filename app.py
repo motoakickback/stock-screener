@@ -2564,7 +2564,7 @@ tab1, tab2, tab3, tab7 = st.tabs([
 ])
 
 # ==========================================
-# 🛠️ 流動性・時価総額フィルター用 実体エンジン（TAB1/TAB2用）
+# 🛠️ 流動性・時価総額フィルター用 実体エンジン（V2完全適応版）
 # ==========================================
 def get_all_market_caps_bulk():
     """ローカルDBの最新決算から発行済株式数を取得し、最新株価と掛けて時価総額(億円)を算出"""
@@ -2578,12 +2578,18 @@ def get_all_market_caps_bulk():
                 df = fund_db.get(api_code)
                 if df is not None and not df.empty:
                     shares = 0.0
-                    for col in df.columns:
-                        if 'NumberOfIssuedAndOutstandingShares' in str(col) or 'Shares' in str(col):
-                            val = df.iloc[-1][col]
+                    
+                    # 💡 V2の短縮キー（ShOutFY, AvgSh）に完全対応
+                    share_cols = ['ShOutFY', 'AvgSh', 'NumberOfIssuedAndOutstandingSharesAtTheEndOfPeriod']
+                    
+                    for col in share_cols:
+                        actual_col = next((c for c in df.columns if str(c).lower() == col.lower()), None)
+                        if actual_col:
+                            val = df.iloc[-1][actual_col]
                             if pd.notna(val) and float(val) > 0:
                                 shares = float(val)
                                 break
+                    
                     if shares > 0:
                         mcap_map[str(code)] = (float(p) * shares) / 100000000.0
     except:
@@ -2608,7 +2614,6 @@ def get_all_volumes_bulk():
     except:
         pass
     return vol_map
-
 
 # ==========================================
 # 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
@@ -2657,7 +2662,7 @@ with tab1:
                     for c_code, c_price in prices_map.items():
                         # 価格フィルタ
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
-                            # 時価総額フィルタ（億円換算の厳格評価）
+                            # 時価総額フィルタ（計算された実数でのみ判定。0なら通すザル仕様を撤廃）
                             c_mcap = float(mcap_map.get(str(c_code), 0))
                             if c_mcap >= float(t1_mcap):
                                 all_codes.append(str(c_code))
@@ -2788,10 +2793,10 @@ with tab2:
                     for c_code, c_price in prices_map.items():
                         # 価格フィルタ
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
-                            # 時価総額フィルタ (億円)
+                            # 時価総額フィルタ
                             c_mcap = float(mcap_map.get(str(c_code), 0))
                             if c_mcap >= float(t2_mcap):
-                                # 売買代金フィルタ (億円)
+                                # 売買代金フィルタ
                                 c_vol = float(vol_map.get(str(c_code), 0))
                                 if c_vol >= float(t2_vol):
                                     all_codes.append(str(c_code))
