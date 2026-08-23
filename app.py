@@ -85,13 +85,14 @@ def get_all_latest_prices_bulk():
 # ==========================================
 import pickle
 import os
+import gzip
 
-@st.cache_resource(ttl=3600*24) # 1日キャッシュしてメモリに常駐させる
+@st.cache_resource(ttl=3600*24)
 def load_local_fundamentals_db():
-    """19時にBotが集めたデータを一瞬でメモリにロードする"""
-    db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl")
+    """深夜にBotが集めたデータを一瞬でメモリにロードする"""
+    db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl.gz")
     if os.path.exists(db_path):
-        with open(db_path, "rb") as f:
+        with gzip.open(db_path, "rb") as f:
             return pickle.load(f)
     return {}
 
@@ -1543,26 +1544,25 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
-# 🚀 260日分株価データ・完全ローカル読込エンジン（API通信ゼロ）
+# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン
 # ==========================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """API通信を完全に物理遮断し、バッチが生成した prices_db.pkl のみを読み込む。"""
+    """API通信を完全に物理遮断し、バッチが生成した圧縮DBを読み込む。"""
     import os
     import pickle
+    import gzip # 👈 追加
     import pandas as pd
     import streamlit as st
 
-    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
     
-    # 🚨 1. ファイルが無い場合は「絶対にAPIへ行かず」警告を出して空データを返す
     if not os.path.exists(db_path):
-        st.error("🚨 ローカル株価DB（prices_db.pkl）が見つかりません。先にバッチ処理が完了しているか確認してください。")
+        st.error("🚨 ローカル株価DB（prices_db.pkl.gz）が見つかりません。")
         return pd.DataFrame()
         
-    # 2. バッチが焼き付けたローカルDBの読み込み
     try:
-        with open(db_path, "rb") as f:
+        with gzip.open(db_path, "rb") as f:
             prices_db = pickle.load(f)
     except Exception as e:
         st.error(f"🚨 株価DB読み込みエラー: {e}")
@@ -1571,25 +1571,21 @@ def get_hist_data_cached(key):
     if not prices_db:
         return pd.DataFrame()
         
-    # 3. 日付キーごとの辞書データを、フラットな表（DataFrame）に爆速結合
     all_dfs = []
     for dt_str, data in prices_db.items():
         if data:
-            df = pd.DataFrame(data)
-            all_dfs.append(df)
+            all_dfs.append(pd.DataFrame(data))
             
     if not all_dfs:
         return pd.DataFrame()
         
     full_df = pd.concat(all_dfs, ignore_index=True)
     
-    # 4. データの浄化と型変換
     if 'Code' in full_df.columns:
         full_df['Code'] = full_df['Code'].astype(str).str.replace('.0', '', regex=False).str[:4]
     if 'Date' in full_df.columns:
         full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
         
-    # 5. 銘柄コードと日付で綺麗に並び替えて返す
     full_df.sort_values(by=['Code', 'Date'], inplace=True)
     full_df.reset_index(drop=True, inplace=True)
     
