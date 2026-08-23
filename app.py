@@ -3351,35 +3351,49 @@ with tab3:
                         hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
-                        q0 = df.iloc[-1]
-                        c_o = q0.get('Open', q0.get('AdjO', 0))
-                        c_h = q0.get('High', q0.get('AdjH', 0))
-                        c_l = q0.get('Low', q0.get('AdjL', 0))
-                        c_c = q0.get('Close', q0.get('AdjC', 0))
-                        
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("始値", f"{c_o:,.1f}円")
-                        c2.metric("高値", f"{c_h:,.1f}円")
-                        c3.metric("安値", f"{c_l:,.1f}円")
-                        c4.metric("終値", f"{c_c:,.1f}円")
-                        
                         if len(df) > 0:
                             df_c = df.copy()
                             c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
                             
+                            # 💡 要件5: RSI(14日)の計算を追加
+                            delta = df_c[c_col].diff()
+                            gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+                            loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+                            rs = gain / loss
+                            df_c['RSI14'] = 100 - (100 / (1 + rs))
+
+                            # 四本値とRSIを取得
+                            q0 = df_c.iloc[-1]
+                            c_o = q0.get('Open', q0.get('AdjO', 0))
+                            c_h = q0.get('High', q0.get('AdjH', 0))
+                            c_l = q0.get('Low', q0.get('AdjL', 0))
+                            c_c = q0.get('Close', q0.get('AdjC', 0))
+                            rsi_val = q0.get('RSI14', 0)
+                            
+                            # 💡 要件5: 4カラムから5カラムに拡張しRSIを表示
+                            c1, c2, c3, c4, c5 = st.columns(5)
+                            c1.metric("始値", f"{c_o:,.1f}円")
+                            c2.metric("高値", f"{c_h:,.1f}円")
+                            c3.metric("安値", f"{c_l:,.1f}円")
+                            c4.metric("終値", f"{c_c:,.1f}円")
+                            c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
+                            
                             fig = go.Figure()
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
+                            # 💡 要件2: 陽線を緑、陰線を赤の濃い色に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
                                 open=df_c.get('AdjO', df_c.get('Open')), 
                                 high=df_c.get('AdjH', df_c.get('High')), 
                                 low=df_c.get('AdjL', df_c.get('Low')), 
                                 close=df_c[c_col], 
-                                name='価格'
+                                name='価格',
+                                increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
+                                decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
                             ))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
@@ -3408,10 +3422,13 @@ with tab3:
                                 x_max = df_c[date_col].iloc[-1]
                                 y_min, y_max = None, None
                             
+                            # 💡 要件1, 3, 4: 見切れ防止(r=40)、左上余白(t=50)、一括ホバー(x unified)
                             layout_args = {
                                 'height': 400,
-                                'margin': dict(l=0, r=0, t=30, b=0),
-                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date')
+                                'margin': dict(l=0, r=40, t=50, b=0),
+                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date'),
+                                'hovermode': 'x unified',
+                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif")
                             }
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
