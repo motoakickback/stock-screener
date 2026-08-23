@@ -33,21 +33,17 @@ jobs:
 
       - name: 💾 取得したデータをGitHubへ保存（プッシュ）
         run: |
-          if [ -f fundamentals_db.pkl ]; then
+          # 🚨 圧縮ファイル（.pkl.gz）を指定するように変更
+          if [ -f fundamentals_db.pkl.gz ]; then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add fundamentals_db.pkl
-            git commit -m "🤖 自動補給: ファンダメンタルズDBの更新" || echo "変更なし"
-
-            # 🚨 修正：株価データ（prices_db.pkl）も一緒に持ち帰るように指示を追加
-            git add fundamentals_db.pkl prices_db.pkl
-            git commit -m "🤖 自動補給: ファンダメンタルズDB・株価DBの更新" || echo "変更なし"
+            git add fundamentals_db.pkl.gz prices_db.pkl.gz
+            git commit -m "🤖 自動補給: 圧縮版ファンダ・株価DBの更新" || echo "変更なし"
             
-            # 🛡️ リモートの最新状態を安全に取り込んでからプッシュする防弾パッチ
             git pull --rebase origin main || echo "No rebase needed"
             
             git push origin main
           else
-            echo "❌ エラー: fundamentals_db.pkl が生成されていません。"
+            echo "❌ エラー: fundamentals_db.pkl.gz が生成されていません。"
             exit 1
           fi
