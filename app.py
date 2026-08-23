@@ -106,12 +106,12 @@ def get_historical_statements(code):
     return db.get(api_code, None)
 
 # ==========================================
-# 🧠 ファンダメンタルズ解析エンジン（YoY・直近1Q単発判定・完全適応版）
+# 🧠 ファンダメンタルズ解析エンジン（YoY・直近1Q単発判定版）
 # ==========================================
 def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
     import pandas as pd
     try:
-        # 🚨 YoY（前年同期比）計算のためには最低5四半期分のデータが必要
+        # 🚨 YoY（前年同期比）の計算には、最低5四半期分（1年＋最新）のデータが必要
         if df is None or len(df) < 5:
             return False, ""
         
@@ -146,7 +146,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             
         std_df = actual_df.copy()
         
-        # 累計値を単独四半期に分解
+        # 累計値を単独四半期に分解（引き算）
         for i in range(1, len(actual_df)):
             curr_sales = to_flt(actual_df[c_sales].iloc[i])
             prev_sales = to_flt(actual_df[c_sales].iloc[i-1])
@@ -167,7 +167,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
                     except Exception:
                         pass
                         
-        # 🎯 直近1Q(q0) と 4つ前＝1年前の同Q(y0) を抽出
+        # 🎯 q0（直近1Q）と y0（4つ前＝前年同期）を抽出
         q0 = std_df.iloc[-1] 
         y0 = std_df.iloc[-5]
         
@@ -189,8 +189,7 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
         q0_eps = get_val(q0, c_eps, c_profit)
         y0_eps = get_val(y0, c_eps, c_profit)
 
-        # 買いモード時：売上が0以下の場合は計算不可として除外
-        if mode == "buy" and (q0_sales <= 0 or y0_sales <= 0):
+        if q0_sales <= 0 or y0_sales <= 0:
             return False, ""
 
         # YoY（前年同期比）のパーセンテージ計算
@@ -208,24 +207,24 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0):
             if q0_op < 0 or q0_ord < 0 or q0_eps < 0:
                 return False, ""
                 
-            # 🚨 直近1Qの YoY のみで一発判定（2期連続縛りを撤廃）
-            if s_yoy < sales_req: return False, ""
-            if op_yoy < 15.0: return False, ""
-            if or_yoy < ord_req: return False, ""
-            if ep_yoy < 15.0: return False, ""
+            # 🚨 直近1Qの YoY のみで一発判定
+            if not (s_yoy >= sales_req): return False, ""
+            if not (op_yoy >= 15.0): return False, ""
+            if not (or_yoy >= ord_req): return False, ""
+            if not (ep_yoy >= 15.0): return False, ""
             
             if op_yoy >= 20.0 and or_yoy >= 20.0 and ep_yoy >= 20.0:
                 return True, "S級🎯"
             return True, "A級🟢"
             
         elif mode == "sell":
-            # 🚨 売りモード: 直近1Qの YoY が8%未満（売上条件はUIに合わせて撤廃）
-            if op_yoy >= 8.0: return False, ""
-            if or_yoy >= 8.0: return False, ""
-            if ep_yoy >= 8.0: return False, ""
+            # 🚨 売りモード: UI設定に従い、直近1Qの営業・経常・EPSが8%未満（売上条件は撤廃）
+            if not (op_yoy < 8.0): return False, ""
+            if not (or_yoy < 8.0): return False, ""
+            if not (ep_yoy < 8.0): return False, ""
             
-            # 営業・経常・純利益(EPS)がすべてマイナスならS級
-            if q0_op < 0 and q0_ord < 0 and q0_eps < 0:
+            # すべてマイナス成長ならS級
+            if op_yoy < 0 and or_yoy < 0 and ep_yoy < 0:
                 return True, "S級💀"
             return True, "A級📉"
             
