@@ -2765,8 +2765,8 @@ with tab2:
         t2_vol = col2_3.selectbox("売買代金フィルタ (億円以上)", [3, 2, 1], index=0, key="t2_vol")
         
         col2_4, col2_5 = st.columns(2)
-        t2_p_min = col2_4.number_input("価格下限 (円)", value=100, step=100, key="t2_p_min")
-        t2_p_max = col2_5.number_input("価格上限 (円)", value=10000, step=100, key="t2_p_max")
+        t2_p_min = col2_4.number_input("価格下限 (円)", value=400, step=100, key="t2_p_min")
+        t2_p_max = col2_5.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
         
         st.markdown("**(固定スキャン条件: 直近2四半期連続 営業・経常・純利・EPSが8%未満)** \n"
                     "・営業利益: 前年同期比 `8%`未満 (マイナスでS級💀)  \n"
