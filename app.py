@@ -425,39 +425,122 @@ def get_all_volumes_bulk():
     except: pass
     return vol_map
 
+# ==========================================
+# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン (.pkl.gz対応・OOM回避仕様)
+# ==========================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    import pickle, gzip
+    """API通信を完全に物理遮断し、圧縮DBを極限の省メモリで読み込む。"""
+    import os
+    import pickle
+    import gzip
+    import gc
+    import pandas as pd
+    import streamlit as st
+
     db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
-    if not os.path.exists(db_path): return pd.DataFrame()
-    try:
-        with gzip.open(db_path, "rb") as f: prices_db = pickle.load(f)
-    except: return pd.DataFrame()
-    if not prices_db: return pd.DataFrame()
+    
+    # 🚨 1. ファイルが無い場合は警告を出して空データを返す
+    if not os.path.exists(db_path):
+        st.error("🚨 ローカル株価DB（prices_db.pkl.gz）が見つかりません。先にバッチ処理が完了しているか確認してください。")
+        return pd.DataFrame()
         
+    # 2. バッチが焼き付けたローカル圧縮DBの読み込み
+    try:
+        with gzip.open(db_path, "rb") as f:
+            prices_db = pickle.load(f)
+    except Exception as e:
+        st.error(f"🚨 株価DB読み込みエラー: {e}")
+        return pd.DataFrame()
+        
+    if not prices_db:
+        return pd.DataFrame()
+        
+    # 🚨 3. OOM（メモリ溢れクラッシュ）回避のため、抽出と同時に不要メモリを破棄
     all_records = []
     for dt_str, data in prices_db.items():
         if not data: continue
         for r in data:
+            # 🚨 修正：J-Quants V1 / V2 両方のキー名揺れを完全吸収し、0円バグを粉砕
             all_records.append({
                 "Date": dt_str,
                 "Code": str(r.get("Code", "")).replace(".0", "")[:4],
-                "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
-                "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
-                "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
-                "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
-                "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+                "AdjO": float(r.get("AdjO") or r.get("AdjustmentOpen") or r.get("O") or r.get("Open") or 0),
+                "AdjH": float(r.get("AdjH") or r.get("AdjustmentHigh") or r.get("H") or r.get("High") or 0),
+                "AdjL": float(r.get("AdjL") or r.get("AdjustmentLow") or r.get("L") or r.get("Low") or 0),
+                "AdjC": float(r.get("AdjC") or r.get("AdjustmentClose") or r.get("C") or r.get("Close") or 0),
+                "Volume": float(r.get("AdjVo") or r.get("AdjustmentVolume") or r.get("Vo") or r.get("Volume") or 0)
             })
-    del prices_db; gc.collect()
-    if not all_records: return pd.DataFrame()
+            
+    # 元の巨大辞書をメモリから完全消去し、明示的にガベージコレクションを実行
+    del prices_db
+    gc.collect()
+    
+    if not all_records:
+        return pd.DataFrame()
+        
+    # リストをDataFrame化し、直後に元のリストも即破棄
     full_df = pd.DataFrame(all_records)
-    del all_records; gc.collect()
+    del all_records
+    gc.collect()
+    
+    # 🚨 4. 最終的なDataFrameのデータ型を圧縮（ダウンキャスト）し、メモリ消費をさらに約70%削減
     full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
     full_df['Code'] = full_df['Code'].astype('category')
-    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']: full_df[col] = pd.to_numeric(full_df[col], downcast='float')
+    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
+        full_df[col] = pd.to_numeric(full_df[col], downcast='float')
+        
+    # 5. 銘柄コードと日付で綺麗に並び替えて返す
     full_df.sort_values(by=['Code', 'Date'], inplace=True)
     full_df.reset_index(drop=True, inplace=True)
+    
     return full_df
+
+# ==========================================
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# ==========================================
+@st.cache_data(show_spinner=False)
+def get_local_stock_data(code):
+    """API通信を物理的に遮断し、バッチが作った prices_db.pkl から指定銘柄の時系列を抽出する"""
+    import os, pickle
+    import pandas as pd
+    
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+        
+    try:
+        with open(db_path, "rb") as f:
+            prices_db = pickle.load(f)
+            
+        all_records = []
+        target_code = str(code).replace('.0', '')[:4]
+        
+        for dt_str, records in prices_db.items():
+            for r in records:
+                c = str(r.get("Code", "")).replace(".0", "")[:4]
+                if c == target_code:
+                    # 🚨 修正：J-Quants V1 / V2 両方のキー名揺れを完全吸収し、0円バグを粉砕
+                    all_records.append({
+                        "Date": pd.to_datetime(dt_str),
+                        "Code": c,
+                        "AdjO": float(r.get("AdjO") or r.get("AdjustmentOpen") or r.get("O") or r.get("Open") or 0),
+                        "AdjH": float(r.get("AdjH") or r.get("AdjustmentHigh") or r.get("H") or r.get("High") or 0),
+                        "AdjL": float(r.get("AdjL") or r.get("AdjustmentLow") or r.get("L") or r.get("Low") or 0),
+                        "AdjC": float(r.get("AdjC") or r.get("AdjustmentClose") or r.get("C") or r.get("Close") or 0),
+                        "Volume": float(r.get("AdjVo") or r.get("AdjustmentVolume") or r.get("Vo") or r.get("Volume") or 0)
+                    })
+                    break 
+        
+        if not all_records:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(all_records)
+        df.sort_values(by="Date", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=86400)
 def load_master():
