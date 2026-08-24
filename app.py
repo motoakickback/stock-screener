@@ -1544,6 +1544,35 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
+# 🛡️ 不足している「load_local_prices_db」関数の定義
+# ==========================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_local_prices_db():
+    """裏のバッチが作った prices_db.pkl.gz または prices_db.pkl を安全に読み込む"""
+    import os
+    import pickle
+    import gzip
+    
+    base_dir = os.path.dirname(__file__)
+    paths = [
+        os.path.join(base_dir, "prices_db.pkl.gz"),
+        os.path.join(base_dir, "prices_db.pkl")
+    ]
+    
+    for db_path in paths:
+        if os.path.exists(db_path):
+            try:
+                if db_path.endswith('.gz'):
+                    with gzip.open(db_path, "rb") as f:
+                        return pickle.load(f)
+                else:
+                    with open(db_path, "rb") as f:
+                        return pickle.load(f)
+            except Exception:
+                pass
+    return {}
+    
+# ==========================================
 # 🛡️ 最終決定版：株価データ ローカル読み込みエンジン（短縮キー完全対応）
 # ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
