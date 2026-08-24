@@ -1517,14 +1517,27 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 🚨 Y軸見切れバグを撤廃したネイティブ追従（オートスケール）
+                            # 🚨 初期表示（直近65日間）の最適Y軸スケール（オートフォーカス）計算を完全復旧
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 t_min = df_recent[date_col].iloc[0]
                                 t_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
+                                
+                                max_h = float(df_recent[c_h_col].max())
+                                min_l = float(df_recent[c_l_col].min())
+                                
+                                # Y軸スケールの異常値（0円や幅ゼロ）によるクラッシュを回避
+                                if pd.isna(max_h) or pd.isna(min_l) or (max_h == 0.0 and min_l == 0.0):
+                                    y_min, y_max = None, None
+                                elif max_h == min_l:
+                                    y_min, y_max = min_l * 0.9, max_h * 1.1
+                                else:
+                                    y_min = min_l * 0.95
+                                    y_max = max_h * 1.05
                             else:
                                 t_min = df_c[date_col].iloc[0]
                                 t_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
+                                y_min, y_max = None, None
                                 
                             x_min_str = t_min.strftime('%Y-%m-%d') if pd.notna(t_min) else None
                             x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
@@ -1551,15 +1564,20 @@ with tab3:
                                 'height': 450,
                                 'margin': dict(l=10, r=50, t=60, b=10),
                                 'xaxis': xaxis_config,
-                                'yaxis': dict(autorange=True, fixedrange=False),
                                 'dragmode': 'pan',
                                 'hovermode': 'x unified',
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
+                            
+                            # 🚨 Y軸のオートフォーカス（range固定）を復活
+                            if y_min and y_max:
+                                layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
+                            else:
+                                layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
                                 
                             fig.update_layout(**layout_args)
                             
-                            st.caption("💡 **狙撃手マニュアル**: 過去に遡る際は「1ヶ月」「6ヶ月」等のボタンを押すか、ドラッグ(Pan)移動後にチャート内で **ダブルクリック** すると、見切れたローソク足に合わせてY軸が自動追従（オートフィット）します。")
+                            st.caption("💡 **狙撃手マニュアル**: 初期表示は直近3ヶ月にオートフォーカスしています。過去に遡ってローソク足が見切れた場合は、右側の価格軸（Y軸の数字）を直接上下にドラッグするか、チャート内で **ダブルクリック** するとY軸が自動追従（オートフィット）します。")
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         # 📊 YoY統一の業績表
