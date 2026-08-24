@@ -746,9 +746,10 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                     (q0_c > q0_o) and (q0_c > m1_c)
         
         # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # ①陽線で2日連続、今日と昨日の安値が18日移動平均線より高い
-        buy_cond2 = (q0_c > q0_o) and (m1_c > m1_o) and \
-                    (q0_l > ma18_q0) and (m1_l > ma18_m1)
+        # 🚨 【完全AND条件】
+        # (今日が陽線 AND 今日の安値が18MAより高い) かつ (昨日が陽線 AND 昨日の安値が18MAより高い)
+        buy_cond2 = ((q0_c > q0_o) and (q0_l > ma18_q0)) and \
+                    ((m1_c > m1_o) and (m1_l > ma18_m1))
         
         if buy_cond1 or buy_cond2:
             buy_signals.append(curr_date)
@@ -760,9 +761,10 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                      (q0_c < q0_o) and (q0_c < m1_c)
         
         # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # ①陰線で2日連続、今日と昨日の高値が18日移動平均線より安い
-        sell_cond2 = (q0_c < q0_o) and (m1_c < m1_o) and \
-                     (q0_h < ma18_q0) and (m1_h < ma18_m1)
+        # 🚨 【完全AND条件】
+        # (今日が陰線 AND 今日の高値が18MAより安い) かつ (昨日が陰線 AND 昨日の高値が18MAより安い)
+        sell_cond2 = ((q0_c < q0_o) and (q0_h < ma18_q0)) and \
+                     ((m1_c < m1_o) and (m1_h < ma18_m1))
         
         if sell_cond1 or sell_cond2:
             # 空売りの前提「市場が下げ相場である（is_macro_downtrend = True）」ことを判定
