@@ -1544,21 +1544,22 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
-# 🛡️ 不足している「load_local_prices_db」関数の定義
+# 🛡️ 徹底防弾：株価データ ローカル完全読み込みエンジン (.pkl.gz / V2短縮キー完全対応)
 # ==========================================
+import streamlit as st
+import pandas as pd
+import os
+import pickle
+import gzip
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_local_prices_db():
-    """裏のバッチが作った prices_db.pkl.gz または prices_db.pkl を安全に読み込む"""
-    import os
-    import pickle
-    import gzip
-    
+    """圧縮ファイル(.pkl.gz)または通常ファイル(.pkl)を安全に読み込む"""
     base_dir = os.path.dirname(__file__)
     paths = [
         os.path.join(base_dir, "prices_db.pkl.gz"),
         os.path.join(base_dir, "prices_db.pkl")
     ]
-    
     for db_path in paths:
         if os.path.exists(db_path):
             try:
@@ -1571,106 +1572,87 @@ def load_local_prices_db():
             except Exception:
                 pass
     return {}
-    
-# ==========================================
-# 🛡️ 決定版：全カラム完全互換マッピング・省メモリ株価ロードエンジン (.pkl.gz対応)
-# ==========================================
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
-def get_hist_data_cached(key):
-    """API通信を完全に物理遮断し、圧縮DBを極限の省メモリで読み込む。"""
-    import os
-    import pickle
-    import gzip
-    import gc
-    import pandas as pd
-    import streamlit as st
 
-    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
-    if not os.path.exists(db_path):
-        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
-        
-    if not os.path.exists(db_path):
-        st.error("🚨 ローカル株価DB（prices_db.pkl.gz または .pkl）が見つかりません。先にバッチ処理が完了しているか確認してください。")
-        return pd.DataFrame()
-        
+def get_all_latest_prices_bulk():
+    """TAB1/TAB2用：ローカルDBから最新日の終値だけを抽出（短縮キー完全対応）"""
+    prices_map = {}
     try:
-        if db_path.endswith('.gz'):
-            with gzip.open(db_path, "rb") as f:
-                prices_db = pickle.load(f)
-        else:
-            with open(db_path, "rb") as f:
-                prices_db = pickle.load(f)
-    except Exception as e:
-        st.error(f"🚨 株価DB読み込みエラー: {e}")
-        return pd.DataFrame()
-        
+        prices_db = load_local_prices_db()
+        if prices_db:
+            latest_date = sorted(prices_db.keys())[-1]
+            for d in prices_db[latest_date]:
+                r_lower = {str(k).lower(): v for k, v in d.items()}
+                code = str(r_lower.get("code", "")).replace(".0", "")[:4]
+                if not code: continue
+                
+                # J-Quants V2の短縮キー (adjc, c) と正式名を完全網羅
+                c_val = 0.0
+                for k in ["adjc", "c", "close", "adjustmentclose"]:
+                    if k in r_lower and r_lower[k] is not None and not pd.isna(r_lower[k]):
+                        try:
+                            c_val = float(r_lower[k])
+                            break
+                        except: pass
+                prices_map[code] = c_val
+    except Exception:
+        pass
+    return prices_map
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_hist_data_cached(cache_key=None):
+    """
+    TAB3チャート用：圧縮ローカルDBから全銘柄の時系列データを抽出し、
+    J-Quantsの短縮キー（AdjO, O, AdjC, C等）を標準名に完全マッピングする
+    """
+    prices_db = load_local_prices_db()
     if not prices_db:
         return pd.DataFrame()
 
-    # 🚨 Noneや空文字が来ても絶対にTypeErrorを起こさないパース関数
-    def get_safe_float(row, *keys):
-        for k in keys:
-            v = row.get(k)
-            if v is not None and str(v).strip() != "" and not pd.isna(v):
+    def parse_v(*vals):
+        for v in vals:
+            if v is not None and not pd.isna(v) and str(v).strip() != "":
                 try:
                     return float(v)
-                except (ValueError, TypeError):
-                    pass
+                except (TypeError, ValueError):
+                    continue
         return 0.0
 
     all_records = []
     for dt_str, records in prices_db.items():
         if not records: continue
+        date_val = pd.to_datetime(dt_str)
         for r in records:
             if isinstance(r, dict):
                 r_lower = {str(k).lower(): v for k, v in r.items()}
-                code_val = str(r_lower.get("code", "")).replace(".0", "")[:4]
-                if not code_val: continue
+                code = str(r_lower.get("code", "")).replace(".0", "")[:4]
+                if not code: continue
                 
-                # 🚨 float()を直接使わず、安全な関数で確実に値を取得する
-                o_v = get_safe_float(r_lower, "adjo", "o", "open", "adjustmentopen")
-                h_v = get_safe_float(r_lower, "adjh", "h", "high", "adjustmenthigh")
-                l_v = get_safe_float(r_lower, "adjl", "l", "low", "adjustmentlow")
-                c_v = get_safe_float(r_lower, "adjc", "c", "close", "adjustmentclose")
-                v_v = get_safe_float(r_lower, "adjvo", "vo", "volume", "adjustmentvolume")
-                va_v = get_safe_float(r_lower, "va", "turnovervalue")
+                # 短縮キー（adjo, o, adjc, c等）と正式名を完全網羅してマッピング
+                o_v = parse_v(r_lower.get("adjo"), r_lower.get("o"), r_lower.get("open"), r_lower.get("adjustmentopen"))
+                h_v = parse_v(r_lower.get("adjh"), r_lower.get("h"), r_lower.get("high"), r_lower.get("adjustmenthigh"))
+                l_v = parse_v(r_lower.get("adjl"), r_lower.get("l"), r_lower.get("low"), r_lower.get("adjustmentlow"))
+                c_v = parse_v(r_lower.get("adjc"), r_lower.get("c"), r_lower.get("close"), r_lower.get("adjustmentclose"))
+                v_v = parse_v(r_lower.get("adjvo"), r_lower.get("vo"), r_lower.get("volume"), r_lower.get("adjustmentvolume"))
+                va_v = parse_v(r_lower.get("va"), r_lower.get("turnovervalue"))
 
-                # 【完全互換マッピング】どの列名で参照されても100%ヒットさせる
                 all_records.append({
-                    "Date": dt_str,
-                    "Code": code_val,
-                    "Open": o_v, "AdjO": o_v, "O": o_v, "AdjustmentOpen": o_v,
-                    "High": h_v, "AdjH": h_v, "H": h_v, "AdjustmentHigh": h_v,
-                    "Low": l_v, "AdjL": l_v, "L": l_v, "AdjustmentLow": l_v,
-                    "Close": c_v, "AdjC": c_v, "C": c_v, "AdjustmentClose": c_v,
-                    "Volume": v_v, "AdjVo": v_v, "Vo": v_v, "AdjustmentVolume": v_v,
+                    "Date": date_val,
+                    "Code": code,
+                    "Open": o_v, "AdjO": o_v, "O": o_v,
+                    "High": h_v, "AdjH": h_v, "H": h_v,
+                    "Low": l_v, "AdjL": l_v, "L": l_v,
+                    "Close": c_v, "AdjC": c_v, "C": c_v,
+                    "Volume": v_v, "AdjVo": v_v, "Vo": v_v,
                     "TurnoverValue": va_v, "Va": va_v
                 })
-            
-    del prices_db
-    gc.collect()
     
     if not all_records:
         return pd.DataFrame()
         
-    full_df = pd.DataFrame(all_records)
-    del all_records
-    gc.collect()
-    
-    full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
-    full_df['Code'] = full_df['Code'].astype(str)
-    
-    num_cols = ['Open', 'AdjO', 'O', 'AdjustmentOpen', 'High', 'AdjH', 'H', 'AdjustmentHigh', 
-                'Low', 'AdjL', 'L', 'AdjustmentLow', 'Close', 'AdjC', 'C', 'AdjustmentClose', 
-                'Volume', 'AdjVo', 'Vo', 'AdjustmentVolume', 'TurnoverValue', 'Va']
-    for col in num_cols:
-        if col in full_df.columns:
-            full_df[col] = pd.to_numeric(full_df[col], downcast='float', errors='coerce')
-        
-    full_df.sort_values(by=['Code', 'Date'], inplace=True)
-    full_df.reset_index(drop=True, inplace=True)
-    
-    return full_df
+    df = pd.DataFrame(all_records)
+    df.sort_values(by=["Code", "Date"], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
     
 def fetch_and_compress_single_day(dt):
     # 🚨 開発参謀パッチ適用：無条件突撃から「GC息継ぎ型の戦術巡航」へ移行
