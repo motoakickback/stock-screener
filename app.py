@@ -1497,16 +1497,22 @@ with tab3:
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean()
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean()
                             
-                            # 💡 RSI(14日)の計算を追加
+                            # 🚨 RSI(14日)の計算：Oh, noエラー（PyArrowクラッシュ）の原因となるゼロ除算とInfを物理排除
                             delta = df_c[c_c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
                             loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
-                            rs = gain / loss
+                            rs = gain / loss.replace(0, 1e-10)
                             df_c['RSI14'] = 100 - (100 / (1 + rs))
+                            
+                            # NaNやInfが発生した場合は中立(50.0)に強制置換
+                            df_c['RSI14'] = df_c['RSI14'].fillna(50.0).replace([np.inf, -np.inf], 50.0)
 
                             def safe_float(val):
                                 if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
-                                try: return float(val)
+                                try:
+                                    v = float(val)
+                                    if np.isnan(v) or np.isinf(v): return 0.0
+                                    return v
                                 except: return 0.0
 
                             q0 = df_c.iloc[-1]
@@ -1514,9 +1520,9 @@ with tab3:
                             c_h = safe_float(q0.get(c_h_col, 0))
                             c_l = safe_float(q0.get(c_l_col, 0))
                             c_c = safe_float(q0.get(c_c_col, 0))
-                            rsi_val = safe_float(q0.get('RSI14', 0))
+                            rsi_val = safe_float(q0.get('RSI14', 50.0))
                             
-                            # 💡 UI要件: 5カラムに拡張しRSIを表示
+                            # UI要件: 5カラムに拡張しRSIを表示
                             c1, c2, c3, c4, c5 = st.columns(5)
                             c1.metric("始値", f"{c_o:,.1f}円")
                             c2.metric("高値", f"{c_h:,.1f}円")
@@ -1531,10 +1537,7 @@ with tab3:
                             # 💡 UI要件: 陽線を薄い緑(#26a69a)、陰線を薄い赤(#ef5350)に変更
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
-                                open=df_c[c_o_col], 
-                                high=df_c[c_h_col], 
-                                low=df_c[c_l_col], 
-                                close=df_c[c_c_col], 
+                                open=df_c[c_o_col], high=df_c[c_h_col], low=df_c[c_l_col], close=df_c[c_c_col], 
                                 name='価格',
                                 increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
                                 decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
@@ -1552,36 +1555,45 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 💡 1年分遡れるように初期表示を3ヶ月(65日)に制限（オートフォーカス）
+                            # 🚨 JSONシリアライズエラー（Oh no!）を防ぐため、Timestampの文字列化と値幅異常の検知を実行
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
-                                x_min = df_recent[date_col].iloc[0]
-                                x_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
+                                t_min = df_recent[date_col].iloc[0]
+                                t_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 
-                                max_h = df_recent[c_h_col].max()
-                                min_l = df_recent[c_l_col].min()
-                                y_min = min_l * 0.95
-                                y_max = max_h * 1.05
+                                max_h = float(df_recent[c_h_col].max())
+                                min_l = float(df_recent[c_l_col].min())
+                                
+                                # Y軸スケールの異常値（0円や幅ゼロ）によるクラッシュを回避
+                                if pd.isna(max_h) or pd.isna(min_l) or (max_h == 0.0 and min_l == 0.0):
+                                    y_min, y_max = None, None
+                                elif max_h == min_l:
+                                    y_min, y_max = min_l * 0.9, max_h * 1.1
+                                else:
+                                    y_min = min_l * 0.95
+                                    y_max = max_h * 1.05
                             else:
-                                x_min = df_c[date_col].iloc[0]
-                                x_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
+                                t_min = df_c[date_col].iloc[0]
+                                t_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 y_min, y_max = None, None
+                                
+                            x_min_str = t_min.strftime('%Y-%m-%d') if pd.notna(t_min) else None
+                            x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
                             
-                            # 💡 ホバーテキストを「x unified」に変更し、視認性の高い統一パネルとして左寄せ表示
+                            # 💡 UI要件: ホバーテキストを「x unified」に変更し左上に集約
                             layout_args = {
-                                'height': 400,
-                                'margin': dict(l=10, r=50, t=60, b=10),
-                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date'),
+                                'height': 400, 'margin': dict(l=10, r=50, t=60, b=10),
+                                'xaxis': dict(range=[x_min_str, x_max_str], rangeslider=dict(visible=False), type='date'),
                                 'hovermode': 'x unified',
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
+                            
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
                                 layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
                                 
                             fig.update_layout(**layout_args)
-                            
                             st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         if data.get("fund") is not None and not data["fund"].empty:
