@@ -3106,8 +3106,7 @@ def fetch_fundamental_history_local(code, local_db):
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
     """API通信を物理的に遮断し、バッチが作った prices_db.pkl.gz から指定銘柄の時系列を抽出する"""
-    import os, pickle
-    import gzip
+    import os, pickle, gzip
     import pandas as pd
     
     # 💡 圧縮ファイル(.pkl.gz)を探しに行くように修正
@@ -3117,7 +3116,7 @@ def get_local_stock_data(code):
         
     def safe_float(val):
         """Noneや空文字が来てもクラッシュしない防弾変換"""
-        if pd.isna(val) or val is None or val == "": return 0.0
+        if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
         try: return float(val)
         except: return 0.0
         
@@ -3132,7 +3131,7 @@ def get_local_stock_data(code):
         # 辞書(日付キー)から対象銘柄だけを抽出
         for dt_str, records in prices_db.items():
             for r in records:
-                # キーの大文字小文字ブレを完全吸収
+                # 💡 キーの大文字小文字ブレとV2短縮カラム名を完全吸収
                 r_lower = {str(k).lower(): v for k, v in r.items()}
                 c = str(r_lower.get("code", "")).replace(".0", "")[:4]
                 if c == target_code:
@@ -3576,35 +3575,28 @@ with tab3:
             st.session_state['tab3_results'] = results_tab3
 
     # ==========================================
-    # 🐛 緊急デバッグ機能（TAB3の最下部に追加）
+    # 🐛 緊急デバッグボタン（.pkl.gz対応）
     # ==========================================
-    st.divider()
-    if st.button("🐛 【緊急デバッグ】prices_db.pkl の生データを解析", key="debug_db_btn_safe"):
-        import os, pickle, pandas as pd
-        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    if st.button("🐛 【緊急デバッグ】大元データのカラム完全解析", type="primary"):
+        import os, pickle, gzip
+        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
         if not os.path.exists(db_path):
-            st.error("🚨 prices_db.pkl が見つかりません。")
+            st.error("🚨 prices_db.pkl.gz が見つかりません。バッチデータが正しくロードされていません。")
         else:
             try:
-                with open(db_path, "rb") as f:
+                with gzip.open(db_path, "rb") as f:
                     debug_db = pickle.load(f)
                 st.info(f"📦 DBのデータ型: {type(debug_db)}")
-                
                 if isinstance(debug_db, dict):
                     first_key = list(debug_db.keys())[0]
                     st.write(f"🔑 最初のキー ({first_key}) の中身の型: {type(debug_db[first_key])}")
                     if isinstance(debug_db[first_key], list) and len(debug_db[first_key]) > 0:
                         st.warning("▼ 実際に保存されている株価生データ（1件目）の完全な中身 ▼")
                         st.json(debug_db[first_key][0])
-                    elif isinstance(debug_db[first_key], pd.DataFrame):
-                        st.warning("▼ 保存されているDataFrameのデータ ▼")
-                        st.dataframe(debug_db[first_key].head(3))
-                elif isinstance(debug_db, pd.DataFrame):
-                    st.warning("▼ 保存されているDataFrameのカラム名一覧 ▼")
-                    st.write(debug_db.columns.tolist())
-                    st.dataframe(debug_db.head(3))
             except Exception as e:
                 st.error(f"🚨 デバッグ読み込みエラー: {e}")
+        st.stop()
+    # ==========================================
         
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
