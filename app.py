@@ -3424,12 +3424,17 @@ with tab3:
                         if len(df) > 0:
                             df_c = df.copy()
                             
-                            # 💡 【修正2】0.0円バグを完全粉砕：大元キャッシュのカラム名の揺れを完全吸収
+                            # 💡 【ゼロ円バグ完全粉砕】カラム名の揺れを完全吸収する最強の検索関数
                             cols_lower = {str(c).lower(): c for c in df_c.columns}
-                            c_o_col = cols_lower.get('adjo', cols_lower.get('adjustmentopen', cols_lower.get('o', cols_lower.get('open', 'Open'))))
-                            c_h_col = cols_lower.get('adjh', cols_lower.get('adjustmenthigh', cols_lower.get('h', cols_lower.get('high', 'High'))))
-                            c_l_col = cols_lower.get('adjl', cols_lower.get('adjustmentlow', cols_lower.get('l', cols_lower.get('low', 'Low'))))
-                            c_c_col = cols_lower.get('adjc', cols_lower.get('adjustmentclose', cols_lower.get('c', cols_lower.get('close', 'Close'))))
+                            def find_col(*names):
+                                for n in names:
+                                    if n in cols_lower: return cols_lower[n]
+                                return names[-1]
+
+                            c_o_col = find_col('adjo', 'adjustmentopen', 'open', 'o', 'Open')
+                            c_h_col = find_col('adjh', 'adjustmenthigh', 'high', 'h', 'High')
+                            c_l_col = find_col('adjl', 'adjustmentlow', 'low', 'l', 'Low')
+                            c_c_col = find_col('adjc', 'adjustmentclose', 'close', 'c', 'Close')
                             
                             # 欠損回避
                             for col in [c_o_col, c_h_col, c_l_col, c_c_col]:
@@ -3439,7 +3444,7 @@ with tab3:
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean()
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean()
                             
-                            # 💡 RSI(14日)の計算を追加
+                            # 💡 要件5: RSI(14日)の計算
                             delta = df_c[c_c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
                             loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
@@ -3451,6 +3456,7 @@ with tab3:
                                 try: return float(val)
                                 except: return 0.0
 
+                            # 💡 ここがRSIが0%になった原因です！RSIを計算した直後の `df_c` から最新行を取得します
                             q0 = df_c.iloc[-1]
                             c_o = safe_float(q0.get(c_o_col, 0))
                             c_h = safe_float(q0.get(c_h_col, 0))
@@ -3458,7 +3464,7 @@ with tab3:
                             c_c = safe_float(q0.get(c_c_col, 0))
                             rsi_val = safe_float(q0.get('RSI14', 0))
                             
-                            # 💡 UI要件: 5カラムに拡張しRSIを表示
+                            # 💡 要件5: UIを5カラム表示に拡張
                             c1, c2, c3, c4, c5 = st.columns(5)
                             c1.metric("始値", f"{c_o:,.1f}円")
                             c2.metric("高値", f"{c_h:,.1f}円")
@@ -3467,10 +3473,10 @@ with tab3:
                             c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
                             
                             fig = go.Figure()
-                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                            date_col = find_col('date', 'd', 'datetime', 'Date')
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
-                            # 💡 UI要件: 陽線を濃い緑(darkgreen)、陰線を濃い赤(darkred)に設定
+                            # 💡 要件2: 陽線を濃い緑(darkgreen)、陰線を濃い赤(darkred)に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
                                 open=df_c[c_o_col], 
@@ -3497,7 +3503,7 @@ with tab3:
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 x_min = df_recent[date_col].iloc[0]
-                                # 💡 UI要件: 右端の見切れ防止（+3日マージン）
+                                # 💡 要件1: 右端の見切れ防止（+3日マージン）
                                 x_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 
                                 max_h = df_recent[c_h_col].max()
@@ -3509,7 +3515,7 @@ with tab3:
                                 x_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 y_min, y_max = None, None
                             
-                            # 💡 UI要件: ホバーのバグ修正（hovermode: 'x'）と位置調整
+                            # 💡 要件3,4: ホバーのバグ修正（hovermode: 'x'）と位置調整
                             layout_args = {
                                 'height': 400,
                                 'margin': dict(l=10, r=50, t=60, b=10),
@@ -3524,7 +3530,7 @@ with tab3:
                                 
                             fig.update_layout(**layout_args)
                             
-                            # 💡 【修正3】重複IDエラー (StreamlitDuplicateElementId) の完全回避
+                            # 💡 重複IDエラー(Oh noエラー)を完全回避する一意のkey
                             st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         # 📊 YoY統一の業績表
