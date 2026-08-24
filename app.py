@@ -1519,10 +1519,16 @@ with tab3:
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
+                            # 💡 UI要件: 陽線を薄い緑、陰線を薄い赤に設定（システム標準色へ統一）
                             fig.add_trace(go.Candlestick(
-                                x=df_c[date_col], open=df_c[c_o_col], high=df_c[c_h_col], low=df_c[c_l_col], close=df_c[c_c_col], name='価格',
-                                increasing_line_color='darkgreen', increasing_fillcolor='darkgreen',
-                                decreasing_line_color='darkred', decreasing_fillcolor='darkred'
+                                x=df_c[date_col], 
+                                open=df_c[c_o_col], 
+                                high=df_c[c_h_col], 
+                                low=df_c[c_l_col], 
+                                close=df_c[c_c_col], 
+                                name='価格',
+                                increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
+                                decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
                             ))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hoverinfo='none'))
                             fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hoverinfo='none'))
