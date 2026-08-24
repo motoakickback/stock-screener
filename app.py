@@ -2928,7 +2928,10 @@ def analyze_formation_history(df):
             if n.lower() in cols: return df.columns[cols.index(n.lower())]
         return None
 
-    c_h, c_l, c_c = get_c('high', 'h'), get_c('low', 'l'), get_c('close', 'adjc', 'c')
+    # 💡 【修正1】adjh, adjl を追加し、0件になるバグを粉砕
+    c_h = get_c('adjh', 'high', 'h')
+    c_l = get_c('adjl', 'low', 'l')
+    c_c = get_c('adjc', 'close', 'c')
     c_d = get_c('date', 'd')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
@@ -3130,17 +3133,18 @@ def get_local_stock_data(code):
         # 辞書(日付キー)から対象銘柄だけを抽出
         for dt_str, records in prices_db.items():
             for r in records:
-                c = str(r.get("Code", "")).replace(".0", "")[:4]
+                # 💡 【修正2】大文字小文字の揺れを完全に吸収し、0.0円になるバグを粉砕
+                r_lower = {str(k).lower(): v for k, v in r.items()}
+                c = str(r_lower.get("code", "")).replace(".0", "")[:4]
                 if c == target_code:
-                    # 💡 【ゼロ円バグ＆クラッシュ完全粉砕】V2短縮カラムに完全対応しつつ安全に抽出
                     all_records.append({
                         "Date": pd.to_datetime(dt_str),
                         "Code": c,
-                        "AdjO": safe_float(r.get("AdjO", r.get("AdjustmentOpen", r.get("O", r.get("Open", 0))))),
-                        "AdjH": safe_float(r.get("AdjH", r.get("AdjustmentHigh", r.get("H", r.get("High", 0))))),
-                        "AdjL": safe_float(r.get("AdjL", r.get("AdjustmentLow", r.get("L", r.get("Low", 0))))),
-                        "AdjC": safe_float(r.get("AdjC", r.get("AdjustmentClose", r.get("C", r.get("Close", 0))))),
-                        "Volume": safe_float(r.get("AdjVo", r.get("AdjustmentVolume", r.get("Vo", r.get("Volume", 0)))))
+                        "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                        "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                        "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                        "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                        "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("volume", 0)))))
                     })
                     break 
         
@@ -3245,7 +3249,7 @@ with tab3:
                 prog_val = min(completed_cnt / total_cnt, 1.0)
                 p_bar.progress(prog_val, text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
                 
-                # 💡 【根本原因の解決】全軍キャッシュ依存を断ち切り、TAB3専用のローカル抽出エンジンを直接呼ぶ
+                # 💡 全軍キャッシュ依存を断ち切り、TAB3専用のローカル抽出エンジンを直接呼ぶ
                 raw_df = get_local_stock_data(code_int)
                 if raw_df.empty or len(raw_df) < 4: continue
                 
