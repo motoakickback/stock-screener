@@ -709,6 +709,7 @@ def analyze_formation_history(df, is_macro_downtrend=False):
     if 'MA18' not in df_recent.columns:
         df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
     
+    # 過去データも全てスキャン（過去出現時もすべてシグナルリストに格納）
     for i in range(3, len(df_recent)):
         m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
         
@@ -737,10 +738,8 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         buy_cond1 = (m2_c < m2_o and m2_c < m3_l) and (m1_c > m1_o and m1_c > m2_h) and (q0_c > q0_o and q0_c > m1_c)
         
         # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # ①陽線で、今日と昨日の安値が18日移動平均線より高い
-        buy_cond2 = (q0_c > q0_o) and (q0_l > ma18_q0) and (m1_l > ma18_m1)
-        # 💡 ②買い価格(max(q0_h, m1_h)) は翌日以降の逆指値発注のトリガーとなるため、
-        # ここでは「セットアップ完了（①）」をもってシグナル点灯日としてマークする。
+        # ①陽線で2日連続、今日と昨日の安値が18日移動平均線より高い
+        buy_cond2 = (q0_c > q0_o) and (m1_c > m1_o) and (q0_l > ma18_q0) and (m1_l > ma18_m1)
         
         if buy_cond1 or buy_cond2:
             buy_signals.append(curr_date)
@@ -750,9 +749,8 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         sell_cond1 = (m2_c > m2_o and m2_c > m3_h) and (m1_c < m1_o and m1_c < m2_l) and (q0_c < q0_o and q0_c < m1_c)
         
         # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # ①陰線で、今日と昨日の高値が18日移動平均線より安い
-        sell_cond2 = (q0_c < q0_o) and (q0_h < ma18_q0) and (m1_h < ma18_m1)
-        # 💡 ②売り価格(min(q0_l, m1_l)) は翌日以降の逆指値発注のトリガーとなる。
+        # ①陰線で2日連続、今日と昨日の高値が18日移動平均線より安い
+        sell_cond2 = (q0_c < q0_o) and (m1_c < m1_o) and (q0_h < ma18_q0) and (m1_h < ma18_m1)
         
         if sell_cond1 or sell_cond2:
             # 空売りの前提「市場が下げ相場である（is_macro_downtrend = True）」ことを判定
