@@ -1162,12 +1162,15 @@ with tab3:
     if "tab3_last_t2" not in st.session_state:
         st.session_state["tab3_last_t2"] = t2_codes_str
 
+    # 🚨 修正: TAB1/TAB2でスキャンされた際に、ウィジェット用Stateも強制上書きし、空欄バグを粉砕
     if st.session_state["tab3_last_t1"] != t1_codes_str:
         st.session_state["tab3_codes_buy"] = t1_codes_str
+        st.session_state["tab3_codes_buy_widget"] = t1_codes_str 
         st.session_state["tab3_last_t1"] = t1_codes_str
 
     if st.session_state["tab3_last_t2"] != t2_codes_str:
         st.session_state["tab3_codes_sell"] = t2_codes_str
+        st.session_state["tab3_codes_sell_widget"] = t2_codes_str
         st.session_state["tab3_last_t2"] = t2_codes_str
 
     text_key = f"tab3_codes_{scan_mode}"
@@ -1580,10 +1583,11 @@ with tab3:
                             x_min_str = t_min.strftime('%Y-%m-%d') if pd.notna(t_min) else None
                             x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
                             
-                            # 💡 UI要件: ホバーテキストを「x unified」に変更し左上に集約
+                            # 💡 UI要件: 1年分遡るための「パン（dragmode: pan）」追加と、ホバー統一表示
                             layout_args = {
                                 'height': 400, 'margin': dict(l=10, r=50, t=60, b=10),
-                                'xaxis': dict(range=[x_min_str, x_max_str], rangeslider=dict(visible=False), type='date'),
+                                'xaxis': dict(range=[x_min_str, x_max_str], rangeslider=dict(visible=False), type='date', fixedrange=False),
+                                'dragmode': 'pan',
                                 'hovermode': 'x unified',
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
@@ -1594,7 +1598,9 @@ with tab3:
                                 layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
                                 
                             fig.update_layout(**layout_args)
-                            st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
+                            
+                            # 💡 ホイールズームとツールバーを解放し、完全なチャート操作を許可
+                            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
