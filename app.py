@@ -1583,41 +1583,13 @@ with tab3:
                             x_min_str = t_min.strftime('%Y-%m-%d') if pd.notna(t_min) else None
                             x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
                             
-                            # 💡 追従バグ粉砕：オートフォーカスと手動追従を両立するUI構成
+                            # 💡 UI要件: 1年分遡るための「パン（dragmode: pan）」追加と、ホバー統一表示
                             layout_args = {
-                                'height': 450, 'margin': dict(l=10, r=50, t=80, b=10),
-                                'xaxis': dict(
-                                    range=[x_min_str, x_max_str], 
-                                    rangeslider=dict(visible=False), 
-                                    type='date', 
-                                    fixedrange=False,
-                                    # 💡 X軸に即時期間切り替えボタンを配備
-                                    rangeselector=dict(
-                                        buttons=list([
-                                            dict(count=1, label="1ヶ月", step="month", stepmode="backward"),
-                                            dict(count=3, label="3ヶ月", step="month", stepmode="backward"),
-                                            dict(count=6, label="6ヶ月", step="month", stepmode="backward"),
-                                            dict(step="all", label="1年")
-                                        ]),
-                                        bgcolor="rgba(38,166,154,0.2)",
-                                        font=dict(color="#26a69a")
-                                    )
-                                ),
+                                'height': 400, 'margin': dict(l=10, r=50, t=60, b=10),
+                                'xaxis': dict(range=[x_min_str, x_max_str], rangeslider=dict(visible=False), type='date', fixedrange=False),
                                 'dragmode': 'pan',
                                 'hovermode': 'x unified',
-                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left"),
-                                # 💡 チャート内に操作スイッチを追加
-                                'updatemenus': [
-                                    dict(
-                                        type="buttons", direction="right", active=0, x=0.0, y=1.25, xanchor="left", yanchor="top",
-                                        bgcolor="rgba(30, 30, 30, 0.9)", bordercolor="#555",
-                                        font=dict(color="#fff", size=11),
-                                        buttons=[
-                                            dict(label="✋ 空間移動(Pan)", method="relayout", args=[{"dragmode": "pan"}]),
-                                            dict(label="🔄 Y軸全体オートフィット", method="relayout", args=[{"yaxis.autorange": True}]),
-                                        ]
-                                    )
-                                ]
+                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
                             if y_min and y_max:
@@ -1627,7 +1599,7 @@ with tab3:
                                 
                             fig.update_layout(**layout_args)
                             
-                            st.caption("💡 **狙撃手マニュアル**: 過去に遡ってローソク足が見切れた場合は、右側の価格軸（Y軸の数字）を直接上下にドラッグするか、左上の「Y軸全体オートフィット」を押せ。")
+                            # 💡 ホイールズームとツールバーを解放し、完全なチャート操作を許可
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         if data.get("fund") is not None and not data["fund"].empty:
