@@ -3101,15 +3101,14 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（Gzip解凍・V2短縮名完全対応版）
+# 🛡️ TAB3専用：完全防弾ローカル株価抽出エンジン（.pkl.gz / .pkl 両対応）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
-    """API通信を完全に遮断し、ローカルDB（prices_db.pkl.gz または prices_db.pkl）から指定銘柄の時系列を抽出する"""
+    """API通信を完全に遮断し、ローカルDBから指定銘柄の時系列を抽出する"""
     import os, pickle, gzip
     import pandas as pd
     
-    # 探索パス（.gz と .pkl の両方を順に探す）
     base_dir = os.path.dirname(__file__)
     paths = [
         os.path.join(base_dir, "prices_db.pkl.gz"),
@@ -3134,7 +3133,6 @@ def get_local_stock_data(code):
         except: return 0.0
         
     try:
-        # Gzip対応の安全な読み込み
         if is_gzip:
             with gzip.open(target_path, "rb") as f:
                 prices_db = pickle.load(f)
@@ -3145,7 +3143,6 @@ def get_local_stock_data(code):
         all_records = []
         target_code = str(code).replace('.0', '')[:4]
         
-        # prices_db が辞書（日付キーなど）の場合
         if isinstance(prices_db, dict):
             for dt_str, records in prices_db.items():
                 if isinstance(records, pd.DataFrame):
@@ -3158,11 +3155,11 @@ def get_local_stock_data(code):
                             all_records.append({
                                 "Date": pd.to_datetime(dt_str),
                                 "Code": target_code,
-                                "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                                "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                                "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                                "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                                "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                                "AdjO": safe_float(r_lower.get("adjo", r_lower.get("o", r_lower.get("open", 0)))),
+                                "AdjH": safe_float(r_lower.get("adjh", r_lower.get("h", r_lower.get("high", 0)))),
+                                "AdjL": safe_float(r_lower.get("adjl", r_lower.get("l", r_lower.get("low", 0)))),
+                                "AdjC": safe_float(r_lower.get("adjc", r_lower.get("c", r_lower.get("close", 0)))),
+                                "Volume": safe_float(r_lower.get("adjvo", r_lower.get("vo", r_lower.get("v", 0))))
                             })
                 elif isinstance(records, list):
                     for r in records:
@@ -3173,11 +3170,11 @@ def get_local_stock_data(code):
                                 all_records.append({
                                     "Date": pd.to_datetime(dt_str),
                                     "Code": target_code,
-                                    "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                                    "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                                    "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                                    "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                                    "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                                    "AdjO": safe_float(r_lower.get("adjo", r_lower.get("o", r_lower.get("open", 0)))),
+                                    "AdjH": safe_float(r_lower.get("adjh", r_lower.get("h", r_lower.get("high", 0)))),
+                                    "AdjL": safe_float(r_lower.get("adjl", r_lower.get("l", r_lower.get("low", 0)))),
+                                    "AdjC": safe_float(r_lower.get("adjc", r_lower.get("c", r_lower.get("close", 0)))),
+                                    "Volume": safe_float(r_lower.get("adjvo", r_lower.get("vo", r_lower.get("v", 0))))
                                 })
                                 break
                                 
@@ -3193,11 +3190,11 @@ def get_local_stock_data(code):
                         all_records.append({
                             "Date": pd.to_datetime(dt_val),
                             "Code": target_code,
-                            "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                            "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                            "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                            "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                            "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                            "AdjO": safe_float(r_lower.get("adjo", r_lower.get("o", r_lower.get("open", 0)))),
+                            "AdjH": safe_float(r_lower.get("adjh", r_lower.get("h", r_lower.get("high", 0)))),
+                            "AdjL": safe_float(r_lower.get("adjl", r_lower.get("l", r_lower.get("low", 0)))),
+                            "AdjC": safe_float(r_lower.get("adjc", r_lower.get("c", r_lower.get("close", 0)))),
+                            "Volume": safe_float(r_lower.get("adjvo", r_lower.get("vo", r_lower.get("v", 0))))
                         })
 
         if not all_records:
@@ -3211,8 +3208,10 @@ def get_local_stock_data(code):
         return pd.DataFrame()
 
 # ==========================================
-# 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
+# 🎯 TAB3 UI描画ブロック（0.0円完全粉砕・完全結線版）
 # ==========================================
+# （※ 「if st.button("🚀 TAB3 精密スキャン＆一斉分析"...)」の中の描画ループ部分）
+# 以下のループ処理を、既存の画面描画ブロックと差し替えてください。
 with tab3:
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
     st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
@@ -3478,7 +3477,6 @@ with tab3:
                     else:
                         st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
 
-                    # 💡 重複IDエラー（Oh noエラー）回避のため enumerate を使用
                     for idx, data in enumerate(display_targets):
                         code = data['code']
                         df = data["df"]
@@ -3490,38 +3488,46 @@ with tab3:
                         if len(df) > 0:
                             df_c = df.copy()
                             
-                            # 💡 デバッグ結果の短縮名（AdjC または C）を動的検知
+                            # カラム名の揺れ（AdjC, C, Close等）を完全吸収
                             c_col = next((col for col in ['AdjC', 'C', 'Close', 'close'] if col in df_c.columns), df_c.columns[-1])
                             
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
                             
-                            # 💡 RSI(14日)の計算を追加
+                            # RSI(14日)の計算
                             delta = df_c[c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
                             loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
                             rs = gain / loss
                             df_c['RSI14'] = 100 - (100 / (1 + rs))
 
-                            # 💡 デバッグで判明したキー（AdjO, O, AdjH, H, AdjL, L 等）を確実に取得する関数
                             q0 = df_c.iloc[-1]
                             
-                            def get_val(*keys):
+                            # どんな短縮名・正式名が来ても絶対に値を落とさない抽出関数
+                            def get_safe_val(*keys):
                                 for k in keys:
                                     if k in q0.index:
                                         v = q0[k]
                                         if pd.notna(v) and str(v).strip() != "":
                                             try: return float(v)
                                             except: pass
+                                    # カラム名が小文字の場合も考慮
+                                    k_lower = k.lower()
+                                    for col_name in q0.index:
+                                        if str(col_name).lower() == k_lower:
+                                            v = q0[col_name]
+                                            if pd.notna(v) and str(v).strip() != "":
+                                                try: return float(v)
+                                                except: pass
                                 return 0.0
 
-                            c_o = get_val('AdjO', 'O', 'Open', 'adjustmentopen')
-                            c_h = get_val('AdjH', 'H', 'High', 'adjustmenthigh')
-                            c_l = get_val('AdjL', 'L', 'Low', 'adjustmentlow')
-                            c_c = get_val(c_col, 'AdjC', 'C', 'Close')
-                            rsi_val = get_val('RSI14')
+                            c_o = get_safe_val('AdjO', 'O', 'Open', 'adjustmentopen')
+                            c_h = get_safe_val('AdjH', 'H', 'High', 'adjustmenthigh')
+                            c_l = get_safe_val('AdjL', 'L', 'Low', 'adjustmentlow')
+                            c_c = get_safe_val(c_col, 'AdjC', 'C', 'Close')
+                            rsi_val = get_safe_val('RSI14')
                             
-                            # 💡 5カラムに拡張し、確実な値とRSIを表示
+                            # 5カラムで数値とRSIを表示
                             c1, c2, c3, c4, c5 = st.columns(5)
                             c1.metric("始値", f"{c_o:,.1f}円")
                             c2.metric("高値", f"{c_h:,.1f}円")
@@ -3533,12 +3539,10 @@ with tab3:
                             date_col = next((col for col in ['Date', 'date', 'datetime', 'd'] if col in df_c.columns), df_c.columns[0])
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
-                            # チャート描画用カラムの特定
                             o_col = next((k for k in ['AdjO', 'O', 'Open', 'adjustmentopen'] if k in df_c.columns), c_col)
                             h_col = next((k for k in ['AdjH', 'H', 'High', 'adjustmenthigh'] if k in df_c.columns), c_col)
                             l_col = next((k for k in ['AdjL', 'L', 'Low', 'adjustmentlow'] if k in df_c.columns), c_col)
 
-                            # 💡 陽線を濃い緑、陰線を濃い赤に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
                                 open=df_c[o_col], 
@@ -3562,7 +3566,6 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=df_c.loc[sig_df.index, c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 右端の見切れ防止（+3日マージン）とスケール調整
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 x_min = df_recent[date_col].iloc[0]
@@ -3588,11 +3591,9 @@ with tab3:
                                 layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
                                 
                             fig.update_layout(**layout_args)
-                            
-                            # 💡 重複IDエラー回避のための安全なkey付与
                             st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
-                        # 📊 YoY統一の業績表
+                        # 業績表の描画
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
                             try:
@@ -3610,8 +3611,7 @@ with tab3:
                             except Exception:
                                 st.dataframe(data["fund"], use_container_width=True)
                         else:
-                            db_status = "ロード済" if local_fund_db is not None else "未取得・空"
-                            st.info(f"ℹ️ 業績データが取得できませんでした。（ローカルDB状態: {db_status}）")
+                            st.info("ℹ️ 業績データが取得できませんでした。")
                             
                         st.divider()
 
