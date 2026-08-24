@@ -568,9 +568,13 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0, se
     return False, ""
 
 def analyze_formation_history(df):
+    """過去3ヶ月分のデータから、買い/空売りフォーメーション（3日ルール・18日ルール）を探知する"""
     import pandas as pd
-    buy_signals, sell_signals = [], []
-    if df is None or len(df) < 65: return buy_signals, sell_signals
+    buy_signals = []
+    sell_signals = []
+    
+    if df is None or len(df) < 65:
+        return buy_signals, sell_signals
         
     cols = [str(c).lower() for c in df.columns]
     def get_c(*names):
@@ -583,7 +587,9 @@ def analyze_formation_history(df):
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
     df_recent = df.tail(65).reset_index(drop=True)
-    if 'MA18' not in df_recent.columns: df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
+    
+    if 'MA18' not in df_recent.columns:
+        df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
     
     for i in range(3, len(df_recent)):
         m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
@@ -593,15 +599,24 @@ def analyze_formation_history(df):
         
         ma18_m1 = float(df_recent.loc[i-1, 'MA18'])
         ma18_q0 = float(df_recent.loc[i, 'MA18'])
+        
         curr_date = df_recent.loc[i, c_d]
 
+        # 🔵 買いシグナル①（3日ルール）
         buy_cond1 = (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c)
+        # 🔵 買いシグナル②（18日ルール）
         buy_cond2 = (m1_l > ma18_m1) and (q0_l > ma18_q0)
-        if buy_cond1 or buy_cond2: buy_signals.append(curr_date)
+        
+        if buy_cond1 or buy_cond2:
+            buy_signals.append(curr_date)
             
+        # 🔴 空売りシグナル①（3日ルール）
         sell_cond1 = (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c)
+        # 🔴 空売りシグナル②（18日ルール）
         sell_cond2 = (m1_h < ma18_m1) and (q0_h < ma18_q0)
-        if sell_cond1 or sell_cond2: sell_signals.append(curr_date)
+        
+        if sell_cond1 or sell_cond2:
+            sell_signals.append(curr_date)
             
     return list(set(buy_signals)), list(set(sell_signals))
 
@@ -733,7 +748,7 @@ render_macro_board()
 tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
 
 # ==========================================
-# 🌐 TAB1: 買い銘柄広域スキャン
+# 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab1:
     st.markdown('### 🌐 買い銘柄広域スキャン', unsafe_allow_html=True)
@@ -750,15 +765,14 @@ with tab1:
         t1_p_min = col1_5.number_input("価格下限 (円)", value=400, step=100, key="t1_p_min")
         t1_p_max = col1_6.number_input("価格上限 (円)", value=3000, step=100, key="t1_p_max")
         
-        st.markdown("**(固定スキャン条件: 直近2四半期連続 YoYS級/A級クリア)** \n"
-                    f"・売上: 前年同期比 `{t1_sales_r}%`以上  \n"
-                    f"・営業利益: 前年同期比 `15%`以上 (20%以上でS級🎯)  \n"
-                    f"・経常利益: 前年同期比 `{t1_ord_r}%`以上 (20%以上でS級🎯)  \n"
-                    f"・一株利益: 前年同期比 `15%`以上 (20%以上でS級🎯)")
+        st.markdown(f"**(固定スキャン条件: 直近2四半期連続 YoY S級/A級クリア)** \n"
+                    f"・直近1つ目の四半期は売上 {t1_sales_r}% 以上、他利益 {t1_ord_r}% 以上で完全クリア必須。\n"
+                    f"・直近2つ目の四半期も完全クリアでS級🎯、1つだけ下回ればA級🟢。")
         
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
 
     if btn_scan_t1:
+        import time
         st.write("---")
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
             t_start_total = time.time()
@@ -769,15 +783,15 @@ with tab1:
             
             all_codes = []
             try:
-                prices_map = get_all_latest_prices_bulk()
-                mcap_map = get_all_market_caps_bulk()
+                prices_map = get_all_latest_prices_bulk() if 'get_all_latest_prices_bulk' in globals() else {}
+                mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
                             c_mcap = float(mcap_map.get(str(c_code), 0))
                             if c_mcap >= float(t1_mcap): all_codes.append(str(c_code))
                 else:
-                    p1_msg.error("❌ J-Quantsからの株価取得に失敗しました。")
+                    p1_msg.error("❌ 株価データの取得に失敗しました。")
                     st.stop()
             except Exception as e:
                 p1_msg.error(f"❌ フィルタ取得エラー: {e}")
@@ -788,16 +802,19 @@ with tab1:
             p1_msg.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
             
             st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析 (YoY 2期連続)")
-            p2_msg, p2_bar = st.empty(), st.progress(0)
+            p2_msg = st.empty()
+            p2_bar = st.progress(0)
             t_start_p2 = time.time()
             hit_codes_s, hit_codes_a = [], []
-
             total_p2 = len(p_filtered_codes)
             processed_p2 = 0
             
             if total_p2 > 0:
                 try: local_fund_db = load_local_fundamentals_db()
                 except: local_fund_db = None
+
+                req_s = float(t1_sales_r)
+                req_o = float(t1_ord_r)
 
                 for code in p_filtered_codes:
                     processed_p2 += 1
@@ -806,12 +823,36 @@ with tab1:
                         p2_msg.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... [標的: {code}]")
 
                     try:
-                        df_fins = fetch_fundamental_history_local(code, local_fund_db) if local_fund_db else get_historical_statements(code)
-                        if df_fins is not None and not df_fins.empty:
-                            is_hit, rank = analyze_fundamental_momentum(df_fins, mode="buy", sales_req=float(t1_sales_r), ord_req=float(t1_ord_r))
-                            if is_hit:
-                                if "S級" in rank: hit_codes_s.append(str(code))
-                                else: hit_codes_a.append(str(code))
+                        f_df = fetch_fundamental_history_local(code, local_fund_db) if 'fetch_fundamental_history_local' in globals() else None
+                        if f_df is not None and not f_df.empty:
+                            q1_row = f_df[f_df["期間"] == "直近 Q1"]
+                            q2_row = f_df[f_df["期間"] == "直近 Q2"]
+                            if not q1_row.empty and not q2_row.empty:
+                                def get_val(r, col):
+                                    v = r[col].iloc[0]
+                                    if isinstance(v, str) and v == "-": return None
+                                    try: return float(v)
+                                    except: return None
+
+                                q1_s, q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "売上(%)"), get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
+                                q2_s, q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "売上(%)"), get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
+                                
+                                def count_misses(s, op, ord_p, np_p, eps):
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 
+                                    m = 0
+                                    if s < req_s: m += 1
+                                    if op < req_o: m += 1
+                                    if ord_p < req_o: m += 1
+                                    if np_p < req_o: m += 1
+                                    if eps < req_o: m += 1
+                                    return m
+                                    
+                                q1_miss = count_misses(q1_s, q1_op, q1_ord, q1_np, q1_eps)
+                                q2_miss = count_misses(q2_s, q2_op, q2_ord, q2_np, q2_eps)
+                                
+                                if q1_miss == 0:
+                                    if q2_miss == 0: hit_codes_s.append(str(code))
+                                    elif q2_miss == 1: hit_codes_a.append(str(code))
                     except: pass
                 
                 time_p2 = time.time() - t_start_p2
@@ -842,16 +883,16 @@ with tab1:
                 status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
 # ==========================================
-# 📉 TAB2: 売り（空売り）銘柄広域スキャン
+# 📉 TAB2: 売り（空売り）銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab2:
     st.markdown('### 📉 売り（空売り）銘柄広域スキャン', unsafe_allow_html=True)
-    st.caption("※直近2四半期の業績鈍化・衰退（YoY 8%未満）をベースに、空売り候補（S級・A級）を広域索敵します。")
+    st.caption("※直近2四半期の業績鈍化・衰退（YoY 8%未満等）をベースに、空売り候補（S級・A級）を広域索敵します。")
     
     with st.form("tab2_sell_scan_form", clear_on_submit=False):
         col2_1, col2_2, col2_3 = st.columns(3)
         t2_period = col2_1.selectbox("期間フィルタ (安値判定基準)", ["6か月", "3か月"], index=0, key="t2_period")
-        t2_ord_r = col2_2.selectbox("直近四半期 経常利益増益率 (%)", [8, 5, 10], index=0, key="t2_ord_r")
+        t2_ord_r = col2_2.selectbox("直近四半期 利益成長率フィルタ (%)", [8, 5, 10], index=0, key="t2_ord_r")
         t2_mcap = col2_3.selectbox("時価総額フィルタ (億円以上)", [500, 300, 1000], index=0, key="t2_mcap")
         
         col2_4, col2_5, col2_6 = st.columns(3)
@@ -859,15 +900,14 @@ with tab2:
         t2_p_min = col2_5.number_input("価格下限 (円)", value=400, step=100, key="t2_p_min")
         t2_p_max = col2_6.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
         
-        st.markdown(f"**(固定スキャン条件: 直近2四半期連続 営業・経常・純利・EPSが{t2_ord_r}%未満)** \n"
-                    f"・営業利益: 前年同期比 `{t2_ord_r}%`未満 (マイナスでS級💀)  \n"
-                    f"・経常利益: 前年同期比 `{t2_ord_r}%`未満 (マイナスでS級💀)  \n"
-                    f"・純利益: 前年同期比 `{t2_ord_r}%`未満 (マイナスでS級💀)  \n"
-                    f"・一株利益: 前年同期比 `{t2_ord_r}%`未満 (マイナスでS級💀)")
+        st.markdown(f"**(固定スキャン条件: 直近2四半期連続 利益鈍化)** \n"
+                    f"・営業利益・経常利益・純利益・一株利益の全8項目が 5%未満 でS級💀 \n"
+                    f"・1つだけ {t2_ord_r}%未満（他5%未満）でA級📉")
         
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
 
     if btn_scan_t2:
+        import time
         st.write("---")
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
             t_start_total = time.time()
@@ -878,9 +918,9 @@ with tab2:
             
             all_codes = []
             try:
-                prices_map = get_all_latest_prices_bulk()
-                mcap_map = get_all_market_caps_bulk()
-                vol_map = get_all_volumes_bulk()
+                prices_map = get_all_latest_prices_bulk() if 'get_all_latest_prices_bulk' in globals() else {}
+                mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
+                vol_map = get_all_volumes_bulk() if 'get_all_volumes_bulk' in globals() else {}
                 
                 if prices_map:
                     for c_code, c_price in prices_map.items():
@@ -901,16 +941,18 @@ with tab2:
             p1_msg_t2.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
             
             st.write("#### 🔄 [Phase 2/2] ファンダメンタルズ直列解析 (空売り)")
-            p2_msg_t2, p2_bar_t2 = st.empty(), st.progress(0)
+            p2_msg_t2 = st.empty()
+            p2_bar_t2 = st.progress(0)
             t_start_p2 = time.time()
             hit_codes_s, hit_codes_a = [], []
-
             total_p2 = len(p_filtered_codes)
             processed_p2 = 0
             
             if total_p2 > 0:
                 try: local_fund_db = load_local_fundamentals_db()
                 except: local_fund_db = None
+
+                req_o = float(t2_ord_r)
 
                 for code in p_filtered_codes:
                     processed_p2 += 1
@@ -919,12 +961,29 @@ with tab2:
                         p2_msg_t2.info(f"📡 索敵中: {processed_p2} / {total_p2} 銘柄完了... [標的: {code}]")
 
                     try:
-                        df_fins = fetch_fundamental_history_local(code, local_fund_db) if local_fund_db else get_historical_statements(code)
-                        if df_fins is not None and not df_fins.empty:
-                            is_hit, rank = analyze_fundamental_momentum(df_fins, mode="sell", sell_req=float(t2_ord_r))
-                            if is_hit:
-                                if "S級" in rank: hit_codes_s.append(str(code))
-                                else: hit_codes_a.append(str(code))
+                        f_df = fetch_fundamental_history_local(code, local_fund_db) if 'fetch_fundamental_history_local' in globals() else None
+                        if f_df is not None and not f_df.empty:
+                            q1_row = f_df[f_df["期間"] == "直近 Q1"]
+                            q2_row = f_df[f_df["期間"] == "直近 Q2"]
+                            if not q1_row.empty and not q2_row.empty:
+                                def get_val(r, col):
+                                    v = r[col].iloc[0]
+                                    if isinstance(v, str) and v == "-": return None
+                                    try: return float(v)
+                                    except: return None
+
+                                q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
+                                q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
+                                
+                                vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
+                                if None not in vals:
+                                    lt_5 = sum(1 for v in vals if v < 5.0)
+                                    lt_req = sum(1 for v in vals if 5.0 <= v < req_o)
+                                    ge_req = sum(1 for v in vals if v >= req_o)
+                                    
+                                    if ge_req == 0:
+                                        if lt_5 == 8: hit_codes_s.append(str(code))
+                                        elif lt_req == 1 and lt_5 == 7: hit_codes_a.append(str(code))
                     except: pass
                 
                 time_p2 = time.time() - t_start_p2
@@ -954,110 +1013,6 @@ with tab2:
                 p2_msg_t2.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                 status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
-# ==========================================
-# 🎯 TAB3: 精密スコープ
-# ==========================================
-with tab3:
-    st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
-    st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
-
-    tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
-    scan_mode = "buy" if "買い" in tab3_mode else "sell"
-
-    t1_codes = []
-    for key in ['tab1_scan_results']:
-        t_res = st.session_state.get(key)
-        if t_res:
-            for r in t_res:
-                c = r.get('Code')
-                if c: t1_codes.append(str(c)[:4])
-    t1_codes_str = ",".join(list(dict.fromkeys(t1_codes)))
-
-    t2_codes = []
-    for key in ['tab2_scan_results']:
-        t_res = st.session_state.get(key)
-        if t_res:
-            for r in t_res:
-                c = r.get('Code')
-                if c: t2_codes.append(str(c)[:4])
-    t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
-
-    if "tab3_codes_buy" not in st.session_state: st.session_state["tab3_codes_buy"] = t1_codes_str
-    if "tab3_codes_sell" not in st.session_state: st.session_state["tab3_codes_sell"] = t2_codes_str
-    if "tab3_last_t1" not in st.session_state: st.session_state["tab3_last_t1"] = t1_codes_str
-    if "tab3_last_t2" not in st.session_state: st.session_state["tab3_last_t2"] = t2_codes_str
-
-    if st.session_state["tab3_last_t1"] != t1_codes_str:
-        st.session_state["tab3_codes_buy"] = t1_codes_str
-        st.session_state["tab3_last_t1"] = t1_codes_str
-
-    if st.session_state["tab3_last_t2"] != t2_codes_str:
-        st.session_state["tab3_codes_sell"] = t2_codes_str
-        st.session_state["tab3_last_t2"] = t2_codes_str
-
-    text_key = f"tab3_codes_{scan_mode}"
-
-    st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
-    target_codes_input = st.text_area(
-        "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
-        key=text_key,
-        height=100
-    )
-
-    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
-        if not target_codes_input.strip():
-            st.warning("⚠️ 銘柄コードが入力されていません。")
-        else:
-            p_bar = st.progress(0, text="🚀 システム初期化・全軍データロード中...")
-            raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
-            target_codes = []
-            for c in raw_codes:
-                try: target_codes.append(int(c[:4]))
-                except: pass
-            target_codes = list(dict.fromkeys(target_codes))
-            target_str_codes = [str(c) for c in target_codes]
-
-            st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
-
-            c_key = get_cache_key()
-            raw_all_data = get_hist_data_cached(c_key)
-
-            if raw_all_data is None or raw_all_data.empty:
-                st.error("⚠️ 全軍データ（キャッシュ）が見つかりません。先にバッチ処理で取得してください。")
-            else:
-                c_code_raw = 'Code' if 'Code' in raw_all_data.columns else ('code' if 'code' in raw_all_data.columns else None)
-                if not c_code_raw:
-                    st.error("⚠️ キャッシュデータに銘柄コード列が見つかりません。")
-                else:
-                    mask = raw_all_data[c_code_raw].astype(str).str[:4].isin(target_str_codes)
-                    df_targets = raw_all_data[mask].copy()
-
-                    analyzed_data = {}
-                    try: local_fund_db = load_local_fundamentals_db()
-                    except: local_fund_db = None
-
-                    total_cnt = df_targets[c_code_raw].nunique() if not df_targets.empty else 1
-                    if total_cnt == 0: total_cnt = 1
-                    completed_cnt = 0
-
-                    for code_str, group in df_targets.groupby(c_code_raw):
-                        code_int = int(str(code_str)[:4])
-                        completed_cnt += 1
-                        p_bar.progress(min(completed_cnt / total_cnt, 1.0), text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
-                        
-                        df = group.tail(260).reset_index(drop=True)
-                        if df.empty or len(df) < 4: continue
-
-                        turnover = 0.0
-                        try:
-                            q0 = df.iloc[-1]
-                            v_col = 'Volume' if 'Volume' in df.columns else ('Vo' if 'Vo' in df.columns else None)
-                            c_col = 'AdjC' if 'AdjC' in df.columns else ('Close' if 'Close' in df.columns else None)
-                            if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
-                        except: pass
-
-                        b_sigs, s_sigs = analyze_formation_history(df)
-                        
                         # ------------------------------------
                         # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
                         # ------------------------------------
@@ -1066,6 +1021,7 @@ with tab3:
                         rank_funda = "対象外"
                         rank_signal = "対象外"
 
+                        # ① シグナル発生日（鮮度）判定
                         date_col = 'Date' if 'Date' in df.columns else df.columns[0]
                         df_dates = df[date_col].dt.date.tolist() if pd.api.types.is_datetime64_any_dtype(df[date_col]) else pd.to_datetime(df[date_col]).dt.date.tolist()
                         
@@ -1074,9 +1030,9 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                if days_ago <= 2: rank_signal = "S"
-                                elif days_ago == 3: rank_signal = "A"
-                                elif days_ago == 4: rank_signal = "B"
+                                if days_ago <= 3: rank_signal = "S"
+                                elif days_ago == 4: rank_signal = "A"
+                                elif days_ago == 5: rank_signal = "B"
                         
                         elif scan_mode == "sell" and s_sigs:
                             s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
@@ -1087,6 +1043,7 @@ with tab3:
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
+                        # ② ファンダメンタルズ（YoY成長率）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
                         if f_df is not None and not f_df.empty:
                             q1_row = f_df[f_df["期間"] == "直近 Q1"]
@@ -1100,8 +1057,17 @@ with tab3:
                                 except: return None
 
                             if scan_mode == "buy":
-                                q1_s, q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "売上(%)"), get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
-                                q2_s, q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "売上(%)"), get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
+                                q1_s = get_val(q1_row, "売上(%)")
+                                q1_op = get_val(q1_row, "営業益(%)")
+                                q1_ord = get_val(q1_row, "経常益(%)")
+                                q1_np = get_val(q1_row, "純利益(%)")
+                                q1_eps = get_val(q1_row, "EPS(%)")
+                                
+                                q2_s = get_val(q2_row, "売上(%)")
+                                q2_op = get_val(q2_row, "営業益(%)")
+                                q2_ord = get_val(q2_row, "経常益(%)")
+                                q2_np = get_val(q2_row, "純利益(%)")
+                                q2_eps = get_val(q2_row, "EPS(%)")
                                 
                                 def count_misses(s, op, ord_p, np_p, eps):
                                     if None in [s, op, ord_p, np_p, eps]: return 99 
@@ -1123,8 +1089,16 @@ with tab3:
                                 
                             elif scan_mode == "sell":
                                 if not q1_row.empty and not q2_row.empty:
-                                    q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
-                                    q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
+                                    q1_op = get_val(q1_row, "営業益(%)")
+                                    q1_ord = get_val(q1_row, "経常益(%)")
+                                    q1_np = get_val(q1_row, "純利益(%)")
+                                    q1_eps = get_val(q1_row, "EPS(%)")
+                                    
+                                    q2_op = get_val(q2_row, "営業益(%)")
+                                    q2_ord = get_val(q2_row, "経常益(%)")
+                                    q2_np = get_val(q2_row, "純利益(%)")
+                                    q2_eps = get_val(q2_row, "EPS(%)")
+                                    
                                     vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
                                     if None not in vals:
                                         lt_5 = sum(1 for v in vals if v < 5.0)
@@ -1136,6 +1110,7 @@ with tab3:
                                             elif lt_8_ge_5 == 1 and lt_5 == 7: rank_funda = "A"
                                             elif lt_8_ge_5 == 2 and lt_5 == 6: rank_funda = "B"
 
+                        # ③ 総合ヒット判定の結合
                         if scan_mode == "buy":
                             if rank_funda != "対象外" and rank_signal != "対象外":
                                 is_hit = True
@@ -1149,145 +1124,6 @@ with tab3:
                             "df": df, "is_hit": is_hit, "rank": rank_str, "turnover": turnover,
                             "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": f_df
                         }
-
-                    p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
-                    
-                    def get_rank_score(data):
-                        if not data["is_hit"]: return -1
-                        score = 0
-                        r = data["rank"]
-                        if "業績:S" in r: score += 1000
-                        elif "業績:A" in r: score += 800
-                        elif "業績:B" in r: score += 600
-                        if "陣形:S" in r: score += 100
-                        elif "陣形:A" in r: score += 80
-                        elif "陣形:B" in r: score += 60
-                        return score
-                        
-                    sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
-                    sortable_results.sort(key=get_rank_score, reverse=True)
-                    display_targets = sortable_results[:30]
-
-                    name_map = {}
-                    try:
-                        m_df = load_master()
-                        name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
-                    except: pass
-                    
-                    p_bar.empty()
-                    st.divider()
-
-                    hit_count = sum(1 for d in sortable_results if d["is_hit"])
-                    if hit_count > 0:
-                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （上位最大30件を表示します）")
-                    else:
-                        st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
-
-                    for idx, data in enumerate(display_targets):
-                        code = data['code']
-                        df = data["df"]
-                        c_name = name_map.get(str(code)[:4], "名称不明")
-                        hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
-                        st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
-                        
-                        if len(df) > 0:
-                            df_c = df.copy()
-                            cols_lower = {str(c).lower(): c for c in df_c.columns}
-                            c_o_col = cols_lower.get('adjo', cols_lower.get('adjustmentopen', cols_lower.get('o', cols_lower.get('open', 'Open'))))
-                            c_h_col = cols_lower.get('adjh', cols_lower.get('adjustmenthigh', cols_lower.get('h', cols_lower.get('high', 'High'))))
-                            c_l_col = cols_lower.get('adjl', cols_lower.get('adjustmentlow', cols_lower.get('l', cols_lower.get('low', 'Low'))))
-                            c_c_col = cols_lower.get('adjc', cols_lower.get('adjustmentclose', cols_lower.get('c', cols_lower.get('close', 'Close'))))
-                            
-                            for col in [c_o_col, c_h_col, c_l_col, c_c_col]:
-                                if col not in df_c.columns: df_c[col] = 0.0
-                                    
-                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean()
-                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean()
-                            
-                            delta = df_c[c_c_col].diff()
-                            gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
-                            loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
-                            rs = gain / loss
-                            df_c['RSI14'] = 100 - (100 / (1 + rs))
-
-                            def safe_float(val):
-                                if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
-                                try: return float(val)
-                                except: return 0.0
-
-                            q0 = df_c.iloc[-1]
-                            c_o, c_h, c_l, c_c = safe_float(q0.get(c_o_col, 0)), safe_float(q0.get(c_h_col, 0)), safe_float(q0.get(c_l_col, 0)), safe_float(q0.get(c_c_col, 0))
-                            rsi_val = safe_float(q0.get('RSI14', 0))
-                            
-                            c1, c2, c3, c4, c5 = st.columns(5)
-                            c1.metric("始値", f"{c_o:,.1f}円")
-                            c2.metric("高値", f"{c_h:,.1f}円")
-                            c3.metric("安値", f"{c_l:,.1f}円")
-                            c4.metric("終値", f"{c_c:,.1f}円")
-                            c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
-                            
-                            fig = go.Figure()
-                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
-                            df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
-                            
-                            fig.add_trace(go.Candlestick(
-                                x=df_c[date_col], open=df_c[c_o_col], high=df_c[c_h_col], low=df_c[c_l_col], close=df_c[c_c_col], name='価格',
-                                increasing_line_color='darkgreen', increasing_fillcolor='darkgreen',
-                                decreasing_line_color='darkred', decreasing_fillcolor='darkred'
-                            ))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hoverinfo='none'))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hoverinfo='none'))
-                            
-                            if scan_mode == "buy" and data.get("buy_sigs"):
-                                sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
-                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
-                            
-                            if scan_mode == "sell" and data.get("sell_sigs"):
-                                sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
-                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
-
-                            if len(df_c) > 65:
-                                df_recent = df_c.tail(65)
-                                x_min, x_max = df_recent[date_col].iloc[0], df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
-                                max_h, min_l = df_recent[c_h_col].max(), df_recent[c_l_col].min()
-                                y_min, y_max = min_l * 0.95, max_h * 1.05
-                            else:
-                                x_min, x_max = df_c[date_col].iloc[0], df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
-                                y_min, y_max = None, None
-                            
-                            layout_args = {
-                                'height': 400, 'margin': dict(l=10, r=50, t=60, b=10),
-                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date'),
-                                'hovermode': 'x', 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
-                            }
-                            if y_min and y_max: layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
-                            else: layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
-                                
-                            fig.update_layout(**layout_args)
-                            st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
-
-                        if data.get("fund") is not None and not data["fund"].empty:
-                            st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
-                            try:
-                                def fmt_pct(x):
-                                    if isinstance(x, str): return x
-                                    return f"{x:.1f}%"
-                                st.dataframe(data["fund"].style.format({
-                                    "売上(%)": fmt_pct, "営業益(%)": fmt_pct, "経常益(%)": fmt_pct, "純利益(%)": fmt_pct, "EPS(%)": fmt_pct
-                                }), use_container_width=True)
-                            except: st.dataframe(data["fund"], use_container_width=True)
-                        else:
-                            db_status = "ロード済" if local_fund_db is not None else "未取得・空"
-                            st.info(f"ℹ️ 業績データが取得できませんでした。（ローカルDB状態: {db_status}）")
-                        st.divider()
-
-            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
-            if results_tab3:
-                hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
-            st.session_state['tab3_results'] = results_tab3
 
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード
