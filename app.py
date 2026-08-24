@@ -1544,23 +1544,26 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
-# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン
+# 🛡️ 絶対無通信・完全ローカル株価ロードエンジン (.pkl.gz対応・OOM回避仕様)
 # ==========================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """API通信を完全に物理遮断し、バッチが生成した圧縮DBを読み込む。"""
+    """API通信を完全に物理遮断し、圧縮DBを極限の省メモリで読み込む。"""
     import os
     import pickle
-    import gzip # 👈 追加
+    import gzip
+    import gc
     import pandas as pd
     import streamlit as st
 
     db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
     
+    # 🚨 1. ファイルが無い場合は警告を出して空データを返す
     if not os.path.exists(db_path):
-        st.error("🚨 ローカル株価DB（prices_db.pkl.gz）が見つかりません。")
+        st.error("🚨 ローカル株価DB（prices_db.pkl.gz）が見つかりません。先にバッチ処理が完了しているか確認してください。")
         return pd.DataFrame()
         
+    # 2. バッチが焼き付けたローカル圧縮DBの読み込み
     try:
         with gzip.open(db_path, "rb") as f:
             prices_db = pickle.load(f)
@@ -1571,21 +1574,40 @@ def get_hist_data_cached(key):
     if not prices_db:
         return pd.DataFrame()
         
-    all_dfs = []
+    # 🚨 3. OOM（メモリ溢れクラッシュ）回避のため、抽出と同時に不要メモリを破棄
+    all_records = []
     for dt_str, data in prices_db.items():
-        if data:
-            all_dfs.append(pd.DataFrame(data))
+        if not data: continue
+        for r in data:
+            all_records.append({
+                "Date": dt_str,
+                "Code": str(r.get("Code", "")).replace(".0", "")[:4],
+                "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
+                "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
+                "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
+                "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
+                "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+            })
             
-    if not all_dfs:
+    # 元の巨大辞書をメモリから完全消去し、明示的にガベージコレクションを実行
+    del prices_db
+    gc.collect()
+    
+    if not all_records:
         return pd.DataFrame()
         
-    full_df = pd.concat(all_dfs, ignore_index=True)
+    # リストをDataFrame化し、直後に元のリストも即破棄
+    full_df = pd.DataFrame(all_records)
+    del all_records
+    gc.collect()
     
-    if 'Code' in full_df.columns:
-        full_df['Code'] = full_df['Code'].astype(str).str.replace('.0', '', regex=False).str[:4]
-    if 'Date' in full_df.columns:
-        full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
+    # 🚨 4. 最終的なDataFrameのデータ型を圧縮（ダウンキャスト）し、メモリ消費をさらに約70%削減
+    full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
+    full_df['Code'] = full_df['Code'].astype('category')
+    for col in ['AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume']:
+        full_df[col] = pd.to_numeric(full_df[col], downcast='float')
         
+    # 5. 銘柄コードと日付で綺麗に並び替えて返す
     full_df.sort_values(by=['Code', 'Date'], inplace=True)
     full_df.reset_index(drop=True, inplace=True)
     
