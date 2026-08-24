@@ -1573,14 +1573,11 @@ def load_local_prices_db():
     return {}
     
 # ==========================================
-# 🛡️ 【OOM完全防衛・短縮名対応】極限省メモリ株価ロードエンジン
+# 🛡️ 決定版：全カラム完全互換マッピング・省メモリ株価ロードエンジン (.pkl.gz対応)
 # ==========================================
 @st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
 def get_hist_data_cached(key):
-    """
-    API通信を完全排除し、prices_db.pkl.gz（または .pkl）を
-    メモリ爆発（OOM）を起こさない極限の省メモリ仕様で読み込む。
-    """
+    """API通信を完全に物理遮断し、圧縮DBを極限の省メモリで読み込む。"""
     import os
     import pickle
     import gzip
@@ -1588,27 +1585,16 @@ def get_hist_data_cached(key):
     import pandas as pd
     import streamlit as st
 
-    base_dir = os.path.dirname(__file__)
-    paths = [
-        os.path.join(base_dir, "prices_db.pkl.gz"),
-        os.path.join(base_dir, "prices_db.pkl")
-    ]
-    
-    db_path = None
-    is_gzip = False
-    for p in paths:
-        if os.path.exists(p):
-            db_path = p
-            if p.endswith('.gz'):
-                is_gzip = True
-            break
-            
-    if not db_path:
-        st.error("🚨 ローカル株価DB（prices_db.pkl.gz / .pkl）が見つかりません。")
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
+    if not os.path.exists(db_path):
+        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+        
+    if not os.path.exists(db_path):
+        st.error("🚨 ローカル株価DB（prices_db.pkl.gz または .pkl）が見つかりません。先にバッチ処理が完了しているか確認してください。")
         return pd.DataFrame()
         
     try:
-        if is_gzip:
+        if db_path.endswith('.gz'):
             with gzip.open(db_path, "rb") as f:
                 prices_db = pickle.load(f)
         else:
@@ -1620,52 +1606,64 @@ def get_hist_data_cached(key):
         
     if not prices_db:
         return pd.DataFrame()
-        
-    # 🚨 OOM回避：辞書を走査し、短縮キー（O, AdjO等）を安全に吸収しながらリスト化
+
+    # 🚨 Noneや空文字が来ても絶対にTypeErrorを起こさないパース関数
+    def get_safe_float(row, *keys):
+        for k in keys:
+            v = row.get(k)
+            if v is not None and str(v).strip() != "" and not pd.isna(v):
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    pass
+        return 0.0
+
     all_records = []
     for dt_str, records in prices_db.items():
         if not records: continue
         for r in records:
             if isinstance(r, dict):
-                # キーの大文字小文字ブレやJ-Quants V2短縮名を完全網羅
                 r_lower = {str(k).lower(): v for k, v in r.items()}
                 code_val = str(r_lower.get("code", "")).replace(".0", "")[:4]
                 if not code_val: continue
                 
-                o_val = float(r_lower.get("adjo", r_lower.get("o", r_lower.get("open", 0.0))))
-                h_val = float(r_lower.get("adjh", r_lower.get("h", r_lower.get("high", 0.0))))
-                l_val = float(r_lower.get("adjl", r_lower.get("l", r_lower.get("low", 0.0))))
-                c_val = float(r_lower.get("adjc", r_lower.get("c", r_lower.get("close", 0.0))))
-                v_val = float(r_lower.get("adjvo", r_lower.get("vo", r_lower.get("volume", 0.0))))
-                va_val = float(r_lower.get("va", r_lower.get("turnovervalue", 0.0)))
+                # 🚨 float()を直接使わず、安全な関数で確実に値を取得する
+                o_v = get_safe_float(r_lower, "adjo", "o", "open", "adjustmentopen")
+                h_v = get_safe_float(r_lower, "adjh", "h", "high", "adjustmenthigh")
+                l_v = get_safe_float(r_lower, "adjl", "l", "low", "adjustmentlow")
+                c_v = get_safe_float(r_lower, "adjc", "c", "close", "adjustmentclose")
+                v_v = get_safe_float(r_lower, "adjvo", "vo", "volume", "adjustmentvolume")
+                va_v = get_safe_float(r_lower, "va", "turnovervalue")
 
+                # 【完全互換マッピング】どの列名で参照されても100%ヒットさせる
                 all_records.append({
                     "Date": dt_str,
                     "Code": code_val,
-                    "AdjO": o_val, "O": o_val, "Open": o_val,
-                    "AdjH": h_val, "H": h_val, "High": h_val,
-                    "AdjL": l_val, "L": l_val, "Low": l_val,
-                    "AdjC": c_val, "C": c_val, "Close": c_val,
-                    "Volume": v_val, "Vo": v_val, "AdjVo": v_val,
-                    "TurnoverValue": va_val, "Va": va_val
+                    "Open": o_v, "AdjO": o_v, "O": o_v, "AdjustmentOpen": o_v,
+                    "High": h_v, "AdjH": h_v, "H": h_v, "AdjustmentHigh": h_v,
+                    "Low": l_v, "AdjL": l_v, "L": l_v, "AdjustmentLow": l_v,
+                    "Close": c_v, "AdjC": c_v, "C": c_v, "AdjustmentClose": c_v,
+                    "Volume": v_v, "AdjVo": v_v, "Vo": v_v, "AdjustmentVolume": v_v,
+                    "TurnoverValue": va_v, "Va": va_v
                 })
             
-    # 元の巨大辞書を即座に破棄し、Pythonのゴミ掃除を実行
     del prices_db
     gc.collect()
     
     if not all_records:
         return pd.DataFrame()
         
-    # DataFrame化してリストも即破棄
     full_df = pd.DataFrame(all_records)
     del all_records
     gc.collect()
     
-    # 🚨 メモリ消費を約70%削減する型圧縮（ダウンキャスト）
     full_df['Date'] = pd.to_datetime(full_df['Date'], errors='coerce')
-    full_df['Code'] = full_df['Code'].astype('category')
-    for col in ['AdjO', 'O', 'Open', 'AdjH', 'H', 'High', 'AdjL', 'L', 'Low', 'AdjC', 'C', 'Close', 'Volume', 'Vo', 'AdjVo', 'TurnoverValue', 'Va']:
+    full_df['Code'] = full_df['Code'].astype(str)
+    
+    num_cols = ['Open', 'AdjO', 'O', 'AdjustmentOpen', 'High', 'AdjH', 'H', 'AdjustmentHigh', 
+                'Low', 'AdjL', 'L', 'AdjustmentLow', 'Close', 'AdjC', 'C', 'AdjustmentClose', 
+                'Volume', 'AdjVo', 'Vo', 'AdjustmentVolume', 'TurnoverValue', 'Va']
+    for col in num_cols:
         if col in full_df.columns:
             full_df[col] = pd.to_numeric(full_df[col], downcast='float', errors='coerce')
         
