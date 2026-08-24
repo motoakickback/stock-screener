@@ -330,32 +330,48 @@ def render_macro_board():
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
 # ==========================================
-# 📊 データ取得エンジン
+# ⚡ 全銘柄現在値・一括取得エンジン（完全ローカルDB参照版）
 # ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_all_latest_prices_bulk():
-    import datetime, time
-    base_time = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
-    for i in range(1, 10): 
-        dt_str = (base_time - datetime.timedelta(days=i)).strftime('%Y%m%d')
-        url = f"{BASE_URL}/equities/bars/daily?date={dt_str}"
-        try:
-            time.sleep(1.05)
-            r = api_session.get(url, timeout=15.0)
-            if r.status_code == 200:
-                raw_json = r.json()
-                data = raw_json.get("daily_quotes") or raw_json.get("data") or raw_json.get("results") or []
-                if data:
-                    df = pd.DataFrame(data)
-                    prices_map = {}
-                    for _, row in df.iterrows():
-                        code_4digit = str(row['Code'])[:4]
-                        val = row.get('Close') or row.get('C') or row.get('AdjC')
-                        if pd.notna(val): prices_map[code_4digit] = float(val)
-                    return prices_map
-            elif r.status_code == 429: time.sleep(2.0) 
-        except: pass 
-    return {}
+    """API通信を物理遮断。ローカル株価DB（prices_db.pkl.gz / .pkl）から最新営業日の株価を一括抽出する"""
+    import os
+    import pickle
+    import gzip
+    
+    db_path_gz = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
+    db_path_raw = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    
+    prices_db = None
+    try:
+        if os.path.exists(db_path_gz):
+            with gzip.open(db_path_gz, "rb") as f:
+                prices_db = pickle.load(f)
+        elif os.path.exists(db_path_raw):
+            with open(db_path_raw, "rb") as f:
+                prices_db = pickle.load(f)
+    except Exception:
+        pass
+        
+    if not prices_db:
+        return {}
+        
+    # 記録されている最新営業日を特定
+    latest_date = sorted(prices_db.keys())[-1]
+    
+    prices_map = {}
+    for r in prices_db[latest_date]:
+        code_4digit = str(r.get("Code", "")).replace(".0", "")[:4]
+        # APIのキー名揺れ（AdjustmentClose, AdjC, Close）を吸収
+        val = r.get("AdjustmentClose") or r.get("AdjC") or r.get("Close") or r.get("C")
+        
+        if val is not None and str(val).strip() != "":
+            try:
+                prices_map[code_4digit] = float(val)
+            except Exception:
+                pass
+                
+    return prices_map
 
 @st.cache_resource(ttl=3600*24)
 def load_local_fundamentals_db():
