@@ -3157,33 +3157,56 @@ def get_local_stock_data(code):
 # 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
 # ==========================================
 with tab3:
-    # 🐛 【デバッグ用】ローカルDBの生データを覗き見るボタン
-    if st.button("🐛 【緊急デバッグ】prices_db.pkl の生データを解析", type="primary"):
-        import os, pickle
-        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
-        if not os.path.exists(db_path):
-            st.error("🚨 prices_db.pkl が見つかりません。")
-        else:
-            try:
-                with open(db_path, "rb") as f:
-                    debug_db = pickle.load(f)
-                st.info(f"📦 DBのデータ型: {type(debug_db)}")
-                if isinstance(debug_db, dict):
-                    first_key = list(debug_db.keys())[0]
-                    st.write(f"🔑 最初のキー ({first_key}) の中身の型: {type(debug_db[first_key])}")
-                    if isinstance(debug_db[first_key], list) and len(debug_db[first_key]) > 0:
-                        st.warning("▼ 実際に保存されている株価生データ（1件目）の完全な中身 ▼")
-                        st.json(debug_db[first_key][0])
-                elif isinstance(debug_db, pd.DataFrame):
-                    st.warning("▼ 保存されているDataFrameのカラム名一覧 ▼")
-                    st.write(debug_db.columns.tolist())
-                    st.dataframe(debug_db.head(3))
-            except Exception as e:
-                st.error(f"🚨 デバッグ読み込みエラー: {e}")
-        st.stop() # デバッグ表示後に後続の処理を止める
-
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
-    # （これより下は既存のコードが続きます）
+    st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
+
+    tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
+    scan_mode = "buy" if "買い" in tab3_mode else "sell"
+
+    t1_codes = []
+    for key in ['tab1_scan_results', 'tab1_scan_results_raw', 'hit_codes_s', 'hit_codes_a', 'all_hits']:
+        t_res = st.session_state.get(key)
+        if t_res:
+            if isinstance(t_res, str):
+                t1_codes.extend([c.strip()[:4] for c in t_res.split(',') if c.strip()])
+            elif isinstance(t_res, list):
+                for r in t_res:
+                    c = r.get('Code') or r.get('code') if isinstance(r, dict) else str(r)
+                    if c: t1_codes.append(str(c)[:4])
+    t1_codes_str = ",".join(list(dict.fromkeys(t1_codes)))
+
+    t2_codes = []
+    for key in ['tab2_scan_results', 'tab2_scan_results_raw', 'hit_codes_s_sell', 'hit_codes_a_sell', 'all_hits_sell']:
+        t_res = st.session_state.get(key)
+        if t_res:
+            if isinstance(t_res, str):
+                t2_codes.extend([c.strip()[:4] for c in t_res.split(',') if c.strip()])
+            elif isinstance(t_res, list):
+                for r in t_res:
+                    c = r.get('Code') or r.get('code') if isinstance(r, dict) else str(r)
+                    if c: t2_codes.append(str(c)[:4])
+    t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
+
+    if "tab3_codes_buy" not in st.session_state:
+        st.session_state["tab3_codes_buy"] = t1_codes_str
+    if "tab3_codes_sell" not in st.session_state:
+        st.session_state["tab3_codes_sell"] = t2_codes_str
+    if "tab3_last_t1" not in st.session_state:
+        st.session_state["tab3_last_t1"] = t1_codes_str
+    if "tab3_last_t2" not in st.session_state:
+        st.session_state["tab3_last_t2"] = t2_codes_str
+
+    if st.session_state["tab3_last_t1"] != t1_codes_str:
+        st.session_state["tab3_codes_buy"] = t1_codes_str
+        st.session_state["tab3_last_t1"] = t1_codes_str
+
+    if st.session_state["tab3_last_t2"] != t2_codes_str:
+        st.session_state["tab3_codes_sell"] = t2_codes_str
+        st.session_state["tab3_last_t2"] = t2_codes_str
+
+    text_key = f"tab3_codes_{scan_mode}"
+
+    st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
         key=text_key,
@@ -3547,6 +3570,37 @@ with tab3:
                 st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
                 
             st.session_state['tab3_results'] = results_tab3
+
+    # ==========================================
+    # 🐛 緊急デバッグ機能（TAB3の最下部に追加）
+    # ==========================================
+    st.divider()
+    if st.button("🐛 【緊急デバッグ】prices_db.pkl の生データを解析", key="debug_db_btn_safe"):
+        import os, pickle, pandas as pd
+        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+        if not os.path.exists(db_path):
+            st.error("🚨 prices_db.pkl が見つかりません。")
+        else:
+            try:
+                with open(db_path, "rb") as f:
+                    debug_db = pickle.load(f)
+                st.info(f"📦 DBのデータ型: {type(debug_db)}")
+                
+                if isinstance(debug_db, dict):
+                    first_key = list(debug_db.keys())[0]
+                    st.write(f"🔑 最初のキー ({first_key}) の中身の型: {type(debug_db[first_key])}")
+                    if isinstance(debug_db[first_key], list) and len(debug_db[first_key]) > 0:
+                        st.warning("▼ 実際に保存されている株価生データ（1件目）の完全な中身 ▼")
+                        st.json(debug_db[first_key][0])
+                    elif isinstance(debug_db[first_key], pd.DataFrame):
+                        st.warning("▼ 保存されているDataFrameのデータ ▼")
+                        st.dataframe(debug_db[first_key].head(3))
+                elif isinstance(debug_db, pd.DataFrame):
+                    st.warning("▼ 保存されているDataFrameのカラム名一覧 ▼")
+                    st.write(debug_db.columns.tolist())
+                    st.dataframe(debug_db.head(3))
+            except Exception as e:
+                st.error(f"🚨 デバッグ読み込みエラー: {e}")
         
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
