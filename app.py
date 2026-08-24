@@ -3102,7 +3102,7 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・絶対防弾版）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
@@ -3113,6 +3113,12 @@ def get_local_stock_data(code):
     db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
     if not os.path.exists(db_path):
         return pd.DataFrame()
+        
+    def safe_float(val):
+        """Noneや空文字が来ても絶対にクラッシュしない防弾変換"""
+        if val is None or val == "": return 0.0
+        try: return float(val)
+        except: return 0.0
         
     try:
         with open(db_path, "rb") as f:
@@ -3126,15 +3132,15 @@ def get_local_stock_data(code):
             for r in records:
                 c = str(r.get("Code", "")).replace(".0", "")[:4]
                 if c == target_code:
-                    # 💡 【ゼロ円バグ粉砕】V2短縮カラムに完全対応
+                    # 💡 【ゼロ円バグ＆クラッシュ完全粉砕】V2短縮カラムに完全対応しつつ安全に抽出
                     all_records.append({
                         "Date": pd.to_datetime(dt_str),
                         "Code": c,
-                        "AdjO": float(r.get("AdjO", r.get("AdjustmentOpen", r.get("O", r.get("Open", 0))))),
-                        "AdjH": float(r.get("AdjH", r.get("AdjustmentHigh", r.get("H", r.get("High", 0))))),
-                        "AdjL": float(r.get("AdjL", r.get("AdjustmentLow", r.get("L", r.get("Low", 0))))),
-                        "AdjC": float(r.get("AdjC", r.get("AdjustmentClose", r.get("C", r.get("Close", 0))))),
-                        "Volume": float(r.get("AdjVo", r.get("AdjustmentVolume", r.get("Vo", r.get("Volume", 0)))))
+                        "AdjO": safe_float(r.get("AdjO", r.get("AdjustmentOpen", r.get("O", r.get("Open", 0))))),
+                        "AdjH": safe_float(r.get("AdjH", r.get("AdjustmentHigh", r.get("H", r.get("High", 0))))),
+                        "AdjL": safe_float(r.get("AdjL", r.get("AdjustmentLow", r.get("L", r.get("Low", 0))))),
+                        "AdjC": safe_float(r.get("AdjC", r.get("AdjustmentClose", r.get("C", r.get("Close", 0))))),
+                        "Volume": safe_float(r.get("AdjVo", r.get("AdjustmentVolume", r.get("Vo", r.get("Volume", 0)))))
                     })
                     break 
         
