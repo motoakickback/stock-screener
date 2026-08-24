@@ -709,7 +709,6 @@ def analyze_formation_history(df, is_macro_downtrend=False):
     if 'MA18' not in df_recent.columns:
         df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
     
-    # 過去データも全てスキャン（過去出現時もすべてシグナルリストに格納）
     for i in range(3, len(df_recent)):
         m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
         
@@ -735,22 +734,30 @@ def analyze_formation_history(df, is_macro_downtrend=False):
 
         # 🔵 買いシグナル①（3日ルール）
         # 1日目:陰線で終値<前日安値, 2日目:陽線で終値>前日高値, 3日目:陽線で終値>前日終値
-        buy_cond1 = (m2_c < m2_o and m2_c < m3_l) and (m1_c > m1_o and m1_c > m2_h) and (q0_c > q0_o and q0_c > m1_c)
+        buy_cond1 = (m2_c < m2_o) and (m2_c < m3_l) and \
+                    (m1_c > m1_o) and (m1_c > m2_h) and \
+                    (q0_c > q0_o) and (q0_c > m1_c)
         
         # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # ①陽線で2日連続、今日と昨日の安値が18日移動平均線より高い
-        buy_cond2 = (q0_c > q0_o) and (m1_c > m1_o) and (q0_l > ma18_q0) and (m1_l > ma18_m1)
+        # 形状：陰線(一昨日) → 陽線(昨日) → 陽線(今日)
+        # 条件：今日と昨日の安値が18日移動平均線より高い
+        buy_cond2 = (m2_c < m2_o) and (m1_c > m1_o) and (q0_c > q0_o) and \
+                    (q0_l > ma18_q0) and (m1_l > ma18_m1)
         
         if buy_cond1 or buy_cond2:
             buy_signals.append(curr_date)
             
         # 🔴 空売りシグナル①（3日ルール）
         # 1日目:陽線で終値>前日高値, 2日目:陰線で終値<前日安値, 3日目:陰線で終値<前日終値
-        sell_cond1 = (m2_c > m2_o and m2_c > m3_h) and (m1_c < m1_o and m1_c < m2_l) and (q0_c < q0_o and q0_c < m1_c)
+        sell_cond1 = (m2_c > m2_o) and (m2_c > m3_h) and \
+                     (m1_c < m1_o) and (m1_c < m2_l) and \
+                     (q0_c < q0_o) and (q0_c < m1_c)
         
         # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # ①陰線で2日連続、今日と昨日の高値が18日移動平均線より安い
-        sell_cond2 = (q0_c < q0_o) and (m1_c < m1_o) and (q0_h < ma18_q0) and (m1_h < ma18_m1)
+        # 形状：陽線(一昨日) → 陰線(昨日) → 陰線(今日)
+        # 条件：今日と昨日の高値が18日移動平均線より安い
+        sell_cond2 = (m2_c > m2_o) and (m1_c < m1_o) and (q0_c < q0_o) and \
+                     (q0_h < ma18_q0) and (m1_h < ma18_m1)
         
         if sell_cond1 or sell_cond2:
             # 空売りの前提「市場が下げ相場である（is_macro_downtrend = True）」ことを判定
