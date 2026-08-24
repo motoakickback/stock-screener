@@ -3102,6 +3102,52 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# ==========================================
+@st.cache_data(show_spinner=False)
+def get_local_stock_data(code):
+    """API通信を物理的に遮断し、バッチが作った prices_db.pkl から指定銘柄の時系列を抽出する"""
+    import os, pickle
+    import pandas as pd
+    
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+        
+    try:
+        with open(db_path, "rb") as f:
+            prices_db = pickle.load(f)
+            
+        all_records = []
+        target_code = str(code).replace('.0', '')[:4]
+        
+        # 辞書(日付キー)から対象銘柄だけを抽出
+        for dt_str, records in prices_db.items():
+            for r in records:
+                c = str(r.get("Code", "")).replace(".0", "")[:4]
+                if c == target_code:
+                    all_records.append({
+                        "Date": pd.to_datetime(dt_str),
+                        "Code": c,
+                        "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
+                        "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
+                        "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
+                        "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
+                        "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+                    })
+                    break 
+        
+        if not all_records:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(all_records)
+        df.sort_values(by="Date", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+# ==========================================
 # 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
 # ==========================================
 with tab3:
@@ -3378,67 +3424,92 @@ with tab3:
                         hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
-                        q0 = df.iloc[-1]
-                        c_o = q0.get('Open', q0.get('AdjO', 0))
-                        c_h = q0.get('High', q0.get('AdjH', 0))
-                        c_l = q0.get('Low', q0.get('AdjL', 0))
-                        c_c = q0.get('Close', q0.get('AdjC', 0))
-                        
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("始値", f"{c_o:,.1f}円")
-                        c2.metric("高値", f"{c_h:,.1f}円")
-                        c3.metric("安値", f"{c_l:,.1f}円")
-                        c4.metric("終値", f"{c_c:,.1f}円")
-                        
                         if len(df) > 0:
                             df_c = df.copy()
-                            c_col = 'AdjC' if 'AdjC' in df_c.columns else 'Close'
-                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
-                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
+                            
+                            # 💡 【完全解決】APIの短いカラム名(C, O, H, L)等の揺れをUI描画時にすべて吸収
+                            cols_lower = {str(c).lower(): c for c in df_c.columns}
+                            col_o = cols_lower.get('adjo', cols_lower.get('o', cols_lower.get('open', 'Open')))
+                            col_h = cols_lower.get('adjh', cols_lower.get('h', cols_lower.get('high', 'High')))
+                            col_l = cols_lower.get('adjl', cols_lower.get('l', cols_lower.get('low', 'Low')))
+                            col_c = cols_lower.get('adjc', cols_lower.get('c', cols_lower.get('close', 'Close')))
+                            
+                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[col_c].rolling(18).mean()
+                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[col_c].rolling(50).mean()
+                            
+                            # 💡 RSI(14日)の計算を新規実装
+                            delta = df_c[col_c].diff()
+                            gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+                            loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+                            rs = gain / loss
+                            df_c['RSI14'] = 100 - (100 / (1 + rs))
+
+                            # 💡 四本値とRSIを安全に取得（0.0円バグ完全消滅）
+                            q0 = df_c.iloc[-1]
+                            c_o = float(q0.get(col_o, 0.0))
+                            c_h = float(q0.get(col_h, 0.0))
+                            c_l = float(q0.get(col_l, 0.0))
+                            c_c = float(q0.get(col_c, 0.0))
+                            rsi_val = float(q0.get('RSI14', 0.0))
+                            
+                            # 💡 UIを5カラムに拡張し、RSIを表示
+                            c1, c2, c3, c4, c5 = st.columns(5)
+                            c1.metric("始値", f"{c_o:,.1f}円")
+                            c2.metric("高値", f"{c_h:,.1f}円")
+                            c3.metric("安値", f"{c_l:,.1f}円")
+                            c4.metric("終値", f"{c_c:,.1f}円")
+                            c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
                             
                             fig = go.Figure()
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
+                            # 💡 陽線を濃い緑(darkgreen)、陰線を濃い赤(darkred)に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
-                                open=df_c.get('AdjO', df_c.get('Open')), 
-                                high=df_c.get('AdjH', df_c.get('High')), 
-                                low=df_c.get('AdjL', df_c.get('Low')), 
-                                close=df_c[c_col], 
-                                name='価格'
+                                open=df_c[col_o], 
+                                high=df_c[col_h], 
+                                low=df_c[col_l], 
+                                close=df_c[col_c], 
+                                name='価格',
+                                increasing_line_color='darkgreen', increasing_fillcolor='darkgreen',
+                                decreasing_line_color='darkred', decreasing_fillcolor='darkred'
                             ))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線'))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hoverinfo='none'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hoverinfo='none'))
                             
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[col_c] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[col_c] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
+                            # 💡 右端の見切れ防止（+3日マージン追加）
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 x_min = df_recent[date_col].iloc[0]
-                                x_max = df_recent[date_col].iloc[-1]
+                                x_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 
-                                max_h = df_recent.get('AdjH', df_recent.get('High')).max()
-                                min_l = df_recent.get('AdjL', df_recent.get('Low')).min()
+                                max_h = df_recent[col_h].max()
+                                min_l = df_recent[col_l].min()
                                 y_min = min_l * 0.95
                                 y_max = max_h * 1.05
                             else:
                                 x_min = df_c[date_col].iloc[0]
-                                x_max = df_c[date_col].iloc[-1]
+                                x_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 y_min, y_max = None, None
                             
+                            # 💡 ホバー情報のバグ修正（hovermode: 'x'）と位置調整
                             layout_args = {
                                 'height': 400,
-                                'margin': dict(l=0, r=0, t=30, b=0),
-                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date')
+                                'margin': dict(l=10, r=50, t=60, b=10),
+                                'xaxis': dict(range=[x_min, x_max], rangeslider=dict(visible=False), type='date'),
+                                'hovermode': 'x',
+                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
