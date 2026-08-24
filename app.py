@@ -2928,8 +2928,7 @@ def analyze_formation_history(df):
             if n.lower() in cols: return df.columns[cols.index(n.lower())]
         return None
 
-    # 💡 【修正箇所1】 adjh, adjl を検索対象に追加（0件になるバグを解消）
-    c_h, c_l, c_c = get_c('adjh', 'high', 'h'), get_c('adjl', 'low', 'l'), get_c('adjc', 'close', 'c')
+    c_h, c_l, c_c = get_c('high', 'h'), get_c('low', 'l'), get_c('close', 'adjc', 'c')
     c_d = get_c('date', 'd')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
@@ -3103,7 +3102,7 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・究極防弾版）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
@@ -3116,7 +3115,6 @@ def get_local_stock_data(code):
         return pd.DataFrame()
         
     def safe_float(val):
-        """Noneや空文字が来てもクラッシュしない防弾変換"""
         if pd.isna(val) or val is None or val == "": return 0.0
         try: return float(val)
         except: return 0.0
@@ -3127,25 +3125,63 @@ def get_local_stock_data(code):
             
         all_records = []
         target_code = str(code).replace('.0', '')[:4]
-        
-        # 辞書(日付キー)から対象銘柄だけを抽出
-        for dt_str, records in prices_db.items():
-            for r in records:
-                # 💡 【修正箇所2】キーの揺れを吸収し、V2カラムを安全に取得（0.0円になるバグを解消）
-                r_lower = {str(k).lower(): v for k, v in r.items()}
-                c = str(r_lower.get("code", "")).replace(".0", "")[:4]
-                if c == target_code:
-                    all_records.append({
-                        "Date": pd.to_datetime(dt_str),
-                        "Code": c,
-                        "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                        "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                        "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                        "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                        "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
-                    })
-                    break 
-        
+
+        # 💡 パターン1: prices_db がDataFrame構造で保存されていた場合（隠れクラッシュの完全回避）
+        if isinstance(prices_db, pd.DataFrame):
+            c_col = next((c for c in prices_db.columns if str(c).lower() in ['code', 'ticker', 'symbol']), None)
+            if c_col:
+                mask = prices_db[c_col].astype(str).str.replace(".0", "", regex=False).str[:4] == target_code
+                df_target = prices_db[mask]
+                for _, r_series in df_target.iterrows():
+                    r_lower = {str(k).lower(): v for k, v in r_series.to_dict().items()}
+                    dt_val = r_lower.get("date", r_lower.get("d", r_lower.get("datetime")))
+                    if pd.notna(dt_val):
+                        all_records.append({
+                            "Date": pd.to_datetime(dt_val),
+                            "Code": target_code,
+                            "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                            "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                            "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                            "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                            "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                        })
+
+        # 💡 パターン2: prices_db が辞書（dict）で保存されていた場合
+        elif isinstance(prices_db, dict):
+            for dt_str, records in prices_db.items():
+                if isinstance(records, pd.DataFrame):
+                    c_col = next((c for c in records.columns if str(c).lower() in ['code', 'ticker', 'symbol']), None)
+                    if c_col:
+                        mask = records[c_col].astype(str).str.replace(".0", "", regex=False).str[:4] == target_code
+                        df_target = records[mask]
+                        for _, r_series in df_target.iterrows():
+                            r_lower = {str(k).lower(): v for k, v in r_series.to_dict().items()}
+                            all_records.append({
+                                "Date": pd.to_datetime(dt_str),
+                                "Code": target_code,
+                                "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                                "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                                "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                                "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                                "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                            })
+                else:
+                    for r in records:
+                        if isinstance(r, dict):
+                            c = str(r.get("Code", r.get("code", ""))).replace(".0", "")[:4]
+                            if c == target_code:
+                                r_lower = {str(k).lower(): v for k, v in r.items()}
+                                all_records.append({
+                                    "Date": pd.to_datetime(dt_str),
+                                    "Code": target_code,
+                                    "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                                    "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                                    "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                                    "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                                    "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                                })
+                                break
+                                
         if not all_records:
             return pd.DataFrame()
             
@@ -3155,7 +3191,7 @@ def get_local_stock_data(code):
         return df
     except Exception:
         return pd.DataFrame()
-
+        
 # ==========================================
 # 🎯 TAB3 UI構築 ＆ スキャン実行ブロック（YoY判定統合版）
 # ==========================================
