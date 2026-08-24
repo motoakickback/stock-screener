@@ -1544,104 +1544,43 @@ def get_nikkei_macro_status():
         return {"status": "地合いニュートラル", "div_rate": div_rate, "close": price, "ma18": ma18, "ma50": ma50, "icon": "🚢", "color": "#26a69a"}
 
 # ==========================================
-# 🛡️ 最終決定版：ローカル株価ロード＆完全カラムマッピングエンジン
+# 🛡️ 最終決定版：株価データ ローカル読み込みエンジン（短縮キー完全対応）
 # ==========================================
-@st.cache_data(ttl=86400, max_entries=1, show_spinner=False)
-def get_hist_data_cached(key):
-    """ローカルの株価DB（.pkl.gz または .pkl）を読み込み、短縮カラム名を標準名に完全マッピングする"""
-    import os
-    import pickle
-    import gzip
-    import pandas as pd
-    import streamlit as st
-
-    base_dir = os.path.dirname(__file__)
-    paths = [
-        os.path.join(base_dir, "prices_db.pkl.gz"),
-        os.path.join(base_dir, "prices_db.pkl")
-    ]
-    
-    db_path = None
-    is_gzip = False
-    for p in paths:
-        if os.path.exists(p):
-            db_path = p
-            if p.endswith('.gz'):
-                is_gzip = True
-            break
-            
-    if not db_path:
-        st.error("🚨 ローカル株価DB（prices_db.pkl.gz / .pkl）が見つかりません。")
-        return pd.DataFrame()
-        
-    try:
-        if is_gzip:
-            with gzip.open(db_path, "rb") as f:
-                prices_db = pickle.load(f)
-        else:
-            with open(db_path, "rb") as f:
-                prices_db = pickle.load(f)
-    except Exception as e:
-        st.error(f"🚨 株価DB読み込みエラー: {e}")
-        return pd.DataFrame()
-        
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_hist_data_cached(cache_key=None):
+    """
+    TAB3チャート用：prices_db.pkl.gz から全銘柄のローソク足データを抽出し、
+    J-Quantsの短縮キー（AdjO, O等）を確実に拾い上げてDataFrame化する
+    """
+    prices_db = load_local_prices_db()
     if not prices_db:
         return pd.DataFrame()
-        
-    all_rows = []
+
+    all_records = []
     for dt_str, records in prices_db.items():
-        try:
-            date_val = pd.to_datetime(dt_str)
-            if isinstance(records, list):
-                for r in records:
-                    if isinstance(r, dict):
-                        # 💡 J-Quants V2の短縮カラム名と標準名を完全同期（マッピング）
-                        o_val = float(r.get("AdjO", r.get("O", r.get("Open", 0.0))))
-                        h_val = float(r.get("AdjH", r.get("H", r.get("High", 0.0))))
-                        l_val = float(r.get("AdjL", r.get("L", r.get("Low", 0.0))))
-                        c_val = float(r.get("AdjC", r.get("C", r.get("Close", 0.0))))
-                        v_val = float(r.get("AdjVo", r.get("Vo", r.get("Volume", 0.0))))
-                        
-                        row_data = {
-                            'Date': date_val,
-                            'Code': str(r.get("Code", "")).replace(".0", "")[:4],
-                            # 短縮名と標準名を両方保持させることで、どこから参照されても100%ヒットさせる
-                            'O': o_val, 'Open': o_val, 'AdjO': o_val,
-                            'H': h_val, 'High': h_val, 'AdjH': h_val,
-                            'L': l_val, 'Low': l_val, 'AdjL': l_val,
-                            'C': c_val, 'Close': c_val, 'AdjC': c_val,
-                            'Vo': v_val, 'Volume': v_val, 'AdjVo': v_val,
-                        }
-                        all_rows.append(row_data)
-            elif isinstance(records, pd.DataFrame):
-                for _, r_series in records.iterrows():
-                    r = r_series.to_dict()
-                    o_val = float(r.get("AdjO", r.get("O", r.get("Open", 0.0))))
-                    h_val = float(r.get("AdjH", r.get("H", r.get("High", 0.0))))
-                    l_val = float(r.get("AdjL", r.get("L", r.get("Low", 0.0))))
-                    c_val = float(r.get("AdjC", r.get("C", r.get("Close", 0.0))))
-                    v_val = float(r.get("AdjVo", r.get("Vo", r.get("Volume", 0.0))))
-                    
-                    row_data = {
-                        'Date': date_val,
-                        'Code': str(r.get("Code", "")).replace(".0", "")[:4],
-                        'O': o_val, 'Open': o_val, 'AdjO': o_val,
-                        'H': h_val, 'High': h_val, 'AdjH': h_val,
-                        'L': l_val, 'Low': l_val, 'AdjL': l_val,
-                        'C': c_val, 'Close': c_val, 'AdjC': c_val,
-                        'Vo': v_val, 'Volume': v_val, 'AdjVo': v_val,
-                    }
-                    all_rows.append(row_data)
-        except Exception:
-            continue
+        date_val = pd.to_datetime(dt_str)
+        for r in records:
+            code = str(r.get("Code", r.get("code", ""))).replace(".0", "")[:4]
+            if not code: continue
             
-    if not all_rows:
+            # 🚨 バッチが保存している実際のキー（AdjO, O, AdjH, H など）を優先して完全に網羅する
+            all_records.append({
+                "Date": date_val,
+                "Code": code,
+                "AdjO": float(r.get("AdjO", r.get("O", r.get("AdjustmentOpen", r.get("Open", 0))))),
+                "AdjH": float(r.get("AdjH", r.get("H", r.get("AdjustmentHigh", r.get("High", 0))))),
+                "AdjL": float(r.get("AdjL", r.get("L", r.get("AdjustmentLow", r.get("Low", 0))))),
+                "AdjC": float(r.get("AdjC", r.get("C", r.get("AdjustmentClose", r.get("Close", 0))))),
+                "Volume": float(r.get("AdjVo", r.get("Vo", r.get("AdjustmentVolume", r.get("Volume", 0))))),
+                "TurnoverValue": float(r.get("Va", r.get("TurnoverValue", 0)))
+            })
+    
+    if not all_records:
         return pd.DataFrame()
         
-    df = pd.DataFrame(all_rows)
-    df.sort_values(by=['Code', 'Date'], inplace=True)
+    df = pd.DataFrame(all_records)
+    df.sort_values(by=["Code", "Date"], inplace=True)
     df.reset_index(drop=True, inplace=True)
-    
     return df
     
 def fetch_and_compress_single_day(dt):
