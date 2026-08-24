@@ -694,55 +694,68 @@ def analyze_formation_history(df, is_macro_downtrend=False):
             if n.lower() in cols: return df.columns[cols.index(n.lower())]
         return None
 
-    # 💡 0件になるバグを粉砕：V2カラム(adjh, adjl等)を検索対象に追加
-    c_h, c_l, c_c = get_c('adjh', 'adjustmenthigh', 'high', 'h'), get_c('adjl', 'adjustmentlow', 'low', 'l'), get_c('adjc', 'adjustmentclose', 'close', 'c')
+    # 💡 陽線・陰線判定のため、始値（c_o）を検索対象に完全追加
+    c_o = get_c('adjo', 'adjustmentopen', 'open', 'o')
+    c_h = get_c('adjh', 'adjustmenthigh', 'high', 'h')
+    c_l = get_c('adjl', 'adjustmentlow', 'low', 'l')
+    c_c = get_c('adjc', 'adjustmentclose', 'close', 'c')
     c_d = get_c('date', 'd', 'datetime')
-    if not all([c_h, c_l, c_c, c_d]): return [], []
+    
+    if not all([c_o, c_h, c_l, c_c, c_d]): return [], []
 
     df_recent = df.tail(65).reset_index(drop=True)
     
-    # ルール②用の18日移動平均線
+    # 18日ルール用の18日移動平均線
     if 'MA18' not in df_recent.columns:
         df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
     
     for i in range(3, len(df_recent)):
         m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
-        m2_h, m2_l, m2_c = float(df_recent.loc[i-2, c_h]), float(df_recent.loc[i-2, c_l]), float(df_recent.loc[i-2, c_c])
-        m1_h, m1_l, m1_c = float(df_recent.loc[i-1, c_h]), float(df_recent.loc[i-1, c_l]), float(df_recent.loc[i-1, c_c])
-        q0_h, q0_l, q0_c = float(df_recent.loc[i, c_h]), float(df_recent.loc[i, c_l]), float(df_recent.loc[i, c_c])
         
-        ma18_m2 = float(df_recent.loc[i-2, 'MA18'])
+        m2_o = float(df_recent.loc[i-2, c_o])
+        m2_h = float(df_recent.loc[i-2, c_h])
+        m2_l = float(df_recent.loc[i-2, c_l])
+        m2_c = float(df_recent.loc[i-2, c_c])
+        
+        m1_o = float(df_recent.loc[i-1, c_o])
+        m1_h = float(df_recent.loc[i-1, c_h])
+        m1_l = float(df_recent.loc[i-1, c_l])
+        m1_c = float(df_recent.loc[i-1, c_c])
+        
+        q0_o = float(df_recent.loc[i, c_o])
+        q0_h = float(df_recent.loc[i, c_h])
+        q0_l = float(df_recent.loc[i, c_l])
+        q0_c = float(df_recent.loc[i, c_c])
+        
         ma18_m1 = float(df_recent.loc[i-1, 'MA18'])
+        ma18_q0 = float(df_recent.loc[i, 'MA18'])
         
         curr_date = df_recent.loc[i, c_d]
 
         # 🔵 買いシグナル①（3日ルール）
-        # 1日目:終値<前日安値, 2日目:終値>前日高値, 3日目:終値>前日終値
-        buy_cond1 = (m2_c < m3_l) and (m1_c > m2_h) and (q0_c > m1_c)
+        # 1日目:陰線で終値<前日安値, 2日目:陽線で終値>前日高値, 3日目:陽線で終値>前日終値
+        buy_cond1 = (m2_c < m2_o and m2_c < m3_l) and (m1_c > m1_o and m1_c > m2_h) and (q0_c > q0_o and q0_c > m1_c)
         
-        # 🔵 買いシグナル②（18日ルール: ブレイクアウトトリガー）
-        # ①今日と昨日の安値>18日移動平均線 (Setup)
-        setup_buy = (m2_l > ma18_m2) and (m1_l > ma18_m1)
-        # ②買い価格：今日と昨日の高い方の高値 (Trigger)
-        trigger_buy = max(m2_h, m1_h)
-        buy_cond2 = setup_buy and (q0_h > trigger_buy)
+        # 🔵 買いシグナル②（18日ルール: セットアップ検知）
+        # ①陽線で、今日と昨日の安値が18日移動平均線より高い
+        buy_cond2 = (q0_c > q0_o) and (q0_l > ma18_q0) and (m1_l > ma18_m1)
+        # 💡 ②買い価格(max(q0_h, m1_h)) は翌日以降の逆指値発注のトリガーとなるため、
+        # ここでは「セットアップ完了（①）」をもってシグナル点灯日としてマークする。
         
         if buy_cond1 or buy_cond2:
             buy_signals.append(curr_date)
             
         # 🔴 空売りシグナル①（3日ルール）
-        # 1日目:終値>前日高値, 2日目:終値<前日安値, 3日目:終値<前日終値
-        sell_cond1 = (m2_c > m3_h) and (m1_c < m2_l) and (q0_c < m1_c)
+        # 1日目:陽線で終値>前日高値, 2日目:陰線で終値<前日安値, 3日目:陰線で終値<前日終値
+        sell_cond1 = (m2_c > m2_o and m2_c > m3_h) and (m1_c < m1_o and m1_c < m2_l) and (q0_c < q0_o and q0_c < m1_c)
         
-        # 🔴 空売りシグナル②（18日ルール: ブレイクアウトトリガー）
-        # ①一昨日と昨日の高値<18日移動平均線 (Setup)
-        setup_sell = (m2_h < ma18_m2) and (m1_h < ma18_m1)
-        # ②売り価格：直近2日間の安い方の安値を今日下回ったか (Trigger)
-        trigger_sell = min(m2_l, m1_l)
-        sell_cond2 = setup_sell and (q0_l < trigger_sell)
+        # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
+        # ①陰線で、今日と昨日の高値が18日移動平均線より安い
+        sell_cond2 = (q0_c < q0_o) and (q0_h < ma18_q0) and (m1_h < ma18_m1)
+        # 💡 ②売り価格(min(q0_l, m1_l)) は翌日以降の逆指値発注のトリガーとなる。
         
         if sell_cond1 or sell_cond2:
-            # 空売りの前提「市場が下げ相場である」ことを判定
+            # 空売りの前提「市場が下げ相場である（is_macro_downtrend = True）」ことを判定
             if is_macro_downtrend:
                 sell_signals.append(curr_date)
             
