@@ -746,7 +746,6 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                     (q0_c > q0_o) and (q0_c > m1_c)
         
         # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # 🚨 【完全AND条件】
         # (今日が陽線 AND 今日の安値が18MAより高い) かつ (昨日が陽線 AND 昨日の安値が18MAより高い)
         buy_cond2 = ((q0_c > q0_o) and (q0_l > ma18_q0)) and \
                     ((m1_c > m1_o) and (m1_l > ma18_m1))
@@ -761,7 +760,6 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                      (q0_c < q0_o) and (q0_c < m1_c)
         
         # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # 🚨 【完全AND条件】
         # (今日が陰線 AND 今日の高値が18MAより安い) かつ (昨日が陰線 AND 昨日の高値が18MAより安い)
         sell_cond2 = ((q0_c < q0_o) and (q0_h < ma18_q0)) and \
                      ((m1_c < m1_o) and (m1_h < ma18_m1))
@@ -1301,7 +1299,7 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # 📊 チャート陣形の検知（ラリー・ルール ＆ マクロ連動）
+                        # 📊 チャート陣形の検知（マクロ地合い連動）
                         b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
                         
                         # ------------------------------------
