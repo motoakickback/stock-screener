@@ -3126,14 +3126,15 @@ def get_local_stock_data(code):
             for r in records:
                 c = str(r.get("Code", "")).replace(".0", "")[:4]
                 if c == target_code:
+                    # 💡 【真の修正】V2短縮カラム（AdjO, O, AdjC, C等）に完全対応し、ゼロになるバグを粉砕
                     all_records.append({
                         "Date": pd.to_datetime(dt_str),
                         "Code": c,
-                        "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
-                        "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
-                        "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
-                        "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
-                        "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+                        "AdjO": float(r.get("AdjO", r.get("AdjustmentOpen", r.get("O", r.get("Open", 0))))),
+                        "AdjH": float(r.get("AdjH", r.get("AdjustmentHigh", r.get("H", r.get("High", 0))))),
+                        "AdjL": float(r.get("AdjL", r.get("AdjustmentLow", r.get("L", r.get("Low", 0))))),
+                        "AdjC": float(r.get("AdjC", r.get("AdjustmentClose", r.get("C", r.get("Close", 0))))),
+                        "Volume": float(r.get("AdjVo", r.get("AdjustmentVolume", r.get("Vo", r.get("Volume", 0)))))
                     })
                     break 
         
