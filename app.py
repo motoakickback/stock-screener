@@ -3101,51 +3101,105 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・圧縮対応・絶対防弾版）
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（Gzip解凍・V2短縮名完全対応版）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
-    """API通信を物理的に遮断し、バッチが作った prices_db.pkl.gz から指定銘柄の時系列を抽出する"""
+    """API通信を完全に遮断し、ローカルDB（prices_db.pkl.gz または prices_db.pkl）から指定銘柄の時系列を抽出する"""
     import os, pickle, gzip
     import pandas as pd
     
-    # 💡 圧縮ファイル(.pkl.gz)を探しに行くように修正
-    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
-    if not os.path.exists(db_path):
+    # 探索パス（.gz と .pkl の両方を順に探す）
+    base_dir = os.path.dirname(__file__)
+    paths = [
+        os.path.join(base_dir, "prices_db.pkl.gz"),
+        os.path.join(base_dir, "prices_db.pkl")
+    ]
+    
+    target_path = None
+    is_gzip = False
+    for p in paths:
+        if os.path.exists(p):
+            target_path = p
+            if p.endswith('.gz'):
+                is_gzip = True
+            break
+            
+    if not target_path:
         return pd.DataFrame()
         
     def safe_float(val):
-        """Noneや空文字が来てもクラッシュしない防弾変換"""
         if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
         try: return float(val)
         except: return 0.0
         
     try:
-        # 💡 gzip で解凍しながら開くように修正
-        with gzip.open(db_path, "rb") as f:
-            prices_db = pickle.load(f)
-            
+        # Gzip対応の安全な読み込み
+        if is_gzip:
+            with gzip.open(target_path, "rb") as f:
+                prices_db = pickle.load(f)
+        else:
+            with open(target_path, "rb") as f:
+                prices_db = pickle.load(f)
+                
         all_records = []
         target_code = str(code).replace('.0', '')[:4]
         
-        # 辞書(日付キー)から対象銘柄だけを抽出
-        for dt_str, records in prices_db.items():
-            for r in records:
-                # 💡 キーの大文字小文字ブレとV2短縮カラム名を完全吸収
-                r_lower = {str(k).lower(): v for k, v in r.items()}
-                c = str(r_lower.get("code", "")).replace(".0", "")[:4]
-                if c == target_code:
-                    all_records.append({
-                        "Date": pd.to_datetime(dt_str),
-                        "Code": c,
-                        "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                        "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                        "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                        "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                        "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
-                    })
-                    break 
-        
+        # prices_db が辞書（日付キーなど）の場合
+        if isinstance(prices_db, dict):
+            for dt_str, records in prices_db.items():
+                if isinstance(records, pd.DataFrame):
+                    c_col = next((c for c in records.columns if str(c).lower() in ['code', 'ticker', 'symbol']), None)
+                    if c_col:
+                        mask = records[c_col].astype(str).str.replace(".0", "", regex=False).str[:4] == target_code
+                        df_sub = records[mask]
+                        for _, r_series in df_sub.iterrows():
+                            r_lower = {str(k).lower(): v for k, v in r_series.to_dict().items()}
+                            all_records.append({
+                                "Date": pd.to_datetime(dt_str),
+                                "Code": target_code,
+                                "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                                "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                                "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                                "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                                "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                            })
+                elif isinstance(records, list):
+                    for r in records:
+                        if isinstance(r, dict):
+                            r_lower = {str(k).lower(): v for k, v in r.items()}
+                            c = str(r_lower.get("code", "")).replace(".0", "")[:4]
+                            if c == target_code:
+                                all_records.append({
+                                    "Date": pd.to_datetime(dt_str),
+                                    "Code": target_code,
+                                    "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                                    "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                                    "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                                    "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                                    "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                                })
+                                break
+                                
+        elif isinstance(prices_db, pd.DataFrame):
+            c_col = next((c for c in prices_db.columns if str(c).lower() in ['code', 'ticker', 'symbol']), None)
+            if c_col:
+                mask = prices_db[c_col].astype(str).str.replace(".0", "", regex=False).str[:4] == target_code
+                df_target = prices_db[mask]
+                for _, r_series in df_target.iterrows():
+                    r_lower = {str(k).lower(): v for k, v in r_series.to_dict().items()}
+                    dt_val = r_lower.get("date", r_lower.get("d", r_lower.get("datetime")))
+                    if pd.notna(dt_val):
+                        all_records.append({
+                            "Date": pd.to_datetime(dt_val),
+                            "Code": target_code,
+                            "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                            "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                            "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                            "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                            "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
+                        })
+
         if not all_records:
             return pd.DataFrame()
             
