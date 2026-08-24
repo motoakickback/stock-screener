@@ -2928,8 +2928,9 @@ def analyze_formation_history(df):
             if n.lower() in cols: return df.columns[cols.index(n.lower())]
         return None
 
-    c_h, c_l, c_c = get_c('high', 'h'), get_c('low', 'l'), get_c('close', 'adjc', 'c')
-    c_d = get_c('date', 'd')
+    # 💡 【修正1】0件になるバグを粉砕：V2カラム(adjh, adjl等)を検索対象に追加
+    c_h, c_l, c_c = get_c('adjh', 'adjustmenthigh', 'high', 'h'), get_c('adjl', 'adjustmentlow', 'low', 'l'), get_c('adjc', 'adjustmentclose', 'close', 'c')
+    c_d = get_c('date', 'd', 'datetime')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
     df_recent = df.tail(65).reset_index(drop=True)
@@ -3052,7 +3053,6 @@ def fetch_fundamental_history_local(code, local_db):
 
         results = []
         for i in range(1, 5):
-            # YoY（4つ前＝前年同期との比較）
             if len(std_df) < i + 4:
                 q_cur = std_df.iloc[-i] if len(std_df) >= i else None
                 dis_date = '-'
@@ -3083,7 +3083,6 @@ def fetch_fundamental_history_local(code, local_db):
                 "EPS(%)": calc_yoy(get_v(q_cur, c_eps, c_profit), get_v(q_yoy, c_eps, c_profit)),
             })
 
-        # 通年データ（YoY）
         if len(std_df) >= 8:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
@@ -3121,7 +3120,6 @@ def get_local_stock_data(code):
         all_records = []
         target_code = str(code).replace('.0', '')[:4]
         
-        # 辞書(日付キー)から対象銘柄だけを抽出
         for dt_str, records in prices_db.items():
             for r in records:
                 c = str(r.get("Code", "")).replace(".0", "")[:4]
@@ -3310,7 +3308,6 @@ with tab3:
                                 except: return None
 
                             if scan_mode == "buy":
-                                # YoY基準の数値を参照
                                 q1_s = get_val(q1_row, "売上(%)")
                                 q1_op = get_val(q1_row, "営業益(%)")
                                 q1_ord = get_val(q1_row, "経常益(%)")
@@ -3416,7 +3413,7 @@ with tab3:
                     else:
                         st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
 
-                    for data in display_targets:
+                    for idx, data in enumerate(display_targets):
                         code = data['code']
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
@@ -3427,32 +3424,41 @@ with tab3:
                         if len(df) > 0:
                             df_c = df.copy()
                             
-                            # 💡 【完全解決】APIの短いカラム名(C, O, H, L)等の揺れをUI描画時にすべて吸収
+                            # 💡 【修正2】0.0円バグを完全粉砕：大元キャッシュのカラム名の揺れを完全吸収
                             cols_lower = {str(c).lower(): c for c in df_c.columns}
-                            col_o = cols_lower.get('adjo', cols_lower.get('o', cols_lower.get('open', 'Open')))
-                            col_h = cols_lower.get('adjh', cols_lower.get('h', cols_lower.get('high', 'High')))
-                            col_l = cols_lower.get('adjl', cols_lower.get('l', cols_lower.get('low', 'Low')))
-                            col_c = cols_lower.get('adjc', cols_lower.get('c', cols_lower.get('close', 'Close')))
+                            c_o_col = cols_lower.get('adjo', cols_lower.get('adjustmentopen', cols_lower.get('o', cols_lower.get('open', 'Open'))))
+                            c_h_col = cols_lower.get('adjh', cols_lower.get('adjustmenthigh', cols_lower.get('h', cols_lower.get('high', 'High'))))
+                            c_l_col = cols_lower.get('adjl', cols_lower.get('adjustmentlow', cols_lower.get('l', cols_lower.get('low', 'Low'))))
+                            c_c_col = cols_lower.get('adjc', cols_lower.get('adjustmentclose', cols_lower.get('c', cols_lower.get('close', 'Close'))))
                             
-                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[col_c].rolling(18).mean()
-                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[col_c].rolling(50).mean()
+                            # 欠損回避
+                            for col in [c_o_col, c_h_col, c_l_col, c_c_col]:
+                                if col not in df_c.columns:
+                                    df_c[col] = 0.0
+                                    
+                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean()
+                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean()
                             
-                            # 💡 RSI(14日)の計算を新規実装
-                            delta = df_c[col_c].diff()
+                            # 💡 RSI(14日)の計算を追加
+                            delta = df_c[c_c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
                             loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
                             rs = gain / loss
                             df_c['RSI14'] = 100 - (100 / (1 + rs))
 
-                            # 💡 四本値とRSIを安全に取得（0.0円バグ完全消滅）
+                            def safe_float(val):
+                                if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
+                                try: return float(val)
+                                except: return 0.0
+
                             q0 = df_c.iloc[-1]
-                            c_o = float(q0.get(col_o, 0.0))
-                            c_h = float(q0.get(col_h, 0.0))
-                            c_l = float(q0.get(col_l, 0.0))
-                            c_c = float(q0.get(col_c, 0.0))
-                            rsi_val = float(q0.get('RSI14', 0.0))
+                            c_o = safe_float(q0.get(c_o_col, 0))
+                            c_h = safe_float(q0.get(c_h_col, 0))
+                            c_l = safe_float(q0.get(c_l_col, 0))
+                            c_c = safe_float(q0.get(c_c_col, 0))
+                            rsi_val = safe_float(q0.get('RSI14', 0))
                             
-                            # 💡 UIを5カラムに拡張し、RSIを表示
+                            # 💡 UI要件: 5カラムに拡張しRSIを表示
                             c1, c2, c3, c4, c5 = st.columns(5)
                             c1.metric("始値", f"{c_o:,.1f}円")
                             c2.metric("高値", f"{c_h:,.1f}円")
@@ -3464,13 +3470,13 @@ with tab3:
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
-                            # 💡 陽線を濃い緑(darkgreen)、陰線を濃い赤(darkred)に設定
+                            # 💡 UI要件: 陽線を濃い緑(darkgreen)、陰線を濃い赤(darkred)に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
-                                open=df_c[col_o], 
-                                high=df_c[col_h], 
-                                low=df_c[col_l], 
-                                close=df_c[col_c], 
+                                open=df_c[c_o_col], 
+                                high=df_c[c_h_col], 
+                                low=df_c[c_l_col], 
+                                close=df_c[c_c_col], 
                                 name='価格',
                                 increasing_line_color='darkgreen', increasing_fillcolor='darkgreen',
                                 decreasing_line_color='darkred', decreasing_fillcolor='darkred'
@@ -3481,21 +3487,21 @@ with tab3:
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[col_c] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[col_c] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 💡 右端の見切れ防止（+3日マージン追加）
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 x_min = df_recent[date_col].iloc[0]
+                                # 💡 UI要件: 右端の見切れ防止（+3日マージン）
                                 x_max = df_recent[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 
-                                max_h = df_recent[col_h].max()
-                                min_l = df_recent[col_l].min()
+                                max_h = df_recent[c_h_col].max()
+                                min_l = df_recent[c_l_col].min()
                                 y_min = min_l * 0.95
                                 y_max = max_h * 1.05
                             else:
@@ -3503,7 +3509,7 @@ with tab3:
                                 x_max = df_c[date_col].iloc[-1] + pd.Timedelta(days=3)
                                 y_min, y_max = None, None
                             
-                            # 💡 ホバー情報のバグ修正（hovermode: 'x'）と位置調整
+                            # 💡 UI要件: ホバーのバグ修正（hovermode: 'x'）と位置調整
                             layout_args = {
                                 'height': 400,
                                 'margin': dict(l=10, r=50, t=60, b=10),
@@ -3517,7 +3523,9 @@ with tab3:
                                 layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
                                 
                             fig.update_layout(**layout_args)
-                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # 💡 【修正3】重複IDエラー (StreamlitDuplicateElementId) の完全回避
+                            st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         # 📊 YoY統一の業績表
                         if data.get("fund") is not None and not data["fund"].empty:
@@ -3542,12 +3550,12 @@ with tab3:
                             
                         st.divider()
 
-                    results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
-                    if results_tab3:
-                        hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                        st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
-                        
-                    st.session_state['tab3_results'] = results_tab3
+            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
+            if results_tab3:
+                hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
+                st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
+                
+            st.session_state['tab3_results'] = results_tab3
         
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード (既存のコードをそのまま配置)
