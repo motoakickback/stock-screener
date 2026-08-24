@@ -3101,7 +3101,7 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ）
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・V2カラム対応版）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
@@ -3113,6 +3113,11 @@ def get_local_stock_data(code):
     if not os.path.exists(db_path):
         return pd.DataFrame()
         
+    def safe_float(val):
+        if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
+        try: return float(val)
+        except: return 0.0
+        
     try:
         with open(db_path, "rb") as f:
             prices_db = pickle.load(f)
@@ -3120,18 +3125,21 @@ def get_local_stock_data(code):
         all_records = []
         target_code = str(code).replace('.0', '')[:4]
         
+        # 辞書(日付キー)から対象銘柄だけを抽出
         for dt_str, records in prices_db.items():
             for r in records:
-                c = str(r.get("Code", "")).replace(".0", "")[:4]
+                # 💡 【0.0円の真の原因解消】キーを全て小文字化し、V2の短いカラム名を最優先で取得
+                r_lower = {str(k).lower(): v for k, v in r.items()}
+                c = str(r_lower.get("code", "")).replace(".0", "")[:4]
                 if c == target_code:
                     all_records.append({
                         "Date": pd.to_datetime(dt_str),
                         "Code": c,
-                        "AdjO": float(r.get("AdjustmentOpen", r.get("Open", 0))),
-                        "AdjH": float(r.get("AdjustmentHigh", r.get("High", 0))),
-                        "AdjL": float(r.get("AdjustmentLow", r.get("Low", 0))),
-                        "AdjC": float(r.get("AdjustmentClose", r.get("Close", 0))),
-                        "Volume": float(r.get("AdjustmentVolume", r.get("Volume", 0)))
+                        "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
+                        "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
+                        "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
+                        "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
+                        "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("v", r_lower.get("volume", 0))))))
                     })
                     break 
         
