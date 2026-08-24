@@ -2928,10 +2928,7 @@ def analyze_formation_history(df):
             if n.lower() in cols: return df.columns[cols.index(n.lower())]
         return None
 
-    # 💡 【修正1】adjh, adjl を追加し、0件になるバグを粉砕
-    c_h = get_c('adjh', 'high', 'h')
-    c_l = get_c('adjl', 'low', 'l')
-    c_c = get_c('adjc', 'close', 'c')
+    c_h, c_l, c_c = get_c('high', 'h'), get_c('low', 'l'), get_c('close', 'adjc', 'c')
     c_d = get_c('date', 'd')
     if not all([c_h, c_l, c_c, c_d]): return [], []
 
@@ -3119,7 +3116,7 @@ def get_local_stock_data(code):
         
     def safe_float(val):
         """Noneや空文字が来ても絶対にクラッシュしない防弾変換"""
-        if val is None or val == "": return 0.0
+        if pd.isna(val) or val is None or val == "": return 0.0
         try: return float(val)
         except: return 0.0
         
@@ -3127,35 +3124,111 @@ def get_local_stock_data(code):
         with open(db_path, "rb") as f:
             prices_db = pickle.load(f)
             
-        all_records = []
         target_code = str(code).replace('.0', '')[:4]
-        
-        # 辞書(日付キー)から対象銘柄だけを抽出
-        for dt_str, records in prices_db.items():
-            for r in records:
-                # 💡 【修正2】大文字小文字の揺れを完全に吸収し、0.0円になるバグを粉砕
-                r_lower = {str(k).lower(): v for k, v in r.items()}
-                c = str(r_lower.get("code", "")).replace(".0", "")[:4]
-                if c == target_code:
-                    all_records.append({
-                        "Date": pd.to_datetime(dt_str),
-                        "Code": c,
-                        "AdjO": safe_float(r_lower.get("adjo", r_lower.get("adjustmentopen", r_lower.get("o", r_lower.get("open", 0))))),
-                        "AdjH": safe_float(r_lower.get("adjh", r_lower.get("adjustmenthigh", r_lower.get("h", r_lower.get("high", 0))))),
-                        "AdjL": safe_float(r_lower.get("adjl", r_lower.get("adjustmentlow", r_lower.get("l", r_lower.get("low", 0))))),
-                        "AdjC": safe_float(r_lower.get("adjc", r_lower.get("adjustmentclose", r_lower.get("c", r_lower.get("close", 0))))),
-                        "Volume": safe_float(r_lower.get("adjvo", r_lower.get("adjustmentvolume", r_lower.get("vo", r_lower.get("volume", 0)))))
-                    })
-                    break 
-        
-        if not all_records:
-            return pd.DataFrame()
+        all_records = []
+
+        # 💡 【真の元凶解決】prices_db が「辞書」ではなく「DataFrame」で保存されていた場合の完全対応
+        if isinstance(prices_db, pd.DataFrame):
+            cols = [str(c).lower() for c in prices_db.columns]
+            def find_c(*names):
+                for n in names:
+                    if n.lower() in cols: return prices_db.columns[cols.index(n.lower())]
+                return None
+
+            c_code = find_c('code', 'ticker', 'symbol')
+            if not c_code: return pd.DataFrame()
+
+            # 対象銘柄のみ抽出
+            mask = prices_db[c_code].astype(str).str.replace('.0', '', regex=False).str[:4] == target_code
+            df_target = prices_db[mask].copy()
+            if df_target.empty: return pd.DataFrame()
+
+            # カラムの揺れを吸収
+            c_date = find_c('date', 'd', 'datetime')
+            c_o = find_c('adjustmentopen', 'adjopen', 'adjo', 'open', 'o')
+            c_h = find_c('adjustmenthigh', 'adjhigh', 'adjh', 'high', 'h')
+            c_l = find_c('adjustmentlow', 'adjlow', 'adjl', 'low', 'l')
+            c_c = find_c('adjustmentclose', 'adjclose', 'adjc', 'close', 'c')
+            c_v = find_c('adjustmentvolume', 'adjvolume', 'adjvo', 'volume', 'v', 'vo')
+
+            if c_date:
+                df_target['Date'] = pd.to_datetime(df_target[c_date], errors='coerce')
+            else:
+                return pd.DataFrame()
+
+            df_target['Code'] = target_code
+            df_target['AdjO'] = df_target[c_o].apply(safe_float) if c_o else 0.0
+            df_target['AdjH'] = df_target[c_h].apply(safe_float) if c_h else 0.0
+            df_target['AdjL'] = df_target[c_l].apply(safe_float) if c_l else 0.0
+            df_target['AdjC'] = df_target[c_c].apply(safe_float) if c_c else 0.0
+            df_target['Volume'] = df_target[c_v].apply(safe_float) if c_v else 0.0
             
-        df = pd.DataFrame(all_records)
-        df.sort_values(by="Date", inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        return df
-    except Exception:
+            # 💡 司令官の既存コード(分析・UI)を一文字も変更せずに動かすため、標準のカラム名も同梱する
+            df_target['Open'] = df_target['AdjO']
+            df_target['High'] = df_target['AdjH']
+            df_target['Low'] = df_target['AdjL']
+            df_target['Close'] = df_target['AdjC']
+
+            df_res = df_target[['Date', 'Code', 'AdjO', 'AdjH', 'AdjL', 'AdjC', 'Volume', 'Open', 'High', 'Low', 'Close']].copy()
+            df_res.sort_values(by="Date", inplace=True)
+            df_res.reset_index(drop=True, inplace=True)
+            return df_res
+            
+        # 従来通り「辞書（dict）」で保存されていた場合の処理
+        elif isinstance(prices_db, dict):
+            for dt_str, records in prices_db.items():
+                if isinstance(records, pd.DataFrame):
+                    c_code = 'Code' if 'Code' in records.columns else ('code' if 'code' in records.columns else None)
+                    if c_code:
+                        mask = records[c_code].astype(str).str.replace('.0', '', regex=False).str[:4] == target_code
+                        r_df = records[mask]
+                        if not r_df.empty:
+                            r = r_df.iloc[0].to_dict()
+                        else:
+                            continue
+                    else:
+                        continue
+                else:
+                    matched = False
+                    for r in records:
+                        if isinstance(r, dict):
+                            c = str(r.get("Code", r.get("code", ""))).replace(".0", "")[:4]
+                            if c == target_code:
+                                matched = True
+                                break
+                    if not matched: continue
+
+                r_lower = {str(k).lower(): v for k, v in r.items()}
+                
+                o_val = safe_float(r_lower.get("adjustmentopen", r_lower.get("adjo", r_lower.get("open", r_lower.get("o", 0)))))
+                h_val = safe_float(r_lower.get("adjustmenthigh", r_lower.get("adjh", r_lower.get("high", r_lower.get("h", 0)))))
+                l_val = safe_float(r_lower.get("adjustmentlow", r_lower.get("adjl", r_lower.get("low", r_lower.get("l", 0)))))
+                c_val = safe_float(r_lower.get("adjustmentclose", r_lower.get("adjc", r_lower.get("close", r_lower.get("c", 0)))))
+                v_val = safe_float(r_lower.get("adjustmentvolume", r_lower.get("adjvo", r_lower.get("volume", r_lower.get("v", 0)))))
+
+                all_records.append({
+                    "Date": pd.to_datetime(dt_str),
+                    "Code": target_code,
+                    "AdjO": o_val,
+                    "AdjH": h_val,
+                    "AdjL": l_val,
+                    "AdjC": c_val,
+                    "Volume": v_val,
+                    "Open": o_val,  # 💡 同梱処理
+                    "High": h_val,
+                    "Low": l_val,
+                    "Close": c_val
+                })
+            
+            if not all_records:
+                return pd.DataFrame()
+                
+            df = pd.DataFrame(all_records)
+            df.sort_values(by="Date", inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            return df
+            
+    except Exception as e:
         return pd.DataFrame()
         
 # ==========================================
