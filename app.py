@@ -1159,23 +1159,30 @@ with tab3:
     if "tab3_last_t2" not in st.session_state: st.session_state["tab3_last_t2"] = t2_codes_str
 
     if st.session_state["tab3_last_t1"] != t1_codes_str:
-        st.session_state["tab3_codes_buy"] = t1_codes_str
-        st.session_state["tab3_last_t1"] = t1_codes_str
+            st.session_state["tab3_codes_buy"] = t1_codes_str
+            st.session_state["tab3_last_t1"] = t1_codes_str
 
-    if st.session_state["tab3_last_t2"] != t2_codes_str:
-        st.session_state["tab3_codes_sell"] = t2_codes_str
-        st.session_state["tab3_last_t2"] = t2_codes_str
+        if st.session_state["tab3_last_t2"] != t2_codes_str:
+            st.session_state["tab3_codes_sell"] = t2_codes_str
+            st.session_state["tab3_last_t2"] = t2_codes_str
 
-    text_key = f"tab3_codes_{scan_mode}"
+        text_key = f"tab3_codes_{scan_mode}"
 
-    st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
-    target_codes_input = st.text_area(
-        "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
-        key=text_key,
-        height=100
-    )
+        # 🚨 UIバグ粉砕: Streamlitのウィジェット状態喪失を防ぐ堅牢なコールバック同期
+        def update_tab3_codes(k):
+            st.session_state[k] = st.session_state[k + "_widget"]
 
-    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
+        st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
+        target_codes_input = st.text_area(
+            "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
+            value=st.session_state.get(text_key, ""),
+            key=text_key + "_widget",
+            on_change=update_tab3_codes,
+            args=(text_key,),
+            height=100
+        )
+
+        if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
         if not target_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
