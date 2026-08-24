@@ -3101,25 +3101,29 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・V2カラム対応版）
+# 🛡️ TAB3専用：完全ローカル株価抽出エンジン（API通信ゼロ・圧縮対応・絶対防弾版）
 # ==========================================
 @st.cache_data(show_spinner=False)
 def get_local_stock_data(code):
-    """API通信を物理的に遮断し、バッチが作った prices_db.pkl から指定銘柄の時系列を抽出する"""
+    """API通信を物理的に遮断し、バッチが作った prices_db.pkl.gz から指定銘柄の時系列を抽出する"""
     import os, pickle
+    import gzip
     import pandas as pd
     
-    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    # 💡 圧縮ファイル(.pkl.gz)を探しに行くように修正
+    db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
     if not os.path.exists(db_path):
         return pd.DataFrame()
         
     def safe_float(val):
-        if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
+        """Noneや空文字が来てもクラッシュしない防弾変換"""
+        if pd.isna(val) or val is None or val == "": return 0.0
         try: return float(val)
         except: return 0.0
         
     try:
-        with open(db_path, "rb") as f:
+        # 💡 gzip で解凍しながら開くように修正
+        with gzip.open(db_path, "rb") as f:
             prices_db = pickle.load(f)
             
         all_records = []
@@ -3128,7 +3132,7 @@ def get_local_stock_data(code):
         # 辞書(日付キー)から対象銘柄だけを抽出
         for dt_str, records in prices_db.items():
             for r in records:
-                # 💡 【0.0円の真の原因解消】キーを全て小文字化し、V2の短いカラム名を最優先で取得
+                # キーの大文字小文字ブレを完全吸収
                 r_lower = {str(k).lower(): v for k, v in r.items()}
                 c = str(r_lower.get("code", "")).replace(".0", "")[:4]
                 if c == target_code:
