@@ -1160,41 +1160,39 @@ with tab3:
                 if c: t2_codes.append(str(c)[:4])
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
 
-    if "tab3_codes_buy" not in st.session_state:
-        st.session_state["tab3_codes_buy"] = t1_codes_str
-    if "tab3_codes_sell" not in st.session_state:
-        st.session_state["tab3_codes_sell"] = t2_codes_str
+    # 🚨 内部Storeの初期化
+    if "tab3_store_buy" not in st.session_state:
+        st.session_state["tab3_store_buy"] = t1_codes_str
+    if "tab3_store_sell" not in st.session_state:
+        st.session_state["tab3_store_sell"] = t2_codes_str
     if "tab3_last_t1" not in st.session_state:
         st.session_state["tab3_last_t1"] = t1_codes_str
     if "tab3_last_t2" not in st.session_state:
         st.session_state["tab3_last_t2"] = t2_codes_str
 
-    # 🚨 修正: TAB1/TAB2でスキャンされた際に、ウィジェット用Stateも強制上書きし、空欄バグを粉砕
+    # 🚨 TAB1/TAB2でスキャン結果が更新された瞬間のみStoreを強制上書き
     if st.session_state["tab3_last_t1"] != t1_codes_str:
-        st.session_state["tab3_codes_buy"] = t1_codes_str
-        st.session_state["tab3_codes_buy_widget"] = t1_codes_str 
+        st.session_state["tab3_store_buy"] = t1_codes_str
         st.session_state["tab3_last_t1"] = t1_codes_str
 
     if st.session_state["tab3_last_t2"] != t2_codes_str:
-        st.session_state["tab3_codes_sell"] = t2_codes_str
-        st.session_state["tab3_codes_sell_widget"] = t2_codes_str
+        st.session_state["tab3_store_sell"] = t2_codes_str
         st.session_state["tab3_last_t2"] = t2_codes_str
 
-    text_key = f"tab3_codes_{scan_mode}"
-
-    # 🚨 UIバグ粉砕: Streamlitのウィジェット状態喪失を防ぐ堅牢なコールバック同期
-    def update_tab3_codes(k):
-        st.session_state[k] = st.session_state[k + "_widget"]
+    store_key = "tab3_store_buy" if scan_mode == "buy" else "tab3_store_sell"
 
     st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
+    
+    # 🚨 KeyErrorおよび空欄バグの完全粉砕仕様
+    # コールバックやkeyバインディングを完全廃止し、value引数による直接注入と戻り値同期で防弾化
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
-        value=st.session_state.get(text_key, ""),
-        key=text_key + "_widget",
-        on_change=update_tab3_codes,
-        args=(text_key,),
+        value=st.session_state.get(store_key, ""),
         height=100
     )
+    
+    # ユーザーの手入力値は即座にStoreへ反映し、タブ切り替え時の状態喪失を防ぐ
+    st.session_state[store_key] = target_codes_input
 
     if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
         if not target_codes_input.strip():
@@ -1213,7 +1211,7 @@ with tab3:
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
 
             # 🚨 マクロ地合い（下げ相場）の独立検知（空売り前提条件: 18日MA）
-            is_macro_down = False
+            is_macro_downtrend = False
             try:
                 _macro_data = get_macro_weather()
                 if _macro_data and "nikkei" in _macro_data:
@@ -1226,7 +1224,7 @@ with tab3:
                         _price_m = _macro_data["nikkei"]["price"]
                         if pd.notna(_ma18_m) and _ma18_m > 0:
                             if ((_price_m / _ma18_m) - 1) * 100 < 0:
-                                is_macro_down = True
+                                is_macro_downtrend = True
             except: pass
 
             c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
@@ -1270,7 +1268,7 @@ with tab3:
                         except: pass
 
                         # 📊 チャート陣形の検知（ラリー・ルール ＆ マクロ連動）
-                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_down)
+                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
                         
                         # ------------------------------------
                         # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
@@ -1301,6 +1299,83 @@ with tab3:
                                 if days_ago == 0: rank_signal = "S"
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
+
+                        # ② ファンダメンタルズ（YoY成長率）判定
+                        f_df = fetch_fundamental_history_local(code_int, local_fund_db)
+                        if f_df is not None and not f_df.empty:
+                            q1_row = f_df[f_df["期間"] == "直近 Q1"]
+                            q2_row = f_df[f_df["期間"] == "直近 Q2"]
+                            
+                            def get_val(r, col):
+                                if r.empty: return None
+                                v = r[col].iloc[0]
+                                if isinstance(v, str) and v == "-": return None
+                                try: return float(v)
+                                except: return None
+
+                            if scan_mode == "buy":
+                                q1_s = get_val(q1_row, "売上(%)")
+                                q1_op = get_val(q1_row, "営業益(%)")
+                                q1_ord = get_val(q1_row, "経常益(%)")
+                                q1_np = get_val(q1_row, "純利益(%)")
+                                q1_eps = get_val(q1_row, "EPS(%)")
+                                
+                                q2_s = get_val(q2_row, "売上(%)")
+                                q2_op = get_val(q2_row, "営業益(%)")
+                                q2_ord = get_val(q2_row, "経常益(%)")
+                                q2_np = get_val(q2_row, "純利益(%)")
+                                q2_eps = get_val(q2_row, "EPS(%)")
+                                
+                                def count_buy_misses(s, op, ord_p, np_p, eps):
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 
+                                    m = 0
+                                    if s < 7.0: m += 1
+                                    if op < 20.0: m += 1
+                                    if ord_p < 20.0: m += 1
+                                    if np_p < 20.0: m += 1
+                                    if eps < 20.0: m += 1
+                                    return m
+                                    
+                                q1_miss = count_buy_misses(q1_s, q1_op, q1_ord, q1_np, q1_eps)
+                                q2_miss = count_buy_misses(q2_s, q2_op, q2_ord, q2_np, q2_eps)
+                                
+                                if q1_miss == 0:
+                                    if q2_miss == 0: rank_funda = "S"
+                                    elif q2_miss == 1: rank_funda = "A"
+                                    elif 2 <= q2_miss <= 4: rank_funda = "B"
+                                
+                            elif scan_mode == "sell":
+                                if not q1_row.empty and not q2_row.empty:
+                                    q1_op = get_val(q1_row, "営業益(%)")
+                                    q1_ord = get_val(q1_row, "経常益(%)")
+                                    q1_np = get_val(q1_row, "純利益(%)")
+                                    q1_eps = get_val(q1_row, "EPS(%)")
+                                    
+                                    q2_op = get_val(q2_row, "営業益(%)")
+                                    q2_ord = get_val(q2_row, "経常益(%)")
+                                    q2_np = get_val(q2_row, "純利益(%)")
+                                    q2_eps = get_val(q2_row, "EPS(%)")
+                                    
+                                    vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
+                                    if None not in vals:
+                                        lt_5 = sum(1 for v in vals if v < 5.0)
+                                        lt_8 = sum(1 for v in vals if v < 8.0)
+                                        
+                                        # 全8項目が8%未満であることが大前提
+                                        if lt_8 == 8:
+                                            if lt_5 == 8: rank_funda = "S"
+                                            elif lt_5 == 7: rank_funda = "A"
+                                            elif lt_5 == 6: rank_funda = "B"
+
+                        # ③ 総合ヒット判定の結合
+                        if scan_mode == "buy":
+                            if rank_funda != "対象外" and rank_signal != "対象外":
+                                is_hit = True
+                                rank_str = f"🎯業績:{rank_funda}級 / 陣形:{rank_signal}級"
+                        elif scan_mode == "sell":
+                            if rank_funda != "対象外" and rank_signal != "対象外":
+                                is_hit = True
+                                rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
                         # ② ファンダメンタルズ（YoY成長率）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
