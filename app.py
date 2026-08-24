@@ -409,20 +409,49 @@ def get_all_market_caps_bulk():
     except: pass
     return mcap_map
 
+# ==========================================
+# 🛠️ 売買代金フィルター用 実体エンジン（完全ローカル完結版）
+# ==========================================
 def get_all_volumes_bulk():
+    """ローカルの株価DB(prices_db.pkl.gz / .pkl)から最新日の売買代金(億円)を抽出（API通信一切なし）"""
+    import os
+    import pickle
+    import gzip
+    
     vol_map = {}
+    db_path_gz = os.path.join(os.path.dirname(__file__), "prices_db.pkl.gz")
+    db_path_raw = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
+    
+    prices_db = None
     try:
-        import pickle
-        db_path = os.path.join(os.path.dirname(__file__), "prices_db.pkl")
-        if os.path.exists(db_path):
-            with open(db_path, "rb") as f: prices_db = pickle.load(f)
-            if prices_db:
-                latest_date = sorted(prices_db.keys())[-1]
-                for d in prices_db[latest_date]:
-                    code = str(d.get("Code", "")).replace(".0", "")[:4]
-                    t_val = float(d.get("TurnoverValue", 0.0))
-                    if t_val > 0: vol_map[code] = t_val / 100000000.0
-    except: pass
+        if os.path.exists(db_path_gz):
+            with gzip.open(db_path_gz, "rb") as f:
+                prices_db = pickle.load(f)
+        elif os.path.exists(db_path_raw):
+            with open(db_path_raw, "rb") as f:
+                prices_db = pickle.load(f)
+    except Exception:
+        pass
+        
+    if prices_db:
+        try:
+            # 記録されている最新営業日のデータを抽出
+            latest_date = sorted(prices_db.keys())[-1]
+            for d in prices_db[latest_date]:
+                code = str(d.get("Code", "")).replace(".0", "")[:4]
+                # 🚨 V1 / V2のキー名揺れ（TurnoverValue, Va）を完全吸収
+                val = d.get("Va") or d.get("TurnoverValue")
+                
+                if val is not None and str(val).strip() != "":
+                    try:
+                        t_val = float(val)
+                        if t_val > 0:
+                            vol_map[code] = t_val / 100000000.0
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+            
     return vol_map
 
 # ==========================================
