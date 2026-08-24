@@ -3490,8 +3490,9 @@ with tab3:
                         if len(df) > 0:
                             df_c = df.copy()
                             
-                            # 💡 カラム名の揺れ（V2短縮名など）を吸収
-                            c_col = 'AdjC' if 'AdjC' in df_c.columns else ('C' if 'C' in df_c.columns else 'Close')
+                            # 💡 デバッグ結果の短縮名（AdjC または C）を動的検知
+                            c_col = next((col for col in ['AdjC', 'C', 'Close', 'close'] if col in df_c.columns), df_c.columns[-1])
+                            
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_col].rolling(18).mean()
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_col].rolling(50).mean()
                             
@@ -3502,25 +3503,23 @@ with tab3:
                             rs = gain / loss
                             df_c['RSI14'] = 100 - (100 / (1 + rs))
 
-                            # 💡 RSI計算後のデータから最新行を取得
+                            # 💡 デバッグで判明したキー（AdjO, O, AdjH, H, AdjL, L 等）を確実に取得する関数
                             q0 = df_c.iloc[-1]
                             
-                            # 💡 0円問題を完全粉砕する値取得関数
-                            def get_safe_val(row, *keys):
+                            def get_val(*keys):
                                 for k in keys:
-                                    if k in row.index:
-                                        v = row[k]
+                                    if k in q0.index:
+                                        v = q0[k]
                                         if pd.notna(v) and str(v).strip() != "":
                                             try: return float(v)
                                             except: pass
                                 return 0.0
 
-                            # デバッグで判明したカラム名（AdjO, O等）を確実に取得
-                            c_o = get_safe_val(q0, 'AdjO', 'O', 'Open', 'AdjustmentOpen')
-                            c_h = get_safe_val(q0, 'AdjH', 'H', 'High', 'AdjustmentHigh')
-                            c_l = get_safe_val(q0, 'AdjL', 'L', 'Low', 'AdjustmentLow')
-                            c_c = get_safe_val(q0, c_col, 'AdjC', 'C', 'Close')
-                            rsi_val = get_safe_val(q0, 'RSI14')
+                            c_o = get_val('AdjO', 'O', 'Open', 'adjustmentopen')
+                            c_h = get_val('AdjH', 'H', 'High', 'adjustmenthigh')
+                            c_l = get_val('AdjL', 'L', 'Low', 'adjustmentlow')
+                            c_c = get_val(c_col, 'AdjC', 'C', 'Close')
+                            rsi_val = get_val('RSI14')
                             
                             # 💡 5カラムに拡張し、確実な値とRSIを表示
                             c1, c2, c3, c4, c5 = st.columns(5)
@@ -3531,21 +3530,21 @@ with tab3:
                             c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
                             
                             fig = go.Figure()
-                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                            date_col = next((col for col in ['Date', 'date', 'datetime', 'd'] if col in df_c.columns), df_c.columns[0])
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
                             
                             # チャート描画用カラムの特定
-                            o_col = next((k for k in ['AdjO', 'O', 'Open', 'AdjustmentOpen'] if k in df_c.columns), 'Open')
-                            h_col = next((k for k in ['AdjH', 'H', 'High', 'AdjustmentHigh'] if k in df_c.columns), 'High')
-                            l_col = next((k for k in ['AdjL', 'L', 'Low', 'AdjustmentLow'] if k in df_c.columns), 'Low')
+                            o_col = next((k for k in ['AdjO', 'O', 'Open', 'adjustmentopen'] if k in df_c.columns), c_col)
+                            h_col = next((k for k in ['AdjH', 'H', 'High', 'adjustmenthigh'] if k in df_c.columns), c_col)
+                            l_col = next((k for k in ['AdjL', 'L', 'Low', 'adjustmentlow'] if k in df_c.columns), c_col)
 
                             # 💡 陽線を濃い緑、陰線を濃い赤に設定
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
-                                open=df_c.get(o_col), 
-                                high=df_c.get(h_col), 
-                                low=df_c.get(l_col), 
-                                close=df_c.get(c_col), 
+                                open=df_c[o_col], 
+                                high=df_c[h_col], 
+                                low=df_c[l_col], 
+                                close=df_c[c_col], 
                                 name='価格',
                                 increasing_line_color='darkgreen', increasing_fillcolor='darkgreen',
                                 decreasing_line_color='darkred', decreasing_fillcolor='darkred'
@@ -3556,12 +3555,12 @@ with tab3:
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=df_c.loc[sig_df.index, c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=df_c.loc[sig_df.index, c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
                             # 右端の見切れ防止（+3日マージン）とスケール調整
                             if len(df_c) > 65:
@@ -3590,7 +3589,7 @@ with tab3:
                                 
                             fig.update_layout(**layout_args)
                             
-                            # 💡 【Oh noエラー完全解消】一意のkeyを付与して重複クラッシュを回避
+                            # 💡 重複IDエラー回避のための安全なkey付与
                             st.plotly_chart(fig, use_container_width=True, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
                         # 📊 YoY統一の業績表
