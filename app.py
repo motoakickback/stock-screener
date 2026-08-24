@@ -727,10 +727,17 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         q0_l = float(df_recent.loc[i, c_l])
         q0_c = float(df_recent.loc[i, c_c])
         
-        ma18_m1 = float(df_recent.loc[i-1, 'MA18'])
-        ma18_q0 = float(df_recent.loc[i, 'MA18'])
+        ma18_m1 = df_recent.loc[i-1, 'MA18']
+        ma18_q0 = df_recent.loc[i, 'MA18']
         
         curr_date = df_recent.loc[i, c_d]
+        
+        # 🚨 判定漏れ防止：移動平均線が算出できていない期間（NaN）は安全にスキップ
+        if pd.isna(ma18_m1) or pd.isna(ma18_q0):
+            continue
+            
+        ma18_m1 = float(ma18_m1)
+        ma18_q0 = float(ma18_q0)
 
         # 🔵 買いシグナル①（3日ルール）
         # 1日目:陰線で終値<前日安値, 2日目:陽線で終値>前日高値, 3日目:陽線で終値>前日終値
@@ -739,9 +746,8 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                     (q0_c > q0_o) and (q0_c > m1_c)
         
         # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # 形状：陰線(一昨日) → 陽線(昨日) → 陽線(今日)
-        # 条件：今日と昨日の安値が18日移動平均線より高い
-        buy_cond2 = (m2_c < m2_o) and (m1_c > m1_o) and (q0_c > q0_o) and \
+        # ①陽線で2日連続、今日と昨日の安値が18日移動平均線より高い
+        buy_cond2 = (q0_c > q0_o) and (m1_c > m1_o) and \
                     (q0_l > ma18_q0) and (m1_l > ma18_m1)
         
         if buy_cond1 or buy_cond2:
@@ -754,9 +760,8 @@ def analyze_formation_history(df, is_macro_downtrend=False):
                      (q0_c < q0_o) and (q0_c < m1_c)
         
         # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # 形状：陽線(一昨日) → 陰線(昨日) → 陰線(今日)
-        # 条件：今日と昨日の高値が18日移動平均線より安い
-        sell_cond2 = (m2_c > m2_o) and (m1_c < m1_o) and (q0_c < q0_o) and \
+        # ①陰線で2日連続、今日と昨日の高値が18日移動平均線より安い
+        sell_cond2 = (q0_c < q0_o) and (m1_c < m1_o) and \
                      (q0_h < ma18_q0) and (m1_h < ma18_m1)
         
         if sell_cond1 or sell_cond2:
