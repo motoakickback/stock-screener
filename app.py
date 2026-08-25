@@ -1440,16 +1440,17 @@ with tab3:
                     def get_rank_score(data):
                         score = 0
                         r = data["rank"]
-                        if "業績:S" in r: score += 1000
-                        elif "業績:A" in r: score += 800
-                        elif "業績:B" in r: score += 600
                         
-                        if "陣形:S" in r: score += 100
-                        elif "陣形:A" in r: score += 80
-                        elif "陣形:B" in r: score += 60
+                        # 🚨 【修正】業績と陣形のスコアを同価値に設定し、純粋な合計点で評価
+                        if "業績:S" in r: score += 300
+                        elif "業績:A" in r: score += 200
+                        elif "業績:B" in r: score += 100
                         
-                        # 🚨 【修正】同点（特に対象外でスコア0）の場合の順序崩壊を防ぐため、
-                        # 第2ソートキーとして「直近の売買代金(turnover)」を適用する
+                        if "陣形:S" in r: score += 300
+                        elif "陣形:A" in r: score += 200
+                        elif "陣形:B" in r: score += 100
+                        
+                        # 第2ソートキーとして「直近の売買代金(turnover)」を適用
                         return (score, data.get("turnover", 0.0))
                         
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
