@@ -1235,7 +1235,6 @@ with tab3:
     st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
     
     # 🚨 KeyErrorおよび空欄バグの完全粉砕仕様
-    # コールバックやkeyバインディングを完全廃止し、value引数による直接注入と戻り値同期で防弾化
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
         value=st.session_state.get(store_key, ""),
@@ -1328,7 +1327,7 @@ with tab3:
                         # ------------------------------------
                         # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
                         # ------------------------------------
-                        is_hit = True # 🚨 足切り排除のため常に有効とする
+                        is_hit = False
                         rank_str = ""
                         rank_funda = "対象外"
                         rank_signal = "対象外"
@@ -1421,10 +1420,14 @@ with tab3:
                                             elif lt_5 == 7: rank_funda = "A"
                                             elif lt_5 == 6: rank_funda = "B"
 
-                        # ③ 総合判定の結合（🚨 足切りを排除し、無条件にすべてのステータスを表示）
+                        # ③ 総合判定の結合（is_hitフラグは維持しつつ表示は全件行う）
                         if scan_mode == "buy":
+                            if rank_funda != "対象外" and rank_signal != "対象外":
+                                is_hit = True
                             rank_str = f"🎯業績:{rank_funda}級 / 陣形:{rank_signal}級"
                         elif scan_mode == "sell":
+                            if rank_funda != "対象外" and rank_signal != "対象外":
+                                is_hit = True
                             rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
                         analyzed_data[code_int] = {
@@ -1435,7 +1438,6 @@ with tab3:
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
                     def get_rank_score(data):
-                        # 🚨 足切り排除のため is_hit チェックによる除外を廃止
                         score = 0
                         r = data["rank"]
                         if "業績:S" in r: score += 1000
@@ -1445,11 +1447,15 @@ with tab3:
                         if "陣形:S" in r: score += 100
                         elif "陣形:A" in r: score += 80
                         elif "陣形:B" in r: score += 60
-                        return score
+                        
+                        # 🚨 【修正】同点（特に対象外でスコア0）の場合の順序崩壊を防ぐため、
+                        # 第2ソートキーとして「直近の売買代金(turnover)」を適用する
+                        return (score, data.get("turnover", 0.0))
                         
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
+                    # 上位30件を無条件に抽出（足切りなし）
                     display_targets = sortable_results[:30]
 
                     name_map = {}
@@ -1464,19 +1470,17 @@ with tab3:
                     import plotly.graph_objects as go
                     import numpy as np
                     
-                    # 🚨 足切り廃止のため、合致件数ではなく全解析対象件数としてメッセージを出力
-                    total_analyzed = len(sortable_results)
-                    if total_analyzed > 0:
-                        st.success(f"🎯 分析完了: 対象 {total_analyzed} 件の精密解析結果（上位最大30件を表示します）")
+                    hit_count = sum(1 for d in sortable_results if d["is_hit"])
+                    if hit_count > 0:
+                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （分析対象 上位最大30件を表示します）")
                     else:
-                        st.error("📉 分析対象となる銘柄データがありませんでした。")
+                        st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
 
                     for idx, data in enumerate(display_targets):
                         code = data['code']
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
                         
-                        # 🚨 待機バッジを廃止し、取得したランクを強制表示
                         hit_badge = data["rank"]
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
@@ -1647,11 +1651,11 @@ with tab3:
                             
                         st.divider()
 
-            # 🚨 足切りを完全に排除し、分析に掛けた全件をコピペ用出力としてリスト化
-            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results]
+            # 🚨 画面に表示されている上位30件をコピペ用出力としてリスト化
+            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
+                st.text_area("📋 分析対象銘柄（コピペ用・上位30件）", value=hit_codes_str, height=70)
                 
             st.session_state['tab3_results'] = results_tab3
 
