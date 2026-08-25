@@ -1193,42 +1193,52 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
+    # 🚨 TAB1/TAB2の結果オブジェクトを直接取得し、オブジェクトID（再スキャン検知）を取得
+    t1_results = st.session_state.get('tab1_scan_results')
     t1_codes = []
-    for key in ['tab1_scan_results']:
-        t_res = st.session_state.get(key)
-        if t_res:
-            for r in t_res:
-                c = r.get('Code')
-                if c: t1_codes.append(str(c)[:4])
+    if t1_results:
+        for r in t1_results:
+            c = r.get('Code')
+            if c: t1_codes.append(str(c)[:4])
     t1_codes_str = ",".join(list(dict.fromkeys(t1_codes)))
+    t1_id = id(t1_results) if t1_results is not None else 0
 
+    t2_results = st.session_state.get('tab2_scan_results')
     t2_codes = []
-    for key in ['tab2_scan_results']:
-        t_res = st.session_state.get(key)
-        if t_res:
-            for r in t_res:
-                c = r.get('Code')
-                if c: t2_codes.append(str(c)[:4])
+    if t2_results:
+        for r in t2_results:
+            c = r.get('Code')
+            if c: t2_codes.append(str(c)[:4])
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
+    t2_id = id(t2_results) if t2_results is not None else 0
 
     # 🚨 内部Storeの初期化
     if "tab3_store_buy" not in st.session_state:
         st.session_state["tab3_store_buy"] = t1_codes_str
     if "tab3_store_sell" not in st.session_state:
         st.session_state["tab3_store_sell"] = t2_codes_str
-    if "tab3_last_t1" not in st.session_state:
-        st.session_state["tab3_last_t1"] = t1_codes_str
-    if "tab3_last_t2" not in st.session_state:
-        st.session_state["tab3_last_t2"] = t2_codes_str
+        
+    if "tab3_last_t1_id" not in st.session_state:
+        st.session_state["tab3_last_t1_id"] = t1_id
+    if "tab3_last_t2_id" not in st.session_state:
+        st.session_state["tab3_last_t2_id"] = t2_id
+        
+    if "tab3_last_t1_str" not in st.session_state:
+        st.session_state["tab3_last_t1_str"] = t1_codes_str
+    if "tab3_last_t2_str" not in st.session_state:
+        st.session_state["tab3_last_t2_str"] = t2_codes_str
 
     # 🚨 TAB1/TAB2でスキャン結果が更新された瞬間のみStoreを強制上書き
-    if st.session_state["tab3_last_t1"] != t1_codes_str:
+    # 文字列が同一でも、再スキャンによってオブジェクトIDが変化すれば強制上書きを発動する
+    if st.session_state["tab3_last_t1_id"] != t1_id or st.session_state["tab3_last_t1_str"] != t1_codes_str:
         st.session_state["tab3_store_buy"] = t1_codes_str
-        st.session_state["tab3_last_t1"] = t1_codes_str
+        st.session_state["tab3_last_t1_id"] = t1_id
+        st.session_state["tab3_last_t1_str"] = t1_codes_str
 
-    if st.session_state["tab3_last_t2"] != t2_codes_str:
+    if st.session_state["tab3_last_t2_id"] != t2_id or st.session_state["tab3_last_t2_str"] != t2_codes_str:
         st.session_state["tab3_store_sell"] = t2_codes_str
-        st.session_state["tab3_last_t2"] = t2_codes_str
+        st.session_state["tab3_last_t2_id"] = t2_id
+        st.session_state["tab3_last_t2_str"] = t2_codes_str
 
     store_key = "tab3_store_buy" if scan_mode == "buy" else "tab3_store_sell"
 
