@@ -1642,16 +1642,18 @@ with tab3:
                             st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
                             try:
                                 def fmt_pct(x):
+                                    if pd.isna(x): return "-"
                                     if isinstance(x, str): return x
                                     return f"{x:.1f}%"
                                     
-                                st.dataframe(data["fund"].style.format({
-                                    "売上(%)": fmt_pct,
-                                    "営業益(%)": fmt_pct,
-                                    "経常益(%)": fmt_pct,
-                                    "純利益(%)": fmt_pct,
-                                    "EPS(%)": fmt_pct
-                                }), use_container_width=True)
+                                # 🚨 列が存在するか動的にチェックし、存在する列のみ右揃えCSSを適用
+                                pct_cols = [c for c in ["売上(%)", "営業益(%)", "経常益(%)", "純利益(%)", "EPS(%)"] if c in data["fund"].columns]
+                                
+                                styled_df = data["fund"].style.format({
+                                    c: fmt_pct for c in pct_cols
+                                }).set_properties(subset=pct_cols, **{'text-align': 'right'})
+                                
+                                st.dataframe(styled_df, use_container_width=True)
                             except Exception:
                                 st.dataframe(data["fund"], use_container_width=True)
                         else:
