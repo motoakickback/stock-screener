@@ -1261,26 +1261,26 @@ with tab3:
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
 
-            # 🚨 マクロ地合い（下げ相場）の独立検知（空売り前提条件: 18日MA）
+            # 🚨 マクロ地合い（下げ相場）の独立検知（空売り前提条件: 25日MA）
             is_macro_downtrend = False
             try:
                 _macro_data = get_macro_weather()
                 if _macro_data and "nikkei" in _macro_data:
                     _df_m = _macro_data["nikkei"]["df"].copy()
                     _close_col_m = next((c for c in ['AdjC', 'Close', 'close', 'C', 'c'] if c in _df_m.columns), None)
-                    if _close_col_m and len(_df_m) >= 18:
+                    if _close_col_m and len(_df_m) >= 25:
                         _s_m = _df_m[_close_col_m]
                         if isinstance(_s_m, pd.DataFrame): _s_m = _s_m.iloc[:, 0]
-                        _ma18_m = pd.to_numeric(_s_m, errors='coerce').rolling(window=18).mean().iloc[-1]
+                        _ma25_m = pd.to_numeric(_s_m, errors='coerce').rolling(window=25).mean().iloc[-1]
                         _price_m = _macro_data["nikkei"]["price"]
-                        if pd.notna(_ma18_m) and _ma18_m > 0:
-                            if ((_price_m / _ma18_m) - 1) * 100 < 0:
+                        if pd.notna(_ma25_m) and _ma25_m > 0:
+                            if ((_price_m / _ma25_m) - 1) * 100 < 0:
                                 is_macro_downtrend = True
             except: pass
 
             # 🚨 【完全新規実装】空売りモード ＆ 上げ相場時の警告メッセージ出力
             if scan_mode == "sell" and not is_macro_downtrend:
-                st.error("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場」です。上げ相場での空売りは資産を溶かす致命的な行為であるため、システムはシグナルを強制棄却し、待機を推奨します。")
+                st.error("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場（現在値が日経25日MA以上）」です。上げ相場での空売りは資産を溶かす致命的な行為であるため、システムはシグナルを強制棄却し、待機を推奨します。")
 
             c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
             raw_all_data = get_hist_data_cached(c_key)
@@ -1322,7 +1322,7 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # 📊 チャート陣形の検知（マクロ地合い連動引数を確実に追加）
+                        # 📊 チャート陣形の検知（マクロ地合い25日MA連動）
                         b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
                         
                         # ------------------------------------
