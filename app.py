@@ -1278,6 +1278,10 @@ with tab3:
                                 is_macro_downtrend = True
             except: pass
 
+            # 🚨 【完全新規実装】空売りモード ＆ 上げ相場時の警告メッセージ出力
+            if scan_mode == "sell" and not is_macro_downtrend:
+                st.error("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場」です。上げ相場での空売りは資産を溶かす致命的な行為であるため、システムはシグナルを強制棄却し、待機を推奨します。")
+
             c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
             raw_all_data = get_hist_data_cached(c_key)
 
@@ -1318,7 +1322,7 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # 📊 チャート陣形の検知（マクロ地合い連動）
+                        # 📊 チャート陣形の検知（マクロ地合い連動引数を確実に追加）
                         b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
                         
                         # ------------------------------------
