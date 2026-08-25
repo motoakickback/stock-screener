@@ -710,70 +710,81 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         df_recent['MA18'] = df_recent[c_c].rolling(18).mean()
     
     for i in range(3, len(df_recent)):
-        m3_h, m3_l = float(df_recent.loc[i-3, c_h]), float(df_recent.loc[i-3, c_l])
+        # 前日(i-3)のデータ（3日ルールにおける前日比較用）
+        prev_h = float(df_recent.loc[i-3, c_h])
+        prev_l = float(df_recent.loc[i-3, c_l])
         
-        m2_o = float(df_recent.loc[i-2, c_o])
-        m2_h = float(df_recent.loc[i-2, c_h])
-        m2_l = float(df_recent.loc[i-2, c_l])
-        m2_c = float(df_recent.loc[i-2, c_c])
+        # 🚨 ボスの要求定義に基づく日数マッピング
+        # 0日目（3日ルールの「1日目」） = 一昨日 (i-2)
+        day0_o = float(df_recent.loc[i-2, c_o])
+        day0_h = float(df_recent.loc[i-2, c_h])
+        day0_l = float(df_recent.loc[i-2, c_l])
+        day0_c = float(df_recent.loc[i-2, c_c])
         
-        m1_o = float(df_recent.loc[i-1, c_o])
-        m1_h = float(df_recent.loc[i-1, c_h])
-        m1_l = float(df_recent.loc[i-1, c_l])
-        m1_c = float(df_recent.loc[i-1, c_c])
+        # 1日目（3日ルールの「2日目」） = 昨日 (i-1)
+        day1_o = float(df_recent.loc[i-1, c_o])
+        day1_h = float(df_recent.loc[i-1, c_h])
+        day1_l = float(df_recent.loc[i-1, c_l])
+        day1_c = float(df_recent.loc[i-1, c_c])
+        day1_ma18 = df_recent.loc[i-1, 'MA18']
         
-        q0_o = float(df_recent.loc[i, c_o])
-        q0_h = float(df_recent.loc[i, c_h])
-        q0_l = float(df_recent.loc[i, c_l])
-        q0_c = float(df_recent.loc[i, c_c])
-        
-        ma18_m1 = df_recent.loc[i-1, 'MA18']
-        ma18_q0 = df_recent.loc[i, 'MA18']
+        # 2日目（3日ルールの「3日目」） = 今日 (i)
+        day2_o = float(df_recent.loc[i, c_o])
+        day2_h = float(df_recent.loc[i, c_h])
+        day2_l = float(df_recent.loc[i, c_l])
+        day2_c = float(df_recent.loc[i, c_c])
+        day2_ma18 = df_recent.loc[i, 'MA18']
         
         curr_date = df_recent.loc[i, c_d]
         
-        # 🚨 判定漏れ防止：移動平均線が算出できていない期間（NaN）は安全にスキップ
-        if pd.isna(ma18_m1) or pd.isna(ma18_q0):
+        # 判定漏れ防止：移動平均線が算出できていない期間（NaN）は安全にスキップ
+        if pd.isna(day1_ma18) or pd.isna(day2_ma18):
             continue
             
-        ma18_m1 = float(ma18_m1)
-        ma18_q0 = float(ma18_q0)
+        day1_ma18 = float(day1_ma18)
+        day2_ma18 = float(day2_ma18)
 
+        # ----------------------------------------------------
         # 🔵 買いシグナル①（3日ルール）
-        # 1日目:陰線で終値<前日安値, 2日目:陽線で終値>前日高値, 3日目:陽線で終値>前日終値
-        buy_cond1 = (m2_c < m2_o) and (m2_c < m3_l) and \
-                    (m1_c > m1_o) and (m1_c > m2_h) and \
-                    (q0_c > q0_o) and (q0_c > m1_c)
+        # 1日目: 陰線 で、終値 が前日の安値(prev_l)を下回る
+        buy1_day1 = (day0_c < day0_o) and (day0_c < prev_l)
+        # 2日目: 陽線 で、終値 が前日の高値(day0_h)を上回る
+        buy1_day2 = (day1_c > day1_o) and (day1_c > day0_h)
+        # 3日目: 陽線 で、終値 が前日の終値(day1_c)を上回る
+        buy1_day3 = (day2_c > day2_o) and (day2_c > day1_c)
+        buy_cond1 = buy1_day1 and buy1_day2 and buy1_day3
         
-        # 🔵 買いシグナル②（18日ルール: セットアップ検知）
-        # 🚨 【完全一致条件】
-        # 0日目: 陰線
-        # 1日目: 陽線 AND 安値が18MAより高い
-        # 2日目: 陽線 AND 安値が18MAより高い
-        buy_cond2 = (m2_c < m2_o) and \
-                    ((m1_c > m1_o) and (m1_l > ma18_m1)) and \
-                    ((q0_c > q0_o) and (q0_l > ma18_q0))
+        # 🔵 買いシグナル②（18日ルール）
+        # 形状：陰線（0日目）→陽線（1日目）→陽線（2日目）
+        # 条件：陽線で2日連続、今日と昨日の安値が18日移動平均線より高い
+        buy2_day0 = (day0_c < day0_o) # 0日目: 陰線
+        buy2_day1 = (day1_c > day1_o) and (day1_l > day1_ma18) # 1日目: 陽線 AND 安値が18MAより高い
+        buy2_day2 = (day2_c > day2_o) and (day2_l > day2_ma18) # 2日目: 陽線 AND 安値が18MAより高い
+        buy_cond2 = buy2_day0 and buy2_day1 and buy2_day2
         
         if buy_cond1 or buy_cond2:
             buy_signals.append(curr_date)
             
+        # ----------------------------------------------------
         # 🔴 空売りシグナル①（3日ルール）
-        # 1日目:陽線で終値>前日高値, 2日目:陰線で終値<前日安値, 3日目:陰線で終値<前日終値
-        sell_cond1 = (m2_c > m2_o) and (m2_c > m3_h) and \
-                     (m1_c < m1_o) and (m1_c < m2_l) and \
-                     (q0_c < q0_o) and (q0_c < m1_c)
+        # 1日目: 陽線 で、終値 が前日の高値(prev_h)を上回る
+        sell1_day1 = (day0_c > day0_o) and (day0_c > prev_h)
+        # 2日目: 陰線 で、終値 が前日の安値(day0_l)を下回る
+        sell1_day2 = (day1_c < day1_o) and (day1_c < day0_l)
+        # 3日目: 陰線 で、終値 が前日の終値(day1_c)を下回る
+        sell1_day3 = (day2_c < day2_o) and (day2_c < day1_c)
+        sell_cond1 = sell1_day1 and sell1_day2 and sell1_day3
         
-        # 🔴 空売りシグナル②（18日ルール: セットアップ検知）
-        # 🚨 【完全一致条件】
-        # 0日目: 陽線
-        # 1日目: 陰線 AND 高値が18MAより安い
-        # 2日目: 陰線 AND 高値が18MAより安い
-        sell_cond2 = (m2_c > m2_o) and \
-                     ((m1_c < m1_o) and (m1_h < ma18_m1)) and \
-                     ((q0_c < q0_o) and (q0_h < ma18_q0))
+        # 🔴 空売りシグナル②（18日ルール）
+        # 形状：陽線（0日目）→陰線（1日目）→陰線（2日目）
+        # 条件：陰線で2日連続、今日と昨日の高値が18日移動平均線より安い
+        sell2_day0 = (day0_c > day0_o) # 0日目: 陽線
+        sell2_day1 = (day1_c < day1_o) and (day1_h < day1_ma18) # 1日目: 陰線 AND 高値が18MAより安い
+        sell2_day2 = (day2_c < day2_o) and (day2_h < day2_ma18) # 2日目: 陰線 AND 高値が18MAより安い
+        sell_cond2 = sell2_day0 and sell2_day1 and sell2_day2
         
         if sell_cond1 or sell_cond2:
-            # 空売りの前提「市場が下げ相場である（is_macro_downtrend = True）」ことを判定
+            # 空売りの前提「市場が下げ相場である」こと
             if is_macro_downtrend:
                 sell_signals.append(curr_date)
             
