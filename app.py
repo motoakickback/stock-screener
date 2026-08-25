@@ -1356,6 +1356,8 @@ with tab3:
 
                         # ② ファンダメンタルズ（YoY成長率）判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
+                        latest_ord_pct = -9999.0  # 第2ソート用の初期値（データ欠損時は最下位へ）
+                        
                         if f_df is not None and not f_df.empty:
                             q1_row = f_df[f_df["期間"] == "直近 Q1"]
                             q2_row = f_df[f_df["期間"] == "直近 Q2"]
@@ -1366,6 +1368,11 @@ with tab3:
                                 if isinstance(v, str) and v == "-": return None
                                 try: return float(v)
                                 except: return None
+
+                            # 🚨 直近Q1の経常益(%)を取得し、ソート用に保持
+                            _tmp_ord = get_val(q1_row, "経常益(%)")
+                            if _tmp_ord is not None:
+                                latest_ord_pct = _tmp_ord
 
                             if scan_mode == "buy":
                                 q1_s = get_val(q1_row, "売上(%)")
@@ -1431,7 +1438,8 @@ with tab3:
                             rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
                         analyzed_data[code_int] = {
-                            "df": df, "is_hit": is_hit, "rank": rank_str, "turnover": turnover,
+                            "df": df, "is_hit": is_hit, "rank": rank_str, 
+                            "latest_ord_pct": latest_ord_pct, "turnover": turnover,
                             "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": f_df
                         }
 
@@ -1441,7 +1449,7 @@ with tab3:
                         score = 0
                         r = data["rank"]
                         
-                        # 🚨 【修正】業績と陣形のスコアを同価値に設定し、純粋な合計点で評価
+                        # 業績と陣形のスコアを同価値に設定し、純粋な合計点で評価
                         if "業績:S" in r: score += 300
                         elif "業績:A" in r: score += 200
                         elif "業績:B" in r: score += 100
@@ -1450,8 +1458,8 @@ with tab3:
                         elif "陣形:A" in r: score += 200
                         elif "陣形:B" in r: score += 100
                         
-                        # 第2ソートキーとして「直近の売買代金(turnover)」を適用
-                        return (score, data.get("turnover", 0.0))
+                        # 🚨 第2ソートキー：直近Q1経常益(%)、第3ソートキー：直近売買代金
+                        return (score, data.get("latest_ord_pct", -9999.0), data.get("turnover", 0.0))
                         
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
