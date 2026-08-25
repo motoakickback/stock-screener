@@ -1328,7 +1328,7 @@ with tab3:
                         # ------------------------------------
                         # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
                         # ------------------------------------
-                        is_hit = False
+                        is_hit = True # 🚨 足切り排除のため常に有効とする
                         rank_str = ""
                         rank_funda = "対象外"
                         rank_signal = "対象外"
@@ -1421,15 +1421,11 @@ with tab3:
                                             elif lt_5 == 7: rank_funda = "A"
                                             elif lt_5 == 6: rank_funda = "B"
 
-                        # ③ 総合ヒット判定の結合
+                        # ③ 総合判定の結合（🚨 足切りを排除し、無条件にすべてのステータスを表示）
                         if scan_mode == "buy":
-                            if rank_funda != "対象外" and rank_signal != "対象外":
-                                is_hit = True
-                                rank_str = f"🎯業績:{rank_funda}級 / 陣形:{rank_signal}級"
+                            rank_str = f"🎯業績:{rank_funda}級 / 陣形:{rank_signal}級"
                         elif scan_mode == "sell":
-                            if rank_funda != "対象外" and rank_signal != "対象外":
-                                is_hit = True
-                                rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
+                            rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
                         analyzed_data[code_int] = {
                             "df": df, "is_hit": is_hit, "rank": rank_str, "turnover": turnover,
@@ -1439,7 +1435,7 @@ with tab3:
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
                     def get_rank_score(data):
-                        if not data["is_hit"]: return -1
+                        # 🚨 足切り排除のため is_hit チェックによる除外を廃止
                         score = 0
                         r = data["rank"]
                         if "業績:S" in r: score += 1000
@@ -1468,18 +1464,20 @@ with tab3:
                     import plotly.graph_objects as go
                     import numpy as np
                     
-                    hit_count = sum(1 for d in sortable_results if d["is_hit"])
-                    if hit_count > 0:
-                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （上位最大30件を表示します）")
+                    # 🚨 足切り廃止のため、合致件数ではなく全解析対象件数としてメッセージを出力
+                    total_analyzed = len(sortable_results)
+                    if total_analyzed > 0:
+                        st.success(f"🎯 分析完了: 対象 {total_analyzed} 件の精密解析結果（上位最大30件を表示します）")
                     else:
-                        st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
+                        st.error("📉 分析対象となる銘柄データがありませんでした。")
 
                     for idx, data in enumerate(display_targets):
                         code = data['code']
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
                         
-                        hit_badge = data["rank"] if data["is_hit"] else "⬜ 待機"
+                        # 🚨 待機バッジを廃止し、取得したランクを強制表示
+                        hit_badge = data["rank"]
                         st.markdown(f"### 📦 {code} {c_name} | {hit_badge}")
                         
                         if len(df) > 0:
@@ -1649,7 +1647,8 @@ with tab3:
                             
                         st.divider()
 
-            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results if d["is_hit"]]
+            # 🚨 足切りを完全に排除し、分析に掛けた全件をコピペ用出力としてリスト化
+            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in sortable_results]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
                 st.text_area("📋 最終突破銘柄（コピペ用・全件）", value=hit_codes_str, height=70)
