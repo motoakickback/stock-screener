@@ -1512,9 +1512,11 @@ with tab3:
                             c_h_col = cols_lower.get('adjh', cols_lower.get('adjustmenthigh', cols_lower.get('h', cols_lower.get('high', 'High'))))
                             c_l_col = cols_lower.get('adjl', cols_lower.get('adjustmentlow', cols_lower.get('l', cols_lower.get('low', 'Low'))))
                             c_c_col = cols_lower.get('adjc', cols_lower.get('adjustmentclose', cols_lower.get('c', cols_lower.get('close', 'Close'))))
+                            # 🚨 出来高カラムの取得を追加
+                            c_v_col = cols_lower.get('adjv', cols_lower.get('adjustmentvolume', cols_lower.get('v', cols_lower.get('volume', cols_lower.get('vo', 'Volume')))))
                             
                             # 🚨 Oh no! (PyArrowクラッシュ) 防御壁：欠損値(NaN)の物理排除
-                            for col in [c_o_col, c_h_col, c_l_col, c_c_col]:
+                            for col in [c_o_col, c_h_col, c_l_col, c_c_col, c_v_col]:
                                 if col not in df_c.columns:
                                     df_c[col] = 0.0
                                 else:
@@ -1584,7 +1586,18 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 🚨 初期表示（直近65日間）の最適Y軸スケール（オートフォーカス）計算を完全復旧
+                            # 🚨 出来高の棒グラフを追加（陽線・陰線で色分け）
+                            v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
+                            fig.add_trace(go.Bar(
+                                x=df_c[date_col], 
+                                y=df_c[c_v_col], 
+                                name='出来高', 
+                                marker_color=v_colors, 
+                                yaxis='y2',
+                                opacity=0.8
+                            ))
+
+                            # 🚨 初期表示（直近65日間）の最適Y軸スケール（オートフォーカス）計算
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 t_min = df_recent[date_col].iloc[0]
@@ -1627,8 +1640,9 @@ with tab3:
                             if x_min_str and x_max_str:
                                 xaxis_config['range'] = [x_min_str, x_max_str]
 
+                            # 🚨 高さを550pxに拡大し、チャート空間を確保
                             layout_args = {
-                                'height': 450,
+                                'height': 550,
                                 'margin': dict(l=10, r=50, t=60, b=10),
                                 'xaxis': xaxis_config,
                                 'dragmode': 'pan',
@@ -1636,11 +1650,14 @@ with tab3:
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
-                            # 🚨 Y軸のオートフォーカス（range固定）を復活
+                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（上部75%）
                             if y_min and y_max:
-                                layout_args['yaxis'] = dict(range=[y_min, y_max], autorange=False, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.25, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
-                                layout_args['yaxis'] = dict(autorange=True, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.25, 1.0], autorange=True, fixedrange=False)
+
+                            # 🚨 出来高用Y軸（y2）を画面下部に配置（下部15%、間を10%空ける）
+                            layout_args['yaxis2'] = dict(domain=[0.0, 0.15], autorange=True, fixedrange=False, showticklabels=False)
                                 
                             fig.update_layout(**layout_args)
                             
