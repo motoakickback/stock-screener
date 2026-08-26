@@ -814,7 +814,7 @@ def fetch_fundamental_history_local(code, local_db):
 
         cols = [str(c).lower() for c in df_target.columns]
         
-        # 🚨 1. 金融セクター完全対応：検索対象の科目を拡張しリスト化
+        # 🚨 1. 金融セクター対応：検索対象の科目を拡張しリスト化
         sales_candidates = ['sales', 'netsales', 'net_sales', 'operatingrevenues', 'operating_revenues', 'ordinaryrevenues', 'ordinary_revenues']
         op_candidates = ['op', 'operatingprofit', 'operating_profit']
         ord_candidates = ['odp', 'ordinaryprofit', 'ordinary_profit']
@@ -853,7 +853,8 @@ def fetch_fundamental_history_local(code, local_db):
         
         if sales_cols_found:
             for sc in sales_cols_found:
-                actual_mask = actual_mask | (df_target[sc].apply(to_flt) > 0)
+                if sc is not None:
+                    actual_mask = actual_mask | (df_target[sc].apply(to_flt) > 0)
         else:
             actual_mask = pd.Series([True]*len(df_target))
 
@@ -867,12 +868,13 @@ def fetch_fundamental_history_local(code, local_db):
             
             c_s = 0.0; p_s = 0.0
             for sc in sales_cols_found:
-                c_val = to_flt(actual_df[sc].iloc[i])
-                p_val = to_flt(actual_df[sc].iloc[i-1])
-                if c_val > 0 or p_val > 0:
-                    c_s = c_val
-                    p_s = p_val
-                    break
+                if sc is not None:
+                    c_val = to_flt(actual_df[sc].iloc[i])
+                    p_val = to_flt(actual_df[sc].iloc[i-1])
+                    if c_val > 0 or p_val > 0:
+                        c_s = c_val
+                        p_s = p_val
+                        break
                     
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
@@ -889,11 +891,9 @@ def fetch_fundamental_history_local(code, local_db):
         # 🚨 2. 「-100%バグ」の完全粉砕（防弾シールド）
         def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
-            # 当期が0.0で前期が数値を持つ場合、金融等における非開示・欠損（ゼロ埋め副作用）とみなし暴発を防ぐ
             if c == 0.0 and p != 0.0: return "-"
             return ((c - p) / abs(p)) * 100.0
 
-        # リスト内にある有効な列名の値を順に探し、最初にヒットした数値を返す
         def get_best_v(row, candidates):
             if row is None: return 0.0
             for c in candidates:
@@ -922,30 +922,65 @@ def fetch_fundamental_history_local(code, local_db):
                 dis_date = dis_date.strftime('%Y-%m-%d')
                 if dis_date == '1970-01-01': dis_date = '-'
             else: dis_date = '-'
+
+            # 🚨 3. 営業利益の欠落に対するプロキシ（偽装）処理
+            v_sales_c = get_best_v(q_cur, sales_candidates)
+            v_sales_p = get_best_v(q_yoy, sales_candidates)
+            
+            v_op_c = get_best_v(q_cur, op_candidates)
+            v_op_p = get_best_v(q_yoy, op_candidates)
+            v_ord_c = get_best_v(q_cur, ord_candidates)
+            v_ord_p = get_best_v(q_yoy, ord_candidates)
+            
+            # 金融銘柄など営業益が取得できない場合、経常益の数値を代入してTAB1/TAB3の足切りを強制突破させる
+            if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
+            if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
+            
+            v_profit_c = get_best_v(q_cur, profit_candidates)
+            v_profit_p = get_best_v(q_yoy, profit_candidates)
+            v_eps_c = get_best_v(q_cur, eps_candidates)
+            v_eps_p = get_best_v(q_yoy, eps_candidates)
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
-                "売上(%)": calc_yoy(get_best_v(q_cur, sales_candidates), get_best_v(q_yoy, sales_candidates)),
-                "営業益(%)": calc_yoy(get_best_v(q_cur, op_candidates), get_best_v(q_yoy, op_candidates)),
-                "経常益(%)": calc_yoy(get_best_v(q_cur, ord_candidates), get_best_v(q_yoy, ord_candidates)),
-                "純利益(%)": calc_yoy(get_best_v(q_cur, profit_candidates), get_best_v(q_yoy, profit_candidates)),
-                "EPS(%)": calc_yoy(get_best_v(q_cur, eps_candidates), get_best_v(q_yoy, eps_candidates)),
+                "売上(%)": calc_yoy(v_sales_c, v_sales_p),
+                "営業益(%)": calc_yoy(v_op_c, v_op_p),
+                "経常益(%)": calc_yoy(v_ord_c, v_ord_p),
+                "純利益(%)": calc_yoy(v_profit_c, v_profit_p),
+                "EPS(%)": calc_yoy(v_eps_c, v_eps_p),
             })
 
         if len(std_df) >= 8:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
+            
+            y_sales_c = get_best_v(y_cur, sales_candidates)
+            y_sales_p = get_best_v(y_prv, sales_candidates)
+            y_op_c = get_best_v(y_cur, op_candidates)
+            y_op_p = get_best_v(y_prv, op_candidates)
+            y_ord_c = get_best_v(y_cur, ord_candidates)
+            y_ord_p = get_best_v(y_prv, ord_candidates)
+            
+            if y_op_c == 0.0 and y_ord_c != 0.0: y_op_c = y_ord_c
+            if y_op_p == 0.0 and y_ord_p != 0.0: y_op_p = y_ord_p
+            
+            y_profit_c = get_best_v(y_cur, profit_candidates)
+            y_profit_p = get_best_v(y_prv, profit_candidates)
+            y_eps_c = get_best_v(y_cur, eps_candidates)
+            y_eps_p = get_best_v(y_prv, eps_candidates)
+
             results.append({
                 "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(%)": calc_yoy(get_best_v(y_cur, sales_candidates), get_best_v(y_prv, sales_candidates)),
-                "営業益(%)": calc_yoy(get_best_v(y_cur, op_candidates), get_best_v(y_prv, op_candidates)),
-                "経常益(%)": calc_yoy(get_best_v(y_cur, ord_candidates), get_best_v(y_prv, ord_candidates)),
-                "純利益(%)": calc_yoy(get_best_v(y_cur, profit_candidates), get_best_v(y_prv, profit_candidates)),
-                "EPS(%)": calc_yoy(get_best_v(y_cur, eps_candidates), get_best_v(y_prv, eps_candidates)),
+                "売上(%)": calc_yoy(y_sales_c, y_sales_p),
+                "営業益(%)": calc_yoy(y_op_c, y_op_p),
+                "経常益(%)": calc_yoy(y_ord_c, y_ord_p),
+                "純利益(%)": calc_yoy(y_profit_c, y_profit_p),
+                "EPS(%)": calc_yoy(y_eps_c, y_eps_p),
             })
         if len(results) == 0: return None
         return pd.DataFrame(results[::-1])
-    except: return None
+    except Exception as e: 
+        return None
 
 # ==========================================
 # 📺 メインUI：レイアウト
