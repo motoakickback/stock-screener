@@ -813,16 +813,19 @@ def fetch_fundamental_history_local(code, local_db):
         if df_target is None or len(df_target) == 0: return None
 
         cols = [str(c).lower() for c in df_target.columns]
+        
+        # 🚨 1. 金融セクター完全対応：検索対象の科目を拡張しリスト化
+        sales_candidates = ['sales', 'netsales', 'net_sales', 'operatingrevenues', 'operating_revenues', 'ordinaryrevenues', 'ordinary_revenues']
+        op_candidates = ['op', 'operatingprofit', 'operating_profit']
+        ord_candidates = ['odp', 'ordinaryprofit', 'ordinary_profit']
+        profit_candidates = ['np', 'profit', 'netincome', 'net_income']
+        eps_candidates = ['eps', 'earningspershare', 'earnings_per_share']
+        
         def find_c(*names):
             for n in names:
                 if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
             return None
 
-        c_sales = find_c('Sales', 'NetSales', 'net_sales')
-        c_op = find_c('OP', 'OperatingProfit', 'operating_profit')
-        c_ord = find_c('OdP', 'OrdinaryProfit', 'ordinary_profit')
-        c_eps = find_c('EPS', 'EarningsPerShare', 'eps')
-        c_profit = find_c('NP', 'Profit', 'netincome')
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
 
@@ -836,7 +839,24 @@ def fetch_fundamental_history_local(code, local_db):
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        actual_mask = (df_target[c_sales].apply(to_flt) > 0) if c_sales else pd.Series([True]*len(df_target))
+        # 存在する対象列名をすべて抽出（累積→四半期変換のため）
+        all_target_cols = []
+        for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
+            for c in c_group:
+                actual_c = find_c(c)
+                if actual_c and actual_c not in all_target_cols:
+                    all_target_cols.append(actual_c)
+
+        # 🚨 売上・収益系項目のどれか1つでも存在すれば有効と判定する
+        actual_mask = pd.Series([False]*len(df_target))
+        sales_cols_found = [find_c(c) for c in sales_candidates if find_c(c)]
+        
+        if sales_cols_found:
+            for sc in sales_cols_found:
+                actual_mask = actual_mask | (df_target[sc].apply(to_flt) > 0)
+        else:
+            actual_mask = pd.Series([True]*len(df_target))
+
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
         if len(actual_df) < 2: return None
@@ -844,12 +864,21 @@ def fetch_fundamental_history_local(code, local_db):
         std_df = actual_df.copy()
         for i in range(1, len(actual_df)):
             curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
-            c_s = to_flt(actual_df[c_sales].iloc[i]) if c_sales else 0.0
-            p_s = to_flt(actual_df[c_sales].iloc[i-1]) if c_sales else 0.0
+            
+            c_s = 0.0; p_s = 0.0
+            for sc in sales_cols_found:
+                c_val = to_flt(actual_df[sc].iloc[i])
+                p_val = to_flt(actual_df[sc].iloc[i-1])
+                if c_val > 0 or p_val > 0:
+                    c_s = c_val
+                    p_s = p_val
+                    break
+                    
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
-                for col in filter(None, [c_sales, c_op, c_ord, c_profit, c_eps]):
+                # 累積値から四半期単独への変換を、存在する全対象列に対して安全に実行
+                for col in all_target_cols:
                     if col in std_df.columns:
                         try: 
                             val_c = to_flt(actual_df[col].iloc[i])
@@ -857,15 +886,22 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
+        # 🚨 2. 「-100%バグ」の完全粉砕（防弾シールド）
         def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
+            # 当期が0.0で前期が数値を持つ場合、金融等における非開示・欠損（ゼロ埋め副作用）とみなし暴発を防ぐ
+            if c == 0.0 and p != 0.0: return "-"
             return ((c - p) / abs(p)) * 100.0
 
-        def get_v(row, primary, fallback=None):
+        # リスト内にある有効な列名の値を順に探し、最初にヒットした数値を返す
+        def get_best_v(row, candidates):
             if row is None: return 0.0
-            v = to_flt(row.get(primary, 0.0)) if primary else 0.0
-            if v == 0.0 and fallback and fallback in row.index: v = to_flt(row.get(fallback, 0.0))
-            return v
+            for c in candidates:
+                ac = next((col for col in row.index if str(col).lower() == c.lower()), None)
+                if ac:
+                    v = to_flt(row.get(ac, 0.0))
+                    if v != 0.0: return v
+            return 0.0
 
         results = []
         for i in range(1, 5):
@@ -880,6 +916,7 @@ def fetch_fundamental_history_local(code, local_db):
                 
             q_cur = std_df.iloc[-i]
             q_yoy = std_df.iloc[-(i+4)]
+            
             dis_date = q_cur.get(c_date, '-')
             if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                 dis_date = dis_date.strftime('%Y-%m-%d')
@@ -888,11 +925,11 @@ def fetch_fundamental_history_local(code, local_db):
                 
             results.append({
                 "期間": f"直近 Q{i}", "開示日": str(dis_date),
-                "売上(%)": calc_yoy(get_v(q_cur, c_sales), get_v(q_yoy, c_sales)),
-                "営業益(%)": calc_yoy(get_v(q_cur, c_op), get_v(q_yoy, c_op)),
-                "経常益(%)": calc_yoy(get_v(q_cur, c_ord), get_v(q_yoy, c_ord)),
-                "純利益(%)": calc_yoy(get_v(q_cur, c_profit, c_eps), get_v(q_yoy, c_profit, c_eps)),
-                "EPS(%)": calc_yoy(get_v(q_cur, c_eps, c_profit), get_v(q_yoy, c_eps, c_profit)),
+                "売上(%)": calc_yoy(get_best_v(q_cur, sales_candidates), get_best_v(q_yoy, sales_candidates)),
+                "営業益(%)": calc_yoy(get_best_v(q_cur, op_candidates), get_best_v(q_yoy, op_candidates)),
+                "経常益(%)": calc_yoy(get_best_v(q_cur, ord_candidates), get_best_v(q_yoy, ord_candidates)),
+                "純利益(%)": calc_yoy(get_best_v(q_cur, profit_candidates), get_best_v(q_yoy, profit_candidates)),
+                "EPS(%)": calc_yoy(get_best_v(q_cur, eps_candidates), get_best_v(q_yoy, eps_candidates)),
             })
 
         if len(std_df) >= 8:
@@ -900,11 +937,11 @@ def fetch_fundamental_history_local(code, local_db):
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             results.append({
                 "期間": "🌟 通年(直近1年)", "開示日": "-",
-                "売上(%)": calc_yoy(get_v(y_cur, c_sales), get_v(y_prv, c_sales)),
-                "営業益(%)": calc_yoy(get_v(y_cur, c_op), get_v(y_prv, c_op)),
-                "経常益(%)": calc_yoy(get_v(y_cur, c_ord), get_v(y_prv, c_ord)),
-                "純利益(%)": calc_yoy(get_v(y_cur, c_profit, c_eps), get_v(y_prv, c_profit, c_eps)),
-                "EPS(%)": calc_yoy(get_v(y_cur, c_eps, c_profit), get_v(y_prv, c_eps, c_profit)),
+                "売上(%)": calc_yoy(get_best_v(y_cur, sales_candidates), get_best_v(y_prv, sales_candidates)),
+                "営業益(%)": calc_yoy(get_best_v(y_cur, op_candidates), get_best_v(y_prv, op_candidates)),
+                "経常益(%)": calc_yoy(get_best_v(y_cur, ord_candidates), get_best_v(y_prv, ord_candidates)),
+                "純利益(%)": calc_yoy(get_best_v(y_cur, profit_candidates), get_best_v(y_prv, profit_candidates)),
+                "EPS(%)": calc_yoy(get_best_v(y_cur, eps_candidates), get_best_v(y_prv, eps_candidates)),
             })
         if len(results) == 0: return None
         return pd.DataFrame(results[::-1])
