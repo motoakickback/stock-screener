@@ -75,7 +75,8 @@ for i, code in enumerate(all_codes):
                 df = pd.DataFrame(data[-8:])
                 for col in df.columns:
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
-                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                        # 🚨 猛毒であった .fillna(0) を完全排除！ 欠損値(NaN)はそのまま保持する
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
                 fundamentals_db[api_code] = df
                 
         elif r.status_code == 429:
