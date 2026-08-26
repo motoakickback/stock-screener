@@ -1623,6 +1623,7 @@ with tab3:
                             x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
                             
                             xaxis_config = dict(
+                                anchor='y2',  # 🚨 X軸を下側の出来高グラフ（y2）にアンカーし、間に挟まるのを防ぐ
                                 rangeslider=dict(visible=False), 
                                 type='date', 
                                 fixedrange=False,
@@ -1650,14 +1651,14 @@ with tab3:
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
-                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（上部75%）
+                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（上部70%）
                             if y_min and y_max:
-                                layout_args['yaxis'] = dict(domain=[0.25, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.30, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
-                                layout_args['yaxis'] = dict(domain=[0.25, 1.0], autorange=True, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.30, 1.0], autorange=True, fixedrange=False)
 
-                            # 🚨 出来高用Y軸（y2）を画面下部に配置（下部15%、間を10%空ける）
-                            layout_args['yaxis2'] = dict(domain=[0.0, 0.15], autorange=True, fixedrange=False, showticklabels=False)
+                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を広げる（下部25%、間を5%空ける）
+                            layout_args['yaxis2'] = dict(domain=[0.0, 0.25], autorange=True, fixedrange=False, showticklabels=False)
                                 
                             fig.update_layout(**layout_args)
                             
