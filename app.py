@@ -1651,14 +1651,14 @@ with tab3:
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
-                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（上部70%）
+                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（空間ゼロ密着設定）
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(domain=[0.30, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
                                 layout_args['yaxis'] = dict(domain=[0.30, 1.0], autorange=True, fixedrange=False)
 
-                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を広げる（下部25%、間を5%空ける）
-                            layout_args['yaxis2'] = dict(domain=[0.0, 0.25], autorange=True, fixedrange=False, showticklabels=False)
+                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を広げる（下部30%、隙間ゼロ）
+                            layout_args['yaxis2'] = dict(domain=[0.0, 0.30], autorange=True, fixedrange=False, showticklabels=False)
                                 
                             fig.update_layout(**layout_args)
                             
