@@ -1586,7 +1586,7 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 🚨 出来高の棒グラフを追加（陽線・陰線で色分け）
+                            # 🚨 出来高の棒グラフを追加（陽線・陰線で色分け、透過度を下げて被りを防ぐ）
                             v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
                             fig.add_trace(go.Bar(
                                 x=df_c[date_col], 
@@ -1594,7 +1594,7 @@ with tab3:
                                 name='出来高', 
                                 marker_color=v_colors, 
                                 yaxis='y2',
-                                opacity=0.8
+                                opacity=0.5
                             ))
 
                             # 🚨 初期表示（直近65日間）の最適Y軸スケール（オートフォーカス）計算
@@ -1612,7 +1612,8 @@ with tab3:
                                 elif max_h == min_l:
                                     y_min, y_max = min_l * 0.9, max_h * 1.1
                                 else:
-                                    y_min = min_l * 0.95
+                                    # 🚨 空間をなくすため、下限の余白を極限まで削る (0.95 -> 0.98)
+                                    y_min = min_l * 0.98
                                     y_max = max_h * 1.05
                             else:
                                 t_min = df_c[date_col].iloc[0]
@@ -1641,9 +1642,9 @@ with tab3:
                             if x_min_str and x_max_str:
                                 xaxis_config['range'] = [x_min_str, x_max_str]
 
-                            # 🚨 高さを550pxに拡大し、チャート空間を確保
+                            # 🚨 高さを600pxに拡大し、プロ仕様のチャート空間を確保
                             layout_args = {
-                                'height': 550,
+                                'height': 600,
                                 'margin': dict(l=10, r=50, t=60, b=10),
                                 'xaxis': xaxis_config,
                                 'dragmode': 'pan',
@@ -1651,14 +1652,14 @@ with tab3:
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
-                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（空間ゼロ密着設定）
+                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（空間を消滅させるため意図的に被らせる）
                             if y_min and y_max:
-                                layout_args['yaxis'] = dict(domain=[0.30, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
-                                layout_args['yaxis'] = dict(domain=[0.30, 1.0], autorange=True, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], autorange=True, fixedrange=False)
 
-                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を広げる（下部30%、隙間ゼロ）
-                            layout_args['yaxis2'] = dict(domain=[0.0, 0.30], autorange=True, fixedrange=False, showticklabels=False)
+                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を大幅に広げる（下部30%、あえて価格軸と10%食い込ませる）
+                            layout_args['yaxis2'] = dict(domain=[0.0, 0.30], rangemode='tozero', autorange=True, fixedrange=False, showticklabels=False, showgrid=False)
                                 
                             fig.update_layout(**layout_args)
                             
