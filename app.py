@@ -838,7 +838,6 @@ def fetch_fundamental_history_local(code, local_db):
 
         cols = [str(c).lower() for c in df_target.columns]
         
-        # 🚨 1. 金融セクター対応：検索対象の科目を拡張しリスト化
         sales_candidates = ['sales', 'netsales', 'net_sales', 'operatingrevenues', 'operating_revenues', 'ordinaryrevenues', 'ordinary_revenues']
         op_candidates = ['op', 'operatingprofit', 'operating_profit']
         ord_candidates = ['odp', 'ordinaryprofit', 'ordinary_profit']
@@ -852,6 +851,8 @@ def fetch_fundamental_history_local(code, local_db):
 
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
+        c_end_date = find_c('CurrentPeriodEndDate', 'currentperiodenddate')
+        c_fy = find_c('FiscalYear', 'fiscalyear')
 
         def to_flt(v):
             try: 
@@ -863,7 +864,14 @@ def fetch_fundamental_history_local(code, local_db):
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        # 存在する対象列名をすべて抽出（累積→四半期変換のため）
+        # 🚨【核心修正】重複開示の完全排除
+        # J-Quants特有の「同じ四半期の短信と有報」が重複する現象を粉砕し、最新の開示のみを残す
+        if c_end_date:
+            df_target = df_target.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
+        elif c_fy and c_type:
+            df_target = df_target.drop_duplicates(subset=[c_fy, c_type], keep='last').reset_index(drop=True)
+
+        # 存在する対象列名をすべて抽出
         all_target_cols = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
             for c in c_group:
@@ -871,7 +879,6 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 🚨 売上・収益系項目のどれか1つでも存在すれば有効と判定する
         actual_mask = pd.Series([False]*len(df_target))
         sales_cols_found = [find_c(c) for c in sales_candidates if find_c(c)]
         
@@ -903,7 +910,6 @@ def fetch_fundamental_history_local(code, local_db):
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
 
             if not is_q1:
-                # 累積値から四半期単独への変換を、存在する全対象列に対して安全に実行
                 for col in all_target_cols:
                     if col in std_df.columns:
                         try: 
@@ -912,7 +918,6 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
-        # 🚨 2. 「-100%バグ」の完全粉砕（防弾シールド）
         def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
             if c == 0.0 and p != 0.0: return "-"
@@ -947,7 +952,6 @@ def fetch_fundamental_history_local(code, local_db):
                 if dis_date == '1970-01-01': dis_date = '-'
             else: dis_date = '-'
 
-            # 🚨 3. 営業利益の欠落に対するプロキシ（偽装）処理
             v_sales_c = get_best_v(q_cur, sales_candidates)
             v_sales_p = get_best_v(q_yoy, sales_candidates)
             
@@ -956,7 +960,6 @@ def fetch_fundamental_history_local(code, local_db):
             v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
             
-            # 金融銘柄など営業益が取得できない場合、経常益の数値を代入してTAB1/TAB3の足切りを強制突破させる
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
             
