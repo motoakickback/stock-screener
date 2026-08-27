@@ -2,7 +2,7 @@ name: 🌙 18:00 Daily Fundamentals Fetch
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '13 9 * * *'
   workflow_dispatch:
 
 permissions:
