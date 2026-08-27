@@ -864,14 +864,11 @@ def fetch_fundamental_history_local(code, local_db):
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        # 🚨【核心修正】重複開示の完全排除
-        # J-Quants特有の「同じ四半期の短信と有報」が重複する現象を粉砕し、最新の開示のみを残す
         if c_end_date:
             df_target = df_target.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
         elif c_fy and c_type:
             df_target = df_target.drop_duplicates(subset=[c_fy, c_type], keep='last').reset_index(drop=True)
 
-        # 存在する対象列名をすべて抽出
         all_target_cols = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
             for c in c_group:
@@ -879,42 +876,42 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        actual_mask = pd.Series([False]*len(df_target))
-        sales_cols_found = [find_c(c) for c in sales_candidates if find_c(c)]
+        # 🚨 【核心修正】実績値（売上・利益など）が全て0の行（業績予想の修正など）を物理排除
+        has_actuals = pd.Series([False]*len(df_target))
+        for c in all_target_cols:
+            if c in df_target.columns:
+                has_actuals = has_actuals | (df_target[c].apply(to_flt) != 0.0)
         
-        if sales_cols_found:
-            for sc in sales_cols_found:
-                if sc is not None:
-                    actual_mask = actual_mask | (df_target[sc].apply(to_flt) > 0)
-        else:
-            actual_mask = pd.Series([True]*len(df_target))
+        df_target = df_target[has_actuals].copy().reset_index(drop=True)
 
-        actual_df = df_target[actual_mask].copy().reset_index(drop=True)
+        if len(df_target) < 2: return None
 
-        if len(actual_df) < 2: return None
-
-        std_df = actual_df.copy()
-        for i in range(1, len(actual_df)):
-            curr_type = str(actual_df[c_type].iloc[i]) if c_type else ""
+        std_df = df_target.copy()
+        for i in range(1, len(df_target)):
+            curr_type = str(df_target[c_type].iloc[i]) if c_type else ""
             
-            c_s = 0.0; p_s = 0.0
-            for sc in sales_cols_found:
-                if sc is not None:
-                    c_val = to_flt(actual_df[sc].iloc[i])
-                    p_val = to_flt(actual_df[sc].iloc[i-1])
-                    if c_val > 0 or p_val > 0:
-                        c_s = c_val
-                        p_s = p_val
+            is_q1 = ('1Q' in curr_type or 'Q1' in curr_type)
+            
+            if not is_q1:
+                # 金融銘柄など売上が無いケースに対応するため、存在する利益項目を使ってQ1の判定（数値のリセット）を検知
+                metric_col = None
+                for c in all_target_cols:
+                    if c in df_target.columns and df_target[c].apply(to_flt).sum() != 0:
+                        metric_col = c
                         break
-                    
-            is_q1 = ('1Q' in curr_type or 'Q1' in curr_type) or (c_s < p_s and p_s > 0)
+                if metric_col:
+                    c_val = to_flt(df_target[metric_col].iloc[i])
+                    p_val = to_flt(df_target[metric_col].iloc[i-1])
+                    # 累積値が前期より減っていれば、年度替わり（Q1）と判定
+                    if c_val < p_val and p_val > 0:
+                        is_q1 = True
 
             if not is_q1:
                 for col in all_target_cols:
                     if col in std_df.columns:
                         try: 
-                            val_c = to_flt(actual_df[col].iloc[i])
-                            val_p = to_flt(actual_df[col].iloc[i-1])
+                            val_c = to_flt(df_target[col].iloc[i])
+                            val_p = to_flt(df_target[col].iloc[i-1])
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
