@@ -1383,9 +1383,9 @@ with tab3:
                                 is_macro_downtrend = True
             except: pass
 
-            # 🚨 【完全新規実装】空売りモード ＆ 上げ相場時の警告メッセージ出力
+            # 🚨 空売りモード ＆ 上げ相場時の警告メッセージ出力（制限解除版）
             if scan_mode == "sell" and not is_macro_downtrend:
-                st.error("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場（現在値が日経25日MA以上）」です。上げ相場での空売りは資産を溶かす致命的な行為であるため、システムはシグナルを強制棄却し、待機を推奨します。")
+                st.warning("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場（現在値が日経25日MA以上）」です。上げ相場での空売りは致命的なリスクを伴うため、待機を強く推奨します。（※参考情報としてシグナル自体は強制表示します）")
 
             c_key = get_cache_key() if 'get_cache_key' in globals() else cache_key
             raw_all_data = get_hist_data_cached(c_key)
@@ -1427,11 +1427,11 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # 📊 チャート陣形の検知（マクロ地合い25日MA連動）
-                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
+                        # 📊 チャート陣形の検知（表示要請により、マクロ地合いに関わらず空売りシグナルを強制抽出するため True 固定）
+                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=True)
                         
                         # ------------------------------------
-                        # 🎯 TAB3 独自の S/A/B 判定ロジック（YoYベース）
+                        # 🎯 TAB3 独自の S/A/B 判定ロジック
                         # ------------------------------------
                         is_hit = False
                         rank_str = ""
@@ -1447,9 +1447,10 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                if days_ago <= 3: rank_signal = "S"
-                                elif days_ago == 4: rank_signal = "A"
-                                elif days_ago == 5: rank_signal = "B"
+                                # 🚨 要件適合化：本日を含む3日以内(0,1,2)はS、4日以内(3)はA、5日以内(4)はB
+                                if days_ago <= 2: rank_signal = "S"
+                                elif days_ago == 3: rank_signal = "A"
+                                elif days_ago == 4: rank_signal = "B"
                         
                         elif scan_mode == "sell" and s_sigs:
                             s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
@@ -1460,7 +1461,7 @@ with tab3:
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
-                        # ② ファンダメンタルズ（YoY成長率）判定
+                        # ② ファンダメンタルズ判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
                         latest_ord_pct = -9999.0  # 第2ソート用の初期値（データ欠損時は最下位へ）
                         
@@ -1533,7 +1534,7 @@ with tab3:
                                             elif lt_5 == 7: rank_funda = "A"
                                             elif lt_5 == 6: rank_funda = "B"
 
-                        # ③ 総合判定の結合（is_hitフラグは維持しつつ表示は全件行う）
+                        # ③ 総合判定の結合
                         if scan_mode == "buy":
                             if rank_funda != "対象外" and rank_signal != "対象外":
                                 is_hit = True
@@ -1555,7 +1556,6 @@ with tab3:
                         score = 0
                         r = data["rank"]
                         
-                        # 業績と陣形のスコアを同価値に設定し、純粋な合計点で評価
                         if "業績:S" in r: score += 300
                         elif "業績:A" in r: score += 200
                         elif "業績:B" in r: score += 100
@@ -1564,13 +1564,11 @@ with tab3:
                         elif "陣形:A" in r: score += 200
                         elif "陣形:B" in r: score += 100
                         
-                        # 🚨 第2ソートキー：直近Q1経常益(%)、第3ソートキー：直近売買代金
                         return (score, data.get("latest_ord_pct", -9999.0), data.get("turnover", 0.0))
                         
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
-                    # 上位30件を無条件に抽出（足切りなし）
                     display_targets = sortable_results[:30]
 
                     name_map = {}
@@ -1602,16 +1600,13 @@ with tab3:
                         if len(df) > 0:
                             df_c = df.copy()
                             
-                            # 💡 0.0円バグを完全粉砕
                             cols_lower = {str(c).lower(): c for c in df_c.columns}
                             c_o_col = cols_lower.get('adjo', cols_lower.get('adjustmentopen', cols_lower.get('o', cols_lower.get('open', 'Open'))))
                             c_h_col = cols_lower.get('adjh', cols_lower.get('adjustmenthigh', cols_lower.get('h', cols_lower.get('high', 'High'))))
                             c_l_col = cols_lower.get('adjl', cols_lower.get('adjustmentlow', cols_lower.get('l', cols_lower.get('low', 'Low'))))
                             c_c_col = cols_lower.get('adjc', cols_lower.get('adjustmentclose', cols_lower.get('c', cols_lower.get('close', 'Close'))))
-                            # 🚨 出来高カラムの取得を追加
                             c_v_col = cols_lower.get('adjv', cols_lower.get('adjustmentvolume', cols_lower.get('v', cols_lower.get('volume', cols_lower.get('vo', 'Volume')))))
                             
-                            # 🚨 Oh no! (PyArrowクラッシュ) 防御壁：欠損値(NaN)の物理排除
                             for col in [c_o_col, c_h_col, c_l_col, c_c_col, c_v_col]:
                                 if col not in df_c.columns:
                                     df_c[col] = 0.0
@@ -1621,14 +1616,12 @@ with tab3:
                             if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean().ffill().fillna(0.0)
                             if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean().ffill().fillna(0.0)
                             
-                            # 🚨 RSI(14日)のOh noエラー（ゼロ除算・Infクラッシュ）完全防止
                             delta = df_c[c_c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
                             loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
-                            rs = gain / loss.replace(0, 1e-10) # 0を1e-10に置換してゼロ除算回避
+                            rs = gain / loss.replace(0, 1e-10)
                             df_c['RSI14'] = 100 - (100 / (1 + rs))
                             
-                            # InfやNaNが発生した場合は強制的に中立(50.0)に戻す
                             df_c['RSI14'] = df_c['RSI14'].replace([np.inf, -np.inf], 50.0).fillna(50.0)
 
                             def safe_float(val):
@@ -1656,7 +1649,6 @@ with tab3:
                             fig = go.Figure()
                             date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
                             df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
-                            # 日付のNaTを削除しJSONエラーを防ぐ
                             df_c = df_c.dropna(subset=[date_col]).copy()
                             
                             fig.add_trace(go.Candlestick(
@@ -1682,7 +1674,6 @@ with tab3:
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
                                 if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
 
-                            # 🚨 出来高の棒グラフを追加（陽線・陰線で色分け、透過度を下げて被りを防ぐ）
                             v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
                             fig.add_trace(go.Bar(
                                 x=df_c[date_col], 
@@ -1693,7 +1684,6 @@ with tab3:
                                 opacity=0.5
                             ))
 
-                            # 🚨 初期表示（直近65日間）の最適Y軸スケール（オートフォーカス）計算
                             if len(df_c) > 65:
                                 df_recent = df_c.tail(65)
                                 t_min = df_recent[date_col].iloc[0]
@@ -1702,13 +1692,11 @@ with tab3:
                                 max_h = float(df_recent[c_h_col].max())
                                 min_l = float(df_recent[c_l_col].min())
                                 
-                                # Y軸スケールの異常値（0円や幅ゼロ）によるクラッシュを回避
                                 if pd.isna(max_h) or pd.isna(min_l) or (max_h == 0.0 and min_l == 0.0):
                                     y_min, y_max = None, None
                                 elif max_h == min_l:
                                     y_min, y_max = min_l * 0.9, max_h * 1.1
                                 else:
-                                    # 🚨 空間をなくすため、下限の余白を極限まで削る (0.95 -> 0.98)
                                     y_min = min_l * 0.98
                                     y_max = max_h * 1.05
                             else:
@@ -1720,7 +1708,7 @@ with tab3:
                             x_max_str = t_max.strftime('%Y-%m-%d') if pd.notna(t_max) else None
                             
                             xaxis_config = dict(
-                                anchor='y2',  # 🚨 X軸を下側の出来高グラフ（y2）にアンカーし、間に挟まるのを防ぐ
+                                anchor='y2', 
                                 rangeslider=dict(visible=False), 
                                 type='date', 
                                 fixedrange=False,
@@ -1738,7 +1726,6 @@ with tab3:
                             if x_min_str and x_max_str:
                                 xaxis_config['range'] = [x_min_str, x_max_str]
 
-                            # 🚨 高さを600pxに拡大し、プロ仕様のチャート空間を確保
                             layout_args = {
                                 'height': 600,
                                 'margin': dict(l=10, r=50, t=60, b=10),
@@ -1748,13 +1735,11 @@ with tab3:
                                 'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
                             }
                             
-                            # 🚨 Y軸のオートフォーカス（range固定）と価格用ドメインの設定（空間を消滅させるため意図的に被らせる）
                             if y_min and y_max:
                                 layout_args['yaxis'] = dict(domain=[0.20, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
                             else:
                                 layout_args['yaxis'] = dict(domain=[0.20, 1.0], autorange=True, fixedrange=False)
 
-                            # 🚨 出来高用Y軸（y2）を画面下部に配置し、縦幅を大幅に広げる（下部30%、あえて価格軸と10%食い込ませる）
                             layout_args['yaxis2'] = dict(domain=[0.0, 0.30], rangemode='tozero', autorange=True, fixedrange=False, showticklabels=False, showgrid=False)
                                 
                             fig.update_layout(**layout_args)
@@ -1762,7 +1747,6 @@ with tab3:
                             st.caption("💡 **狙撃手マニュアル**: 初期表示は直近3ヶ月にオートフォーカスしています。過去に遡ってローソク足が見切れた場合は、右側の価格軸（Y軸の数字）を直接上下にドラッグするか、チャート内で **ダブルクリック** するとY軸が自動追従（オートフィット）します。")
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
 
-                        # 📊 YoY統一の業績表
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
                             try:
@@ -1771,7 +1755,6 @@ with tab3:
                                     if isinstance(x, str): return x
                                     return f"{x:.1f}%"
                                     
-                                # 🚨 列が存在するか動的にチェックし、存在する列のみ右揃えCSSを適用
                                 pct_cols = [c for c in ["売上(%)", "営業益(%)", "経常益(%)", "純利益(%)", "EPS(%)"] if c in data["fund"].columns]
                                 
                                 styled_df = data["fund"].style.format({
@@ -1787,7 +1770,6 @@ with tab3:
                             
                         st.divider()
 
-            # 🚨 画面に表示されている上位30件をコピペ用出力としてリスト化
             results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
