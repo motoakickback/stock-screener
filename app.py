@@ -29,7 +29,8 @@ st.markdown("""
 # --- 1. ページ設定 & ゲートキーパー ---
 st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide", page_icon="🎯")
 
-ALLOWED_PASSWORDS = [p.strip() for p in st.secrets.get("APP_PASSWORD", "sniper2026").split(",")]
+# リスト形式でカンマ区切りで追加します
+ALLOWED_PASSWORDS = ["sniper", "senyu001", "senyu002"]
 
 # 【重要】認証スクリプトを一度だけ注入するためのコンテナ
 if "js_injected" not in st.session_state:
@@ -153,6 +154,8 @@ st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; bo
 # ==========================================
 import gspread
 from google.oauth2.service_account import Credentials
+import pandas as pd
+import streamlit as st
 
 SPREADSHEET_ID = "1PZZwhGvUgTHd0ptY2g9AmLloZoB9qZpr-VIx6DrYIdw"
 
@@ -168,7 +171,13 @@ def init_gspread():
     except Exception: return None
 
 g_client = init_gspread()
-db_sheet = g_client.open_by_key(SPREADSHEET_ID) if g_client else None
+
+# 🚨 先日の「API通信エラーによるシステム白画面化」を防ぐ完全防弾処理
+try:
+    db_sheet = g_client.open_by_key(SPREADSHEET_ID) if g_client else None
+except Exception as e:
+    print(f"Google Sheets接続エラー（システムは継続稼働）: {e}")
+    db_sheet = None
 
 def get_or_create_worksheet(sheet_name):
     if not db_sheet: return None
@@ -177,9 +186,12 @@ def get_or_create_worksheet(sheet_name):
         try: return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
         except: return None
 
-WS_AAR = f"交戦DB_{user_id}"
+# 🚨 マルチテナント（戦友分離）の核心：認証されたアクセスコードをシート名に強制バインド
+_active_user = st.session_state.get("current_user", "Guest")
+WS_AAR = f"交戦DB_{_active_user}"
 
 def save_aar_db(df):
+    # ユーザー固有のタブ名（WS_AAR）に保存。他人のタブは絶対に書き換わらない。
     ws = get_or_create_worksheet(WS_AAR)
     if ws:
         ws.clear()
@@ -193,7 +205,19 @@ def save_aar_db(df):
         except: pass
 
 def load_db_to_df(sheet_name, default_cols):
-    ws = get_or_create_worksheet(sheet_name)
+    # 🚨 動的シート名の強制補正処理
+    # UI側が誤って '交戦DB' などの固定文字で呼び出してきた場合でも、ユーザー固有の名前に強制変換する
+    _uid = st.session_state.get("current_user", "Guest")
+    if f"_{_uid}" not in sheet_name:
+        if "_" in sheet_name:
+            base = sheet_name.split("_")[0]
+            target_sheet_name = f"{base}_{_uid}"
+        else:
+            target_sheet_name = f"{sheet_name}_{_uid}"
+    else:
+        target_sheet_name = sheet_name
+
+    ws = get_or_create_worksheet(target_sheet_name)
     if ws:
         try:
             data = ws.get_all_records()
