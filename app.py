@@ -1369,7 +1369,6 @@ with tab3:
         st.session_state["tab3_last_t2_str"] = t2_codes_str
 
     # 🚨 TAB1/TAB2でスキャン結果が更新された瞬間のみStoreを強制上書き
-    # 文字列が同一でも、再スキャンによってオブジェクトIDが変化すれば強制上書きを発動する
     if st.session_state["tab3_last_t1_id"] != t1_id or st.session_state["tab3_last_t1_str"] != t1_codes_str:
         st.session_state["tab3_store_buy"] = t1_codes_str
         st.session_state["tab3_last_t1_id"] = t1_id
@@ -1384,14 +1383,12 @@ with tab3:
 
     st.markdown("#### 📡 分析対象銘柄（最大30件まで強制表示）")
     
-    # 🚨 KeyErrorおよび空欄バグの完全粉砕仕様
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
         value=st.session_state.get(store_key, ""),
         height=100
     )
     
-    # ユーザーの手入力値は即座にStoreへ反映し、タブ切り替え時の状態喪失を防ぐ
     st.session_state[store_key] = target_codes_input
 
     if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
@@ -1410,7 +1407,6 @@ with tab3:
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
 
-            # 🚨 マクロ地合い（下げ相場）の独立検知（空売り前提条件: 25日MA）
             is_macro_downtrend = False
             try:
                 _macro_data = get_macro_weather()
@@ -1427,7 +1423,6 @@ with tab3:
                                 is_macro_downtrend = True
             except: pass
 
-            # 🚨 空売りモード ＆ 上げ相場時の警告メッセージ出力（制限解除版）
             if scan_mode == "sell" and not is_macro_downtrend:
                 st.warning("🚨 【絶対交戦規定 警告】現在のマクロ地合いは「上げ相場（現在値が日経25日MA以上）」です。上げ相場での空売りは致命的なリスクを伴うため、待機を強く推奨します。（※参考情報としてシグナル自体は強制表示します）")
 
@@ -1471,18 +1466,13 @@ with tab3:
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        # 📊 チャート陣形の検知（表示要請により、マクロ地合いに関わらず空売りシグナルを強制抽出するため True 固定）
                         b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=True)
                         
-                        # ------------------------------------
-                        # 🎯 TAB3 独自の S/A/B 判定ロジック
-                        # ------------------------------------
                         is_hit = False
                         rank_str = ""
                         rank_funda = "対象外"
                         rank_signal = "対象外"
 
-                        # ① シグナル発生日（鮮度）判定
                         date_col = 'Date' if 'Date' in df.columns else df.columns[0]
                         df_dates = df[date_col].dt.date.tolist() if pd.api.types.is_datetime64_any_dtype(df[date_col]) else pd.to_datetime(df[date_col]).dt.date.tolist()
                         
@@ -1491,7 +1481,6 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                # 🚨 要件適合化：本日を含む3日以内(0,1,2)はS、4日以内(3)はA、5日以内(4)はB
                                 if days_ago <= 2: rank_signal = "S"
                                 elif days_ago == 3: rank_signal = "A"
                                 elif days_ago == 4: rank_signal = "B"
@@ -1505,9 +1494,8 @@ with tab3:
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
-                        # ② ファンダメンタルズ判定
                         f_df = fetch_fundamental_history_local(code_int, local_fund_db)
-                        latest_ord_pct = -9999.0  # 第2ソート用の初期値（データ欠損時は最下位へ）
+                        latest_ord_pct = -9999.0
                         
                         if f_df is not None and not f_df.empty:
                             q1_row = f_df[f_df["期間"] == "直近 Q1"]
@@ -1520,7 +1508,6 @@ with tab3:
                                 try: return float(v)
                                 except: return None
 
-                            # 🚨 直近Q1の経常益(%)を取得し、ソート用に保持
                             _tmp_ord = get_val(q1_row, "経常益(%)")
                             if _tmp_ord is not None:
                                 latest_ord_pct = _tmp_ord
@@ -1578,7 +1565,6 @@ with tab3:
                                             elif lt_5 == 7: rank_funda = "A"
                                             elif lt_5 == 6: rank_funda = "B"
 
-                        # ③ 総合判定の結合
                         if scan_mode == "buy":
                             if rank_funda != "対象外" and rank_signal != "対象外":
                                 is_hit = True
@@ -1596,6 +1582,7 @@ with tab3:
 
                     p_bar.progress(1.0, text="⚙️ データベースをマウント中（フェーズ2準備）...")
                     
+                    # 🚨 【修正ポイント】ソートロジックの改修（両方揃いを絶対優先する）
                     def get_rank_score(data):
                         score = 0
                         r = data["rank"]
@@ -1608,7 +1595,11 @@ with tab3:
                         elif "陣形:A" in r: score += 200
                         elif "陣形:B" in r: score += 100
                         
-                        return (score, data.get("latest_ord_pct", -9999.0), data.get("turnover", 0.0))
+                        # 第1優先キー: 両方揃っているか（is_hit）
+                        is_both = data.get("is_hit", False)
+                        
+                        # ソート順: 1.両方揃い(True), 2.合計スコア, 3.経常益%, 4.売買代金
+                        return (is_both, score, data.get("latest_ord_pct", -9999.0), data.get("turnover", 0.0))
                         
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
