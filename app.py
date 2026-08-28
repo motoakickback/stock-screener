@@ -1618,7 +1618,7 @@ with tab3:
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
-                    display_targets = sortable_results[:30]
+                    display_targets = sortable_results[:50]
 
                     name_map = {}
                     try:
