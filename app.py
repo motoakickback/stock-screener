@@ -1109,11 +1109,24 @@ with tab1:
             try:
                 prices_map = get_all_latest_prices_bulk() if 'get_all_latest_prices_bulk' in globals() else {}
                 mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
+                
+                # 🚨 J-Quantsの欠損バグ救済用：マスターデータをロード
+                try: m_df_local = load_master()
+                except: m_df_local = None
+
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
                             c_mcap = float(mcap_map.get(str(c_code), 0))
-                            if c_mcap >= float(t1_mcap): all_codes.append(str(c_code))
+                            if c_mcap >= float(t1_mcap): 
+                                all_codes.append(str(c_code))
+                            elif c_mcap == 0 and m_df_local is not None and not m_df_local.empty:
+                                # 🚨 松井証券救済ルート：時価総額が欠損(0)でも、プライム/スタンダード市場なら通過させる
+                                m_row = m_df_local[m_df_local['Code'].astype(str).str.startswith(str(c_code)[:4])]
+                                if not m_row.empty:
+                                    market_val = str(m_row.iloc[0].get('Market', ''))
+                                    if "プライム" in market_val or "Prime" in market_val or "スタンダード" in market_val or "Standard" in market_val:
+                                        all_codes.append(str(c_code))
                 else:
                     p1_msg.error("❌ 株価データの取得に失敗しました。")
                     st.stop()
@@ -1161,12 +1174,6 @@ with tab1:
                                 q1_s, q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "売上(%)"), get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
                                 q2_s, q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "売上(%)"), get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
                                 
-                                # 🚨 金融業対策: 営業益が欠損（Noneまたは0）かつ経常益が存在する場合、経常益をプロキシとして代入する
-                                if (q1_op is None or q1_op == 0.0) and q1_ord is not None: q1_op = q1_ord
-                                if (q2_op is None or q2_op == 0.0) and q2_ord is not None: q2_op = q2_ord
-                                if (q1_s is None or q1_s == 0.0) and q1_ord is not None: q1_s = q1_ord
-                                if (q2_s is None or q2_s == 0.0) and q2_ord is not None: q2_s = q2_ord
-
                                 def count_misses(s, op, ord_p, np_p, eps):
                                     if None in [s, op, ord_p, np_p, eps]: return 99 
                                     m = 0
