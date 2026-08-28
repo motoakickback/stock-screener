@@ -1449,10 +1449,10 @@ with tab3:
             raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
             target_codes = []
             for c in raw_codes:
-                try: target_codes.append(int(c[:4]))
-                except: pass
+                if len(c) >= 4:
+                    target_codes.append(str(c)[:4])
             target_codes = list(dict.fromkeys(target_codes))
-            target_str_codes = [str(c) for c in target_codes]
+            target_str_codes = target_codes
 
             st.write(f"📡 実行対象: {len(target_codes)} 銘柄を解析中...（対象外は除外されます）")
 
@@ -1498,7 +1498,7 @@ with tab3:
 
                     import pandas as pd
                     for code_str, group in df_targets.groupby(c_code_raw):
-                        code_int = int(str(code_str)[:4])
+                        code_val = str(code_str)[:4]
                         completed_cnt += 1
                         
                         prog_val = min(completed_cnt / total_cnt, 1.0)
@@ -1543,7 +1543,7 @@ with tab3:
                                 elif days_ago == 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
-                        f_df = fetch_fundamental_history_local(code_int, local_fund_db)
+                        f_df = fetch_fundamental_history_local(code_val, local_fund_db)
                         latest_ord_pct = -9999.0
                         
                         if f_df is not None and not f_df.empty:
@@ -1623,7 +1623,7 @@ with tab3:
                                 is_hit = True
                             rank_str = f"💀業績:{rank_funda}級 / 陣形:{rank_signal}級"
 
-                        analyzed_data[code_int] = {
+                        analyzed_data[code_val] = {
                             "df": df, "is_hit": is_hit, "rank": rank_str, 
                             "latest_ord_pct": latest_ord_pct, "turnover": turnover,
                             "buy_sigs": b_sigs, "sell_sigs": s_sigs, "fund": f_df
@@ -1650,7 +1650,6 @@ with tab3:
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
-                    # 🚨 【新戦略】業績＆陣形が完全合致（is_hit == True）の銘柄のみを無制限に抽出（対象外はパージ）
                     display_targets = [d for d in sortable_results if d.get("is_hit", False)]
 
                     name_map = {}
