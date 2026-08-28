@@ -853,6 +853,8 @@ def fetch_fundamental_history_local(code, local_db):
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
         c_end_date = find_c('CurrentPeriodEndDate', 'currentperiodenddate')
         c_fy = find_c('FiscalYear', 'fiscalyear')
+        # 🚨 メタデータ列の取得
+        c_doc = find_c('TypeOfDocument', 'typeofdocument', 'DocumentType', 'document_type')
 
         def to_flt(v):
             try: 
@@ -860,7 +862,6 @@ def fetch_fundamental_history_local(code, local_db):
                 return float(str(v).replace(',', '').strip())
             except: return 0.0
 
-        # 1. 日付順にソート
         if c_date:
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
@@ -872,16 +873,22 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 🚨 2. 【最優先】実績値ゼロのノイズ行を物理排除
-        # 売上だけでなく、利益項目のどれか1つでも数値があれば「有効な決算」として残す
-        has_actuals = pd.Series([False]*len(df_target))
-        for c in all_target_cols:
-            if c in df_target.columns:
-                has_actuals = has_actuals | (df_target[c].apply(to_flt) != 0.0)
-        
-        df_target = df_target[has_actuals].copy().reset_index(drop=True)
+        # 🚨 【究極のノイズ排除】本物の「決算短信」だけを強制抽出
+        if c_doc:
+            # J-Quantsの決算短信（Earnings）のみを残し、業績予想の修正などを一網打尽にする
+            is_earnings = df_target[c_doc].astype(str).str.contains('Earnings|決算', case=False, na=False, regex=True)
+            df_target = df_target[is_earnings].copy().reset_index(drop=True)
+        else:
+            # メタデータが無い場合の予備防衛線（EPSを含めず、売上か利益が必ず存在する行のみ残す）
+            has_actuals = pd.Series([False]*len(df_target))
+            for c_group in [sales_candidates, op_candidates, ord_candidates]:
+                for c in c_group:
+                    actual_c = find_c(c)
+                    if actual_c:
+                        has_actuals = has_actuals | (df_target[actual_c].apply(to_flt) != 0.0)
+            df_target = df_target[has_actuals].copy().reset_index(drop=True)
 
-        # 🚨 3. 重複排除（本物の決算データだけになった状態で、最新の開示を残す）
+        # 重複排除（同じ四半期の修正版が出た場合は最新を残す）
         if c_end_date:
             df_target = df_target.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
         elif c_fy and c_type:
@@ -891,10 +898,8 @@ def fetch_fundamental_history_local(code, local_db):
 
         std_df = df_target.copy()
         
-        # 4. 累積値から四半期単独値への変換（引き算）
         for i in range(1, len(df_target)):
             curr_type = str(df_target[c_type].iloc[i]) if c_type else ""
-            
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type)
             
             if not is_q1:
@@ -954,16 +959,14 @@ def fetch_fundamental_history_local(code, local_db):
 
             v_sales_c = get_best_v(q_cur, sales_candidates)
             v_sales_p = get_best_v(q_yoy, sales_candidates)
-            
             v_op_c = get_best_v(q_cur, op_candidates)
             v_op_p = get_best_v(q_yoy, op_candidates)
             v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
             
-            # 🚨 5. 金融銘柄専用の突破プロキシ（売上・営業益が0なら経常益を偽装コピーする）
+            # 金融銘柄専用の突破プロキシ（売上・営業益が0なら経常益を偽装コピーする）
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
-            
             if v_sales_c == 0.0 and v_ord_c != 0.0: v_sales_c = v_ord_c
             if v_sales_p == 0.0 and v_ord_p != 0.0: v_sales_p = v_ord_p
             
@@ -992,7 +995,6 @@ def fetch_fundamental_history_local(code, local_db):
             y_ord_c = get_best_v(y_cur, ord_candidates)
             y_ord_p = get_best_v(y_prv, ord_candidates)
             
-            # 通年データ用のプロキシ
             if y_op_c == 0.0 and y_ord_c != 0.0: y_op_c = y_ord_c
             if y_op_p == 0.0 and y_ord_p != 0.0: y_op_p = y_ord_p
             if y_sales_c == 0.0 and y_ord_c != 0.0: y_sales_c = y_ord_c
