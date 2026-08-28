@@ -1110,7 +1110,6 @@ with tab1:
                 prices_map = get_all_latest_prices_bulk() if 'get_all_latest_prices_bulk' in globals() else {}
                 mcap_map = get_all_market_caps_bulk() if 'get_all_market_caps_bulk' in globals() else {}
                 
-                # 🚨 J-Quantsの欠損バグ救済用：マスターデータをロード
                 try: m_df_local = load_master()
                 except: m_df_local = None
 
@@ -1121,7 +1120,6 @@ with tab1:
                             if c_mcap >= float(t1_mcap): 
                                 all_codes.append(str(c_code))
                             elif c_mcap == 0 and m_df_local is not None and not m_df_local.empty:
-                                # 🚨 松井証券救済ルート：時価総額が欠損(0)でも、プライム/スタンダード市場なら通過させる
                                 m_row = m_df_local[m_df_local['Code'].astype(str).str.startswith(str(c_code)[:4])]
                                 if not m_row.empty:
                                     market_val = str(m_row.iloc[0].get('Market', ''))
@@ -1134,7 +1132,10 @@ with tab1:
                 p1_msg.error(f"❌ フィルタ取得エラー: {e}")
                 st.stop()
                 
-            p_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            # 🚨 修正ポイント：4桁にスライスした直後に、dict.fromkeysを使って重複（優先株など）を完全に排除する
+            raw_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            p_filtered_codes = list(dict.fromkeys(raw_filtered_codes))
+            
             time_p1 = time.time() - t_start_p1
             p1_msg.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
             
@@ -1174,6 +1175,11 @@ with tab1:
                                 q1_s, q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "売上(%)"), get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
                                 q2_s, q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "売上(%)"), get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
                                 
+                                if (q1_op is None or q1_op == 0.0) and q1_ord is not None: q1_op = q1_ord
+                                if (q2_op is None or q2_op == 0.0) and q2_ord is not None: q2_op = q2_ord
+                                if (q1_s is None or q1_s == 0.0) and q1_ord is not None: q1_s = q1_ord
+                                if (q2_s is None or q2_s == 0.0) and q2_ord is not None: q2_s = q2_ord
+
                                 def count_misses(s, op, ord_p, np_p, eps):
                                     if None in [s, op, ord_p, np_p, eps]: return 99 
                                     m = 0
