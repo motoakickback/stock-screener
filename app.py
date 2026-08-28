@@ -2013,9 +2013,12 @@ with st.expander("🛠️ 参謀直通デバッグターミナル（松井証券
                     df_8628 = db[db[c_col].astype(str).str.startswith("8628")]
             
             if df_8628 is not None and (isinstance(df_8628, pd.DataFrame) and not df_8628.empty):
-                st.write("✅ **抽出成功: 松井証券 (8628) 直近16件の生データ（全カラム強制出力）**")
-                # 🚨 余計なフィルターを全撤廃し、ありのままの全データを表示
-                st.dataframe(df_8628.tail(16), use_container_width=True)
+                st.write("✅ **抽出成功: 松井証券 (8628) 生データ**")
+                
+                # 🚨 コピペ専用のテキスト（CSV形式）として出力
+                csv_text = df_8628.tail(16).to_csv(index=False)
+                st.text_area("📋 【ここをクリックして Ctrl+A で全選択し、コピーしてください】", value=csv_text, height=300)
+                
             else:
                 st.warning("⚠️ 8628のデータが見つかりません。")
         except Exception as e:
