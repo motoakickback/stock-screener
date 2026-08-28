@@ -851,7 +851,6 @@ def fetch_fundamental_history_local(code, local_db):
 
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
-        c_end_date = find_c('CurPerEn', 'CurrentPeriodEndDate', 'currentperiodenddate')
 
         def to_flt(v):
             try: 
@@ -870,7 +869,7 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # ノイズ完全パージ（業績予想の修正を排除）
+        # ノイズ完全パージ
         has_actuals = pd.Series([False]*len(df_target))
         all_cols_for_mask = [find_c(c) for group in [sales_candidates, op_candidates, ord_candidates] for c in group if find_c(c)]
         
@@ -883,17 +882,23 @@ def fetch_fundamental_history_local(code, local_db):
 
         actual_df = df_target[has_actuals].copy().reset_index(drop=True)
 
-        # 🚨 水戸証券を破壊した元凶（数値ベースの削除）を破棄し、安全な期末日ベースの重複排除へ修正
-        if c_end_date:
-            actual_df = actual_df.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
+        # 数値ベースの重複排除
+        cols_to_check = []
+        for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates]:
+            c = next((find_c(x) for x in c_group if find_c(x)), None)
+            if c: cols_to_check.append(c)
+            
+        if cols_to_check:
+            actual_df = actual_df.drop_duplicates(subset=cols_to_check, keep='last').reset_index(drop=True)
 
         if len(actual_df) < 2: return None
 
         std_df = actual_df.copy()
         
-        # 単独値（アイソレーション）フラグの導入（松井証券の4Q正常化ロジック）
+        # 🚨 【絶対防衛線】単独値（アイソレーション）フラグの導入
         is_standalone = [False] * len(actual_df)
         
+        # 先頭行は手前にデータがないため、明示的にQ1ラベルがない限り累計値と見なしFalseとする
         c_type_0 = str(actual_df[c_type].iloc[0]).strip() if c_type else ""
         if '1Q' in c_type_0 or 'Q1' in c_type_0:
             is_standalone[0] = True
@@ -929,6 +934,7 @@ def fetch_fundamental_history_local(code, local_db):
                             break
 
             if not is_q1:
+                # 引き算を実行するため、単独値として信頼できる（True）
                 is_standalone[i] = True
                 for col in all_target_cols:
                     if col in std_df.columns:
@@ -938,6 +944,7 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
             else:
+                # 元から3ヶ月分（Q1）なので単独値として信頼できる（True）
                 is_standalone[i] = True
 
         def calc_yoy(c, p):
@@ -964,6 +971,7 @@ def fetch_fundamental_history_local(code, local_db):
                 
             q_cur = std_df.iloc[cur_idx]
             
+            # 🚨 今年のデータ自体が単独化されていない場合は比較計算をキャンセル
             if not is_standalone[cur_idx]:
                 dis_date = q_cur.get(c_date, '-')
                 if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
@@ -984,6 +992,7 @@ def fetch_fundamental_history_local(code, local_db):
                         if pd.notna(p_date_val):
                             days_diff = (curr_date_val - p_date_val).days
                             if 300 <= days_diff <= 430:
+                                # 🚨 1年前の比較対象も「単独値」として担保されている場合のみ許可する
                                 if is_standalone[j]:
                                     q_yoy = past_row
                                 break
@@ -1027,7 +1036,7 @@ def fetch_fundamental_history_local(code, local_db):
                 "EPS(%)": calc_yoy(v_eps_c, v_eps_p),
             })
 
-        # 通年データの純化と計算
+        # 🚨 5. 通年データの純化：計算に使う過去4件に「累計値（False）」が一つでも混ざっていれば計算をブロック
         cur_year_valid = False
         prv_year_valid = False
         if len(std_df) >= 4:
