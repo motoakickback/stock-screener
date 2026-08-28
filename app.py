@@ -860,14 +860,10 @@ def fetch_fundamental_history_local(code, local_db):
                 return float(str(v).replace(',', '').strip())
             except: return 0.0
 
+        # 1. 日付順にソート
         if c_date:
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
-
-        if c_end_date:
-            df_target = df_target.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
-        elif c_fy and c_type:
-            df_target = df_target.drop_duplicates(subset=[c_fy, c_type], keep='last').reset_index(drop=True)
 
         all_target_cols = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
@@ -876,7 +872,8 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 🚨 【核心修正】実績値（売上・利益など）が全て0の行（業績予想の修正など）を物理排除
+        # 🚨 2. 【最優先】実績値ゼロのノイズ行を物理排除
+        # 売上だけでなく、利益項目のどれか1つでも数値があれば「有効な決算」として残す
         has_actuals = pd.Series([False]*len(df_target))
         for c in all_target_cols:
             if c in df_target.columns:
@@ -884,16 +881,23 @@ def fetch_fundamental_history_local(code, local_db):
         
         df_target = df_target[has_actuals].copy().reset_index(drop=True)
 
+        # 🚨 3. 重複排除（本物の決算データだけになった状態で、最新の開示を残す）
+        if c_end_date:
+            df_target = df_target.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
+        elif c_fy and c_type:
+            df_target = df_target.drop_duplicates(subset=[c_fy, c_type], keep='last').reset_index(drop=True)
+
         if len(df_target) < 2: return None
 
         std_df = df_target.copy()
+        
+        # 4. 累積値から四半期単独値への変換（引き算）
         for i in range(1, len(df_target)):
             curr_type = str(df_target[c_type].iloc[i]) if c_type else ""
             
             is_q1 = ('1Q' in curr_type or 'Q1' in curr_type)
             
             if not is_q1:
-                # 金融銘柄など売上が無いケースに対応するため、存在する利益項目を使ってQ1の判定（数値のリセット）を検知
                 metric_col = None
                 for c in all_target_cols:
                     if c in df_target.columns and df_target[c].apply(to_flt).sum() != 0:
@@ -902,7 +906,6 @@ def fetch_fundamental_history_local(code, local_db):
                 if metric_col:
                     c_val = to_flt(df_target[metric_col].iloc[i])
                     p_val = to_flt(df_target[metric_col].iloc[i-1])
-                    # 累積値が前期より減っていれば、年度替わり（Q1）と判定
                     if c_val < p_val and p_val > 0:
                         is_q1 = True
 
@@ -957,8 +960,12 @@ def fetch_fundamental_history_local(code, local_db):
             v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
             
+            # 🚨 5. 金融銘柄専用の突破プロキシ（売上・営業益が0なら経常益を偽装コピーする）
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
+            
+            if v_sales_c == 0.0 and v_ord_c != 0.0: v_sales_c = v_ord_c
+            if v_sales_p == 0.0 and v_ord_p != 0.0: v_sales_p = v_ord_p
             
             v_profit_c = get_best_v(q_cur, profit_candidates)
             v_profit_p = get_best_v(q_yoy, profit_candidates)
@@ -985,8 +992,11 @@ def fetch_fundamental_history_local(code, local_db):
             y_ord_c = get_best_v(y_cur, ord_candidates)
             y_ord_p = get_best_v(y_prv, ord_candidates)
             
+            # 通年データ用のプロキシ
             if y_op_c == 0.0 and y_ord_c != 0.0: y_op_c = y_ord_c
             if y_op_p == 0.0 and y_ord_p != 0.0: y_op_p = y_ord_p
+            if y_sales_c == 0.0 and y_ord_c != 0.0: y_sales_c = y_ord_c
+            if y_sales_p == 0.0 and y_ord_p != 0.0: y_sales_p = y_ord_p
             
             y_profit_c = get_best_v(y_cur, profit_candidates)
             y_profit_p = get_best_v(y_prv, profit_candidates)
