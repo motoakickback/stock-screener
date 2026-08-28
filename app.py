@@ -849,8 +849,8 @@ def fetch_fundamental_history_local(code, local_db):
                 if n.lower() in cols: return df_target.columns[cols.index(n.lower())]
             return None
 
-        # 🚨 生データで確実に存在する「開示日」のみを頼りにする
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
+        c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
 
         def to_flt(v):
             try: 
@@ -869,7 +869,7 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 🚨 1. ノイズ完全パージ：純利益を判定から外し、「業績予想の修正」を消滅させる
+        # ノイズ完全パージ
         has_actuals = pd.Series([False]*len(df_target))
         all_cols_for_mask = [find_c(c) for group in [sales_candidates, op_candidates, ord_candidates] for c in group if find_c(c)]
         
@@ -882,7 +882,7 @@ def fetch_fundamental_history_local(code, local_db):
 
         actual_df = df_target[has_actuals].copy().reset_index(drop=True)
 
-        # 🚨 2. 数値ベースの重複排除：日付が数日ズレて連投される短信・有報のダブリを値の完全一致で排除する
+        # 数値ベースの重複排除
         cols_to_check = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates]:
             c = next((find_c(x) for x in c_group if find_c(x)), None)
@@ -895,9 +895,19 @@ def fetch_fundamental_history_local(code, local_db):
 
         std_df = actual_df.copy()
         
-        # 3. 累積値から四半期単独値への変換（引き算）
+        # 🚨 【絶対防衛線】単独値（アイソレーション）フラグの導入
+        is_standalone = [False] * len(actual_df)
+        
+        # 先頭行は手前にデータがないため、明示的にQ1ラベルがない限り累計値と見なしFalseとする
+        c_type_0 = str(actual_df[c_type].iloc[0]).strip() if c_type else ""
+        if '1Q' in c_type_0 or 'Q1' in c_type_0:
+            is_standalone[0] = True
+        
         for i in range(1, len(actual_df)):
             is_q1 = False
+            curr_type = str(actual_df[c_type].iloc[i]).strip() if c_type else ""
+            if '1Q' in curr_type or 'Q1' in curr_type:
+                is_q1 = True
             
             c_s = 0.0; p_s = 0.0
             for sc in sales_candidates:
@@ -910,11 +920,9 @@ def fetch_fundamental_history_local(code, local_db):
                         p_s = p_val
                         break
             
-            # 売上が前期より減っていれば「Q1（年度替わり）」と判定
             if c_s < p_s and p_s > 0:
                 is_q1 = True
             
-            # 売上が無い特殊ケース向け（経常益で判定）
             if c_s == 0.0 and p_s == 0.0:
                 for oc in ord_candidates:
                     oc_col = find_c(oc)
@@ -926,6 +934,8 @@ def fetch_fundamental_history_local(code, local_db):
                             break
 
             if not is_q1:
+                # 引き算を実行するため、単独値として信頼できる（True）
+                is_standalone[i] = True
                 for col in all_target_cols:
                     if col in std_df.columns:
                         try: 
@@ -933,6 +943,9 @@ def fetch_fundamental_history_local(code, local_db):
                             val_p = to_flt(actual_df[col].iloc[i-1])
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
+            else:
+                # 元から3ヶ月分（Q1）なので単独値として信頼できる（True）
+                is_standalone[i] = True
 
         def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
@@ -950,34 +963,43 @@ def fetch_fundamental_history_local(code, local_db):
 
         results = []
         
-        # 🚨 4. 開示日（DiscDate）レーダー：空欄の期末日を捨て、確実に存在する開示日で約1年前を探す
         for i in range(1, 5):
-            if len(std_df) < i:
+            cur_idx = len(std_df) - i
+            if cur_idx < 0:
                 results.append({"期間": f"直近 Q{i}", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
                 continue
                 
-            q_cur = std_df.iloc[-i]
-            q_yoy = None
+            q_cur = std_df.iloc[cur_idx]
             
+            # 🚨 今年のデータ自体が単独化されていない場合は比較計算をキャンセル
+            if not is_standalone[cur_idx]:
+                dis_date = q_cur.get(c_date, '-')
+                if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
+                    dis_date = dis_date.strftime('%Y-%m-%d')
+                results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
+                continue
+
+            q_yoy = None
             curr_date_val = None
             if c_date and pd.notna(q_cur.get(c_date)):
                 curr_date_val = pd.to_datetime(q_cur[c_date], errors='coerce')
             
             if pd.notna(curr_date_val):
-                for j in range(len(std_df) - i - 1, -1, -1):
+                for j in range(cur_idx - 1, -1, -1):
                     past_row = std_df.iloc[j]
                     if c_date and pd.notna(past_row.get(c_date)):
                         p_date_val = pd.to_datetime(past_row[c_date], errors='coerce')
                         if pd.notna(p_date_val):
                             days_diff = (curr_date_val - p_date_val).days
-                            # 300日～430日前なら「1年前の同四半期決算」と確定
                             if 300 <= days_diff <= 430:
-                                q_yoy = past_row
+                                # 🚨 1年前の比較対象も「単独値」として担保されている場合のみ許可する
+                                if is_standalone[j]:
+                                    q_yoy = past_row
                                 break
             
-            # 日付レーダーが空振った場合の保険（4行前参照）
-            if q_yoy is None and len(std_df) >= i + 4:
-                q_yoy = std_df.iloc[-(i+4)]
+            if q_yoy is None and cur_idx >= 4:
+                if is_standalone[cur_idx - 4]:
+                    q_yoy = std_df.iloc[cur_idx - 4]
                 
             if q_yoy is None:
                 q_yoy = pd.Series(dtype=float)
@@ -995,7 +1017,6 @@ def fetch_fundamental_history_local(code, local_db):
             v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
             
-            # 【金融専用プロキシ】売上・営業益が0なら経常益を偽装コピー（TAB1突破用）
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
             if v_sales_c == 0.0 and v_ord_c != 0.0: v_sales_c = v_ord_c
@@ -1015,10 +1036,17 @@ def fetch_fundamental_history_local(code, local_db):
                 "EPS(%)": calc_yoy(v_eps_c, v_eps_p),
             })
 
-        # 5. 通年データの計算
+        # 🚨 5. 通年データの純化：計算に使う過去4件に「累計値（False）」が一つでも混ざっていれば計算をブロック
+        cur_year_valid = False
+        prv_year_valid = False
         if len(std_df) >= 4:
+            cur_year_valid = all(is_standalone[-4:])
+        if len(std_df) >= 8:
+            prv_year_valid = all(is_standalone[-8:-4])
+
+        if cur_year_valid and prv_year_valid:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
-            y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True) if len(std_df) >= 8 else None
+            y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             
             y_sales_c = get_best_v(y_cur, sales_candidates)
             y_sales_p = get_best_v(y_prv, sales_candidates)
