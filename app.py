@@ -2026,33 +2026,32 @@ with tab7:
 gc.collect()
 
 # ==========================================
-# 🛠️ 参謀直通デバッグターミナル（一時抽出用）
+# 🛠️ 参謀直通デバッグターミナル（生データCSV抽出）
 # ==========================================
 st.markdown("---")
-with st.expander("🛠️ 参謀直通デバッグターミナル（松井証券生データ抽出）", expanded=False):
-    if st.button("📡 8628 生データを抽出"):
-        try:
-            db = load_local_fundamentals_db()
-            df_8628 = None
-            
-            if isinstance(db, dict):
-                df_8628 = db.get("86280")
-                if df_8628 is None:  
-                    df_8628 = db.get("8628")
-            elif isinstance(db, pd.DataFrame):
-                c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
-                if c_col:
-                    df_8628 = db[db[c_col].astype(str).str.startswith("8628")]
-            
-            if df_8628 is not None and (isinstance(df_8628, pd.DataFrame) and not df_8628.empty):
-                st.write("✅ **抽出成功: 松井証券 (8628) 生データ**")
+with st.expander("🛠️ 参謀直通デバッグターミナル（生データCSV抽出）", expanded=False):
+    debug_code = st.text_input("抽出する銘柄コードを入力（例: 8627）", value="8628")
+    if st.button("📡 生データを抽出してCSV生成"):
+        if debug_code.strip():
+            try:
+                db = load_local_fundamentals_db()
+                df_debug = None
+                code_str = debug_code.strip()[:4]
                 
-                # 🚨 コピペ専用のテキスト（CSV形式）として出力
-                csv_text = df_8628.tail(16).to_csv(index=False)
-                st.text_area("📋 【ここをクリックして Ctrl+A で全選択し、コピーしてください】", value=csv_text, height=300)
+                if isinstance(db, dict):
+                    df_debug = db.get(code_str + "0")
+                    if df_debug is None:  
+                        df_debug = db.get(code_str)
+                elif isinstance(db, pd.DataFrame):
+                    c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
+                    if c_col:
+                        df_debug = db[db[c_col].astype(str).str.startswith(code_str)]
                 
-            else:
-                st.warning("⚠️ 8628のデータが見つかりません。")
-        except Exception as e:
-            st.error(f"🚨 抽出エラー: {e}")
-            
+                if df_debug is not None and (isinstance(df_debug, pd.DataFrame) and not df_debug.empty):
+                    st.write(f"✅ **抽出成功: {code_str} 生データ**")
+                    csv_text = df_debug.tail(16).to_csv(index=False)
+                    st.text_area("📋 【ここをクリックして Ctrl+A で全選択し、コピーしてください】", value=csv_text, height=300)
+                else:
+                    st.warning(f"⚠️ {code_str} のデータが見つかりません。")
+            except Exception as e:
+                st.error(f"🚨 抽出エラー: {e}")
