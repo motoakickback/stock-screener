@@ -2005,22 +2005,17 @@ with st.expander("🛠️ 参謀直通デバッグターミナル（松井証券
             
             if isinstance(db, dict):
                 df_8628 = db.get("86280")
-                if df_8628 is None:  # 🚨 or評価を避け、確実なNone判定に修正
+                if df_8628 is None:  
                     df_8628 = db.get("8628")
             elif isinstance(db, pd.DataFrame):
                 c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
                 if c_col:
                     df_8628 = db[db[c_col].astype(str).str.startswith("8628")]
             
-            # 🚨 empty判定を用いて安全に存在確認
             if df_8628 is not None and (isinstance(df_8628, pd.DataFrame) and not df_8628.empty):
-                cols = [c for c in df_8628.columns if c.lower() in [
-                    'discloseddate', 'typeofdocument', 'typeofcurrentperiod', 'currentperiodenddate',
-                    'netsales', 'operatingrevenues', 'ordinaryrevenues', 
-                    'operatingprofit', 'ordinaryprofit', 'profit', 'earningspershare'
-                ]]
-                st.write("✅ **抽出成功: 松井証券 (8628) 直近16件の生データ**")
-                st.dataframe(df_8628[cols].tail(16), use_container_width=True)
+                st.write("✅ **抽出成功: 松井証券 (8628) 直近16件の生データ（全カラム強制出力）**")
+                # 🚨 余計なフィルターを全撤廃し、ありのままの全データを表示
+                st.dataframe(df_8628.tail(16), use_container_width=True)
             else:
                 st.warning("⚠️ 8628のデータが見つかりません。")
         except Exception as e:
