@@ -2000,18 +2000,20 @@ st.markdown("---")
 with st.expander("🛠️ 参謀直通デバッグターミナル（松井証券生データ抽出）", expanded=False):
     if st.button("📡 8628 生データを抽出"):
         try:
-            # ローカルDB（キャッシュまたはファイル）から直接データをロード
             db = load_local_fundamentals_db()
             df_8628 = None
+            
             if isinstance(db, dict):
-                df_8628 = db.get("86280") or db.get("8628")
+                df_8628 = db.get("86280")
+                if df_8628 is None:  # 🚨 or評価を避け、確実なNone判定に修正
+                    df_8628 = db.get("8628")
             elif isinstance(db, pd.DataFrame):
                 c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
                 if c_col:
                     df_8628 = db[db[c_col].astype(str).str.startswith("8628")]
             
-            if df_8628 is not None and not df_8628.empty:
-                # J-Quantsの主要な収益・メタデータ列のみをフィルタリング
+            # 🚨 empty判定を用いて安全に存在確認
+            if df_8628 is not None and (isinstance(df_8628, pd.DataFrame) and not df_8628.empty):
                 cols = [c for c in df_8628.columns if c.lower() in [
                     'discloseddate', 'typeofdocument', 'typeofcurrentperiod', 'currentperiodenddate',
                     'netsales', 'operatingrevenues', 'ordinaryrevenues', 
