@@ -852,7 +852,6 @@ def fetch_fundamental_history_local(code, local_db):
         c_type = find_c('CurPerType', 'TypeOfCurrentPeriod')
         c_date = find_c('DiscDate', 'DisclosedDate', 'Date')
         c_end_date = find_c('CurrentPeriodEndDate', 'currentperiodenddate')
-        c_doc = find_c('TypeOfDocument', 'typeofdocument', 'DocumentType')
 
         def to_flt(v):
             try: 
@@ -864,11 +863,6 @@ def fetch_fundamental_history_local(code, local_db):
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        # 🚨 1. 【精密狙撃】「業績予想の修正」等のノイズ行を文書名から直接検知して完全排除
-        if c_doc:
-            is_rev = df_target[c_doc].astype(str).str.contains('Revision|修正', case=False, na=False, regex=True)
-            df_target = df_target[~is_rev].copy().reset_index(drop=True)
-
         all_target_cols = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
             for c in c_group:
@@ -876,7 +870,7 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 2. 一般企業を保護する王道フィルター（有効データのみ抽出）
+        # 🚨 1. 【一般企業を絶対保護】フィルターを緩め、65社が通過していた王道状態に完全ロールバック
         actual_mask = pd.Series([False]*len(df_target))
         all_cols_for_mask = [find_c(c) for group in [sales_candidates, op_candidates, ord_candidates, profit_candidates] for c in group if find_c(c)]
         
@@ -889,7 +883,6 @@ def fetch_fundamental_history_local(code, local_db):
 
         actual_df = df_target[actual_mask].copy().reset_index(drop=True)
 
-        # 3. 重複排除
         if c_end_date:
             actual_df = actual_df.drop_duplicates(subset=[c_end_date], keep='last').reset_index(drop=True)
 
@@ -897,7 +890,6 @@ def fetch_fundamental_history_local(code, local_db):
 
         std_df = actual_df.copy()
         
-        # 4. 累積値から四半期単独値への変換（引き算）
         for i in range(1, len(actual_df)):
             curr_type = str(actual_df[c_type].iloc[i]).strip() if c_type else ""
             
@@ -935,10 +927,11 @@ def fetch_fundamental_history_local(code, local_db):
                             std_df.iat[i, std_df.columns.get_loc(col)] = val_c - val_p
                         except: pass
 
+        # 🚨 2. 【小数点・フォーマット崩壊の修正】UIとTAB1を破壊していた計算結果を第1位で丸める
         def calc_yoy(c, p):
             if p == 0.0 or p is None: return "-"
             if c == 0.0 and p != 0.0: return "-"
-            return ((c - p) / abs(p)) * 100.0
+            return round(((c - p) / abs(p)) * 100.0, 1)
 
         def get_best_v(row, candidates):
             if row is None: return 0.0
@@ -950,13 +943,26 @@ def fetch_fundamental_history_local(code, local_db):
             return 0.0
 
         valid_q_results = []
+        idx = len(std_df) - 1
         
-        # 🚨 5. 【動的バックワード・スキャン】盲目的な4行取得を破棄。過去に遡り「本物の4四半期」を見つけるまで自律探索する
-        for idx in range(len(std_df) - 1, -1, -1):
+        # 🚨 3. 【スマート・ピックアップ】無意味な行は削除せず「無視」し、有効な決算を4つ拾う
+        while idx >= 0 and len(valid_q_results) < 4:
             q_cur = std_df.iloc[idx]
             q_cur_type = str(q_cur.get(c_type, "")).strip() if c_type else ""
             
+            v_sales_c = get_best_v(q_cur, sales_candidates)
+            v_op_c = get_best_v(q_cur, op_candidates)
+            v_ord_c = get_best_v(q_cur, ord_candidates)
+            v_profit_c = get_best_v(q_cur, profit_candidates)
+            v_eps_c = get_best_v(q_cur, eps_candidates)
+            
+            # 松井証券の「空っぽQ1/Q3」や「実績ゼロの修正行」をスキップする
+            if v_sales_c == 0.0 and v_op_c == 0.0 and v_ord_c == 0.0:
+                idx -= 1
+                continue
+                
             q_yoy = None
+            # 現在の行と同じラベル（例：2Q）の行を過去へ探す
             if q_cur_type:
                 for j in range(idx - 1, -1, -1):
                     past_row = std_df.iloc[j]
@@ -964,6 +970,7 @@ def fetch_fundamental_history_local(code, local_db):
                         q_yoy = past_row
                         break
             
+            # 見つからなかった場合の保険（4行前を採用）
             if q_yoy is None and idx >= 4:
                 q_yoy = std_df.iloc[idx - 4]
                 
@@ -976,52 +983,36 @@ def fetch_fundamental_history_local(code, local_db):
                 if dis_date == '1970-01-01': dis_date = '-'
             else: dis_date = '-'
 
-            v_sales_c = get_best_v(q_cur, sales_candidates)
             v_sales_p = get_best_v(q_yoy, sales_candidates)
-            v_op_c = get_best_v(q_cur, op_candidates)
             v_op_p = get_best_v(q_yoy, op_candidates)
-            v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
+            v_profit_p = get_best_v(q_yoy, profit_candidates)
+            v_eps_p = get_best_v(q_yoy, eps_candidates)
             
-            # 金融専用プロキシ（売上・営業益が0なら経常益を偽装コピー）
+            # 金融銘柄専用の突破プロキシ（売上・営業益が0なら経常益を偽装コピーする）
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
             if v_sales_c == 0.0 and v_ord_c != 0.0: v_sales_c = v_ord_c
             if v_sales_p == 0.0 and v_ord_p != 0.0: v_sales_p = v_ord_p
-            
-            v_profit_c = get_best_v(q_cur, profit_candidates)
-            v_profit_p = get_best_v(q_yoy, profit_candidates)
-            v_eps_c = get_best_v(q_cur, eps_candidates)
-            v_eps_p = get_best_v(q_yoy, eps_candidates)
                 
-            res_dict = {
+            valid_q_results.append({
                 "開示日": str(dis_date),
                 "売上(%)": calc_yoy(v_sales_c, v_sales_p),
                 "営業益(%)": calc_yoy(v_op_c, v_op_p),
                 "経常益(%)": calc_yoy(v_ord_c, v_ord_p),
                 "純利益(%)": calc_yoy(v_profit_c, v_profit_p),
                 "EPS(%)": calc_yoy(v_eps_c, v_eps_p),
-            }
-
-            # 🚨 異常値（オールハイフン）はスキップし、有効データのみを抽出し続ける
-            if res_dict["売上(%)"] == "-" and res_dict["営業益(%)"] == "-" and res_dict["経常益(%)"] == "-" and res_dict["純利益(%)"] == "-":
-                continue
-                
-            valid_q_results.append(res_dict)
+            })
             
-            # 本物のデータが4つ集まった時点で探索完了
-            if len(valid_q_results) == 4:
-                break
+            idx -= 1
 
-        # 万が一4つ未満だった場合は空枠でパディング
         while len(valid_q_results) < 4:
             valid_q_results.append({"開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
             
-        # UI表示用に Q1(最新) ～ Q4(最古) のラベルを付与
-        for idx, r in enumerate(valid_q_results):
-            r["期間"] = f"直近 Q{idx+1}"
+        for list_idx, r in enumerate(valid_q_results):
+            r["期間"] = f"直近 Q{list_idx+1}"
 
-        # 6. 通年データの計算（最新の4行＝最新1年分を安全に合算）
+        # 通年データの計算
         if len(std_df) >= 4:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
             y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True) if len(std_df) >= 8 else None
@@ -1055,8 +1046,6 @@ def fetch_fundamental_history_local(code, local_db):
             valid_q_results.append({"期間": "🌟 通年(直近1年)", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
 
         if len(valid_q_results) == 0: return None
-        
-        # 降順（通年、Q4、Q3、Q2、Q1）で返すためリバース
         return pd.DataFrame(valid_q_results[::-1])
     except Exception as e: 
         return None
