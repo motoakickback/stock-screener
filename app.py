@@ -863,7 +863,6 @@ def fetch_fundamental_history_local(code, local_db):
             df_target[c_date] = pd.to_datetime(df_target[c_date], errors='coerce')
             df_target = df_target.sort_values(by=c_date).reset_index(drop=True)
 
-        # 🚨 【撤回と再構築】一般企業のデータ消失（60社→6社）を防ぐため、安全な王道仕様へロールバック
         all_target_cols = []
         for c_group in [sales_candidates, op_candidates, ord_candidates, profit_candidates, eps_candidates]:
             for c in c_group:
@@ -871,19 +870,16 @@ def fetch_fundamental_history_local(code, local_db):
                 if actual_c and actual_c not in all_target_cols:
                     all_target_cols.append(actual_c)
 
-        # 🚨 【核心修正】松井証券のQ1/Q3が消えていた真の原因（売上0による強制削除）の粉砕
-        actual_mask = pd.Series([False]*len(df_target))
-        all_cols_for_mask = [find_c(c) for group in [sales_candidates, op_candidates, ord_candidates, profit_candidates] for c in group if find_c(c)]
+        # 🚨 1. 【空洞四半期の完全排除】一般企業（60社）は無傷のまま、金融のスッカスカ行をパージ
+        has_actuals = pd.Series([False]*len(df_target))
+        # 純利益（profit）は判定から外し、「売上・営業益・経常益」のどれかが存在しない行は無価値として消滅させる
+        for c_group in [sales_candidates, op_candidates, ord_candidates]:
+            for c in c_group:
+                actual_c = find_c(c)
+                if actual_c:
+                    has_actuals = has_actuals | (df_target[actual_c].apply(to_flt) != 0.0)
         
-        if all_cols_for_mask:
-            for col in all_cols_for_mask:
-                if col is not None:
-                    # 売上が0でも、経常益等に数値が入っていれば「有効データ」として保護する
-                    actual_mask = actual_mask | (df_target[col].apply(to_flt) != 0.0)
-        else:
-            actual_mask = pd.Series([True]*len(df_target))
-
-        actual_df = df_target[actual_mask].copy().reset_index(drop=True)
+        actual_df = df_target[has_actuals].copy().reset_index(drop=True)
 
         # 重複排除（同じ四半期の修正版が出た場合は最新を残す）
         if c_end_date:
@@ -906,7 +902,6 @@ def fetch_fundamental_history_local(code, local_db):
                         p_s = p_val
                         break
             
-            # 🚨 【金融専用】売上がない場合、経常益の減少幅を見て「Q1のリセット（年度替わり）」を検知する
             if c_s == 0.0 and p_s == 0.0:
                 for oc in ord_candidates:
                     oc_col = find_c(oc)
@@ -944,20 +939,30 @@ def fetch_fundamental_history_local(code, local_db):
             return 0.0
 
         results = []
-        # 🚨 一般企業のインデックスを破壊しない「王道の4行前（1年前）参照」へ復帰
         for i in range(1, 5):
-            if len(std_df) < i + 4:
-                q_cur = std_df.iloc[-i] if len(std_df) >= i else None
-                dis_date = '-'
-                if q_cur is not None:
-                    dis_date = q_cur.get(c_date, '-')
-                    if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): dis_date = dis_date.strftime('%Y-%m-%d')
-                results.append({"期間": f"直近 Q{i}", "開示日": str(dis_date), "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
+            if len(std_df) < i:
+                results.append({"期間": f"直近 Q{i}", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
                 continue
                 
             q_cur = std_df.iloc[-i]
-            q_yoy = std_df.iloc[-(i+4)]
+            q_cur_type = str(q_cur.get(c_type, "")).strip() if c_type else ""
             
+            # 🚨 2. 【レーダーロック式 YoY計算】行数がズレていても、必ず同じ四半期ラベルの過去行を探し出す
+            q_yoy = None
+            if q_cur_type:
+                for j in range(len(std_df) - i - 1, -1, -1):
+                    past_row = std_df.iloc[j]
+                    if str(past_row.get(c_type, "")).strip() == q_cur_type:
+                        q_yoy = past_row
+                        break
+            
+            # 万が一探知できなかった場合の安全装置（従来の4行前参照）
+            if q_yoy is None and len(std_df) >= i + 4:
+                q_yoy = std_df.iloc[-(i+4)]
+
+            if q_yoy is None:
+                q_yoy = pd.Series(dtype=float)
+
             dis_date = q_cur.get(c_date, '-')
             if pd.notna(dis_date) and hasattr(dis_date, 'strftime'): 
                 dis_date = dis_date.strftime('%Y-%m-%d')
@@ -971,7 +976,7 @@ def fetch_fundamental_history_local(code, local_db):
             v_ord_c = get_best_v(q_cur, ord_candidates)
             v_ord_p = get_best_v(q_yoy, ord_candidates)
             
-            # 🚨 【金融専用プロキシ】売上や営業益がゼロなら、経常益を偽装コピーしてTAB1の条件を突破
+            # 🚨 金融銘柄専用プロキシ（売上・営業益が0なら経常益を偽装コピーしてTAB1を突破）
             if v_op_c == 0.0 and v_ord_c != 0.0: v_op_c = v_ord_c
             if v_op_p == 0.0 and v_ord_p != 0.0: v_op_p = v_ord_p
             if v_sales_c == 0.0 and v_ord_c != 0.0: v_sales_c = v_ord_c
@@ -991,9 +996,9 @@ def fetch_fundamental_history_local(code, local_db):
                 "EPS(%)": calc_yoy(v_eps_c, v_eps_p),
             })
 
-        if len(std_df) >= 8:
+        if len(std_df) >= 4:
             y_cur = std_df.iloc[-4:].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
-            y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True)
+            y_prv = std_df.iloc[-8:-4].apply(lambda x: pd.to_numeric(x, errors='coerce')).sum(numeric_only=True) if len(std_df) >= 8 else None
             
             y_sales_c = get_best_v(y_cur, sales_candidates)
             y_sales_p = get_best_v(y_prv, sales_candidates)
@@ -1020,6 +1025,9 @@ def fetch_fundamental_history_local(code, local_db):
                 "純利益(%)": calc_yoy(y_profit_c, y_profit_p),
                 "EPS(%)": calc_yoy(y_eps_c, y_eps_p),
             })
+        else:
+            results.append({"期間": "🌟 通年(直近1年)", "開示日": "-", "売上(%)": "-", "営業益(%)": "-", "経常益(%)": "-", "純利益(%)": "-", "EPS(%)": "-"})
+
         if len(results) == 0: return None
         return pd.DataFrame(results[::-1])
     except Exception as e: 
