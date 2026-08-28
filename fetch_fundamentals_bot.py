@@ -72,7 +72,7 @@ for i, code in enumerate(all_codes):
             
             if data:
                 success_count += 1
-                df = pd.DataFrame(data[-16:])
+                df = pd.DataFrame(data[-40:])
                 for col in df.columns:
                     if col not in ['Date', 'DisclosedDate', 'LocalCode']:
                         # 🚨 猛毒であった .fillna(0) を完全排除！ 欠損値(NaN)はそのまま保持する
