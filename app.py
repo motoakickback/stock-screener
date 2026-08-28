@@ -1992,3 +1992,35 @@ with tab7:
             st.rerun()
 
 gc.collect()
+
+# ==========================================
+# 🛠️ 参謀直通デバッグターミナル（一時抽出用）
+# ==========================================
+st.markdown("---")
+with st.expander("🛠️ 参謀直通デバッグターミナル（松井証券生データ抽出）", expanded=False):
+    if st.button("📡 8628 生データを抽出"):
+        try:
+            # ローカルDB（キャッシュまたはファイル）から直接データをロード
+            db = load_local_fundamentals_db()
+            df_8628 = None
+            if isinstance(db, dict):
+                df_8628 = db.get("86280") or db.get("8628")
+            elif isinstance(db, pd.DataFrame):
+                c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
+                if c_col:
+                    df_8628 = db[db[c_col].astype(str).str.startswith("8628")]
+            
+            if df_8628 is not None and not df_8628.empty:
+                # J-Quantsの主要な収益・メタデータ列のみをフィルタリング
+                cols = [c for c in df_8628.columns if c.lower() in [
+                    'discloseddate', 'typeofdocument', 'typeofcurrentperiod', 'currentperiodenddate',
+                    'netsales', 'operatingrevenues', 'ordinaryrevenues', 
+                    'operatingprofit', 'ordinaryprofit', 'profit', 'earningspershare'
+                ]]
+                st.write("✅ **抽出成功: 松井証券 (8628) 直近16件の生データ**")
+                st.dataframe(df_8628[cols].tail(16), use_container_width=True)
+            else:
+                st.warning("⚠️ 8628のデータが見つかりません。")
+        except Exception as e:
+            st.error(f"🚨 抽出エラー: {e}")
+            
