@@ -1161,6 +1161,12 @@ with tab1:
                                 q1_s, q1_op, q1_ord, q1_np, q1_eps = get_val(q1_row, "売上(%)"), get_val(q1_row, "営業益(%)"), get_val(q1_row, "経常益(%)"), get_val(q1_row, "純利益(%)"), get_val(q1_row, "EPS(%)")
                                 q2_s, q2_op, q2_ord, q2_np, q2_eps = get_val(q2_row, "売上(%)"), get_val(q2_row, "営業益(%)"), get_val(q2_row, "経常益(%)"), get_val(q2_row, "純利益(%)"), get_val(q2_row, "EPS(%)")
                                 
+                                # 🚨 金融業対策: 営業益が欠損（Noneまたは0）かつ経常益が存在する場合、経常益をプロキシとして代入する
+                                if (q1_op is None or q1_op == 0.0) and q1_ord is not None: q1_op = q1_ord
+                                if (q2_op is None or q2_op == 0.0) and q2_ord is not None: q2_op = q2_ord
+                                if (q1_s is None or q1_s == 0.0) and q1_ord is not None: q1_s = q1_ord
+                                if (q2_s is None or q2_s == 0.0) and q2_ord is not None: q2_s = q2_ord
+
                                 def count_misses(s, op, ord_p, np_p, eps):
                                     if None in [s, op, ord_p, np_p, eps]: return 99 
                                     m = 0
