@@ -1395,7 +1395,7 @@ with tab3:
 
     store_key = "tab3_store_buy" if scan_mode == "buy" else "tab3_store_sell"
 
-    st.markdown("#### 📡 分析対象銘柄（最大50件まで強制表示）")
+    st.markdown("#### 📡 分析対象銘柄（※完全合致銘柄のみを抽出します）")
     
     target_codes_input = st.text_area(
         "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
@@ -1419,7 +1419,7 @@ with tab3:
             target_codes = list(dict.fromkeys(target_codes))
             target_str_codes = [str(c) for c in target_codes]
 
-            st.write(f"📡 実行対象: {len(target_codes)} 銘柄を一斉解析中...")
+            st.write(f"📡 実行対象: {len(target_codes)} 銘柄を解析中...（対象外は除外されます）")
 
             is_macro_downtrend = False
             try:
@@ -1615,8 +1615,8 @@ with tab3:
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
-                    # 🚨 【限界突破】50件への解放
-                    display_targets = sortable_results[:50]
+                    # 🚨 【新戦略】業績＆陣形が完全合致（is_hit == True）の銘柄のみを無制限に抽出（対象外はパージ）
+                    display_targets = [d for d in sortable_results if d.get("is_hit", False)]
 
                     name_map = {}
                     try:
@@ -1630,11 +1630,11 @@ with tab3:
                     import plotly.graph_objects as go
                     import numpy as np
                     
-                    hit_count = sum(1 for d in sortable_results if d["is_hit"])
+                    hit_count = len(display_targets)
                     if hit_count > 0:
-                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （分析対象 上位最大50件を表示します）")
+                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （全件出力します）")
                     else:
-                        st.error("📉 条件に完全合致する銘柄はありませんでした。分析データを強制表示します。")
+                        st.warning("📉 条件に完全合致する銘柄はありませんでした。（対象外銘柄は表示をスキップしました）")
 
                     for idx, data in enumerate(display_targets):
                         code = data['code']
@@ -1820,7 +1820,7 @@ with tab3:
             results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area("📋 分析対象銘柄（コピペ用・上位50件）", value=hit_codes_str, height=70)
+                st.text_area(f"📋 突破銘柄（コピペ用・完全合致 {len(results_tab3)}件）", value=hit_codes_str, height=70)
                 
             st.session_state['tab3_results'] = results_tab3
 
