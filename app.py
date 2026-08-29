@@ -1087,7 +1087,7 @@ with tab1:
         col1_4, col1_5, col1_6 = st.columns(3)
         t1_mcap = col1_4.selectbox("時価総額フィルタ (億円以上)", [500, 300, 1000], index=0)
         t1_p_min = col1_5.number_input("価格下限 (円)", value=800, step=100, key="t1_p_min")
-        t1_p_max = col1_6.number_input("価格上限 (円)", value=3000, step=100, key="t1_p_max")
+        t1_p_max = col1_6.number_input("価格上限 (円)", value=4000, step=100, key="t1_p_max")
         
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 YoY S級/A級クリア)** \n"
                     f"・直近1つ目の四半期は売上 {t1_sales_r}% 以上、他利益 {t1_ord_r}% 以上で完全クリア必須。\n"
