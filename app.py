@@ -1382,7 +1382,7 @@ with tab3:
     tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
-    # 🚨 TAB1/TAB2の結果オブジェクトを直接取得し、オブジェクトID（再スキャン検知）を取得
+    # TAB1/TAB2の結果オブジェクトを直接取得し、オブジェクトID（再スキャン検知）を取得
     t1_results = st.session_state.get('tab1_scan_results')
     t1_codes = []
     if t1_results:
@@ -1401,7 +1401,7 @@ with tab3:
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
     t2_id = id(t2_results) if t2_results is not None else 0
 
-    # 🚨 内部Storeの初期化
+    # 内部Storeの初期化
     if "tab3_store_buy" not in st.session_state:
         st.session_state["tab3_store_buy"] = t1_codes_str
     if "tab3_store_sell" not in st.session_state:
@@ -1417,7 +1417,7 @@ with tab3:
     if "tab3_last_t2_str" not in st.session_state:
         st.session_state["tab3_last_t2_str"] = t2_codes_str
 
-    # 🚨 TAB1/TAB2でスキャン結果が更新された瞬間のみStoreを強制上書き
+    # TAB1/TAB2でスキャン結果が更新された瞬間のみStoreを強制上書き
     if st.session_state["tab3_last_t1_id"] != t1_id or st.session_state["tab3_last_t1_str"] != t1_codes_str:
         st.session_state["tab3_store_buy"] = t1_codes_str
         st.session_state["tab3_last_t1_id"] = t1_id
@@ -1574,8 +1574,14 @@ with tab3:
                                 q2_np = get_val(q2_row, "純利益(%)")
                                 q2_eps = get_val(q2_row, "EPS(%)")
                                 
+                                # 🛡️ 金融銘柄プロキシ処理（TAB1と完全同期）
+                                if (q1_op is None or q1_op == 0.0) and q1_ord is not None: q1_op = q1_ord
+                                if (q2_op is None or q2_op == 0.0) and q2_ord is not None: q2_op = q2_ord
+                                if (q1_s is None or q1_s == 0.0) and q1_ord is not None: q1_s = q1_ord
+                                if (q2_s is None or q2_s == 0.0) and q2_ord is not None: q2_s = q2_ord
+                                
                                 def count_misses(s, op, ord_p, np_p, eps):
-                                    if None in [s, op, ord_p, np_p, eps]: return 99 
+                                    if None in [s, op, ord_p, np_p, eps]: return 99 # 🛡️ 厳格なペナルティによる防壁
                                     m = 0
                                     if s < 7.0: m += 1
                                     if op < 20.0: m += 1
@@ -1604,8 +1610,12 @@ with tab3:
                                     q2_np = get_val(q2_row, "純利益(%)")
                                     q2_eps = get_val(q2_row, "EPS(%)")
                                     
+                                    # 🛡️ 金融銘柄プロキシ処理（TAB1と完全同期）
+                                    if (q1_op is None or q1_op == 0.0) and q1_ord is not None: q1_op = q1_ord
+                                    if (q2_op is None or q2_op == 0.0) and q2_ord is not None: q2_op = q2_ord
+
                                     vals = [q1_op, q1_ord, q1_np, q1_eps, q2_op, q2_ord, q2_np, q2_eps]
-                                    if None not in vals:
+                                    if None not in vals: # 🛡️ 厳格なペナルティによる防壁
                                         lt_5 = sum(1 for v in vals if v < 5.0)
                                         lt_8 = sum(1 for v in vals if v < 8.0)
                                         
@@ -1652,7 +1662,6 @@ with tab3:
                     
                     display_targets = [d for d in sortable_results if d.get("is_hit", False)]
 
-                    # 🚨 修正ポイント：市場区分のデータを取得する辞書(market_map)を追加構築
                     name_map = {}
                     market_map = {}
                     try:
@@ -1685,7 +1694,6 @@ with tab3:
                         elif "グロース" in raw_market or "Growth" in raw_market: market_badge = "🚀 グロース"
                         
                         hit_badge = data["rank"]
-                        # 🚨 バッジ表示を追加
                         st.markdown(f"### 📦 {code} {c_name} | {market_badge} | {hit_badge}")
                         
                         if len(df) > 0:
