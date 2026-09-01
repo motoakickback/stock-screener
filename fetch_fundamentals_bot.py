@@ -150,3 +150,40 @@ with gzip.open(prices_db_path, "wb") as f:
     pickle.dump(prices_db, f)
 
 print(f"[{datetime.now()}] ✅ 株価データ全ミッション完了！ {fetched_days}営業日分の株価データを圧縮して焼き付けました。")
+
+# ==========================================
+# 📅 5. 決算発表予定日の一括収集（V2新規格）
+# ==========================================
+print("\n--- 📅 決算発表予定日 一括収集開始 ---")
+earnings_db = {}
+url_calendar = f"{BASE_URL}/equities/earnings-calendar"
+
+time.sleep(1.1) # 🛡️ 1.1秒の絶対待機
+
+try:
+    r_cal = session.get(url_calendar, timeout=10.0)
+    if r_cal.status_code == 200:
+        res_json = r_cal.json()
+        # V2仕様: 原則としてデータを "data" キーの配列として返却
+        cal_data = res_json.get("data", [])
+        for d in cal_data:
+            c = str(d.get("Code", ""))
+            if not c:
+                continue
+            if c not in earnings_db:
+                earnings_db[c] = []
+            earnings_db[c].append(d)
+        print(f"✅ 決算発表予定日: {len(cal_data)} 件のレコードを取得完了")
+    elif r_cal.status_code == 429:
+        print("⚠️ [429検知] 決算発表予定日取得中にサーバー負荷警報。")
+    else:
+        print(f"⚠️ 決算発表予定日の取得失敗: ステータスコード {r_cal.status_code}")
+except Exception as e:
+    print(f"❌ 決算発表予定日取得エラー: {e}")
+
+# 🚨 gzip圧縮化して保存
+earn_db_path = os.path.join(os.path.dirname(__file__), "earnings_db.pkl.gz")
+with gzip.open(earn_db_path, "wb") as f:
+    pickle.dump(earnings_db, f)
+
+print(f"[{datetime.now()}] ✅ 全ミッション完全終了。")
