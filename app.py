@@ -1674,13 +1674,21 @@ with tab3:
                         sector_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['Sector']))
                     except: pass
                     
-                    try:
-                        earn_path = os.path.join(os.path.dirname(__file__), "earnings_db.pkl.gz")
-                        if os.path.exists(earn_path):
-                            import gzip, pickle
-                            with gzip.open(earn_path, "rb") as f:
-                                earnings_map = pickle.load(f)
-                    except: pass
+                    # 🚨 修正：Streamlit環境とバッチ環境のディレクトリズレを完全吸収するマルチパス検索
+                    earn_paths = [
+                        "earnings_db.pkl.gz",
+                        os.path.join(os.path.dirname(__file__), "earnings_db.pkl.gz"),
+                        os.path.join(os.getcwd(), "earnings_db.pkl.gz"),
+                        os.path.join(os.path.dirname(os.path.dirname(__file__)), "earnings_db.pkl.gz")
+                    ]
+                    for path in earn_paths:
+                        if os.path.exists(path):
+                            try:
+                                import gzip, pickle
+                                with gzip.open(path, "rb") as f:
+                                    earnings_map = pickle.load(f)
+                                break  # ロード成功で抜ける
+                            except: pass
                     
                     p_bar.empty()
                     st.divider()
@@ -1712,33 +1720,46 @@ with tab3:
                         
                         hit_badge = data["rank"]
                         
-                        # 🚨 決算日14日前カウントダウンロジック完全版
+                        # 🚨 カウントダウンロジックの防弾化
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
                         countdown_badge = ""
-                        if c_earn_data:
+                        
+                        # ネストされた辞書（例: {"data": [...]}）構造も強制的にリスト化して吸収
+                        if isinstance(c_earn_data, dict) and "data" in c_earn_data:
+                            c_earn_data = c_earn_data["data"]
+                        elif isinstance(c_earn_data, dict):
+                            c_earn_data = [c_earn_data]
+                            
+                        if c_earn_data and isinstance(c_earn_data, list):
                             future_dates = []
                             for row in c_earn_data:
-                                # 新API(/v2/fins/earnings-date)のあらゆる日付キー名に対応
-                                for k in ["ScheduledDate", "Date", "SchDate", "AnnouncementDate", "DisclosedDate"]:
-                                    v = row.get(k)
-                                    if v and isinstance(v, str):
-                                        try:
-                                            d_obj = pd.to_datetime(v).date()
-                                            if d_obj >= today_date:
-                                                future_dates.append(d_obj)
-                                        except: pass
+                                if not isinstance(row, dict): continue
+                                
+                                # APIのキー名揺れ（大文字小文字の違い）を完全に無効化するため全て小文字化
+                                row_lower = {str(k).lower(): v for k, v in row.items()}
+                                v = None
+                                for target_key in ["date", "scheduleddate", "schdate", "announcementdate", "discloseddate", "earningsannouncementdate"]:
+                                    if target_key in row_lower:
+                                        v = row_lower[target_key]
+                                        break
+                                        
+                                if v:
+                                    try:
+                                        d_obj = pd.to_datetime(v).date()
+                                        if d_obj >= today_date:
+                                            future_dates.append(d_obj)
+                                    except: pass
+                                    
                             if future_dates:
                                 future_dates.sort()
                                 next_date = future_dates[0]
                                 days_left = (next_date - today_date).days
                                 
-                                # 🚨 14日前から当日までの期間のみカウントダウンを点灯
                                 if 0 <= days_left <= 14:
                                     countdown_badge = f" | ⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})"
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
 
-                        # 🚨 バッジ表示（業種とカウントダウンを統合）
                         st.markdown(f"### 📦 {code} {c_name} | {c_sector} | {market_badge} | {hit_badge}{countdown_badge}")
                         
                         if len(df) > 0:
