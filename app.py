@@ -1506,16 +1506,25 @@ with tab3:
                         
                         df = group.tail(260).reset_index(drop=True)
                         if df.empty or len(df) < 4: continue
+                        
+                        # 🚨 修正：V2 APIカラムをV1形式へ強制置換（外部関数 analyze_formation_history の互換性維持のため）
+                        v2_to_v1_map = {
+                            'O': 'Open', 'H': 'High', 'L': 'Low', 'C': 'Close', 'Vo': 'Volume',
+                            'AdjO': 'AdjustmentOpen', 'AdjH': 'AdjustmentHigh', 'AdjL': 'AdjustmentLow', 
+                            'AdjC': 'AdjustmentClose', 'AdjVo': 'AdjustmentVolume'
+                        }
+                        df = df.rename(columns=v2_to_v1_map)
 
                         turnover = 0.0
                         try:
                             q0 = df.iloc[-1]
                             v_col = 'Volume' if 'Volume' in df.columns else ('Vo' if 'Vo' in df.columns else None)
-                            c_col = 'AdjC' if 'AdjC' in df.columns else ('Close' if 'Close' in df.columns else None)
+                            c_col = 'AdjustmentClose' if 'AdjustmentClose' in df.columns else ('Close' if 'Close' in df.columns else None)
                             if v_col and c_col: turnover = float(q0[v_col]) * float(q0[c_col])
                         except: pass
 
-                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=True)
+                        # 🚨 修正：is_macro_downtrendのハードコードを撤廃し、動的変数を引き渡す
+                        b_sigs, s_sigs = analyze_formation_history(df, is_macro_downtrend=is_macro_downtrend)
                         
                         is_hit = False
                         rank_str = ""
@@ -1530,9 +1539,10 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                if days_ago <= 2: rank_signal = "S"
-                                elif days_ago == 3: rank_signal = "A"
-                                elif days_ago == 4: rank_signal = "B"
+                                # 🚨 修正：原典ルールの判定日数（3日=S, 4日=A, 5日=B）に完全同期
+                                if days_ago <= 3: rank_signal = "S"
+                                elif days_ago <= 4: rank_signal = "A"
+                                elif days_ago <= 5: rank_signal = "B"
                         
                         elif scan_mode == "sell" and s_sigs:
                             s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
