@@ -1,49 +1,59 @@
-name: 🌙 18:13 Daily Fundamentals Fetch
+name: J-Quants Data Batch
 
 on:
   schedule:
-    - cron: '13 9 * * *'
+    # 毎日UTC午後3時（日本時間午前0時）に定期実行する場合
+    - cron: '0 15 * * *'
   workflow_dispatch:
-
-permissions:
-  contents: write
+    inputs:
+      run_fundamentals:
+        description: 'ファンダメンタルズを取得'
+        type: boolean
+        default: true
+      run_prices:
+        description: '株価データを取得'
+        type: boolean
+        default: true
+      run_earnings:
+        description: '決算カレンダーを取得'
+        type: boolean
+        default: true
 
 jobs:
-  fetch-and-update:
+  update-data:
     runs-on: ubuntu-latest
-    
     env:
       JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
-
+    
     steps:
-      - name: 📥 リポジトリをチェックアウト
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Pythonのセットアップ
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 📦 必要なライブラリのインストール
-        run: |
-          pip install requests pandas
+      - name: Install Dependencies
+        run: pip install requests pandas
 
-      - name: 🚀 兵站Botの実行（データ収集）
-        run: python fetch_fundamentals_bot.py
+      - name: Fetch Fundamentals
+        # スケジュール実行時、または手動実行でチェックを入れた場合のみ起動
+        if: ${{ github.event_name == 'schedule' || inputs.run_fundamentals == true }}
+        run: python fetch_fundamentals.py
 
-      - name: 💾 取得したデータをGitHubへ保存（プッシュ）
+      - name: Fetch Prices
+        if: ${{ github.event_name == 'schedule' || inputs.run_prices == true }}
+        run: python fetch_prices.py
+
+      - name: Fetch Earnings Calendar
+        if: ${{ github.event_name == 'schedule' || inputs.run_earnings == true }}
+        run: python fetch_earnings.py
+
+      - name: Commit and Push DB files
         run: |
-          # 🚨 圧縮ファイル（.pkl.gz）を指定するように変更
-          if [ -f fundamentals_db.pkl.gz ]; then
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add fundamentals_db.pkl.gz prices_db.pkl.gz
-            git commit -m "🤖 自動補給: 圧縮版ファンダ・株価DBの更新" || echo "変更なし"
-            
-            git pull --rebase origin main || echo "No rebase needed"
-            
-            git push origin main
-          else
-            echo "❌ エラー: fundamentals_db.pkl.gz が生成されていません。"
-            exit 1
-          fi
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add *_db.pkl.gz
+          git commit -m "Auto-update J-Quants DB files" || echo "No changes to commit"
+          git push
