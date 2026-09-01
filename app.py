@@ -1662,12 +1662,15 @@ with tab3:
                     
                     display_targets = [d for d in sortable_results if d.get("is_hit", False)]
 
+                    # 🚨 修正ポイント：市場・業種区分のデータを取得する辞書を追加構築
                     name_map = {}
                     market_map = {}
+                    sector_map = {}
                     try:
                         m_df = load_master()
                         name_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['CompanyName']))
                         market_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['Market']))
+                        sector_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['Sector']))
                     except: pass
                     
                     p_bar.empty()
@@ -1687,6 +1690,7 @@ with tab3:
                         df = data["df"]
                         c_name = name_map.get(str(code)[:4], "名称不明")
                         raw_market = str(market_map.get(str(code)[:4], ""))
+                        c_sector = sector_map.get(str(code)[:4], "業種不明")
                         
                         market_badge = "❓ 市場不明"
                         if "プライム" in raw_market or "Prime" in raw_market: market_badge = "👑 プライム"
@@ -1694,7 +1698,8 @@ with tab3:
                         elif "グロース" in raw_market or "Growth" in raw_market: market_badge = "🚀 グロース"
                         
                         hit_badge = data["rank"]
-                        st.markdown(f"### 📦 {code} {c_name} | {market_badge} | {hit_badge}")
+                        # 🚨 バッジ表示を追加
+                        st.markdown(f"### 📦 {code} {c_name} | {c_sector} | {market_badge} | {hit_badge}")
                         
                         if len(df) > 0:
                             df_c = df.copy()
