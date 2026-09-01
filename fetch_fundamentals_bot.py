@@ -22,7 +22,9 @@ headers = {'x-api-key': JQUANTS_API_KEY}
 session = requests.Session()
 session.headers.update(headers)
 
-# 1. 全銘柄コードの取得
+# ==========================================
+# 1. 全銘柄コードの取得 (/v2/equities/master)
+# ==========================================
 try:
     print("📡 J-Quants V2 サーバーへ接続中（銘柄マスター取得）...")
     r_info = session.get(f"{BASE_URL}/equities/master", timeout=10.0)
@@ -44,7 +46,9 @@ except Exception as e:
         print(f"📝 サーバー応答: {r_info.text}")
     exit(1)
 
-# 2. 1.1秒の絶対防弾行進で全件取得（全方位キー自動適応型）
+# ==========================================
+# 2. 1.1秒の絶対防弾行進で全件取得（ファンダメンタルズ専任）
+# ==========================================
 fundamentals_db = {}
 total = len(all_codes)
 start_time = time.time()
@@ -83,25 +87,25 @@ for i, code in enumerate(all_codes):
             print(f"⚠️ [429検知] サーバー負荷警報。10秒間、息を潜めます...", flush=True)
             time.sleep(10.0)
             
-        elapsed = time.time() - start_time
-        percent = ((i + 1) / total) * 100
-        
-        # 100銘柄ごと、または最初の数銘柄で状況を可視化
-        if (i + 1) <= 5 or (i + 1) % 100 == 0:
-            print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄: {api_code} 確保完了 (有効データ: {success_count}件, 経過: {elapsed:.1f}秒)", flush=True)
-            
     except Exception as e:
         continue
 
-# 3. ローカルDBとして保存（🚨 gzip圧縮化）
+    elapsed = time.time() - start_time
+    percent = ((i + 1) / total) * 100
+    
+    # 100銘柄ごと、または最初の数銘柄で状況を可視化
+    if (i + 1) <= 5 or (i + 1) % 100 == 0:
+        print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄: {api_code} 確保完了 (有効データ: {success_count}件, 経過: {elapsed:.1f}秒)", flush=True)
+
+# ローカルDBとして保存（🚨 gzip圧縮化）
 db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl.gz")
 with gzip.open(db_path, "wb") as f:
     pickle.dump(fundamentals_db, f)
 
-print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 {len(fundamentals_db)} 件の決算データを圧縮して焼き付けました。")
+print(f"[{datetime.now()}] ✅ ファンダメンタルズ完了！ 総合計 {len(fundamentals_db)} 件の決算データを圧縮して焼き付けました。")
 
 # ==========================================
-# 📈 4. 株価データ（過去約400日分）の一括収集
+# 📈 3. 株価データ（過去約400日分）の一括収集
 # ==========================================
 from datetime import timedelta
 
@@ -152,86 +156,35 @@ with gzip.open(prices_db_path, "wb") as f:
 print(f"[{datetime.now()}] ✅ 株価データ全ミッション完了！ {fetched_days}営業日分の株価データを圧縮して焼き付けました。")
 
 # ==========================================
-# 2. 1.1秒の絶対防弾行進で全件取得（ファンダメンタルズ ＆ 決算発表予定日）
+# 📅 4. 決算発表予定日の一括収集（公式エンドポイント正規版）
 # ==========================================
-fundamentals_db = {} # 財務データを保持する辞書
-earnings_db = {}     # 決算発表予定日データを保持する辞書
-total = len(all_codes)
-start_time = time.time()
-success_count = 0      # 財務データの取得成功数
-earn_success_count = 0 # 決算予定日の取得成功数
+print("\n--- 📅 決算発表予定日 一括収集開始 ---")
+earnings_db = {}
+# 公式仕様の正規エンドポイント（全上場銘柄のカレンダーを一括取得）
+url_calendar = f"{BASE_URL}/equities/earnings-calendar"
 
-print(f"🚀 全 {total} 銘柄のファンダメンタルズおよび決算発表予定日の強襲索敵を開始します...")
+try:
+    print("📡 J-Quants カレンダーサーバーへ接続中...")
+    r_cal = session.get(url_calendar, timeout=10.0)
+    if r_cal.status_code == 200:
+        cal_data = r_cal.json().get("data", [])
+        for d in cal_data:
+            c = str(d.get("Code", ""))
+            if c:
+                # TAB3からの検索（4桁・5桁）に完全対応させるため両方をキー化
+                if c not in earnings_db: earnings_db[c] = []
+                if c[:4] not in earnings_db: earnings_db[c[:4]] = []
+                earnings_db[c].append(d)
+                earnings_db[c[:4]].append(d)
+        print(f"✅ 決算発表予定日: {len(cal_data)} 件のレコードを取得完了")
+    else:
+        print(f"⚠️ カレンダー取得失敗: ステータスコード {r_cal.status_code}")
+except Exception as e:
+    print(f"❌ エラー: {e}")
 
-for i, code in enumerate(all_codes):
-    # APIの仕様に合わせ、4桁コードの場合は末尾に0を追加して5桁のAPIコードにする
-    api_code = code if len(code) >= 5 else code + "0"
-    
-    # ファンダメンタルズ取得APIのエンドポイント
-    url_fins = f"{BASE_URL}/fins/summary?code={api_code}"
-    # 2026年8月3日リリースの新API：決算発表予定日（全上場銘柄対象）のエンドポイント
-    url_earn = f"{BASE_URL}/fins/earnings-date?code={api_code}"
-    
-    time.sleep(1.1) # 🛡️ サーバー負荷・API制限を回避するための1.1秒の絶対待機
-    
-    try:
-        # 1. 財務情報の取得処理
-        r = session.get(url_fins, timeout=10.0)
-        if r.status_code == 200:
-            res_data = r.json()
-            # 取得したJSONから財務データを抽出（複数のキー名候補に安全に対応）
-            data = (
-                res_data.get("summary") or 
-                res_data.get("statements") or 
-                res_data.get("data") or 
-                res_data.get("fins") or []
-            )
-            if data:
-                success_count += 1
-                # 直近40件のデータをDataFrame化
-                df = pd.DataFrame(data[-40:])
-                for col in df.columns:
-                    # 日付系の列以外は数値型へ変換（エラー時はNaNとしてそのまま保持し、欠損値を推測でゼロ埋めしない）
-                    if col not in ['Date', 'DisclosedDate', 'LocalCode']:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                # APIコードをキーとしてDB用辞書へ格納
-                fundamentals_db[api_code] = df
-                
-        # 2. 決算発表予定日の取得処理 (/v2/fins/earnings-date)
-        r_earn = session.get(url_earn, timeout=10.0)
-        if r_earn.status_code == 200:
-            res_earn_json = r_earn.json()
-            # J-Quants V2の仕様に基づき、"data"キーの中身を配列として取得
-            earn_data = res_earn_json.get("data", [])
-            if earn_data:
-                earn_success_count += 1
-                # アプリ側で4桁・5桁のどちらのコードからでも参照できるように両方をキーとして格納
-                earnings_db[api_code] = earn_data
-                earnings_db[api_code[:4]] = earn_data
-                
-        # サーバーからの制限（429 Too Many Requestsエラー）を受けた場合の待機・再開処理
-        elif r.status_code == 429 or r_earn.status_code == 429:
-            print(f"⚠️ [429検知] サーバー負荷警報。10秒間、息を潜めます...", flush=True)
-            time.sleep(10.0)
-            
-    except Exception as e:
-        # 通信エラー等が発生した場合はスキップして次の銘柄へ移行
-        continue
-
-    elapsed = time.time() - start_time
-    percent = ((i + 1) / total) * 100
-    
-    # 進行状況の出力（最初の5件、または100件ごとにコンソールへ出力）
-    if (i + 1) <= 5 or (i + 1) % 100 == 0:
-        print(f"📡 [{i + 1}/{total}] ({percent:.1f}%) 銘柄: {api_code} 確保完了 (財務: {success_count}件, 予定日: {earn_success_count}件, 経過: {elapsed:.1f}秒)", flush=True)
-
-# 3. ローカルDBとして保存（🚨 ディスク容量とロード速度最適化のためgzip圧縮化）
-db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl.gz")
-with gzip.open(db_path, "wb") as f:
-    pickle.dump(fundamentals_db, f)
-
+# 🚨 ローカルDBへ圧縮保存
 earn_db_path = os.path.join(os.path.dirname(__file__), "earnings_db.pkl.gz")
 with gzip.open(earn_db_path, "wb") as f:
     pickle.dump(earnings_db, f)
 
-print(f"[{datetime.now()}] ✅ 全ミッション完了！ 総合計 財務:{len(fundamentals_db)}件, 予定日:{len(earnings_db)}件 のデータを圧縮して焼き付けました。")
+print(f"[{datetime.now()}] ✅ 決算カレンダー焼き付け完了。全システムの更新を終了します。")
