@@ -26,12 +26,13 @@ total_records = 0
 try:
     print("📡 J-Quants カレンダーサーバーへ接続中（ページング対応）...")
     while True:
-        req_url = url_calendar
-        # ページングキーが存在する場合はパラメータを付与して次ページを要求
+        req_params = {}
+        # ページングキーが存在する場合はparams辞書に格納し、安全にURLエンコードさせる
         if pagination_key:
-            req_url = f"{url_calendar}?pagination_key={pagination_key}"
+            req_params['pagination_key'] = pagination_key
         
-        r_cal = session.get(req_url, timeout=10.0)
+        r_cal = session.get(url_calendar, params=req_params, timeout=10.0)
+        
         if r_cal.status_code == 200:
             res_json = r_cal.json()
             cal_data = res_json.get("data", [])
