@@ -1674,7 +1674,7 @@ with tab3:
                         sector_map = dict(zip(m_df['Code'].astype(str).str[:4], m_df['Sector']))
                     except: pass
                     
-                    # 🚨 修正：Streamlit環境とバッチ環境のディレクトリズレを完全吸収するマルチパス検索
+                    # Streamlit環境とバッチ環境のディレクトリズレを完全吸収するマルチパス検索
                     earn_paths = [
                         "earnings_db.pkl.gz",
                         os.path.join(os.path.dirname(__file__), "earnings_db.pkl.gz"),
@@ -1687,7 +1687,7 @@ with tab3:
                                 import gzip, pickle
                                 with gzip.open(path, "rb") as f:
                                     earnings_map = pickle.load(f)
-                                break  # ロード成功で抜ける
+                                break
                             except: pass
                     
                     p_bar.empty()
@@ -1720,11 +1720,10 @@ with tab3:
                         
                         hit_badge = data["rank"]
                         
-                        # 🚨 カウントダウンロジックの防弾化
+                        # 🚨 カウントダウンバッジ判定ロジック
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
                         countdown_badge = ""
                         
-                        # ネストされた辞書（例: {"data": [...]}）構造も強制的にリスト化して吸収
                         if isinstance(c_earn_data, dict) and "data" in c_earn_data:
                             c_earn_data = c_earn_data["data"]
                         elif isinstance(c_earn_data, dict):
@@ -1735,10 +1734,9 @@ with tab3:
                             for row in c_earn_data:
                                 if not isinstance(row, dict): continue
                                 
-                                # APIのキー名揺れ（大文字小文字の違い）を完全に無効化するため全て小文字化
                                 row_lower = {str(k).lower(): v for k, v in row.items()}
                                 v = None
-                                for target_key in ["date", "scheduleddate", "schdate", "announcementdate", "discloseddate", "earningsannouncementdate"]:
+                                for target_key in ["date", "scheduleddate", "schdate", "announcementdate", "discloseddate"]:
                                     if target_key in row_lower:
                                         v = row_lower[target_key]
                                         break
@@ -1760,6 +1758,7 @@ with tab3:
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
 
+                        # バッジの結合と出力
                         st.markdown(f"### 📦 {code} {c_name} | {c_sector} | {market_badge} | {hit_badge}{countdown_badge}")
                         
                         if len(df) > 0:
