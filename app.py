@@ -1712,14 +1712,14 @@ with tab3:
                         
                         hit_badge = data["rank"]
                         
-                        # 🚨 決算日14日前カウントダウンロジック
+                        # 🚨 決算日14日前カウントダウンロジック完全版
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
                         countdown_badge = ""
                         if c_earn_data:
                             future_dates = []
                             for row in c_earn_data:
-                                # APIキー名が変動しても取得できるよう汎用走査
-                                for k in ["Date", "AnnouncementDate", "DisclosedDate", "EarningsAnnouncementDate", "ScheduledDate"]:
+                                # 新API(/v2/fins/earnings-date)のあらゆる日付キー名に対応
+                                for k in ["ScheduledDate", "Date", "SchDate", "AnnouncementDate", "DisclosedDate"]:
                                     v = row.get(k)
                                     if v and isinstance(v, str):
                                         try:
@@ -1731,7 +1731,9 @@ with tab3:
                                 future_dates.sort()
                                 next_date = future_dates[0]
                                 days_left = (next_date - today_date).days
-                                if days_left <= 14:
+                                
+                                # 🚨 14日前から当日までの期間のみカウントダウンを点灯
+                                if 0 <= days_left <= 14:
                                     countdown_badge = f" | ⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})"
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
