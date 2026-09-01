@@ -27,7 +27,6 @@ try:
     print("📡 J-Quants カレンダーサーバーへ接続中（ページング対応）...")
     while True:
         req_params = {}
-        # ページングキーが存在する場合はparams辞書に格納し、安全にURLエンコードさせる
         if pagination_key:
             req_params['pagination_key'] = pagination_key
         
@@ -46,16 +45,14 @@ try:
                     earnings_db[c[:4]].append(d)
                     total_records += 1
                     
-            # APIレスポンスから次ページのキーを取得
             pagination_key = res_json.get("pagination_key")
             print(f"✅ {page_count}ページ目取得完了 (累計: {total_records} 件のレコードを確保)")
             
-            # ページングキーが空（null または 空文字列）になれば全件取得完了
             if not pagination_key:
                 break
             
             page_count += 1
-            time.sleep(1.1) # サーバー負荷回避のための絶対待機
+            time.sleep(1.1)
         else:
             print(f"⚠️ カレンダー取得失敗: ステータスコード {r_cal.status_code}")
             break
