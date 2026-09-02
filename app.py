@@ -1888,8 +1888,9 @@ with tab3:
                                 increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
                                 decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
                             ))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hoverinfo='none'))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hoverinfo='none'))
+                            # 🚨 修正：hoverinfo='none'を撤廃し、hovertemplateで価格を明示的に出力
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hovertemplate='%{y:.1f}円'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hovertemplate='%{y:.1f}円'))
                             
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
