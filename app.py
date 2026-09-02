@@ -1251,6 +1251,15 @@ with tab1:
 # 📉 TAB2: 売り（空売り）銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab2:
+    import os, pickle
+    tab2_cache_file = os.path.join(os.path.dirname(__file__), "tab2_cache.pkl")
+    if 'tab2_scan_results' not in st.session_state:
+        if os.path.exists(tab2_cache_file):
+            try:
+                with open(tab2_cache_file, "rb") as f:
+                    st.session_state['tab2_scan_results'] = pickle.load(f)
+            except: pass
+
     st.markdown('### 📉 売り（空売り）銘柄広域スキャン', unsafe_allow_html=True)
     st.caption("※直近2四半期の業績鈍化・衰退（YoY 8%未満等）をベースに、空売り候補（S級・A級）を広域索敵します。")
     
@@ -1270,6 +1279,12 @@ with tab2:
                     f"・1つだけ {t2_ord_r}%未満（他5%未満）でA級📉")
         
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
+
+    # 🚨 修正：スキャン実行時以外（リロード直後等）にキャッシュ結果を画面へ表示し、TAB3へデータを維持する
+    if not btn_scan_t2 and st.session_state.get('tab2_scan_results'):
+        cached_hits = [r.get("Code", "") for r in st.session_state['tab2_scan_results']]
+        st.info("💾 【キャッシュ復元】前回スキャンした突破銘柄（F5リロード保護）")
+        st.code(", ".join(cached_hits) if cached_hits else "条件に合致する銘柄はありませんでした。", language="text")
 
     if btn_scan_t2:
         import time
@@ -1389,7 +1404,14 @@ with tab2:
                 st.markdown("#### 📋 TAB3 (詳細分析) 貼り付け用コード")
                 st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
                 st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
-                st.session_state['tab2_scan_results'] = [{"Code": c, "Rank": "S級"} for c in hit_codes_s] + [{"Code": c, "Rank": "A級"} for c in hit_codes_a]
+                
+                # 🚨 修正：スキャン完了と同時に物理ファイル（pickle）へキャッシュを書き込み永続化
+                final_results_t2 = [{"Code": c, "Rank": "S級"} for c in hit_codes_s] + [{"Code": c, "Rank": "A級"} for c in hit_codes_a]
+                st.session_state['tab2_scan_results'] = final_results_t2
+                try:
+                    with open(tab2_cache_file, "wb") as f:
+                        pickle.dump(final_results_t2, f)
+                except: pass
             else:
                 p2_msg_t2.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                 status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
