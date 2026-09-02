@@ -1147,8 +1147,9 @@ with tab1:
                 p1_msg.error(f"❌ フィルタ取得エラー: {e}")
                 st.stop()
                 
-            # 🚨 修正ポイント：4桁にスライスした直後に、dict.fromkeysを使って重複（優先株など）を完全に排除する
-            raw_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            import unicodedata
+            # 🚨 修正：取得コードの全角を半角に強制統一し、重複を完全に排除
+            raw_filtered_codes = [unicodedata.normalize('NFKC', str(code).replace('.0', '').strip())[:4] for code in all_codes]
             p_filtered_codes = list(dict.fromkeys(raw_filtered_codes))
             
             time_p1 = time.time() - t_start_p1
@@ -1328,7 +1329,9 @@ with tab2:
                 p1_msg_t2.error(f"❌ フィルタ取得エラー: {e}")
                 st.stop()
                 
-            p_filtered_codes = [str(code).replace('.0', '').strip()[:4] for code in all_codes]
+            import unicodedata
+            # 🚨 修正：取得コードの全角を半角に強制統一
+            p_filtered_codes = [unicodedata.normalize('NFKC', str(code).replace('.0', '').strip())[:4] for code in all_codes]
             time_p1 = time.time() - t_start_p1
             p1_msg_t2.success(f"✅ Phase 1 完了: 適合 {len(p_filtered_codes)} 銘柄 ➔ Phase 2 へパスしました。")
             
@@ -1490,7 +1493,12 @@ with tab3:
         else:
             p_bar = st.progress(0, text="🚀 システム初期化・全軍データロード中...")
 
-            raw_codes = [c.strip() for c in target_codes_input.split(",") if c.strip()]
+            import unicodedata
+            # 🚨 修正：入力を半角に統一。半角スペース（全角スペースも正規化済）および改行をカンマに置換して分割
+            normalized_input = unicodedata.normalize('NFKC', target_codes_input)
+            normalized_input = normalized_input.replace(" ", ",").replace("\n", ",")
+            raw_codes = [c.strip() for c in normalized_input.split(",") if c.strip()]
+                        
             target_codes = []
             for c in raw_codes:
                 if len(c) >= 4:
