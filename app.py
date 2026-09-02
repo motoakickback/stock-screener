@@ -1700,9 +1700,6 @@ with tab3:
                                 break
                             except: pass
                     
-                    # 🚨 物理証拠取得：Streamlit画面上に決算データの生中身を強制出力
-                    st.warning(f"【システム解析用】4238の決算DB格納データ: {earnings_map.get('4238', 'データが存在しません（バッチ取得漏れ、またはファイル読み込み失敗）')}")
-                    
                     p_bar.empty()
                     st.divider()
 
