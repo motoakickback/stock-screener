@@ -1764,7 +1764,8 @@ with tab3:
                                 days_left = (next_date - today_date).days
                                 
                                 if 0 <= days_left <= 14:
-                                    countdown_badge = f" | ⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})"
+                                    # 🚨 修正：決算カウントダウン（14日以内）の場合のみ、Streamlit標準記法で赤色に装飾
+                                    countdown_badge = f" | :red[⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})]"
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
 
