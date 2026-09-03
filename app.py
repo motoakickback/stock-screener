@@ -596,8 +596,8 @@ def get_local_stock_data(code):
         return pd.DataFrame()
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def _load_master_v3_core():
-    # 🚨 修正1：キャッシュ強制パージ用の新規コア関数。J-Quants V2 APIのページング仕様に完全対応
+def _load_master_v4_core():
+    # 🚨 究極の自己修復：データ駆動型カラム探索エンジン搭載版
     try:
         import pandas as pd
         req_params = {}
@@ -619,28 +619,32 @@ def _load_master_v3_core():
                 
         if all_data:
             df = pd.DataFrame(all_data)
-            
-            # 🚨 修正2：V2での未知のカラム名短縮（Sec33Name, MktName等）を「部分一致」で全方位から吸収
             cols_lower = {str(c).lower(): c for c in df.columns}
             
             def find_col(*candidates):
-                # 完全一致検索
                 for cand in candidates:
-                    if cand.lower() in cols_lower:
-                        return cols_lower[cand.lower()]
-                # 部分一致フォールバック
+                    if cand.lower() in cols_lower: return cols_lower[cand.lower()]
                 for c in df.columns:
                     c_lower = str(c).lower()
                     for cand in candidates:
-                        if cand.lower() in c_lower:
-                            return c
+                        if cand.lower() in c_lower: return c
                 return None
                 
             c_code = find_col('Code', 'code', '銘柄コード')
             c_name = find_col('CompanyName', 'CoName', 'Name', 'companyName', 'name', '銘柄名', 'CoNameEn')
-            c_sector = find_col('Sector33CodeName', 'Sector33Name', 'Sec33Name', 'SectorName', 'Sector', '業種', '33業種区分', 'Sector33', 'sec33')
-            c_market = find_col('MarketCodeName', 'MarketName', 'MktName', 'Market', '市場', '市場・商品区分', 'mkt')
+            c_sector = find_col('Sector33CodeName', 'Sector33Name', 'Sec33Name', 'SectorName', 'Sector', '業種', '33業種区分', 'Sector33', 'sec33', 'Industry')
+            c_market = find_col('MarketCodeName', 'MarketName', 'MktName', 'Market', '市場', '市場・商品区分', 'mkt', 'Section', 'Exchange')
             
+            # 🚨 最強の防壁：カラム名が未知に改変された場合、実際の「データの中身」をスキャンして業種と市場を特定する
+            if not c_sector or not c_market:
+                for col in df.columns:
+                    if df[col].dtype == object or str(df[col].dtype) == 'string':
+                        sample = " ".join(df[col].dropna().astype(str).head(200).tolist())
+                        if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース", "Prime", "Standard", "Growth"]):
+                            c_market = col
+                        if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業", "電気機器", "銀行業", "小売業"]):
+                            c_sector = col
+
             if c_code and c_name:
                 if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
                 if not c_market: c_market = 'Market'; df[c_market] = '市場不明'
@@ -651,7 +655,7 @@ def _load_master_v3_core():
                 return df
     except: pass
 
-    # 🚨 修正3：APIダウン時のフェイルセーフを復活（JPX公式Excel .xlsx / .xls 完全対応版）
+    # 🚨 APIダウン時のフェイルセーフ（JPX公式Excel 完全対応 ＆ データ駆動探索）
     try:
         import re, requests
         import pandas as pd
@@ -670,14 +674,22 @@ def _load_master_v3_core():
                 for c in df.columns:
                     c_lower = str(c).lower()
                     for cand in candidates:
-                        if cand.lower() in c_lower:
-                            return c
+                        if cand.lower() in c_lower: return c
                 return None
                 
             c_code = find_col_jpx('コード', '銘柄コード', 'Code')
             c_name = find_col_jpx('銘柄名', '会社名', 'CompanyName', 'Name')
             c_sector = find_col_jpx('33業種区分', '業種', 'Sector')
             c_market = find_col_jpx('市場・商品区分', '市場', 'Market')
+            
+            # 🚨 JPX版・データ駆動探索（ヘッダー行ズレ等による取得エラーを無効化）
+            if not c_code or not c_name or not c_sector or not c_market:
+                for col in df.columns:
+                    sample = " ".join(df[col].dropna().astype(str).head(100).tolist())
+                    if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース"]): c_market = col
+                    if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業"]): c_sector = col
+                    if not c_code and any(c in sample for c in ["7203", "5702", "9984"]): c_code = col
+                    if not c_name and any(n in sample for n in ["トヨタ", "ソニー", "ソフトバンク"]): c_name = col
             
             if c_code and c_name:
                 if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
@@ -693,8 +705,8 @@ def _load_master_v3_core():
     return pd.DataFrame()
 
 def load_master():
-    # 🚨 既存のシステムコールを維持しつつ、異常キャッシュ（空データ）を強制バイパスするステルスラッパー
-    return _load_master_v3_core()
+    # 🚨 異常キャッシュを完全に切り離すステルスラッパー
+    return _load_master_v4_core()
 
 # ==========================================
 # 🧠 ファンダメンタルズ＆陣形判定ロジック
