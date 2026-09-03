@@ -597,19 +597,21 @@ def get_local_stock_data(code):
 
 @st.cache_data(ttl=86400)
 def load_master():
-    # 🚨 修正：J-Quants V2 API（ページング完全対応版）へ置換し、銘柄データの欠落を完全に排除
+    # 🚨 JPXスクレイピングを完全破棄。J-Quants V2 API (/equities/master) へ完全移行
     try:
+        import pandas as pd
         req_params = {}
         all_data = []
+        
+        # V2仕様: pagination_keyが存在する限りループして全件取得
         while True:
             r = api_session.get(f"{BASE_URL}/equities/master", params=req_params, timeout=10.0)
             if r.status_code == 200:
                 res_json = r.json()
-                page_data = res_json.get("data") or res_json.get("equities") or res_json.get("info") or []
+                page_data = res_json.get("data", [])
                 if page_data:
                     all_data.extend(page_data)
                 
-                # ページングキーが存在する間はループを継続
                 pagination_key = res_json.get("pagination_key")
                 if not pagination_key:
                     break
@@ -618,39 +620,34 @@ def load_master():
                 break
                 
         if all_data:
-            import pandas as pd
             df = pd.DataFrame(all_data)
             
-            c_code = next((c for c in df.columns if str(c).lower() == 'code'), 'Code')
-            c_name = next((c for c in df.columns if str(c).lower() == 'companyname'), 'CompanyName')
-            c_sector = next((c for c in df.columns if str(c).lower() == 'sector33codename'), 'Sector33CodeName')
-            c_market = next((c for c in df.columns if str(c).lower() == 'marketcodename'), 'MarketCodeName')
+            # V2カラム短縮化（CoName等）の揺れを全方位から吸収
+            cols_lower = {str(c).lower(): c for c in df.columns}
             
-            for col in [c_code, c_name, c_sector, c_market]:
-                if col not in df.columns: df[col] = "不明"
-                    
+            def get_c(*names):
+                for n in names:
+                    if n.lower() in cols_lower: return cols_lower[n.lower()]
+                return None
+                
+            c_code = get_c('Code', 'code')
+            c_name = get_c('CompanyName', 'CoName', 'Name', 'companyName')
+            c_sector = get_c('Sector33CodeName', 'SectorName', 'Sector', 'sector33CodeName')
+            c_market = get_c('MarketCodeName', 'MarketName', 'Market', 'marketCodeName')
+            
+            if not c_code: df['Code'] = '不明'; c_code = 'Code'
+            if not c_name: df['CompanyName'] = '不明'; c_name = 'CompanyName'
+            if not c_sector: df['Sector'] = '不明'; c_sector = 'Sector'
+            if not c_market: df['Market'] = '不明'; c_market = 'Market'
+            
             df = df[[c_code, c_name, c_sector, c_market]].copy()
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            # 5桁コードへ正規化（末尾0）
             df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
             return df
-    except: pass
-
-    # APIダウン時のフェイルセーフ（JPXスクレイピング：.xlsx移行対応版）
-    try:
-        import pandas as pd
-        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xlsx?)"', r1.text)
-        if m:
-            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            try:
-                df = pd.read_excel(BytesIO(r2.content), engine='openpyxl')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            except:
-                df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-            return df
-    except: pass
-    
+    except:
+        pass
+        
     import pandas as pd
     return pd.DataFrame()
 
