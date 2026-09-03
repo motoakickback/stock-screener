@@ -596,8 +596,8 @@ def get_local_stock_data(code):
         return pd.DataFrame()
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def _load_master_v4_core():
-    # 🚨 究極の自己修復：データ駆動型カラム探索エンジン搭載版
+def _load_master_v5_core():
+    # 🚨 究極の自己修復：データ駆動型カラム探索エンジン（全ユニーク値スキャンによるETF地雷完全粉砕版）
     try:
         import pandas as pd
         req_params = {}
@@ -635,11 +635,12 @@ def _load_master_v4_core():
             c_sector = find_col('Sector33CodeName', 'Sector33Name', 'Sec33Name', 'SectorName', 'Sector', '業種', '33業種区分', 'Sector33', 'sec33', 'Industry')
             c_market = find_col('MarketCodeName', 'MarketName', 'MktName', 'Market', '市場', '市場・商品区分', 'mkt', 'Section', 'Exchange')
             
-            # 🚨 最強の防壁：カラム名が未知に改変された場合、実際の「データの中身」をスキャンして業種と市場を特定する
+            # 🚨 最強の防壁：カラム名が未知に改変された場合、実際の「データの中身」を全スキャンして業種と市場を特定する
             if not c_sector or not c_market:
                 for col in df.columns:
                     if df[col].dtype == object or str(df[col].dtype) == 'string':
-                        sample = " ".join(df[col].dropna().astype(str).head(200).tolist())
+                        # ETF偏りによる特定空振りを防ぐため、サンプリングを「ユニーク値の全結合」に変更
+                        sample = " ".join(df[col].dropna().astype(str).unique().tolist())
                         if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース", "Prime", "Standard", "Growth"]):
                             c_market = col
                         if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業", "電気機器", "銀行業", "小売業"]):
@@ -682,10 +683,10 @@ def _load_master_v4_core():
             c_sector = find_col_jpx('33業種区分', '業種', 'Sector')
             c_market = find_col_jpx('市場・商品区分', '市場', 'Market')
             
-            # 🚨 JPX版・データ駆動探索（ヘッダー行ズレ等による取得エラーを無効化）
+            # 🚨 JPX版・データ駆動探索（全ユニーク値サンプリング版）
             if not c_code or not c_name or not c_sector or not c_market:
                 for col in df.columns:
-                    sample = " ".join(df[col].dropna().astype(str).head(100).tolist())
+                    sample = " ".join(df[col].dropna().astype(str).unique().tolist())
                     if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース"]): c_market = col
                     if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業"]): c_sector = col
                     if not c_code and any(c in sample for c in ["7203", "5702", "9984"]): c_code = col
@@ -705,8 +706,8 @@ def _load_master_v4_core():
     return pd.DataFrame()
 
 def load_master():
-    # 🚨 異常キャッシュを完全に切り離すステルスラッパー
-    return _load_master_v4_core()
+    # 🚨 異常キャッシュを完全に切り離すステルスラッパー (v5へ移行)
+    return _load_master_v5_core()
 
 # ==========================================
 # 🧠 ファンダメンタルズ＆陣形判定ロジック
