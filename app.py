@@ -595,15 +595,13 @@ def get_local_stock_data(code):
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=86400)
-def load_master():
-    # 🚨 JPXスクレイピングを完全破棄。J-Quants V2 API (/equities/master) へ完全移行
+@st.cache_data(ttl=86400, show_spinner=False)
+def _load_master_v3_core():
+    # 🚨 修正1：キャッシュ強制パージ用の新規コア関数。J-Quants V2 APIのページング仕様に完全対応
     try:
         import pandas as pd
         req_params = {}
         all_data = []
-        
-        # V2仕様: pagination_keyが存在する限りループして全件取得
         while True:
             r = api_session.get(f"{BASE_URL}/equities/master", params=req_params, timeout=10.0)
             if r.status_code == 200:
@@ -622,34 +620,81 @@ def load_master():
         if all_data:
             df = pd.DataFrame(all_data)
             
-            # V2カラム短縮化（CoName等）の揺れを全方位から吸収
+            # 🚨 修正2：V2での未知のカラム名短縮（Sec33Name, MktName等）を「部分一致」で全方位から吸収
             cols_lower = {str(c).lower(): c for c in df.columns}
             
-            def get_c(*names):
-                for n in names:
-                    if n.lower() in cols_lower: return cols_lower[n.lower()]
+            def find_col(*candidates):
+                # 完全一致検索
+                for cand in candidates:
+                    if cand.lower() in cols_lower:
+                        return cols_lower[cand.lower()]
+                # 部分一致フォールバック
+                for c in df.columns:
+                    c_lower = str(c).lower()
+                    for cand in candidates:
+                        if cand.lower() in c_lower:
+                            return c
                 return None
                 
-            c_code = get_c('Code', 'code')
-            c_name = get_c('CompanyName', 'CoName', 'Name', 'companyName')
-            c_sector = get_c('Sector33CodeName', 'SectorName', 'Sector', 'sector33CodeName')
-            c_market = get_c('MarketCodeName', 'MarketName', 'Market', 'marketCodeName')
+            c_code = find_col('Code', 'code', '銘柄コード')
+            c_name = find_col('CompanyName', 'CoName', 'Name', 'companyName', 'name', '銘柄名', 'CoNameEn')
+            c_sector = find_col('Sector33CodeName', 'Sector33Name', 'Sec33Name', 'SectorName', 'Sector', '業種', '33業種区分', 'Sector33', 'sec33')
+            c_market = find_col('MarketCodeName', 'MarketName', 'MktName', 'Market', '市場', '市場・商品区分', 'mkt')
             
-            if not c_code: df['Code'] = '不明'; c_code = 'Code'
-            if not c_name: df['CompanyName'] = '不明'; c_name = 'CompanyName'
-            if not c_sector: df['Sector'] = '不明'; c_sector = 'Sector'
-            if not c_market: df['Market'] = '不明'; c_market = 'Market'
+            if c_code and c_name:
+                if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
+                if not c_market: c_market = 'Market'; df[c_market] = '市場不明'
+                        
+                df = df[[c_code, c_name, c_sector, c_market]].copy()
+                df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+                df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                return df
+    except: pass
+
+    # 🚨 修正3：APIダウン時のフェイルセーフを復活（JPX公式Excel .xlsx / .xls 完全対応版）
+    try:
+        import re, requests
+        import pandas as pd
+        from io import BytesIO
+        r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        m = re.search(r'href="([^"]+data_j\.xlsx?)"', r1.text)
+        if m:
+            r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+            try: df = pd.read_excel(BytesIO(r2.content), engine='openpyxl')
+            except: df = pd.read_excel(BytesIO(r2.content), engine='xlrd')
             
-            df = df[[c_code, c_name, c_sector, c_market]].copy()
-            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-            # 5桁コードへ正規化（末尾0）
-            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-            return df
-    except:
-        pass
-        
+            def find_col_jpx(*candidates):
+                cols_lower = {str(c).lower(): c for c in df.columns}
+                for cand in candidates:
+                    if cand.lower() in cols_lower: return cols_lower[cand.lower()]
+                for c in df.columns:
+                    c_lower = str(c).lower()
+                    for cand in candidates:
+                        if cand.lower() in c_lower:
+                            return c
+                return None
+                
+            c_code = find_col_jpx('コード', '銘柄コード', 'Code')
+            c_name = find_col_jpx('銘柄名', '会社名', 'CompanyName', 'Name')
+            c_sector = find_col_jpx('33業種区分', '業種', 'Sector')
+            c_market = find_col_jpx('市場・商品区分', '市場', 'Market')
+            
+            if c_code and c_name:
+                if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
+                if not c_market: c_market = 'Market'; df[c_market] = '市場不明'
+                
+                df = df[[c_code, c_name, c_sector, c_market]].copy()
+                df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+                df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                return df
+    except: pass
+    
     import pandas as pd
     return pd.DataFrame()
+
+def load_master():
+    # 🚨 既存のシステムコールを維持しつつ、異常キャッシュ（空データ）を強制バイパスするステルスラッパー
+    return _load_master_v3_core()
 
 # ==========================================
 # 🧠 ファンダメンタルズ＆陣形判定ロジック
