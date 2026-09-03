@@ -596,12 +596,13 @@ def get_local_stock_data(code):
         return pd.DataFrame()
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def _load_master_v5_core():
-    # 🚨 究極の自己修復：データ駆動型カラム探索エンジン（全ユニーク値スキャンによるETF地雷完全粉砕版）
+def _load_master_v6_core():
+    # 🚨 J-Quants V2 APIの正規仕様へ完全同期（推測を排除し、S33Nm, MktNm を直指定）
     try:
         import pandas as pd
         req_params = {}
         all_data = []
+        
         while True:
             r = api_session.get(f"{BASE_URL}/equities/master", params=req_params, timeout=10.0)
             if r.status_code == 200:
@@ -619,44 +620,23 @@ def _load_master_v5_core():
                 
         if all_data:
             df = pd.DataFrame(all_data)
-            cols_lower = {str(c).lower(): c for c in df.columns}
             
-            def find_col(*candidates):
-                for cand in candidates:
-                    if cand.lower() in cols_lower: return cols_lower[cand.lower()]
-                for c in df.columns:
-                    c_lower = str(c).lower()
-                    for cand in candidates:
-                        if cand.lower() in c_lower: return c
-                return None
-                
-            c_code = find_col('Code', 'code', '銘柄コード')
-            c_name = find_col('CompanyName', 'CoName', 'Name', 'companyName', 'name', '銘柄名', 'CoNameEn')
-            c_sector = find_col('Sector33CodeName', 'Sector33Name', 'Sec33Name', 'SectorName', 'Sector', '業種', '33業種区分', 'Sector33', 'sec33', 'Industry')
-            c_market = find_col('MarketCodeName', 'MarketName', 'MktName', 'Market', '市場', '市場・商品区分', 'mkt', 'Section', 'Exchange')
+            # 🚨 ボスが提示したV2仕様に基づく完全指定マッピング
+            c_code = 'Code' if 'Code' in df.columns else 'code'
+            c_name = 'CoName' if 'CoName' in df.columns else 'CompanyName'
+            c_sector = 'S33Nm' if 'S33Nm' in df.columns else 'Sector33CodeName'
+            c_market = 'MktNm' if 'MktNm' in df.columns else 'MarketCodeName'
             
-            # 🚨 最強の防壁：カラム名が未知に改変された場合、実際の「データの中身」を全スキャンして業種と市場を特定する
-            if not c_sector or not c_market:
-                for col in df.columns:
-                    if df[col].dtype == object or str(df[col].dtype) == 'string':
-                        # ETF偏りによる特定空振りを防ぐため、サンプリングを「ユニーク値の全結合」に変更
-                        sample = " ".join(df[col].dropna().astype(str).unique().tolist())
-                        if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース", "Prime", "Standard", "Growth"]):
-                            c_market = col
-                        if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業", "電気機器", "銀行業", "小売業"]):
-                            c_sector = col
-
-            if c_code and c_name:
-                if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
-                if not c_market: c_market = 'Market'; df[c_market] = '市場不明'
-                        
-                df = df[[c_code, c_name, c_sector, c_market]].copy()
-                df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
-                df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
-                return df
+            for col in [c_code, c_name, c_sector, c_market]:
+                if col not in df.columns: df[col] = "不明"
+                    
+            df = df[[c_code, c_name, c_sector, c_market]].copy()
+            df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+            df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+            return df
     except: pass
 
-    # 🚨 APIダウン時のフェイルセーフ（JPX公式Excel 完全対応 ＆ データ駆動探索）
+    # 🚨 APIダウン時のフェイルセーフ（JPX公式Excel 完全対応版）
     try:
         import re, requests
         import pandas as pd
@@ -683,15 +663,6 @@ def _load_master_v5_core():
             c_sector = find_col_jpx('33業種区分', '業種', 'Sector')
             c_market = find_col_jpx('市場・商品区分', '市場', 'Market')
             
-            # 🚨 JPX版・データ駆動探索（全ユニーク値サンプリング版）
-            if not c_code or not c_name or not c_sector or not c_market:
-                for col in df.columns:
-                    sample = " ".join(df[col].dropna().astype(str).unique().tolist())
-                    if not c_market and any(m in sample for m in ["プライム", "スタンダード", "グロース"]): c_market = col
-                    if not c_sector and any(s in sample for s in ["水産・農林業", "食料品", "化学", "非鉄金属", "情報・通信業"]): c_sector = col
-                    if not c_code and any(c in sample for c in ["7203", "5702", "9984"]): c_code = col
-                    if not c_name and any(n in sample for n in ["トヨタ", "ソニー", "ソフトバンク"]): c_name = col
-            
             if c_code and c_name:
                 if not c_sector: c_sector = 'Sector'; df[c_sector] = '業種不明'
                 if not c_market: c_market = 'Market'; df[c_market] = '市場不明'
@@ -702,12 +673,11 @@ def _load_master_v5_core():
                 return df
     except: pass
     
-    import pandas as pd
     return pd.DataFrame()
 
 def load_master():
-    # 🚨 異常キャッシュを完全に切り離すステルスラッパー (v5へ移行)
-    return _load_master_v5_core()
+    # 🚨 異常キャッシュを完全に切り離すステルスラッパー (v6へ移行)
+    return _load_master_v6_core()
 
 # ==========================================
 # 🧠 ファンダメンタルズ＆陣形判定ロジック
