@@ -597,16 +597,49 @@ def get_local_stock_data(code):
 
 @st.cache_data(ttl=86400)
 def load_master():
+    # 🚨 修正：不安定なJPXのWebスクレイピングを廃止し、正規のJ-Quants V2 APIを主軸に変更
     try:
+        url = f"{BASE_URL}/equities/master"
+        r = api_session.get(url, timeout=10.0)
+        if r.status_code == 200:
+            res_json = r.json()
+            info_data = res_json.get("equities") or res_json.get("data") or res_json.get("info") or []
+            if info_data:
+                import pandas as pd
+                df = pd.DataFrame(info_data)
+                
+                # APIのキー揺れ吸収
+                c_code = next((c for c in df.columns if str(c).lower() == 'code'), 'Code')
+                c_name = next((c for c in df.columns if str(c).lower() == 'companyname'), 'CompanyName')
+                c_sector = next((c for c in df.columns if str(c).lower() == 'sector33codename'), 'Sector33CodeName')
+                c_market = next((c for c in df.columns if str(c).lower() == 'marketcodename'), 'MarketCodeName')
+                
+                for col in [c_code, c_name, c_sector, c_market]:
+                    if col not in df.columns: df[col] = "不明"
+                        
+                df = df[[c_code, c_name, c_sector, c_market]].copy()
+                df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
+                df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
+                return df
+    except: pass
+
+    # API失敗時のフェイルセーフ（従来のJPXスクレイピング：.xlsx拡張子への変更に対応）
+    try:
+        import pandas as pd
         r1 = requests.get("https://www.jpx.co.jp/markets/statistics-equities/misc/01.html", headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        m = re.search(r'href="([^"]+data_j\.xls)"', r1.text)
+        m = re.search(r'href="([^"]+data_j\.xlsx?)"', r1.text)
         if m:
             r2 = requests.get("https://www.jpx.co.jp" + m.group(1), headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
-            df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+            try:
+                df = pd.read_excel(BytesIO(r2.content), engine='openpyxl')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
+            except:
+                df = pd.read_excel(BytesIO(r2.content), engine='xlrd')[['コード', '銘柄名', '33業種区分', '市場・商品区分']]
             df.columns = ['Code', 'CompanyName', 'Sector', 'Market']
             df['Code'] = df['Code'].astype(str).apply(lambda x: x if len(x) >= 5 else x + "0")
             return df
     except: pass
+    
+    import pandas as pd
     return pd.DataFrame()
 
 # ==========================================
