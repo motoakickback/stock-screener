@@ -1954,29 +1954,31 @@ with tab3:
                                 high=df_c[c_h_col], 
                                 low=df_c[c_l_col], 
                                 close=df_c[c_c_col], 
-                                name='価格',
+                                name='',
+                                hovertemplate='・始値：%{open:,.2~f}<br>・高値：%{high:,.2~f}<br>・安値：%{low:,.2~f}<br>・終値：%{close:,.2~f}',
                                 increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
                                 decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
                             ))
-                            # 🚨 修正：hoverinfo='none'を撤廃し、hovertemplateで価格を明示的に出力
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hovertemplate='%{y:.1f}円'))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hovertemplate='%{y:.1f}円'))
+                            # 🚨 修正：ボスの指示に基づき、ホバー表示を「・項目：価格」のフォーマットに完全同期
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='', hovertemplate='・18MA：%{y:,.2~f}'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='', hovertemplate='・50MA：%{y:,.2~f}'))
                             
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='', hovertemplate='・買陣形：%{y:,.2~f}'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
                                 sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形'))
+                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='', hovertemplate='・空売陣形：%{y:,.2~f}'))
 
                             v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
                             fig.add_trace(go.Bar(
                                 x=df_c[date_col], 
                                 y=df_c[c_v_col], 
-                                name='出来高', 
+                                name='', 
+                                hovertemplate='・出来高：%{y:,.0f}',
                                 marker_color=v_colors, 
                                 yaxis='y2',
                                 opacity=0.5
@@ -2010,6 +2012,7 @@ with tab3:
                                 rangeslider=dict(visible=False), 
                                 type='date', 
                                 fixedrange=False,
+                                hoverformat='・日付：%Y/%m/%d',
                                 rangeselector=dict(
                                     buttons=list([
                                         dict(count=1, label="1ヶ月", step="month", stepmode="backward"),
