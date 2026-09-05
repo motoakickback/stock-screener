@@ -184,7 +184,19 @@ def get_or_create_worksheet(sheet_name):
     try: return db_sheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
         try: return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
-        except: return None
+        except Exception as e:
+            if not st.session_state.get('system_data_error', False):
+                st.session_state['system_data_error'] = True
+                st.session_state['system_error_message'] = "Google Sheets API 通信障害（シート作成失敗）。現在の表示データは不完全です。"
+                st.rerun()
+            return None
+    except Exception as e:
+        # 🚨 無言で空データを返すフェイルセーフを撤廃。エラーを捕捉しシステムロックフラグを発火させる。
+        if not st.session_state.get('system_data_error', False):
+            st.session_state['system_data_error'] = True
+            st.session_state['system_error_message'] = "Google Sheets / J-Quants API 等の通信障害。データが不完全です。"
+            st.rerun() # UI最下部で発火した場合に備え、直ちにリロードして上部の物理ロックを適用
+        return None
 
 # 🚨 マルチテナント（戦友分離）の核心：認証されたアクセスコードをシート名に強制バインド
 _active_user = st.session_state.get("current_user", "Guest")
@@ -1143,6 +1155,11 @@ def fetch_fundamental_history_local(code, local_db):
 # ==========================================
 render_macro_board()
 
+# 🚨 致命的データ欠落を検知した場合、全タブ共通で警告を強制出力
+if st.session_state.get('system_data_error', False):
+    st.error(f"🚨 【重大な警告】 {st.session_state.get('system_error_message', 'データ基盤に通信障害が発生しています。')}")
+    st.warning("誤った分析（誤射）を防ぐため、スキャンシステムを物理的にロック（停止）しています。時間をおいて再実行してください。")
+
 tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
 
 # ==========================================
@@ -1176,7 +1193,8 @@ with tab1:
                     f"・直近1つ目の四半期は売上 {t1_sales_r}% 以上、他利益 {t1_ord_r}% 以上で完全クリア必須。\n"
                     f"・直近2つ目の四半期も完全クリアでS級🎯、1つだけ下回ればA級🟢。")
         
-        btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary")
+        # 🚨 致命的データ欠落時、スキャンボタンを無効化（ロック）
+        btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary", disabled=st.session_state.get('system_data_error', False))
 
     # 🚨 修正：スキャン実行時以外（リロード直後等）にキャッシュ結果を画面へ表示し、TAB3へデータを維持する
     if not btn_scan_t1 and st.session_state.get('tab1_scan_results'):
@@ -1353,7 +1371,8 @@ with tab2:
                     f"・営業利益・経常利益・純利益・一株利益の全8項目が 5%未満 でS級💀 \n"
                     f"・1つだけ {t2_ord_r}%未満（他5%未満）でA級📉")
         
-        btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary")
+        # 🚨 致命的データ欠落時、スキャンボタンを無効化（ロック）
+        btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary", disabled=st.session_state.get('system_data_error', False))
 
     # 🚨 修正：スキャン実行時以外（リロード直後等）にキャッシュ結果を画面へ表示し、TAB3へデータを維持する
     if not btn_scan_t2 and st.session_state.get('tab2_scan_results'):
