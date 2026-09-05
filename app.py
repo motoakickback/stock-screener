@@ -1684,18 +1684,19 @@ with tab3:
                             sig_indices = [i for i, d in enumerate(df_dates) if d in b_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
-                                # 🚨 修正：原典ルールの判定日数（3日=S, 4日=A, 5日=B）に完全同期
-                                if days_ago <= 3: rank_signal = "S"
-                                elif days_ago <= 4: rank_signal = "A"
-                                elif days_ago <= 5: rank_signal = "B"
+                                # 🚨 修正：新規格に基づく日数判定に完全同期（当日 = days_ago: 0）
+                                if days_ago <= 2: rank_signal = "S"
+                                elif days_ago <= 3: rank_signal = "A"
+                                elif days_ago <= 4: rank_signal = "B"
                         
                         elif scan_mode == "sell" and s_sigs:
                             s_sig_dates = [pd.to_datetime(d).date() for d in s_sigs if pd.notna(d)]
                             sig_indices = [i for i, d in enumerate(df_dates) if d in s_sig_dates]
                             if sig_indices:
                                 days_ago = (len(df_dates) - 1) - max(sig_indices)
+                                # 🚨 修正：新規格に基づく日数判定に完全同期
                                 if days_ago == 0: rank_signal = "S"
-                                elif days_ago == 1: rank_signal = "A"
+                                elif days_ago <= 1: rank_signal = "A"
                                 elif days_ago <= 3: rank_signal = "B"
 
                         f_df = fetch_fundamental_history_local(code_val, local_fund_db)
