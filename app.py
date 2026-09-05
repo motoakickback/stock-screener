@@ -1958,14 +1958,14 @@ with tab3:
                                 high=df_c[c_h_col], 
                                 low=df_c[c_l_col], 
                                 close=df_c[c_c_col], 
-                                name='',
-                                hovertemplate='・始値：%{open:,.2~f}<br>・高値：%{high:,.2~f}<br>・安値：%{low:,.2~f}<br>・終値：%{close:,.2~f}',
+                                name='価格',
+                                hovertemplate='・始値：%{open:,.2~f}<br>・高値：%{high:,.2~f}<br>・安値：%{low:,.2~f}<br>・終値：%{close:,.2~f}<extra></extra>',
                                 increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
                                 decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
                             ))
-                            # 🚨 修正：ボスの指示に基づき、ホバー表示を「・項目：価格」のフォーマットに完全同期
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='', hovertemplate='・18MA：%{y:,.2~f}'))
-                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='', hovertemplate='・50MA：%{y:,.2~f}'))
+                            # 🚨 修正：凡例に名前を表示しつつ、ホバー横の不要なバッジを <extra></extra> で物理遮断
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA18'], mode='lines', line=dict(color='orange', width=1.5), name='18日線', hovertemplate='・18MA：%{y:,.2~f}<extra></extra>'))
+                            fig.add_trace(go.Scatter(x=df_c[date_col], y=df_c['MA50'], mode='lines', line=dict(color='cyan', width=1.5), name='50日線', hovertemplate='・50MA：%{y:,.2~f}<extra></extra>'))
                             
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
@@ -1978,7 +1978,7 @@ with tab3:
                                             p = next((v for k, v in data["buy_sigs"].items() if pd.to_datetime(k).date() == pd.to_datetime(d).date()), 0)
                                         prices.append(p)
                                     # 🚨 修正：y座標(描画位置)は維持しつつ、customdataに計算された本来の価格を注入しホバーへ出力
-                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='', customdata=prices, hovertemplate='・買陣形：%{customdata:,.2~f}'))
+                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='買陣形', customdata=prices, hovertemplate='・買陣形：%{customdata:,.2~f}<extra></extra>'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
@@ -1990,14 +1990,14 @@ with tab3:
                                         if p is None:
                                             p = next((v for k, v in data["sell_sigs"].items() if pd.to_datetime(k).date() == pd.to_datetime(d).date()), 0)
                                         prices.append(p)
-                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='', customdata=prices, hovertemplate='・空売陣形：%{customdata:,.2~f}'))
+                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='空売陣形', customdata=prices, hovertemplate='・空売陣形：%{customdata:,.2~f}<extra></extra>'))
 
                             v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
                             fig.add_trace(go.Bar(
                                 x=df_c[date_col], 
                                 y=df_c[c_v_col], 
-                                name='', 
-                                hovertemplate='・出来高：%{y:,.0f}',
+                                name='出来高', 
+                                hovertemplate='・出来高：%{y:,.0f}<extra></extra>',
                                 marker_color=v_colors, 
                                 yaxis='y2',
                                 opacity=0.5
@@ -2052,7 +2052,15 @@ with tab3:
                                 'xaxis': xaxis_config,
                                 'dragmode': 'pan',
                                 'hovermode': 'x unified',
-                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left")
+                                'hoverlabel': dict(bgcolor="rgba(0,0,0,0.8)", font_size=13, font_family="sans-serif", align="left"),
+                                'legend': dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=1.02,
+                                    xanchor="left",
+                                    x=0,
+                                    bgcolor="rgba(0,0,0,0)"
+                                )
                             }
                             
                             if y_min and y_max:
