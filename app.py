@@ -2048,7 +2048,7 @@ with tab3:
 
                             layout_args = {
                                 'height': 600,
-                                'margin': dict(l=10, r=50, t=60, b=10),
+                                'margin': dict(l=0, r=40, t=60, b=10),
                                 'xaxis': xaxis_config,
                                 'dragmode': 'pan',
                                 'hovermode': 'x unified',
@@ -2057,8 +2057,8 @@ with tab3:
                                     orientation="h",
                                     yanchor="bottom",
                                     y=1.02,
-                                    xanchor="left",
-                                    x=0,
+                                    xanchor="center",
+                                    x=0.5,
                                     bgcolor="rgba(0,0,0,0)"
                                 )
                             }
