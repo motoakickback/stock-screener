@@ -776,8 +776,9 @@ def analyze_fundamental_momentum(df, mode="buy", sales_req=7.0, ord_req=15.0, se
 def analyze_formation_history(df, is_macro_downtrend=False):
     """過去3ヶ月分のデータから、買い/空売りフォーメーション（3日ルール・18日ルール）を厳格に探知する"""
     import pandas as pd
-    buy_signals = []
-    sell_signals = []
+    # 🚨 修正：単なる日付リストではなく、{日付: 規定価格} の辞書として保持
+    buy_signals = {}
+    sell_signals = {}
     
     if df is None or len(df) < 65:
         return buy_signals, sell_signals
@@ -795,7 +796,7 @@ def analyze_formation_history(df, is_macro_downtrend=False):
     c_c = get_c('adjc', 'adjustmentclose', 'close', 'c')
     c_d = get_c('date', 'd', 'datetime')
     
-    if not all([c_o, c_h, c_l, c_c, c_d]): return [], []
+    if not all([c_o, c_h, c_l, c_c, c_d]): return {}, {}
 
     df_recent = df.tail(65).reset_index(drop=True)
     
@@ -857,7 +858,9 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         buy_cond2 = buy2_day0 and buy2_day1 and buy2_day2
         
         if buy_cond1 or buy_cond2:
-            buy_signals.append(curr_date)
+            # 🚨 修正：18日ルール時は「今日と昨日の高い方の高値」、それ以外（3日）は本日の終値を買い価格とする
+            buy_price = max(day1_h, day2_h) if buy_cond2 else day2_c
+            buy_signals[curr_date] = buy_price
             
         # ----------------------------------------------------
         # 🔴 空売りシグナル①（3日ルール）
@@ -878,11 +881,12 @@ def analyze_formation_history(df, is_macro_downtrend=False):
         sell_cond2 = sell2_day0 and sell2_day1 and sell2_day2
         
         if sell_cond1 or sell_cond2:
-            # 空売りの前提「市場が下げ相場である」こと
             if is_macro_downtrend:
-                sell_signals.append(curr_date)
+                # 🚨 修正：18日ルール時は「今日と昨日の安い方の安値」、それ以外（3日）は本日の終値を売り価格とする
+                sell_price = min(day1_l, day2_l) if sell_cond2 else day2_c
+                sell_signals[curr_date] = sell_price
             
-    return list(set(buy_signals)), list(set(sell_signals))
+    return buy_signals, sell_signals
 
 def fetch_fundamental_history_local(code, local_db):
     import pandas as pd
@@ -1965,13 +1969,28 @@ with tab3:
                             
                             if scan_mode == "buy" and data.get("buy_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["buy_sigs"] if pd.notna(d)]
-                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='', hovertemplate='・買陣形：%{y:,.2~f}'))
+                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)].copy()
+                                if not sig_df.empty: 
+                                    prices = []
+                                    for d in sig_df[date_col]:
+                                        p = data["buy_sigs"].get(d)
+                                        if p is None: # Timestamp不一致へのフェイルセーフ
+                                            p = next((v for k, v in data["buy_sigs"].items() if pd.to_datetime(k).date() == pd.to_datetime(d).date()), 0)
+                                        prices.append(p)
+                                    # 🚨 修正：y座標(描画位置)は維持しつつ、customdataに計算された本来の価格を注入しホバーへ出力
+                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 0.95, mode='markers', marker=dict(symbol='triangle-up', color='magenta', size=12), name='', customdata=prices, hovertemplate='・買陣形：%{customdata:,.2~f}'))
                             
                             if scan_mode == "sell" and data.get("sell_sigs"):
                                 sig_dates = [pd.to_datetime(d).date() for d in data["sell_sigs"] if pd.notna(d)]
-                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)]
-                                if not sig_df.empty: fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='', hovertemplate='・空売陣形：%{y:,.2~f}'))
+                                sig_df = df_c[df_c[date_col].dt.date.isin(sig_dates)].copy()
+                                if not sig_df.empty: 
+                                    prices = []
+                                    for d in sig_df[date_col]:
+                                        p = data["sell_sigs"].get(d)
+                                        if p is None:
+                                            p = next((v for k, v in data["sell_sigs"].items() if pd.to_datetime(k).date() == pd.to_datetime(d).date()), 0)
+                                        prices.append(p)
+                                    fig.add_trace(go.Scatter(x=sig_df[date_col], y=sig_df[c_c_col] * 1.05, mode='markers', marker=dict(symbol='triangle-down', color='yellow', size=12), name='', customdata=prices, hovertemplate='・空売陣形：%{customdata:,.2~f}'))
 
                             v_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df_c[c_c_col], df_c[c_o_col])]
                             fig.add_trace(go.Bar(
