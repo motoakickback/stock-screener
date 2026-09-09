@@ -100,66 +100,71 @@ if is_initial_build:
 
 else:
     # ---------------------------------------------------------
-    # 【モード2】差分更新アーキテクチャ（ページング対応）
+    # 【モード2】差分更新アーキテクチャ（過去7日間遡及フェイルセーフ対応）
     # ---------------------------------------------------------
     tz = pytz.timezone('Asia/Tokyo')
-    today_str = datetime.now(tz).strftime("%Y-%m-%d")
-    print(f"{RED}🚀 差分更新実行: {today_str} に発表された決算データのみを抽出・マージします...{RESET}")
+    now_jst = datetime.now(tz)
+    from datetime import timedelta
     
-    url = f"{BASE_URL}/fins/summary?date={today_str}"
+    print(f"{RED}🚀 差分更新実行: バッチ未稼働による欠落を防ぐため、過去7日分のデータを遡及してマージします...{RESET}")
     
-    while url:
-        time.sleep(1.5)
-        try:
-            r = session.get(url, timeout=10.0)
-            if r.status_code == 200:
-                res_data = r.json()
-                data = res_data.get("summary") or res_data.get("statements") or res_data.get("data") or res_data.get("fins") or []
-                
-                if data:
-                    updates_by_code = {}
-                    for row in data:
-                        code_val = row.get("LocalCode") or row.get("Code") or row.get("code")
-                        if not code_val: continue
-                        api_code = str(code_val) if len(str(code_val)) >= 5 else str(code_val) + "0"
-                        if api_code not in updates_by_code:
-                            updates_by_code[api_code] = []
-                        updates_by_code[api_code].append(row)
-                        
-                    for api_code, rows in updates_by_code.items():
-                        new_df = pd.DataFrame(rows)
-                        for col in new_df.columns:
-                            if col not in ['Date', 'DisclosedDate', 'LocalCode']:
-                                new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
-                        
-                        if api_code in fundamentals_db:
-                            combined = pd.concat([fundamentals_db[api_code], new_df], ignore_index=True)
-                            if 'DisclosedDate' in combined.columns:
-                                combined = combined.drop_duplicates(subset=['DisclosedDate'], keep='last')
-                            fundamentals_db[api_code] = combined.tail(40).reset_index(drop=True)
-                        else:
-                            fundamentals_db[api_code] = new_df.tail(40).reset_index(drop=True)
-                        
-                        success_count += 1
-                        print(f"{RED}🔄 差分マージ完了: {api_code}{RESET}")
+    # 🚨 修正：過去7日前から当日へ向かって時系列順にAPIを叩き、欠落データを完全に拾い上げる
+    for i in range(7, -1, -1):
+        target_date = (now_jst - timedelta(days=i)).strftime("%Y-%m-%d")
+        url = f"{BASE_URL}/fins/summary?date={target_date}"
+        
+        while url:
+            time.sleep(1.5)
+            try:
+                r = session.get(url, timeout=10.0)
+                if r.status_code == 200:
+                    res_data = r.json()
+                    data = res_data.get("summary") or res_data.get("statements") or res_data.get("data") or res_data.get("fins") or []
+                    
+                    if data:
+                        updates_by_code = {}
+                        for row in data:
+                            code_val = row.get("LocalCode") or row.get("Code") or row.get("code")
+                            if not code_val: continue
+                            api_code = str(code_val) if len(str(code_val)) >= 5 else str(code_val) + "0"
+                            if api_code not in updates_by_code:
+                                updates_by_code[api_code] = []
+                            updates_by_code[api_code].append(row)
+                            
+                        for api_code, rows in updates_by_code.items():
+                            new_df = pd.DataFrame(rows)
+                            for col in new_df.columns:
+                                if col not in ['Date', 'DisclosedDate', 'LocalCode']:
+                                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                            
+                            if api_code in fundamentals_db:
+                                combined = pd.concat([fundamentals_db[api_code], new_df], ignore_index=True)
+                                if 'DisclosedDate' in combined.columns:
+                                    combined = combined.drop_duplicates(subset=['DisclosedDate'], keep='last')
+                                fundamentals_db[api_code] = combined.tail(40).reset_index(drop=True)
+                            else:
+                                fundamentals_db[api_code] = new_df.tail(40).reset_index(drop=True)
+                            
+                            success_count += 1
+                            print(f"{RED}🔄 差分マージ完了({target_date}): {api_code}{RESET}")
 
-                pagination_key = res_data.get("pagination_key")
-                if pagination_key:
-                    print(f"{RED}⏭️ 次のページ（Pagination）を取得中...{RESET}")
-                    url = f"{BASE_URL}/fins/summary?date={today_str}&pagination_key={pagination_key}"
+                    pagination_key = res_data.get("pagination_key")
+                    if pagination_key:
+                        print(f"{RED}⏭️ 次のページ（Pagination）を取得中...{RESET}")
+                        url = f"{BASE_URL}/fins/summary?date={target_date}&pagination_key={pagination_key}"
+                    else:
+                        url = None
+                        break
+                elif r.status_code == 429:
+                    print(f"{RED}⚠️ [429検知] 制限到達。15秒待機してリトライ...{RESET}", flush=True)
+                    time.sleep(15.0)
+                    continue
                 else:
-                    url = None
+                    print(f"{RED}⚠️ 通信エラー({target_date}): {r.status_code}{RESET}")
                     break
-            elif r.status_code == 429:
-                print(f"{RED}⚠️ [429検知] 制限到達。15秒待機してリトライ...{RESET}", flush=True)
-                time.sleep(15.0)
-                continue
-            else:
-                print(f"{RED}⚠️ 通信エラー: {r.status_code}{RESET}")
+            except Exception as e:
+                print(f"{RED}❌ 差分取得エラー({target_date}): {e}{RESET}")
                 break
-        except Exception as e:
-            print(f"{RED}❌ 差分取得エラー: {e}{RESET}")
-            break
 
 # 3. 最終データの焼き付け
 with gzip.open(db_path, "wb") as f:
