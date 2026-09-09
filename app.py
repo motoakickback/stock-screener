@@ -1570,36 +1570,53 @@ with tab3:
 
     store_key = "tab3_store_buy" if scan_mode == "buy" else "tab3_store_sell"
 
-    st.markdown("#### 📡 分析対象銘柄（※完全合致銘柄のみを抽出します）")
+    st.markdown("#### 📡 分析対象銘柄")
     
     target_codes_input = st.text_area(
-        "銘柄コード（カンマ区切り）。TAB1・TAB2の突破銘柄が自動入力されています。",
+        "【正規スキャン枠】（TAB1・TAB2突破銘柄が自動入力。※厳格条件に完全合致した銘柄のみ抽出）",
         value=st.session_state.get(store_key, ""),
         height=100
+    )
+    
+    # 🚨 追加：手動入力による強制出力枠
+    manual_codes_input = st.text_input(
+        "【強行偵察枠】（手動入力。※条件に関わらず分析チャート・業績を強制出力します。カンマ区切り）",
+        value=""
     )
     
     st.session_state[store_key] = target_codes_input
 
     if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
-        if not target_codes_input.strip():
+        if not target_codes_input.strip() and not manual_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
             p_bar = st.progress(0, text="🚀 システム初期化・全軍データロード中...")
 
             import unicodedata
-            # 🚨 修正：入力を半角に統一。半角スペース（全角スペースも正規化済）および改行をカンマに置換して分割
+            
+            # 正規スキャン枠のパース
             normalized_input = unicodedata.normalize('NFKC', target_codes_input)
             normalized_input = normalized_input.replace(" ", ",").replace("\n", ",")
             raw_codes = [c.strip() for c in normalized_input.split(",") if c.strip()]
+            
+            # 強行偵察枠のパース
+            normalized_manual = unicodedata.normalize('NFKC', manual_codes_input)
+            normalized_manual = normalized_manual.replace(" ", ",").replace("\n", ",")
+            raw_manual = [c.strip() for c in normalized_manual.split(",") if c.strip()]
                         
             target_codes = []
             for c in raw_codes:
                 if len(c) >= 4:
                     target_codes.append(str(c)[:4])
-            target_codes = list(dict.fromkeys(target_codes))
-            target_str_codes = target_codes
+                    
+            manual_codes = []
+            for c in raw_manual:
+                if len(c) >= 4:
+                    manual_codes.append(str(c)[:4])
+                    
+            target_str_codes = list(dict.fromkeys(target_codes + manual_codes))
 
-            st.write(f"📡 実行対象: {len(target_codes)} 銘柄を解析中...（対象外は除外されます）")
+            st.write(f"📡 実行対象: {len(target_str_codes)} 銘柄を解析中...（正規: {len(target_codes)} / 強行偵察: {len(manual_codes)}）")
 
             is_macro_downtrend = False
             try:
@@ -1816,7 +1833,8 @@ with tab3:
                     sortable_results = [{"code": k, **v} for k, v in analyzed_data.items()]
                     sortable_results.sort(key=get_rank_score, reverse=True)
                     
-                    display_targets = [d for d in sortable_results if d.get("is_hit", False)]
+                    # 🚨 修正：強行偵察枠（manual_codes）は is_hit == False (条件未達) でも強制抽出
+                    display_targets = [d for d in sortable_results if d.get("is_hit", False) or d["code"] in manual_codes]
 
                     # 🚨 修正ポイント：市場・業種区分・決算予定日データの取得用辞書構築
                     name_map = {}
@@ -1858,9 +1876,9 @@ with tab3:
                     
                     hit_count = len(display_targets)
                     if hit_count > 0:
-                        st.success(f"🎯 陣形とファンダメンタルズが完全合致した銘柄: {hit_count}件 確認！ （全件出力します）")
+                        st.success(f"🎯 抽出完了: 計 {hit_count} 件のチャート・業績データを出力します。")
                     else:
-                        st.warning("📉 条件に完全合致する銘柄はありませんでした。（対象外銘柄は表示をスキップしました）")
+                        st.warning("📉 表示対象となる銘柄はありませんでした。")
 
                     for idx, data in enumerate(display_targets):
                         code = data['code']
@@ -1875,6 +1893,9 @@ with tab3:
                         elif "グロース" in raw_market or "Growth" in raw_market: market_badge = "🚀 グロース"
                         
                         hit_badge = data["rank"]
+                        # 🚨 強行偵察（手動入力）で条件未達のまま強制出力された場合のアノテーション
+                        if not data.get("is_hit", False) and code in manual_codes:
+                            hit_badge += " | 🚨 強行偵察(条件未達)"
                         
                         # 🚨 カウントダウンバッジ判定ロジック
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
@@ -2121,7 +2142,7 @@ with tab3:
             results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
             if results_tab3:
                 hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area(f"📋 突破銘柄（コピペ用・完全合致 {len(results_tab3)}件）", value=hit_codes_str, height=70)
+                st.text_area(f"📋 分析完了銘柄（コピペ用・計 {len(results_tab3)}件）", value=hit_codes_str, height=70)
                 
             st.session_state['tab3_results'] = results_tab3
 
