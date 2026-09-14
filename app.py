@@ -2105,11 +2105,11 @@ with tab3:
                             }
                             
                             if y_min and y_max:
-                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], range=[y_min, y_max], autorange=False, fixedrange=False, side='right')
                             else:
-                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], autorange=True, fixedrange=False)
+                                layout_args['yaxis'] = dict(domain=[0.20, 1.0], autorange=True, fixedrange=False, side='right')
 
-                            layout_args['yaxis2'] = dict(domain=[0.0, 0.30], rangemode='tozero', autorange=True, fixedrange=False, showticklabels=False, showgrid=False)
+                            layout_args['yaxis2'] = dict(domain=[0.0, 0.30], rangemode='tozero', autorange=True, fixedrange=False, showticklabels=False, showgrid=False, side='right')
                                 
                             fig.update_layout(**layout_args)
                             
