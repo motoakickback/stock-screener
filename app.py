@@ -330,7 +330,7 @@ def render_macro_board():
                 yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True), 
                 xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
             )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False}, key="macro_weather_chart")
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
