@@ -1166,19 +1166,9 @@ with tab1:
         t1_p_min = col1_5.number_input("価格下限 (円)", value=800, step=100, key="t1_p_min")
         t1_p_max = col1_6.number_input("価格上限 (円)", value=4000, step=100, key="t1_p_max")
         
-        with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
-            st.caption("対象としたいセクターをチェックしてください。")
-            
-            if "t1_sec_all" not in st.session_state:
-                st.session_state.t1_sec_all = False
-                
-            def toggle_all_t1():
-                st.session_state.t1_sec_all = not st.session_state.t1_sec_all
-                for i in range(len(available_sectors)):
-                    st.session_state[f"t1_sec_{i}"] = st.session_state.t1_sec_all
-
-            st.button("✅ 全選択 / 全解除", on_click=toggle_all_t1, key="btn_t1_sec_all")
-            
+        with st.expander("🏭 セクター絞り込み", expanded=False):
+            t1_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t1_sec_all")
+            st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
             sec_cols = st.columns(4)
             selected_sectors_t1 = []
             for i, sec in enumerate(available_sectors):
@@ -1225,7 +1215,7 @@ with tab1:
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
                             # セクターフィルタの判定
                             c_sec = sector_map.get(str(c_code)[:4], "不明")
-                            if selected_sectors_t1 and c_sec not in selected_sectors_t1:
+                            if not t1_sec_all and selected_sectors_t1 and c_sec not in selected_sectors_t1:
                                 continue
                             
                             c_mcap = float(mcap_map.get(str(c_code), 0))
@@ -1372,19 +1362,9 @@ with tab2:
         t2_p_min = col2_5.number_input("価格下限 (円)", value=400, step=100, key="t2_p_min")
         t2_p_max = col2_6.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
         
-        with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
-            st.caption("対象としたいセクターをチェックしてください。")
-            
-            if "t2_sec_all" not in st.session_state:
-                st.session_state.t2_sec_all = False
-                
-            def toggle_all_t2():
-                st.session_state.t2_sec_all = not st.session_state.t2_sec_all
-                for i in range(len(available_sectors)):
-                    st.session_state[f"t2_sec_{i}"] = st.session_state.t2_sec_all
-
-            st.button("✅ 全選択 / 全解除", on_click=toggle_all_t2, key="btn_t2_sec_all")
-            
+        with st.expander("🏭 セクター絞り込み", expanded=False):
+            t2_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t2_sec_all")
+            st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
             sec_cols_t2 = st.columns(4)
             selected_sectors_t2 = []
             for i, sec in enumerate(available_sectors):
@@ -1433,7 +1413,7 @@ with tab2:
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
                             # セクターフィルタの判定
                             c_sec_t2 = sector_map_t2.get(str(c_code)[:4], "不明")
-                            if selected_sectors_t2 and c_sec_t2 not in selected_sectors_t2:
+                            if not t2_sec_all and selected_sectors_t2 and c_sec_t2 not in selected_sectors_t2:
                                 continue
 
                             c_vol = float(vol_map.get(str(c_code), 0))
