@@ -259,21 +259,19 @@ api_session = st.session_state.api_session
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
-        import pandas_datareader.data as web
-        import pandas as pd
-        
-        # 🚨 C案・戦術A: pandas_datareaderを用いてStooqから直接データを取得 (推測排除)
-        df_raw = web.DataReader('^NKX', 'stooq')
+        import yfinance as yf
+        tk = yf.Ticker("^N225")
+        df_raw = tk.history(period="3mo")
         if not df_raw.empty:
-            df_raw = df_raw.reset_index()
-            df_raw['Date'] = pd.to_datetime(df_raw['Date'])
-            df_raw = df_raw.sort_values('Date').reset_index(drop=True)
-            df_ni = df_raw.tail(65).copy()
-            
-            close_col = 'Close'
+            if df_raw.index.tz is not None:
+                df_raw.index = df_raw.index.tz_localize(None)
+            df_ni = df_raw.reset_index()
+            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
+            close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_ni.columns), 'Close')
             df_ni = df_ni.dropna(subset=[close_col])
             
             if len(df_ni) >= 2:
+                # 🚨 戦術B: 推測合成ロジック（13060 ETFからの算出等）を完全パージ。遅延時は事実のみを出力する。
                 latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
                 return {
                     "nikkei": {
