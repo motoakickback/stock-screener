@@ -259,46 +259,19 @@ api_session = st.session_state.api_session
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
-        import yfinance as yf
-        tk = yf.Ticker("^N225")
-        df_raw = tk.history(period="3mo")
+        import pandas as pd
+        
+        # 🚨 C案（Stooq）への完全移行: yfinance と 推測ロジックを全パージし、Stooqから直接データを取得
+        df_raw = pd.read_csv("https://stooq.com/q/d/l/?s=^nkx&i=d")
         if not df_raw.empty:
-            if df_raw.index.tz is not None:
-                df_raw.index = df_raw.index.tz_localize(None)
-            df_ni = df_raw.reset_index()
-            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
-            close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_ni.columns), 'Close')
+            df_raw['Date'] = pd.to_datetime(df_raw['Date'])
+            df_raw = df_raw.sort_values('Date').reset_index(drop=True)
+            df_ni = df_raw.tail(65).copy()
+            
+            close_col = 'Close'
             df_ni = df_ni.dropna(subset=[close_col])
             
             if len(df_ni) >= 2:
-                tz_jst = pytz.timezone('Asia/Tokyo')
-                now_jst = datetime.now(tz_jst)
-                today_date = now_jst.date()
-                yf_latest_date = df_ni['Date'].dt.date.max()
-                
-                if (now_jst.hour < 9 or (now_jst.hour == 9 and now_jst.minute < 30)) and (today_date - yf_latest_date).days >= 2:
-                    f_d = (now_jst - timedelta(days=7)).strftime('%Y%m%d')
-                    t_d = now_jst.strftime('%Y%m%d')
-                    # 🚨 修正：TOPIX連動ETFを用いた推測計算を破棄し、J-Quants V2の正規「指数四本値API」を使用する
-                    url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}" 
-                    try:
-                        r = api_session.get(url, timeout=3.0)
-                        if r.status_code == 200:
-                            data = r.json().get("daily_quotes") or r.json().get("data") or []
-                            if data:
-                                jq_latest = sorted(data, key=lambda x: x['Date'])[-1]
-                                jq_date_str = jq_latest.get("Date")
-                                jq_date = datetime.strptime(jq_date_str, "%Y-%m-%d").date() if "-" in jq_date_str else datetime.strptime(jq_date_str, "%Y%m%d").date()
-                                if jq_date > yf_latest_date:
-                                    val = jq_latest.get("Close") or jq_latest.get("C") or jq_latest.get("c")
-                                    if val is not None and str(val).strip() != "":
-                                        new_row = df_ni.iloc[-1].copy()
-                                        new_row['Date'] = pd.to_datetime(jq_date)
-                                        # 🚨 推測を排除。指数APIの正確な値をそのまま代入
-                                        new_row[close_col] = float(val)
-                                        df_ni = pd.concat([df_ni, pd.DataFrame([new_row])], ignore_index=True)
-                    except: pass
-
                 latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
                 return {
                     "nikkei": {
