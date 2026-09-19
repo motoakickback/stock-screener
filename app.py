@@ -259,18 +259,18 @@ api_session = st.session_state.api_session
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
-        import yfinance as yf
+        import pandas_datareader.data as web
         import pandas as pd
         
-        # 🚨 安定性と「推測の排除」を最優先とし、yfinanceへ回帰。遅延時は推測穴埋めを行わず事実を出力する。
-        tk = yf.Ticker("^N225")
-        df_raw = tk.history(period="3mo")
+        # 🚨 C案・戦術A: pandas_datareaderを用いてStooqから直接データを取得 (推測排除)
+        df_raw = web.DataReader('^NKX', 'stooq')
         if not df_raw.empty:
-            if df_raw.index.tz is not None:
-                df_raw.index = df_raw.index.tz_localize(None)
-            df_ni = df_raw.reset_index()
-            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
-            close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_ni.columns), 'Close')
+            df_raw = df_raw.reset_index()
+            df_raw['Date'] = pd.to_datetime(df_raw['Date'])
+            df_raw = df_raw.sort_values('Date').reset_index(drop=True)
+            df_ni = df_raw.tail(65).copy()
+            
+            close_col = 'Close'
             df_ni = df_ni.dropna(subset=[close_col])
             
             if len(df_ni) >= 2:
