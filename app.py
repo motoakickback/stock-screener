@@ -279,7 +279,8 @@ def get_macro_weather():
                 if (now_jst.hour < 9 or (now_jst.hour == 9 and now_jst.minute < 30)) and (today_date - yf_latest_date).days >= 2:
                     f_d = (now_jst - timedelta(days=7)).strftime('%Y%m%d')
                     t_d = now_jst.strftime('%Y%m%d')
-                    url = f"{BASE_URL}/equities/bars/daily?code=13060&from={f_d}&to={t_d}" 
+                    # 🚨 修正：TOPIX連動ETFを用いた推測計算を破棄し、J-Quants V2の正規「指数四本値API」を使用する
+                    url = f"{BASE_URL}/indices/bars/daily?code=0000&from={f_d}&to={t_d}" 
                     try:
                         r = api_session.get(url, timeout=3.0)
                         if r.status_code == 200:
@@ -289,17 +290,12 @@ def get_macro_weather():
                                 jq_date_str = jq_latest.get("Date")
                                 jq_date = datetime.strptime(jq_date_str, "%Y-%m-%d").date() if "-" in jq_date_str else datetime.strptime(jq_date_str, "%Y%m%d").date()
                                 if jq_date > yf_latest_date:
-                                    val = jq_latest.get("Close") or jq_latest.get("C") or jq_latest.get("AdjC") or jq_latest.get("c")
+                                    val = jq_latest.get("Close") or jq_latest.get("C") or jq_latest.get("c")
                                     if val is not None and str(val).strip() != "":
                                         new_row = df_ni.iloc[-1].copy()
                                         new_row['Date'] = pd.to_datetime(jq_date)
-                                        if "1001" in url or float(val) > 30000:
-                                            new_row[close_col] = float(val)
-                                        else:
-                                            jq_prev = sorted(data, key=lambda x: x['Date'])[-2]
-                                            jq_prev_val = jq_prev.get("Close") or jq_prev.get("C") or jq_prev.get("AdjC") or jq_prev.get("c")
-                                            pct_change = (float(val) / float(jq_prev_val))
-                                            new_row[close_col] = df_ni.iloc[-1][close_col] * pct_change
+                                        # 🚨 推測を排除。指数APIの正確な値をそのまま代入
+                                        new_row[close_col] = float(val)
                                         df_ni = pd.concat([df_ni, pd.DataFrame([new_row])], ignore_index=True)
                     except: pass
 
