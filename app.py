@@ -259,35 +259,31 @@ api_session = st.session_state.api_session
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
+        import yfinance as yf
         import pandas as pd
-        import requests
-        import io
         
-        # 🚨 C案（Stooq）: User-Agentを偽装し、Bot検知による通信遮断（403エラー）を突破する
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        r = requests.get("https://stooq.com/q/d/l/?s=^nkx&i=d", headers=headers, timeout=5.0)
-        
-        if r.status_code == 200:
-            df_raw = pd.read_csv(io.StringIO(r.text))
-            if not df_raw.empty and 'Date' in df_raw.columns:
-                df_raw['Date'] = pd.to_datetime(df_raw['Date'])
-                df_raw = df_raw.sort_values('Date').reset_index(drop=True)
-                df_ni = df_raw.tail(65).copy()
-                
-                close_col = 'Close'
-                df_ni = df_ni.dropna(subset=[close_col])
-                
-                if len(df_ni) >= 2:
-                    latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
-                    return {
-                        "nikkei": {
-                            "price": float(latest[close_col]),
-                            "diff": float(latest[close_col] - prev[close_col]),
-                            "pct": ((float(latest[close_col]) / float(prev[close_col])) - 1) * 100,
-                            "df": df_ni,
-                            "date": latest['Date'].strftime('%m/%d')
-                        }
+        # 🚨 安定性と「推測の排除」を最優先とし、yfinanceへ回帰。遅延時は推測穴埋めを行わず事実を出力する。
+        tk = yf.Ticker("^N225")
+        df_raw = tk.history(period="3mo")
+        if not df_raw.empty:
+            if df_raw.index.tz is not None:
+                df_raw.index = df_raw.index.tz_localize(None)
+            df_ni = df_raw.reset_index()
+            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
+            close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_ni.columns), 'Close')
+            df_ni = df_ni.dropna(subset=[close_col])
+            
+            if len(df_ni) >= 2:
+                latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+                return {
+                    "nikkei": {
+                        "price": float(latest[close_col]),
+                        "diff": float(latest[close_col] - prev[close_col]),
+                        "pct": ((float(latest[close_col]) / float(prev[close_col])) - 1) * 100,
+                        "df": df_ni,
+                        "date": latest['Date'].strftime('%m/%d')
                     }
+                }
     except: pass
     return None
 
