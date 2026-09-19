@@ -1239,6 +1239,9 @@ with tab1:
                 else:
                     p1_msg.error("❌ 株価データの取得に失敗しました。")
                     st.stop()
+            except Exception as e:
+                p1_msg.error(f"❌ フィルタ取得エラー: {e}")
+                st.stop()
                 
             import unicodedata
             # 🚨 修正：取得コードの全角を半角に強制統一し、重複を完全に排除
