@@ -1168,6 +1168,17 @@ with tab1:
         
         with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
             st.caption("対象としたいセクターをチェックしてください。")
+            
+            if "t1_sec_all" not in st.session_state:
+                st.session_state.t1_sec_all = False
+                
+            def toggle_all_t1():
+                st.session_state.t1_sec_all = not st.session_state.t1_sec_all
+                for i in range(len(available_sectors)):
+                    st.session_state[f"t1_sec_{i}"] = st.session_state.t1_sec_all
+
+            st.button("✅ 全選択 / 全解除", on_click=toggle_all_t1, key="btn_t1_sec_all")
+            
             sec_cols = st.columns(4)
             selected_sectors_t1 = []
             for i, sec in enumerate(available_sectors):
@@ -1363,6 +1374,17 @@ with tab2:
         
         with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
             st.caption("対象としたいセクターをチェックしてください。")
+            
+            if "t2_sec_all" not in st.session_state:
+                st.session_state.t2_sec_all = False
+                
+            def toggle_all_t2():
+                st.session_state.t2_sec_all = not st.session_state.t2_sec_all
+                for i in range(len(available_sectors)):
+                    st.session_state[f"t2_sec_{i}"] = st.session_state.t2_sec_all
+
+            st.button("✅ 全選択 / 全解除", on_click=toggle_all_t2, key="btn_t2_sec_all")
+            
             sec_cols_t2 = st.columns(4)
             selected_sectors_t2 = []
             for i, sec in enumerate(available_sectors):
