@@ -334,6 +334,39 @@ def render_macro_board():
             
         st.markdown("<div style='margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
 
+<<<<
+# ==========================================
+# 📺 メインUI：レイアウト
+# ==========================================
+render_macro_board()
+
+# 🚨 致命的データ欠落を検知した場合、全タブ共通で警告を強制出力
+if st.session_state.get('system_data_error', False):
+    st.error(f"🚨 【重大な警告】 {st.session_state.get('system_error_message', 'データ基盤に通信障害が発生しています。')}")
+    st.warning("誤った分析（誤射）を防ぐため、スキャンシステムを物理的にロック（停止）しています。時間をおいて再実行してください。")
+
+tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
+====
+# ==========================================
+# 📺 メインUI：レイアウト
+# ==========================================
+render_macro_board()
+
+# 🚨 致命的データ欠落を検知した場合、全タブ共通で警告を強制出力
+if st.session_state.get('system_data_error', False):
+    st.error(f"🚨 【重大な警告】 {st.session_state.get('system_error_message', 'データ基盤に通信障害が発生しています。')}")
+    st.warning("誤った分析（誤射）を防ぐため、スキャンシステムを物理的にロック（停止）しています。時間をおいて再実行してください。")
+
+# --- 🏭 セクター一覧の取得 (TAB1/2 フィルタ用) ---
+try: 
+    master_for_sector = load_master()
+    available_sectors = sorted([s for s in master_for_sector['Sector'].unique() if str(s) not in ["nan", "不明", "業種不明"]])
+except:
+    available_sectors = ["水産・農林業", "鉱業", "建設業", "食料品", "繊維製品", "パルプ・紙", "化学", "医薬品", "石油・石炭製品", "ゴム製品", "ガラス・土石製品", "鉄鋼", "非鉄金属", "金属製品", "機械", "電気機器", "輸送用機器", "精密機器", "その他製品", "電気・ガス業", "陸運業", "海運業", "空運業", "倉庫・運輸関連業", "情報・通信業", "卸売業", "小売業", "銀行業", "証券、商品先物取引業", "保険業", "その他金融業", "不動産業", "サービス業"]
+
+tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
+>>>>
+
 # ==========================================
 # ⚡ 全銘柄現在値・一括取得エンジン（完全ローカルDB参照版）
 # ==========================================
@@ -1120,18 +1153,6 @@ def fetch_fundamental_history_local(code, local_db):
         return None
 
 # ==========================================
-# 📺 メインUI：レイアウト
-# ==========================================
-render_macro_board()
-
-# 🚨 致命的データ欠落を検知した場合、全タブ共通で警告を強制出力
-if st.session_state.get('system_data_error', False):
-    st.error(f"🚨 【重大な警告】 {st.session_state.get('system_error_message', 'データ基盤に通信障害が発生しています。')}")
-    st.warning("誤った分析（誤射）を防ぐため、スキャンシステムを物理的にロック（停止）しています。時間をおいて再実行してください。")
-
-tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
-
-# ==========================================
 # 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab1:
@@ -1158,6 +1179,14 @@ with tab1:
         t1_p_min = col1_5.number_input("価格下限 (円)", value=800, step=100, key="t1_p_min")
         t1_p_max = col1_6.number_input("価格上限 (円)", value=4000, step=100, key="t1_p_max")
         
+        with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
+            st.caption("対象としたいセクターをチェックしてください。")
+            sec_cols = st.columns(4)
+            selected_sectors_t1 = []
+            for i, sec in enumerate(available_sectors):
+                if sec_cols[i % 4].checkbox(sec, key=f"t1_sec_{i}"):
+                    selected_sectors_t1.append(sec)
+
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 YoY S級/A級クリア)** \n"
                     f"・直近1つ目の四半期は売上 {t1_sales_r}% 以上、他利益 {t1_ord_r}% 以上で完全クリア必須。\n"
                     f"・直近2つ目の四半期も完全クリアでS級🎯、1つだけ下回ればA級🟢。")
@@ -1188,10 +1217,19 @@ with tab1:
                 
                 try: m_df_local = load_master()
                 except: m_df_local = None
+                
+                sector_map = {}
+                if m_df_local is not None and not m_df_local.empty:
+                    sector_map = dict(zip(m_df_local['Code'].astype(str).str[:4], m_df_local['Sector']))
 
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
+                            # セクターフィルタの判定
+                            c_sec = sector_map.get(str(c_code)[:4], "不明")
+                            if selected_sectors_t1 and c_sec not in selected_sectors_t1:
+                                continue
+                            
                             c_mcap = float(mcap_map.get(str(c_code), 0))
                             if c_mcap >= float(t1_mcap): 
                                 all_codes.append(str(c_code))
@@ -1204,9 +1242,6 @@ with tab1:
                 else:
                     p1_msg.error("❌ 株価データの取得に失敗しました。")
                     st.stop()
-            except Exception as e:
-                p1_msg.error(f"❌ フィルタ取得エラー: {e}")
-                st.stop()
                 
             import unicodedata
             # 🚨 修正：取得コードの全角を半角に強制統一し、重複を完全に排除
@@ -1336,6 +1371,14 @@ with tab2:
         t2_p_min = col2_5.number_input("価格下限 (円)", value=400, step=100, key="t2_p_min")
         t2_p_max = col2_6.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
         
+        with st.expander("🏭 セクター絞り込み (未選択時は全セクター対象)", expanded=False):
+            st.caption("対象としたいセクターをチェックしてください。")
+            sec_cols_t2 = st.columns(4)
+            selected_sectors_t2 = []
+            for i, sec in enumerate(available_sectors):
+                if sec_cols_t2[i % 4].checkbox(sec, key=f"t2_sec_{i}"):
+                    selected_sectors_t2.append(sec)
+
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 利益鈍化)** \n"
                     f"・営業利益・経常利益・純利益・一株利益の全8項目が 5%未満 でS級💀 \n"
                     f"・1つだけ {t2_ord_r}%未満（他5%未満）でA級📉")
@@ -1369,9 +1412,18 @@ with tab2:
                 try: m_df_local = load_master()
                 except: m_df_local = None
                 
+                sector_map_t2 = {}
+                if m_df_local is not None and not m_df_local.empty:
+                    sector_map_t2 = dict(zip(m_df_local['Code'].astype(str).str[:4], m_df_local['Sector']))
+                
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
+                            # セクターフィルタの判定
+                            c_sec_t2 = sector_map_t2.get(str(c_code)[:4], "不明")
+                            if selected_sectors_t2 and c_sec_t2 not in selected_sectors_t2:
+                                continue
+
                             c_vol = float(vol_map.get(str(c_code), 0))
                             if c_vol >= float(t2_vol):
                                 c_mcap = float(mcap_map.get(str(c_code), 0))
