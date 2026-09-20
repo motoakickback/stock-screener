@@ -345,6 +345,44 @@ if st.session_state.get('system_data_error', False):
     st.error(f"🚨 【重大な警告】 {st.session_state.get('system_error_message', 'データ基盤に通信障害が発生しています。')}")
     st.warning("誤った分析（誤射）を防ぐため、スキャンシステムを物理的にロック（停止）しています。時間をおいて再実行してください。")
 
+# --- 🏭 セクター一覧の取得 (TAB1/2 フィルタ用) ---
+try: 
+    master_for_sector = load_master()
+    available_sectors = sorted([s for s in master_for_sector['Sector'].unique() if str(s) not in ["nan", "不明", "業種不明"]])
+except:
+    available_sectors = ["水産・農林業", "鉱業", "建設業", "食料品", "繊維製品", "パルプ・紙", "化学", "医薬品", "石油・石炭製品", "ゴム製品", "ガラス・土石製品", "鉄鋼", "非鉄金属", "金属製品", "機械", "電気機器", "輸送用機器", "精密機器", "その他製品", "電気・ガス業", "陸運業", "海運業", "空運業", "倉庫・運輸関連業", "情報・通信業", "卸売業", "小売業", "銀行業", "証券、商品先物取引業", "保険業", "その他金融業", "不動産業", "サービス業"]
+
+# 🚨 Streamlit仕様封鎖：クライアントサイドDOMハック（フォーム内チェックボックスの強制同期）
+import streamlit.components.v1 as components
+components.html(
+    """
+    <script>
+    const doc = window.parent.document;
+    if(!window.sectorSyncInjected) {
+        doc.addEventListener('change', function(e) {
+            if(e.target.type === 'checkbox') {
+                const label = e.target.closest('label');
+                if(label && label.innerText.includes('✅ 全セクターを一括切替')) {
+                    const isChecked = e.target.checked;
+                    const expander = e.target.closest('div[data-testid="stExpanderDetails"]');
+                    if(expander) {
+                        const checkboxes = expander.querySelectorAll('input[type="checkbox"]');
+                        checkboxes.forEach(cb => {
+                            if(cb !== e.target && cb.checked !== isChecked) {
+                                cb.click(); 
+                            }
+                        });
+                    }
+                }
+            }
+        });
+        window.sectorSyncInjected = true;
+    }
+    </script>
+    """,
+    height=0, width=0
+)
+
 tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "🎯 TAB3: 精密スコープ", "📁 TAB7: 戦績"])
 
 # --- 🏭 セクター一覧の取得 (TAB1/2 フィルタ用) ---
@@ -1167,12 +1205,13 @@ with tab1:
         t1_p_max = col1_6.number_input("価格上限 (円)", value=4000, step=100, key="t1_p_max")
         
         with st.expander("🏭 セクター絞り込み", expanded=False):
-            t1_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t1_sec_all")
-            st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
+            st.checkbox("✅ 全セクターを一括切替", value=True, key="t1_sec_all_ui")
+            st.caption("※上のチェックを外すと全解除され、個別に選択できます。")
             sec_cols = st.columns(4)
             selected_sectors_t1 = []
             for i, sec in enumerate(available_sectors):
-                if sec_cols[i % 4].checkbox(sec, key=f"t1_sec_{i}"):
+                # 🚨 デフォルトで全てTrue(全選択)とし、JSと同期させる
+                if sec_cols[i % 4].checkbox(sec, value=True, key=f"t1_sec_{i}"):
                     selected_sectors_t1.append(sec)
 
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 YoY S級/A級クリア)** \n"
@@ -1213,9 +1252,9 @@ with tab1:
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
-                            # セクターフィルタの判定
+                            # 🚨 物理チェックリストのみに依存した厳格な足切り
                             c_sec = sector_map.get(str(c_code)[:4], "不明")
-                            if not t1_sec_all and selected_sectors_t1 and c_sec not in selected_sectors_t1:
+                            if selected_sectors_t1 and (c_sec not in selected_sectors_t1):
                                 continue
                             
                             c_mcap = float(mcap_map.get(str(c_code), 0))
@@ -1363,12 +1402,12 @@ with tab2:
         t2_p_max = col2_6.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
         
         with st.expander("🏭 セクター絞り込み", expanded=False):
-            t2_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t2_sec_all")
-            st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
+            st.checkbox("✅ 全セクターを一括切替", value=True, key="t2_sec_all_ui")
+            st.caption("※上のチェックを外すと全解除され、個別に選択できます。")
             sec_cols_t2 = st.columns(4)
             selected_sectors_t2 = []
             for i, sec in enumerate(available_sectors):
-                if sec_cols_t2[i % 4].checkbox(sec, key=f"t2_sec_{i}"):
+                if sec_cols_t2[i % 4].checkbox(sec, value=True, key=f"t2_sec_{i}"):
                     selected_sectors_t2.append(sec)
 
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 利益鈍化)** \n"
@@ -1411,9 +1450,9 @@ with tab2:
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
-                            # セクターフィルタの判定
+                            # 🚨 物理チェックリストのみに依存した厳格な足切り
                             c_sec_t2 = sector_map_t2.get(str(c_code)[:4], "不明")
-                            if not t2_sec_all and selected_sectors_t2 and c_sec_t2 not in selected_sectors_t2:
+                            if selected_sectors_t2 and (c_sec_t2 not in selected_sectors_t2):
                                 continue
 
                             c_vol = float(vol_map.get(str(c_code), 0))
