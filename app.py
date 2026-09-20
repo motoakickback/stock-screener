@@ -352,7 +352,7 @@ try:
 except:
     available_sectors = ["水産・農林業", "鉱業", "建設業", "食料品", "繊維製品", "パルプ・紙", "化学", "医薬品", "石油・石炭製品", "ゴム製品", "ガラス・土石製品", "鉄鋼", "非鉄金属", "金属製品", "機械", "電気機器", "輸送用機器", "精密機器", "その他製品", "電気・ガス業", "陸運業", "海運業", "空運業", "倉庫・運輸関連業", "情報・通信業", "卸売業", "小売業", "銀行業", "証券、商品先物取引業", "保険業", "その他金融業", "不動産業", "サービス業"]
 
-# 🚨 Streamlit仕様封鎖：クライアントサイドDOMハック（フォーム内チェックボックスの強制同期）
+# 🚨 Streamlit仕様封鎖：クライアントサイドDOMハック（フォーム内チェックボックスの強制同期・React競合回避版）
 import streamlit.components.v1 as components
 components.html(
     """
@@ -367,9 +367,15 @@ components.html(
                     const expander = e.target.closest('div[data-testid="stExpanderDetails"]');
                     if(expander) {
                         const checkboxes = expander.querySelectorAll('input[type="checkbox"]');
+                        let delay = 0;
                         checkboxes.forEach(cb => {
                             if(cb !== e.target && cb.checked !== isChecked) {
-                                cb.click(); 
+                                const targetLabel = cb.closest('label');
+                                if(targetLabel) {
+                                    // 🚨 Reactの処理詰まりを防ぐため5ms間隔でイベントをパスする
+                                    setTimeout(() => { targetLabel.click(); }, delay);
+                                    delay += 5; 
+                                }
                             }
                         });
                     }
@@ -1210,7 +1216,6 @@ with tab1:
             sec_cols = st.columns(4)
             selected_sectors_t1 = []
             for i, sec in enumerate(available_sectors):
-                # 🚨 デフォルトで全てTrue(全選択)とし、JSと同期させる
                 if sec_cols[i % 4].checkbox(sec, value=True, key=f"t1_sec_{i}"):
                     selected_sectors_t1.append(sec)
 
@@ -1252,7 +1257,7 @@ with tab1:
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t1_p_min) <= float(c_price) <= float(t1_p_max):
-                            # 🚨 物理チェックリストのみに依存した厳格な足切り
+                            # 🚨 セクターフィルタ判定
                             c_sec = sector_map.get(str(c_code)[:4], "不明")
                             if selected_sectors_t1 and (c_sec not in selected_sectors_t1):
                                 continue
@@ -1450,7 +1455,7 @@ with tab2:
                 if prices_map:
                     for c_code, c_price in prices_map.items():
                         if float(t2_p_min) <= float(c_price) <= float(t2_p_max):
-                            # 🚨 物理チェックリストのみに依存した厳格な足切り
+                            # 🚨 セクターフィルタ判定
                             c_sec_t2 = sector_map_t2.get(str(c_code)[:4], "不明")
                             if selected_sectors_t2 and (c_sec_t2 not in selected_sectors_t2):
                                 continue
