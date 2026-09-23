@@ -1910,7 +1910,7 @@ with tab3:
                         
                         # 🚨 カウントダウンバッジ判定ロジック
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
-                        countdown_badge = ""
+                        countdown_badge = " | 📅 次回決算: 未定(未公表)"
                         
                         if isinstance(c_earn_data, dict) and "data" in c_earn_data:
                             c_earn_data = c_earn_data["data"]
@@ -1945,7 +1945,6 @@ with tab3:
                                 days_left = (next_date - today_date).days
                                 
                                 if 0 <= days_left <= 14:
-                                    # 🚨 決算カウントダウン（14日以内）の場合のみ赤色に装飾
                                     countdown_badge = f" | :red[⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})]"
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
