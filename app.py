@@ -1906,9 +1906,7 @@ with tab3:
                         elif "グロース" in raw_market or "Growth" in raw_market: market_badge = "🚀 グロース"
                         
                         hit_badge = data["rank"]
-                        # 🚨 強行偵察（手動入力）で条件未達のまま強制出力された場合のアノテーション
-                        if not data.get("is_hit", False) and code in manual_codes:
-                            hit_badge += " | 🚨 強行偵察(条件未達)"
+                        # 🚨 ボスの指示により、「🚨 強行偵察(条件未達)」の文言表示を完全撤廃
                         
                         # 🚨 カウントダウンバッジ判定ロジック
                         c_earn_data = earnings_map.get(str(code)[:4] + "0", earnings_map.get(str(code)[:4], []))
@@ -1931,11 +1929,14 @@ with tab3:
                                         v = row_lower[target_key]
                                         break
                                         
-                                if v:
+                                if v and str(v).strip() != "":
                                     try:
-                                        d_obj = pd.to_datetime(v).date()
-                                        if d_obj >= today_date:
-                                            future_dates.append(d_obj)
+                                        # 🚨 空文字や無効値によるNaTクラッシュを完全に回避
+                                        d_obj = pd.to_datetime(v)
+                                        if pd.notna(d_obj):
+                                            d_date = d_obj.date()
+                                            if d_date >= today_date:
+                                                future_dates.append(d_date)
                                     except: pass
                                     
                             if future_dates:
@@ -1944,7 +1945,7 @@ with tab3:
                                 days_left = (next_date - today_date).days
                                 
                                 if 0 <= days_left <= 14:
-                                    # 🚨 修正：決算カウントダウン（14日以内）の場合のみ、Streamlit標準記法で赤色に装飾
+                                    # 🚨 決算カウントダウン（14日以内）の場合のみ赤色に装飾
                                     countdown_badge = f" | :red[⚠️ 決算まであと {days_left}日 ({next_date.strftime('%Y-%m-%d')})]"
                                 else:
                                     countdown_badge = f" | 📅 次回決算: {next_date.strftime('%Y-%m-%d')}"
