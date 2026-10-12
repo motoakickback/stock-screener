@@ -2263,14 +2263,13 @@ with tab7:
             min_date = pd.to_datetime(w_df['決済日']).min().date()
             max_date = pd.to_datetime(w_df['決済日']).max().date()
             
-            date_range = st.date_input("🗓️ 決済日フィルタ (集計・表示範囲)", value=[min_date, max_date], key="aar_date_filter")
+            # 👇 バグ修正部：開始日と終了日を独立させ、Streamlit特有の画面更新リセットを物理的に排除
+            d_col1, d_col2 = st.columns(2)
+            start_d = d_col1.date_input("🗓️ 抽出開始日", value=min_date, min_value=min_date, max_value=max_date, key="aar_start_date")
+            end_d = d_col2.date_input("🗓️ 抽出終了日", value=max_date, min_value=min_date, max_value=max_date, key="aar_end_date")
             
-            if len(date_range) == 2:
-                start_d, end_d = date_range
-                w_df = w_df[(pd.to_datetime(w_df['決済日']).dt.date >= start_d) & (pd.to_datetime(w_df['決済日']).dt.date <= end_d)]
-            elif len(date_range) == 1:
-                start_d = date_range[0]
-                w_df = w_df[pd.to_datetime(w_df['決済日']).dt.date == start_d]
+            # 指定された範囲内でデータフレームをフィルタリング
+            w_df = w_df[(pd.to_datetime(w_df['決済日']).dt.date >= start_d) & (pd.to_datetime(w_df['決済日']).dt.date <= end_d)]
         
         if not w_df.empty:
             m1, m2, m3, m4 = st.columns(4)
@@ -2279,7 +2278,12 @@ with tab7:
             loss_sum = abs(w_df[w_df['損益額(円)'] < 0]['損益額(円)'].sum())
             pf = round(w_df[w_df['損益額(円)'] > 0]['損益額(円)'].sum() / loss_sum, 2) if loss_sum > 0 else 9.9
             adh = (len(w_df[w_df['規律'] == '遵守']) / len(w_df)) * 100
-            m1.metric("総交戦", f"{len(w_df)}回"); m2.metric("勝率", f"{w_rate:.1f}%"); m3.metric("損益", f"{int(tot_p):,}円", f"PF: {pf}"); m4.metric("遵守率", f"{adh:.1f}%")
+            
+            # 抽出した範囲のみを対象に再計算した数値を表示
+            m1.metric("抽出範囲 交戦", f"{len(w_df)}回")
+            m2.metric("勝率", f"{w_rate:.1f}%")
+            m3.metric("損益", f"{int(tot_p):,}円", f"PF: {pf}")
+            m4.metric("遵守率", f"{adh:.1f}%")
             
             import plotly.express as px
             df_curv = w_df.sort_values('決済日', ascending=True).copy()
@@ -2287,6 +2291,8 @@ with tab7:
             fig = px.line(df_curv, x='決済日', y='累積', markers=True, color_discrete_sequence=["#26a69a"])
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.1)', height=250, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
+        elif 'start_d' in locals():
+            st.warning("選択された期間に交戦記録はありません。")
 
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
@@ -2302,6 +2308,7 @@ with tab7:
         if '銘柄' in display_df.columns:
             display_df.insert(display_df.columns.get_loc('銘柄') + 1, '企業名', "名称不明")
             
+    # 要件適用：戦術列の削除
     if '戦術' in display_df.columns:
         display_df = display_df.drop(columns=['戦術'])
     
