@@ -2257,7 +2257,21 @@ with tab7:
 
     with col_a2:
         st.markdown("#### 📊 司令部 総合戦績")
-        w_df = st.session_state.aar_df_stable
+        w_df = st.session_state.aar_df_stable.copy()
+        
+        if not w_df.empty:
+            min_date = pd.to_datetime(w_df['決済日']).min().date()
+            max_date = pd.to_datetime(w_df['決済日']).max().date()
+            
+            date_range = st.date_input("🗓️ 決済日フィルタ (集計・表示範囲)", value=[min_date, max_date], key="aar_date_filter")
+            
+            if len(date_range) == 2:
+                start_d, end_d = date_range
+                w_df = w_df[(pd.to_datetime(w_df['決済日']).dt.date >= start_d) & (pd.to_datetime(w_df['決済日']).dt.date <= end_d)]
+            elif len(date_range) == 1:
+                start_d = date_range[0]
+                w_df = w_df[pd.to_datetime(w_df['決済日']).dt.date == start_d]
+        
         if not w_df.empty:
             m1, m2, m3, m4 = st.columns(4)
             tot_p = w_df['損益額(円)'].sum()
@@ -2277,6 +2291,20 @@ with tab7:
     st.divider()
     st.markdown("##### 📜 詳細交戦記録 (キル・ログ)")
     
+    display_df = w_df.copy()
+    
+    try:
+        master_df = load_master()
+        name_map = dict(zip(master_df['Code'].astype(str).str[:4], master_df['CompanyName']))
+        if '銘柄' in display_df.columns:
+            display_df.insert(display_df.columns.get_loc('銘柄') + 1, '企業名', display_df['銘柄'].astype(str).str[:4].map(name_map).fillna("名称不明"))
+    except Exception:
+        if '銘柄' in display_df.columns:
+            display_df.insert(display_df.columns.get_loc('銘柄') + 1, '企業名', "名称不明")
+            
+    if '戦術' in display_df.columns:
+        display_df = display_df.drop(columns=['戦術'])
+    
     def apply_performance_colors(val):
         try:
             v = float(val)
@@ -2290,7 +2318,7 @@ with tab7:
         elif val == '違反': return 'color: #ef5350;'
         else: return 'color: #ffffff;'
 
-    styled_view = st.session_state.aar_df_stable.style.map(apply_performance_colors, subset=['損益額(円)', '損益(%)']).map(apply_rule_style, subset=['規律'])
+    styled_view = display_df.style.map(apply_performance_colors, subset=['損益額(円)', '損益(%)']).map(apply_rule_style, subset=['規律'])
     
     st.dataframe(
         styled_view,
