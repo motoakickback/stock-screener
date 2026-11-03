@@ -2202,25 +2202,45 @@ with tab7:
                     if h_idx != -1:
                         df_csv = pd.read_csv(io.StringIO("\n".join(lines[h_idx:])))
                         df_csv.columns = df_csv.columns.str.strip()
-                        if '取引' in df_csv.columns: df_csv = df_csv[df_csv['取引'].astype(str).str.contains('現物')].copy()
+                        
                         records = []
                         c_col = '銘柄コード' if '銘柄コード' in df_csv.columns else '銘柄'
                         for code, group in df_csv.groupby(c_col):
-                            buys, sells = [], []
+                            all_trades = []
                             for _, row in group.iterrows():
-                                item = {'date': str(row['約定日']).replace('/', '-'), 'qty': int(row['約定数量']), 'price': float(row['約定単価']), 'code': str(code).strip()}
-                                if "買" in str(row['取引']): buys.append(item)
-                                elif "売" in str(row['取引']): sells.append(item)
-                            buys.sort(key=lambda x: x['date']); sells.sort(key=lambda x: x['date'])
-                            for s in sells:
-                                s_qty, m_qty, m_amt = s['qty'], 0, 0
-                                while s_qty > 0 and len(buys) > 0:
-                                    b = buys[0]
-                                    if b['qty'] <= s_qty: m_qty += b['qty']; m_amt += b['price']*b['qty']; s_qty -= b['qty']; buys.pop(0)
-                                    else: m_qty += s_qty; m_amt += b['price']*s_qty; b['qty'] -= s_qty; s_qty = 0
-                                if m_qty > 0:
-                                    avg_b = m_amt / m_qty
-                                    records.append({"決済日": s['date'], "銘柄": s['code'], "規模": get_scale_for_code(s['code']), "戦術": "自動解析", "買値": int(avg_b), "売値": int(s['price']), "株数": int(m_qty), "損益額(円)": int((s['price']-avg_b)*m_qty), "損益(%)": round(((s['price']/avg_b)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動取り込み"})
+                                t_type = str(row['取引']) if '取引' in df_csv.columns else ""
+                                item = {'date': str(row['約定日']).replace('/', '-'), 'qty': int(row['約定数量']), 'price': float(row['約定単価']), 'code': str(code).strip(), 'type': t_type}
+                                all_trades.append(item)
+                            all_trades.sort(key=lambda x: x['date'])
+                            
+                            long_pos, short_pos = [], []
+                            for t in all_trades:
+                                qty, price = t['qty'], t['price']
+                                if "買" in t['type']:
+                                    m_qty, m_amt = 0, 0
+                                    while qty > 0 and len(short_pos) > 0:
+                                        sp = short_pos[0]
+                                        if sp['qty'] <= qty:
+                                            m_qty += sp['qty']; m_amt += sp['price'] * sp['qty']; qty -= sp['qty']; short_pos.pop(0)
+                                        else:
+                                            m_qty += qty; m_amt += sp['price'] * qty; sp['qty'] -= qty; qty = 0
+                                    if m_qty > 0:
+                                        avg_sell = m_amt / m_qty
+                                        records.append({"決済日": t['date'], "銘柄": t['code'], "規模": get_scale_for_code(t['code']), "戦術": "空売", "買値": int(price), "売値": int(avg_sell), "株数": int(m_qty), "損益額(円)": int((avg_sell-price)*m_qty), "損益(%)": round(((avg_sell/price)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動(空売)"})
+                                    if qty > 0: long_pos.append({'date': t['date'], 'qty': qty, 'price': price})
+                                elif "売" in t['type']:
+                                    m_qty, m_amt = 0, 0
+                                    while qty > 0 and len(long_pos) > 0:
+                                        lp = long_pos[0]
+                                        if lp['qty'] <= qty:
+                                            m_qty += lp['qty']; m_amt += lp['price'] * lp['qty']; qty -= lp['qty']; long_pos.pop(0)
+                                        else:
+                                            m_qty += qty; m_amt += lp['price'] * qty; lp['qty'] -= qty; qty = 0
+                                    if m_qty > 0:
+                                        avg_buy = m_amt / m_qty
+                                        records.append({"決済日": t['date'], "銘柄": t['code'], "規模": get_scale_for_code(t['code']), "戦術": "買", "買値": int(avg_buy), "売値": int(price), "株数": int(m_qty), "損益額(円)": int((price-avg_buy)*m_qty), "損益(%)": round(((price/avg_buy)-1)*100, 2), "規律": "不明", "敗因/勝因メモ": "CSV自動(買)"})
+                                    if qty > 0: short_pos.append({'date': t['date'], 'qty': qty, 'price': price})
+
                         if records:
                             st.session_state.aar_df_stable = pd.concat([st.session_state.aar_df_stable, pd.DataFrame(records)], ignore_index=True).sort_values(['決済日', '銘柄'], ascending=[False, True]).reset_index(drop=True)
                             save_aar_db(st.session_state.aar_df_stable); st.rerun()
