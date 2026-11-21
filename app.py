@@ -29,8 +29,153 @@ st.markdown("""
 # --- 1. ページ設定 & ゲートキーパー ---
 st.set_page_config(page_title="戦術スコープ『鉄の掟』", layout="wide", page_icon="🎯")
 
-# リスト形式でカンマ区切りで追加します
-ALLOWED_PASSWORDS = ["sniper", "senyu001", "senyu002"]
+# ==========================================
+# ☁️ 究極永続化ストレージ（Google Sheets 直結・マルチテナント基盤）
+# ==========================================
+import gspread
+from google.oauth2.service_account import Credentials
+
+SPREADSHEET_ID = "1PZZwhGvUgTHd0ptY2g9AmLloZoB9qZpr-VIx6DrYIdw"
+WS_AUTH_MASTER = "AUTH_MASTER"
+AUTH_MASTER_HEADERS = ["access_code", "status", "role", "memo"]
+AUTH_MASTER_DEFAULTS = [
+    ["sniper", "active", "admin", ""],
+    ["senyu001", "active", "user", ""],
+    ["senyu002", "active", "user", ""],
+]
+SCAN_STATE_KEYS = [
+    "tab1_filters",
+    "tab1_results",
+    "tab2_filters",
+    "tab2_results",
+    "tab3_state",
+]
+
+def get_now_jst_str():
+    try:
+        tz = pytz.timezone('Asia/Tokyo')
+        return datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S JST')
+    except Exception:
+        return (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S JST')
+
+@st.cache_resource
+def init_gspread():
+    if "gcp_service_account" not in st.secrets:
+        return None
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    gcp_credentials = dict(st.secrets["gcp_service_account"])
+    gcp_credentials["private_key"] = gcp_credentials["private_key"].replace('\\n', '\n')
+    creds = Credentials.from_service_account_info(gcp_credentials, scopes=scopes)
+    return gspread.authorize(creds)
+
+def get_db_sheet():
+    try:
+        client = init_gspread()
+        if not client:
+            return None
+        return client.open_by_key(SPREADSHEET_ID)
+    except Exception as e:
+        print(f"Google Sheets接続エラー: {e}")
+        return None
+
+def _ws_update_compat(ws, range_name, values):
+    try:
+        ws.update(values=values, range_name=range_name)
+    except TypeError:
+        ws.update(range_name, values)
+
+def load_auth_master():
+    """AUTH_MASTERを文字列ベースで厳密取得する。未存在時は初期レコードで自動作成。通信障害時はNoneを返す（案A：全ログインブロック）。"""
+    sheet = get_db_sheet()
+    if not sheet:
+        return None, "🚨 Google Sheets との接続に失敗しました。安全のためログインをブロックしています。"
+
+    try:
+        try:
+            ws = sheet.worksheet(WS_AUTH_MASTER)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sheet.add_worksheet(title=WS_AUTH_MASTER, rows="100", cols="10")
+            init_rows = [AUTH_MASTER_HEADERS] + AUTH_MASTER_DEFAULTS
+            _ws_update_compat(ws, "A1:D4", init_rows)
+
+        all_values = ws.get_all_values()
+        if not all_values:
+            init_rows = [AUTH_MASTER_HEADERS] + AUTH_MASTER_DEFAULTS
+            _ws_update_compat(ws, "A1:D4", init_rows)
+            all_values = init_rows
+
+        headers = [str(h).strip().lower() for h in all_values[0]]
+        idx_code = headers.index("access_code") if "access_code" in headers else 0
+        idx_status = headers.index("status") if "status" in headers else 1
+        idx_role = headers.index("role") if "role" in headers else 2
+        idx_memo = headers.index("memo") if "memo" in headers else 3
+
+        auth_map = {}
+        for row in all_values[1:]:
+            code = str(row[idx_code]).strip() if len(row) > idx_code else ""
+            if not code:
+                continue
+            status = str(row[idx_status]).strip().lower() if len(row) > idx_status else ""
+            role = str(row[idx_role]).strip().lower() if len(row) > idx_role else "user"
+            memo = str(row[idx_memo]).strip() if len(row) > idx_memo else ""
+            auth_map[code] = {
+                "status": status,
+                "role": role if role else "user",
+                "memo": memo,
+            }
+        return auth_map, ""
+    except Exception as e:
+        print(f"AUTH_MASTER取得エラー: {e}")
+        return None, "🚨 認証マスタ（AUTH_MASTER）の読み込みに失敗しました。安全のためログインをブロックしています。"
+
+def clear_user_session_state():
+    """ユーザー切替・ログイン完了時にTAB1〜TAB3・TAB7のセッション残留を完全にクリアする。"""
+    exact_keys = [
+        "user_scan_state",
+        "scan_state_loaded_user",
+        "tab1_scan_results",
+        "tab1_scan_updated_at",
+        "tab2_scan_results",
+        "tab2_scan_updated_at",
+        "tab3_results",
+        "tab3_updated_at",
+        "tab3_last_mode",
+        "tab3_store_buy",
+        "tab3_store_sell",
+        "tab3_manual_codes",
+        "tab3_last_t1_id",
+        "tab3_last_t2_id",
+        "tab3_last_t1_str",
+        "tab3_last_t2_str",
+        "tab3_mode_radio",
+        "t1_period",
+        "t1_sales_r",
+        "t1_ord_r",
+        "t1_mcap",
+        "t1_p_min",
+        "t1_p_max",
+        "t1_sec_all",
+        "t2_period",
+        "t2_ord_r",
+        "t2_mcap",
+        "t2_vol",
+        "t2_p_min",
+        "t2_p_max",
+        "t2_sec_all",
+        "aar_df_stable",
+        "aar_loaded_user",
+        "aar_start_date",
+        "aar_end_date",
+        "aar_editor_maintenance_fixed",
+        "confirm_aar_delete",
+        "system_data_error",
+        "system_error_message",
+    ]
+    for k in exact_keys:
+        st.session_state.pop(k, None)
+    for k in list(st.session_state.keys()):
+        if k.startswith("t1_sec_") or k.startswith("t2_sec_"):
+            st.session_state.pop(k, None)
 
 # 【重要】認証スクリプトを一度だけ注入するためのコンテナ
 if "js_injected" not in st.session_state:
@@ -89,12 +234,24 @@ def check_password():
             acc_code = st.text_input("Access Code", type="password", label_visibility="collapsed", placeholder="アクセスコード", key="input_access_code")
             submitted = st.button("認証 (ENTER)", use_container_width=True)
             if submitted:
-                if acc_code in ALLOWED_PASSWORDS:
-                    st.session_state["password_correct"] = True
-                    st.session_state["current_user"] = acc_code
-                    st.rerun()
-                elif acc_code != "":
-                    st.error("🚨 認証失敗：コードが違います。")
+                cleaned_code = acc_code.strip()
+                if cleaned_code != "":
+                    auth_map, err_msg = load_auth_master()
+                    if auth_map is None:
+                        st.error(err_msg)
+                    elif cleaned_code in auth_map:
+                        user_info = auth_map[cleaned_code]
+                        if user_info.get("status") == "active":
+                            clear_user_session_state()
+                            st.session_state["password_correct"] = True
+                            st.session_state["current_user"] = cleaned_code
+                            st.session_state["current_user_role"] = user_info.get("role", "user")
+                            st.session_state["current_user_memo"] = user_info.get("memo", "")
+                            st.rerun()
+                        else:
+                            st.error("🚨 認証失敗：このアクセスコードは現在停止されています。")
+                    else:
+                        st.error("🚨 認証失敗：コードが違います。")
         return False
     return True
 
@@ -147,43 +304,18 @@ components.html(
 )
 
 user_id = st.session_state.get("current_user", "UNKNOWN")
-st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">(ID: {user_id[:4]}***)</span></h1>', unsafe_allow_html=True)
-
-# ==========================================
-# ☁️ 究極永続化ストレージ（Google Sheets 直結仕様）
-# ==========================================
-import gspread
-from google.oauth2.service_account import Credentials
-import pandas as pd
-import streamlit as st
-
-SPREADSHEET_ID = "1PZZwhGvUgTHd0ptY2g9AmLloZoB9qZpr-VIx6DrYIdw"
-
-@st.cache_resource
-def init_gspread():
-    try:
-        if "gcp_service_account" not in st.secrets: return None
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        gcp_credentials = dict(st.secrets["gcp_service_account"])
-        gcp_credentials["private_key"] = gcp_credentials["private_key"].replace('\\n', '\n')
-        creds = Credentials.from_service_account_info(gcp_credentials, scopes=scopes)
-        return gspread.authorize(creds)
-    except Exception: return None
-
-g_client = init_gspread()
+user_memo = st.session_state.get("current_user_memo", "").strip()
+display_user_label = f"({user_memo} / ID: {user_id})" if user_memo else f"(ID: {user_id})"
+st.markdown(f'<h1 style="font-size: clamp(24px, 7vw, 42px); font-weight: 900; border-bottom: 2px solid #2e7d32; padding-bottom: 0.5rem; margin-bottom: 1rem;">🎯 戦術スコープ『鉄の掟』 <span style="font-size: 16px; font-weight: normal; color: #888;">{display_user_label}</span></h1>', unsafe_allow_html=True)
 
 # 🚨 先日の「API通信エラーによるシステム白画面化」を防ぐ完全防弾処理
-try:
-    db_sheet = g_client.open_by_key(SPREADSHEET_ID) if g_client else None
-except Exception as e:
-    print(f"Google Sheets接続エラー（システムは継続稼働）: {e}")
-    db_sheet = None
+db_sheet = get_db_sheet()
 
-def get_or_create_worksheet(sheet_name):
+def get_or_create_worksheet(sheet_name, rows="1000", cols="20"):
     if not db_sheet: return None
     try: return db_sheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
-        try: return db_sheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+        try: return db_sheet.add_worksheet(title=sheet_name, rows=str(rows), cols=str(cols))
         except Exception as e:
             if not st.session_state.get('system_data_error', False):
                 st.session_state['system_data_error'] = True
@@ -201,6 +333,101 @@ def get_or_create_worksheet(sheet_name):
 # 🚨 マルチテナント（戦友分離）の核心：認証されたアクセスコードをシート名に強制バインド
 _active_user = st.session_state.get("current_user", "Guest")
 WS_AAR = f"交戦DB_{_active_user}"
+WS_SCAN_STATE = f"SCAN_STATE_{_active_user}"
+
+def _default_scan_state_dict():
+    return {k: {} for k in SCAN_STATE_KEYS}
+
+def _build_scan_state_rows(state_dict, updated_map):
+    rows = [["key", "payload_json", "updated_at"]]
+    for k in SCAN_STATE_KEYS:
+        payload_obj = state_dict.get(k, {})
+        payload_str = json.dumps(payload_obj, ensure_ascii=False, separators=(",", ":"))
+        if len(payload_str) > 49000:
+            payload_str = "{}"
+        rows.append([k, payload_str, updated_map.get(k, "")])
+    return rows
+
+def ensure_user_scan_state_loaded():
+    """ログイン直後に1回だけ SCAN_STATE_{ID} を一括ロードし、st.session_stateへ展開する（429対策）。"""
+    uid = st.session_state.get("current_user", "Guest")
+    if st.session_state.get("scan_state_loaded_user") == uid and "user_scan_state" in st.session_state:
+        return st.session_state["user_scan_state"]
+
+    state_dict = _default_scan_state_dict()
+    updated_map = {k: "" for k in SCAN_STATE_KEYS}
+    ws = get_or_create_worksheet(f"SCAN_STATE_{uid}", rows="10", cols="5")
+    if ws:
+        try:
+            all_values = ws.get_all_values()
+            if not all_values:
+                _ws_update_compat(ws, "A1:C6", _build_scan_state_rows(state_dict, updated_map))
+            else:
+                for row in all_values[1:]:
+                    if len(row) < 1:
+                        continue
+                    k = str(row[0]).strip()
+                    if k in state_dict:
+                        raw_json = row[1] if len(row) > 1 else "{}"
+                        upd = row[2] if len(row) > 2 else ""
+                        try:
+                            parsed = json.loads(raw_json) if raw_json else {}
+                            if isinstance(parsed, dict):
+                                state_dict[k] = parsed
+                        except Exception:
+                            state_dict[k] = {}
+                        updated_map[k] = str(upd)
+        except Exception as e:
+            print(f"SCAN_STATE読み込みエラー({uid}): {e}")
+
+    st.session_state["user_scan_state"] = state_dict
+    st.session_state["user_scan_state_updated"] = updated_map
+    st.session_state["scan_state_loaded_user"] = uid
+
+    # TAB1〜TAB3 結果をセッションへ初回展開
+    t1_res_block = state_dict.get("tab1_results", {})
+    if isinstance(t1_res_block.get("results"), list):
+        st.session_state["tab1_scan_results"] = t1_res_block["results"]
+        st.session_state["tab1_scan_updated_at"] = t1_res_block.get("updated_at", updated_map.get("tab1_results", ""))
+
+    t2_res_block = state_dict.get("tab2_results", {})
+    if isinstance(t2_res_block.get("results"), list):
+        st.session_state["tab2_scan_results"] = t2_res_block["results"]
+        st.session_state["tab2_scan_updated_at"] = t2_res_block.get("updated_at", updated_map.get("tab2_results", ""))
+
+    t3_block = state_dict.get("tab3_state", {})
+    if isinstance(t3_block.get("results"), list):
+        st.session_state["tab3_results"] = t3_block["results"]
+        st.session_state["tab3_updated_at"] = t3_block.get("updated_at", updated_map.get("tab3_state", ""))
+        st.session_state["tab3_last_mode"] = t3_block.get("mode", "buy")
+
+    return state_dict
+
+def save_user_scan_state(updates_dict):
+    """指定されたキー群をメモリキャッシュと SCAN_STATE_{ID}（固定6行 A1:C6）へ1回のAPIコールで完全上書き保存する。"""
+    uid = st.session_state.get("current_user", "Guest")
+    state_dict = ensure_user_scan_state_loaded()
+    updated_map = st.session_state.get("user_scan_state_updated", {k: "" for k in SCAN_STATE_KEYS})
+    now_str = get_now_jst_str()
+
+    for k, v in updates_dict.items():
+        if k in SCAN_STATE_KEYS:
+            state_dict[k] = v
+            updated_map[k] = now_str
+
+    st.session_state["user_scan_state"] = state_dict
+    st.session_state["user_scan_state_updated"] = updated_map
+
+    ws = get_or_create_worksheet(f"SCAN_STATE_{uid}", rows="10", cols="5")
+    if ws:
+        try:
+            rows = _build_scan_state_rows(state_dict, updated_map)
+            _ws_update_compat(ws, "A1:C6", rows)
+        except Exception as e:
+            print(f"SCAN_STATE書き込みエラー({uid}): {e}")
+
+# ログイン直後に該当ユーザーの状態を一括ロード
+ensure_user_scan_state_loaded()
 
 def save_aar_db(df):
     # ユーザー固有のタブ名（WS_AAR）に保存。他人のタブは絶対に書き換わらない。
@@ -212,8 +439,7 @@ def save_aar_db(df):
         else:
             data = [list(df.columns)] + df.fillna("").astype(str).values.tolist()
         try:
-            try: ws.update(values=data, range_name="A1")
-            except TypeError: ws.update("A1", data)
+            _ws_update_compat(ws, "A1", data)
         except: pass
 
 def load_db_to_df(sheet_name, default_cols):
@@ -1143,36 +1369,52 @@ def fetch_fundamental_history_local(code, local_db):
 # 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab1:
-    import os, pickle
-    tab1_cache_file = os.path.join(os.path.dirname(__file__), "tab1_cache.pkl")
-    if 'tab1_scan_results' not in st.session_state:
-        if os.path.exists(tab1_cache_file):
-            try:
-                with open(tab1_cache_file, "rb") as f:
-                    st.session_state['tab1_scan_results'] = pickle.load(f)
-            except: pass
+    user_scan_state_t1 = ensure_user_scan_state_loaded()
+    saved_t1_filters = user_scan_state_t1.get("tab1_filters", {}) if isinstance(user_scan_state_t1, dict) else {}
+
+    t1_period_opts = ["52週", "3か月", "6か月", "2年"]
+    t1_sales_opts = [7, 3, 5]
+    t1_ord_opts = [15, 10, 13, 20]
+    t1_mcap_opts = [500, 300, 1000]
+
+    def _safe_idx(opts, val, default_idx=0):
+        try:
+            return opts.index(val)
+        except ValueError:
+            return default_idx
+
+    t1_def_period_idx = _safe_idx(t1_period_opts, saved_t1_filters.get("period", "52週"), 0)
+    t1_def_sales_idx = _safe_idx(t1_sales_opts, saved_t1_filters.get("sales_r", 7), 0)
+    t1_def_ord_idx = _safe_idx(t1_ord_opts, saved_t1_filters.get("ord_r", 15), 0)
+    t1_def_mcap_idx = _safe_idx(t1_mcap_opts, saved_t1_filters.get("mcap", 500), 0)
+    t1_def_p_min = int(saved_t1_filters.get("p_min", 800))
+    t1_def_p_max = int(saved_t1_filters.get("p_max", 4000))
+    t1_def_sec_all = bool(saved_t1_filters.get("sec_all", True))
+    t1_def_selected_secs = saved_t1_filters.get("selected_sectors", [])
+    if not isinstance(t1_def_selected_secs, list):
+        t1_def_selected_secs = []
 
     st.markdown('### 🌐 買い銘柄広域スキャン', unsafe_allow_html=True)
     st.caption("※直近2四半期の売上・利益のYoY（前年同期比）成長率をベースに、大化け候補（S級・A級）を広域索敵します。")
     
     with st.form("tab1_buy_scan_form", clear_on_submit=False):
         col1_1, col1_2, col1_3 = st.columns(3)
-        t1_period = col1_1.selectbox("期間フィルタ (高値判定基準)", ["52週", "3か月", "6か月", "2年"], index=0)
-        t1_sales_r = col1_2.selectbox("直近四半期 売上増収率 (%)", [7, 3, 5], index=0)
-        t1_ord_r = col1_3.selectbox("直近四半期 経常利益増益率 (%)", [15, 10, 13, 20], index=0)
+        t1_period = col1_1.selectbox("期間フィルタ (高値判定基準)", t1_period_opts, index=t1_def_period_idx, key="t1_period")
+        t1_sales_r = col1_2.selectbox("直近四半期 売上増収率 (%)", t1_sales_opts, index=t1_def_sales_idx, key="t1_sales_r")
+        t1_ord_r = col1_3.selectbox("直近四半期 経常利益増益率 (%)", t1_ord_opts, index=t1_def_ord_idx, key="t1_ord_r")
         
         col1_4, col1_5, col1_6 = st.columns(3)
-        t1_mcap = col1_4.selectbox("時価総額フィルタ (億円以上)", [500, 300, 1000], index=0)
-        t1_p_min = col1_5.number_input("価格下限 (円)", value=800, step=100, key="t1_p_min")
-        t1_p_max = col1_6.number_input("価格上限 (円)", value=4000, step=100, key="t1_p_max")
+        t1_mcap = col1_4.selectbox("時価総額フィルタ (億円以上)", t1_mcap_opts, index=t1_def_mcap_idx, key="t1_mcap")
+        t1_p_min = col1_5.number_input("価格下限 (円)", value=t1_def_p_min, step=100, key="t1_p_min")
+        t1_p_max = col1_6.number_input("価格上限 (円)", value=t1_def_p_max, step=100, key="t1_p_max")
         
         with st.expander("🏭 セクター絞り込み", expanded=False):
-            t1_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t1_sec_all")
+            t1_sec_all = st.checkbox("✅ 全セクターを対象とする", value=t1_def_sec_all, key="t1_sec_all")
             st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
             sec_cols = st.columns(4)
             selected_sectors_t1 = []
             for i, sec in enumerate(available_sectors):
-                if sec_cols[i % 4].checkbox(sec, key=f"t1_sec_{i}"):
+                if sec_cols[i % 4].checkbox(sec, value=(sec in t1_def_selected_secs), key=f"t1_sec_{i}"):
                     selected_sectors_t1.append(sec)
 
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 YoY S級/A級クリア)** \n"
@@ -1182,14 +1424,26 @@ with tab1:
         # 🚨 致命的データ欠落時、スキャンボタンを無効化（ロック）
         btn_scan_t1 = st.form_submit_button("🚀 買い銘柄 スキャン実行", use_container_width=True, type="primary", disabled=st.session_state.get('system_data_error', False))
 
-    # 🚨 修正：スキャン実行時以外（リロード直後等）にキャッシュ結果を画面へ表示し、TAB3へデータを維持する
+    # 🚨 修正：スキャン実行時以外（リロード直後等）にユーザー固有のクラウド保存結果を画面へ復元表示する
     if not btn_scan_t1 and st.session_state.get('tab1_scan_results'):
         cached_hits = [r.get("Code", "") for r in st.session_state['tab1_scan_results']]
-        st.info("💾 【キャッシュ復元】前回スキャンした突破銘柄（F5リロード保護）")
+        t1_upd_str = st.session_state.get('tab1_scan_updated_at', '')
+        t1_upd_suffix = f" （実行日時: {t1_upd_str}）" if t1_upd_str else ""
+        st.info(f"💾 【クラウド復元】前回スキャンした突破銘柄（アクセスコード別保存）{t1_upd_suffix}")
         st.code(", ".join(cached_hits) if cached_hits else "条件に合致する銘柄はありませんでした。", language="text")
 
     if btn_scan_t1:
         import time
+        t1_filters_payload = {
+            "period": t1_period,
+            "sales_r": int(t1_sales_r),
+            "ord_r": int(t1_ord_r),
+            "mcap": int(t1_mcap),
+            "p_min": int(t1_p_min),
+            "p_max": int(t1_p_max),
+            "sec_all": bool(t1_sec_all),
+            "selected_sectors": list(selected_sectors_t1),
+        }
         st.write("---")
         with st.status("📡 買い広域レーダー稼働中...", expanded=True) as status:
             t_start_total = time.time()
@@ -1324,14 +1578,23 @@ with tab1:
                 st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
                 st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
                 
-                # 🚨 修正：スキャン完了と同時に物理ファイル（pickle）へキャッシュを書き込み永続化
+                # 🚨 スキャン完了と同時にアクセスコード別 Google Sheets（SCAN_STATE_{ID}）へ上書き永続化
                 final_results = [{"Code": c, "Rank": "S級"} for c in hit_codes_s] + [{"Code": c, "Rank": "A級"} for c in hit_codes_a]
+                now_jst_t1 = get_now_jst_str()
                 st.session_state['tab1_scan_results'] = final_results
-                try:
-                    with open(tab1_cache_file, "wb") as f:
-                        pickle.dump(final_results, f)
-                except: pass
+                st.session_state['tab1_scan_updated_at'] = now_jst_t1
+                save_user_scan_state({
+                    "tab1_filters": t1_filters_payload,
+                    "tab1_results": {"results": final_results, "updated_at": now_jst_t1},
+                })
             else:
+                now_jst_t1 = get_now_jst_str()
+                st.session_state['tab1_scan_results'] = []
+                st.session_state['tab1_scan_updated_at'] = now_jst_t1
+                save_user_scan_state({
+                    "tab1_filters": t1_filters_payload,
+                    "tab1_results": {"results": [], "updated_at": now_jst_t1},
+                })
                 p2_msg.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                 status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
@@ -1339,36 +1602,52 @@ with tab1:
 # 📉 TAB2: 売り（空売り）銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
 with tab2:
-    import os, pickle
-    tab2_cache_file = os.path.join(os.path.dirname(__file__), "tab2_cache.pkl")
-    if 'tab2_scan_results' not in st.session_state:
-        if os.path.exists(tab2_cache_file):
-            try:
-                with open(tab2_cache_file, "rb") as f:
-                    st.session_state['tab2_scan_results'] = pickle.load(f)
-            except: pass
+    user_scan_state_t2 = ensure_user_scan_state_loaded()
+    saved_t2_filters = user_scan_state_t2.get("tab2_filters", {}) if isinstance(user_scan_state_t2, dict) else {}
+
+    t2_period_opts = ["6か月", "3か月"]
+    t2_ord_opts = [8, 5, 10]
+    t2_mcap_opts = [500, 300, 1000]
+    t2_vol_opts = [3, 1, 2]
+
+    def _safe_idx_t2(opts, val, default_idx=0):
+        try:
+            return opts.index(val)
+        except ValueError:
+            return default_idx
+
+    t2_def_period_idx = _safe_idx_t2(t2_period_opts, saved_t2_filters.get("period", "6か月"), 0)
+    t2_def_ord_idx = _safe_idx_t2(t2_ord_opts, saved_t2_filters.get("ord_r", 8), 0)
+    t2_def_mcap_idx = _safe_idx_t2(t2_mcap_opts, saved_t2_filters.get("mcap", 500), 0)
+    t2_def_vol_idx = _safe_idx_t2(t2_vol_opts, saved_t2_filters.get("vol", 3), 0)
+    t2_def_p_min = int(saved_t2_filters.get("p_min", 400))
+    t2_def_p_max = int(saved_t2_filters.get("p_max", 3000))
+    t2_def_sec_all = bool(saved_t2_filters.get("sec_all", True))
+    t2_def_selected_secs = saved_t2_filters.get("selected_sectors", [])
+    if not isinstance(t2_def_selected_secs, list):
+        t2_def_selected_secs = []
 
     st.markdown('### 📉 売り（空売り）銘柄広域スキャン', unsafe_allow_html=True)
     st.caption("※直近2四半期の業績鈍化・衰退（YoY 8%未満等）をベースに、空売り候補（S級・A級）を広域索敵します。")
     
     with st.form("tab2_sell_scan_form", clear_on_submit=False):
         col2_1, col2_2, col2_3 = st.columns(3)
-        t2_period = col2_1.selectbox("期間フィルタ (安値判定基準)", ["6か月", "3か月"], index=0, key="t2_period")
-        t2_ord_r = col2_2.selectbox("直近四半期 利益成長率フィルタ (%)", [8, 5, 10], index=0, key="t2_ord_r")
-        t2_mcap = col2_3.selectbox("時価総額フィルタ (億円以上)", [500, 300, 1000], index=0, key="t2_mcap")
+        t2_period = col2_1.selectbox("期間フィルタ (安値判定基準)", t2_period_opts, index=t2_def_period_idx, key="t2_period")
+        t2_ord_r = col2_2.selectbox("直近四半期 利益成長率フィルタ (%)", t2_ord_opts, index=t2_def_ord_idx, key="t2_ord_r")
+        t2_mcap = col2_3.selectbox("時価総額フィルタ (億円以上)", t2_mcap_opts, index=t2_def_mcap_idx, key="t2_mcap")
         
         col2_4, col2_5, col2_6 = st.columns(3)
-        t2_vol = col2_4.selectbox("売買代金フィルタ (億円以上)", [3, 1, 2], index=0, key="t2_vol")
-        t2_p_min = col2_5.number_input("価格下限 (円)", value=400, step=100, key="t2_p_min")
-        t2_p_max = col2_6.number_input("価格上限 (円)", value=3000, step=100, key="t2_p_max")
+        t2_vol = col2_4.selectbox("売買代金フィルタ (億円以上)", t2_vol_opts, index=t2_def_vol_idx, key="t2_vol")
+        t2_p_min = col2_5.number_input("価格下限 (円)", value=t2_def_p_min, step=100, key="t2_p_min")
+        t2_p_max = col2_6.number_input("価格上限 (円)", value=t2_def_p_max, step=100, key="t2_p_max")
         
         with st.expander("🏭 セクター絞り込み", expanded=False):
-            t2_sec_all = st.checkbox("✅ 全セクターを対象とする", value=True, key="t2_sec_all")
+            t2_sec_all = st.checkbox("✅ 全セクターを対象とする", value=t2_def_sec_all, key="t2_sec_all")
             st.caption("※個別に絞り込む場合は、上のチェックを外して以下を選択してください。")
             sec_cols_t2 = st.columns(4)
             selected_sectors_t2 = []
             for i, sec in enumerate(available_sectors):
-                if sec_cols_t2[i % 4].checkbox(sec, key=f"t2_sec_{i}"):
+                if sec_cols_t2[i % 4].checkbox(sec, value=(sec in t2_def_selected_secs), key=f"t2_sec_{i}"):
                     selected_sectors_t2.append(sec)
 
         st.markdown(f"**(固定スキャン条件: 直近2四半期連続 利益鈍化)** \n"
@@ -1378,14 +1657,26 @@ with tab2:
         # 🚨 致命的データ欠落時、スキャンボタンを無効化（ロック）
         btn_scan_t2 = st.form_submit_button("🚀 売り銘柄 スキャン実行", use_container_width=True, type="primary", disabled=st.session_state.get('system_data_error', False))
 
-    # 🚨 修正：スキャン実行時以外（リロード直後等）にキャッシュ結果を画面へ表示し、TAB3へデータを維持する
+    # 🚨 修正：スキャン実行時以外（リロード直後等）にユーザー固有のクラウド保存結果を画面へ復元表示する
     if not btn_scan_t2 and st.session_state.get('tab2_scan_results'):
         cached_hits = [r.get("Code", "") for r in st.session_state['tab2_scan_results']]
-        st.info("💾 【キャッシュ復元】前回スキャンした突破銘柄（F5リロード保護）")
+        t2_upd_str = st.session_state.get('tab2_scan_updated_at', '')
+        t2_upd_suffix = f" （実行日時: {t2_upd_str}）" if t2_upd_str else ""
+        st.info(f"💾 【クラウド復元】前回スキャンした突破銘柄（アクセスコード別保存）{t2_upd_suffix}")
         st.code(", ".join(cached_hits) if cached_hits else "条件に合致する銘柄はありませんでした。", language="text")
 
     if btn_scan_t2:
         import time
+        t2_filters_payload = {
+            "period": t2_period,
+            "ord_r": int(t2_ord_r),
+            "mcap": int(t2_mcap),
+            "vol": int(t2_vol),
+            "p_min": int(t2_p_min),
+            "p_max": int(t2_p_max),
+            "sec_all": bool(t2_sec_all),
+            "selected_sectors": list(selected_sectors_t2),
+        }
         st.write("---")
         with st.status("📡 売り広域レーダー稼働中...", expanded=True) as status:
             t_start_total = time.time()
@@ -1514,14 +1805,23 @@ with tab2:
                 st.info("以下のコードをコピーし、次フェーズの分析へ移行してください。")
                 st.code(", ".join(all_hits) if all_hits else "条件に合致する銘柄はありませんでした。", language="text")
                 
-                # 🚨 修正：スキャン完了と同時に物理ファイル（pickle）へキャッシュを書き込み永続化
+                # 🚨 スキャン完了と同時にアクセスコード別 Google Sheets（SCAN_STATE_{ID}）へ上書き永続化
                 final_results_t2 = [{"Code": c, "Rank": "S級"} for c in hit_codes_s] + [{"Code": c, "Rank": "A級"} for c in hit_codes_a]
+                now_jst_t2 = get_now_jst_str()
                 st.session_state['tab2_scan_results'] = final_results_t2
-                try:
-                    with open(tab2_cache_file, "wb") as f:
-                        pickle.dump(final_results_t2, f)
-                except: pass
+                st.session_state['tab2_scan_updated_at'] = now_jst_t2
+                save_user_scan_state({
+                    "tab2_filters": t2_filters_payload,
+                    "tab2_results": {"results": final_results_t2, "updated_at": now_jst_t2},
+                })
             else:
+                now_jst_t2 = get_now_jst_str()
+                st.session_state['tab2_scan_results'] = []
+                st.session_state['tab2_scan_updated_at'] = now_jst_t2
+                save_user_scan_state({
+                    "tab2_filters": t2_filters_payload,
+                    "tab2_results": {"results": [], "updated_at": now_jst_t2},
+                })
                 p2_msg_t2.warning("⚠️ Phase 1 を通過した銘柄が0件のため、解析をスキップします。")
                 status.update(label="⚠️ スキャン中断：対象銘柄なし", state="complete")
 
@@ -1529,10 +1829,21 @@ with tab2:
 # 🎯 TAB3: 精密スコープ
 # ==========================================
 with tab3:
+    user_scan_state_t3 = ensure_user_scan_state_loaded()
+    saved_t3_state = user_scan_state_t3.get("tab3_state", {}) if isinstance(user_scan_state_t3, dict) else {}
+    saved_t3_mode = saved_t3_state.get("mode", "buy")
+    t3_mode_def_idx = 0 if saved_t3_mode != "sell" else 1
+
     st.markdown("### 🎯 【照準】精密スコープ＆詳細分析")
     st.info("TAB1・TAB2で抽出されたファンダ強者に対し、陣形の判定および詳細な個別チャート・業績推移を完全ローカルデータから出力します。")
 
-    tab3_mode = st.radio("スキャンモードを選択してください", ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"], horizontal=True)
+    tab3_mode = st.radio(
+        "スキャンモードを選択してください",
+        ["モード1：買い（反転上昇）", "モード2：空売り（奈落崩壊）"],
+        index=t3_mode_def_idx,
+        horizontal=True,
+        key="tab3_mode_radio",
+    )
     scan_mode = "buy" if "買い" in tab3_mode else "sell"
 
     # TAB1/TAB2の結果オブジェクトを直接取得し、オブジェクトID（再スキャン検知）を取得
@@ -1554,11 +1865,15 @@ with tab3:
     t2_codes_str = ",".join(list(dict.fromkeys(t2_codes)))
     t2_id = id(t2_results) if t2_results is not None else 0
 
-    # 内部Storeの初期化
+    # 内部Storeの初期化（クラウド保存済みのTAB3入力枠を優先復元）
     if "tab3_store_buy" not in st.session_state:
-        st.session_state["tab3_store_buy"] = t1_codes_str
+        saved_buy = saved_t3_state.get("store_buy", "")
+        st.session_state["tab3_store_buy"] = saved_buy if saved_buy != "" else t1_codes_str
     if "tab3_store_sell" not in st.session_state:
-        st.session_state["tab3_store_sell"] = t2_codes_str
+        saved_sell = saved_t3_state.get("store_sell", "")
+        st.session_state["tab3_store_sell"] = saved_sell if saved_sell != "" else t2_codes_str
+    if "tab3_manual_codes" not in st.session_state:
+        st.session_state["tab3_manual_codes"] = str(saved_t3_state.get("manual_codes", ""))
         
     if "tab3_last_t1_id" not in st.session_state:
         st.session_state["tab3_last_t1_id"] = t1_id
@@ -1594,16 +1909,38 @@ with tab3:
     # 🚨 追加：手動入力による強制出力枠
     manual_codes_input = st.text_input(
         "【強行偵察枠】（手動入力。※条件に関わらず分析チャート・業績を強制出力します。カンマ区切り）",
-        value=""
+        value=st.session_state.get("tab3_manual_codes", "")
     )
     
     st.session_state[store_key] = target_codes_input
+    st.session_state["tab3_manual_codes"] = manual_codes_input
 
-    if st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3"):
+    btn_scan_t3 = st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3")
+
+    # 案A：リロード・再ログイン時（ボタン未押下時）は保存済みの前回抽出サマリーを高速復元表示する
+    if not btn_scan_t3 and st.session_state.get('tab3_results'):
+        prev_t3_results = st.session_state.get('tab3_results', [])
+        prev_t3_upd = st.session_state.get('tab3_updated_at', '')
+        prev_t3_mode_raw = st.session_state.get('tab3_last_mode', saved_t3_mode)
+        prev_t3_mode_label = "買い（反転上昇）" if prev_t3_mode_raw != "sell" else "空売り（奈落崩壊）"
+        upd_txt = f" | 実行日時: {prev_t3_upd}" if prev_t3_upd else ""
+        st.info(f"💾 【クラウド復元】前回TAB3抽出結果（モード: {prev_t3_mode_label}{upd_txt} / 計 {len(prev_t3_results)}件）\n\n※チャート・業績表を再描画するには上の『🚀 TAB3 精密スキャン＆一斉分析』を押下してください。")
+        summary_df = pd.DataFrame([
+            {"銘柄コード": str(r.get("Code", "")), "判定ランク": str(r.get("Rank", "")), "モード": "買い" if r.get("Mode") != "sell" else "空売り"}
+            for r in prev_t3_results
+        ])
+        if not summary_df.empty:
+            st.dataframe(summary_df, hide_index=True, use_container_width=True)
+            prev_codes_str = ",".join([str(r.get("Code", "")) for r in prev_t3_results if r.get("Code")])
+            st.text_area(f"📋 前回抽出銘柄（コピペ用・計 {len(prev_t3_results)}件）", value=prev_codes_str, height=70, key="tab3_restored_codes_copy")
+
+    if btn_scan_t3:
         if not target_codes_input.strip() and not manual_codes_input.strip():
             st.warning("⚠️ 銘柄コードが入力されていません。")
         else:
             p_bar = st.progress(0, text="🚀 システム初期化・全軍データロード中...")
+            display_targets = []
+            scan_succeeded = False
 
             import unicodedata
             
@@ -1660,6 +1997,7 @@ with tab3:
                 if not c_code_raw:
                     st.error("⚠️ キャッシュデータに銘柄コード列が見つかりません。")
                 else:
+                    scan_succeeded = True
                     mask = raw_all_data[c_code_raw].astype(str).str[:4].isin(target_str_codes)
                     df_targets = raw_all_data[mask].copy()
 
@@ -2152,12 +2490,26 @@ with tab3:
                             
                         st.divider()
 
-            results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
-            if results_tab3:
-                hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
-                st.text_area(f"📋 分析完了銘柄（コピペ用・計 {len(results_tab3)}件）", value=hit_codes_str, height=70)
-                
-            st.session_state['tab3_results'] = results_tab3
+            if scan_succeeded:
+                results_tab3 = [{"Code": d["code"], "Rank": d["rank"], "Mode": scan_mode} for d in display_targets]
+                if results_tab3:
+                    hit_codes_str = ",".join([str(r["Code"]) for r in results_tab3])
+                    st.text_area(f"📋 分析完了銘柄（コピペ用・計 {len(results_tab3)}件）", value=hit_codes_str, height=70)
+
+                now_jst_t3 = get_now_jst_str()
+                st.session_state['tab3_results'] = results_tab3
+                st.session_state['tab3_updated_at'] = now_jst_t3
+                st.session_state['tab3_last_mode'] = scan_mode
+                save_user_scan_state({
+                    "tab3_state": {
+                        "mode": scan_mode,
+                        "store_buy": st.session_state.get("tab3_store_buy", ""),
+                        "store_sell": st.session_state.get("tab3_store_sell", ""),
+                        "manual_codes": st.session_state.get("tab3_manual_codes", ""),
+                        "results": results_tab3,
+                        "updated_at": now_jst_t3,
+                    }
+                })
 
 # ==========================================
 # 📁 TAB7: 戦績ダッシュボード
@@ -2362,30 +2714,31 @@ gc.collect()
 # ==========================================
 # 🛠️ 参謀直通デバッグターミナル（生データCSV抽出）
 # ==========================================
-st.markdown("---")
-with st.expander("🛠️ 参謀直通デバッグターミナル（生データCSV抽出）", expanded=False):
-    debug_code = st.text_input("抽出する銘柄コードを入力（例: 8627）", value="8628")
-    if st.button("📡 生データを抽出してCSV生成"):
-        if debug_code.strip():
-            try:
-                db = load_local_fundamentals_db()
-                df_debug = None
-                code_str = debug_code.strip()[:4]
-                
-                if isinstance(db, dict):
-                    df_debug = db.get(code_str + "0")
-                    if df_debug is None:  
-                        df_debug = db.get(code_str)
-                elif isinstance(db, pd.DataFrame):
-                    c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
-                    if c_col:
-                        df_debug = db[db[c_col].astype(str).str.startswith(code_str)]
-                
-                if df_debug is not None and (isinstance(df_debug, pd.DataFrame) and not df_debug.empty):
-                    st.write(f"✅ **抽出成功: {code_str} 生データ**")
-                    csv_text = df_debug.tail(16).to_csv(index=False)
-                    st.text_area("📋 【ここをクリックして Ctrl+A で全選択し、コピーしてください】", value=csv_text, height=300)
-                else:
-                    st.warning(f"⚠️ {code_str} のデータが見つかりません。")
-            except Exception as e:
-                st.error(f"🚨 抽出エラー: {e}")
+if st.session_state.get("current_user_role", "user") == "admin":
+    st.markdown("---")
+    with st.expander("🛠️ 参謀直通デバッグターミナル（生データCSV抽出）", expanded=False):
+        debug_code = st.text_input("抽出する銘柄コードを入力（例: 8627）", value="8628")
+        if st.button("📡 生データを抽出してCSV生成"):
+            if debug_code.strip():
+                try:
+                    db = load_local_fundamentals_db()
+                    df_debug = None
+                    code_str = debug_code.strip()[:4]
+                    
+                    if isinstance(db, dict):
+                        df_debug = db.get(code_str + "0")
+                        if df_debug is None:  
+                            df_debug = db.get(code_str)
+                    elif isinstance(db, pd.DataFrame):
+                        c_col = 'Code' if 'Code' in db.columns else ('code' if 'code' in db.columns else None)
+                        if c_col:
+                            df_debug = db[db[c_col].astype(str).str.startswith(code_str)]
+                    
+                    if df_debug is not None and (isinstance(df_debug, pd.DataFrame) and not df_debug.empty):
+                        st.write(f"✅ **抽出成功: {code_str} 生データ**")
+                        csv_text = df_debug.tail(16).to_csv(index=False)
+                        st.text_area("📋 【ここをクリックして Ctrl+A で全選択し、コピーしてください】", value=csv_text, height=300)
+                    else:
+                        st.warning(f"⚠️ {code_str} のデータが見つかりません。")
+                except Exception as e:
+                    st.error(f"🚨 抽出エラー: {e}")
