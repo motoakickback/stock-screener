@@ -2183,7 +2183,7 @@ with tab3:
                         prog_val = min(completed_cnt / total_cnt, 1.0)
                         p_bar.progress(prog_val, text=f"🚀 フェーズ1：インメモリ陣形判定中... ({completed_cnt}/{total_cnt} 完了)")
                         
-                        df = group.tail(260).reset_index(drop=True)
+                        df = group.reset_index(drop=True)
                         if df.empty or len(df) < 4: continue
                         
                         # 🚨 修正：V2 APIカラムをV1形式へ強制置換（外部関数 analyze_formation_history の互換性維持のため）
@@ -2472,8 +2472,12 @@ with tab3:
                                 else:
                                     df_c[col] = df_c[col].ffill().fillna(0.0)
                                     
-                            if 'MA18' not in df_c.columns: df_c['MA18'] = df_c[c_c_col].rolling(18).mean().ffill().fillna(0.0)
-                            if 'MA50' not in df_c.columns: df_c['MA50'] = df_c[c_c_col].rolling(50).mean().ffill().fillna(0.0)
+                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
+                            df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
+                            df_c = df_c.dropna(subset=[date_col]).sort_values(date_col).reset_index(drop=True)
+
+                            df_c['MA18'] = df_c[c_c_col].rolling(18).mean()
+                            df_c['MA50'] = df_c[c_c_col].rolling(50).mean()
                             
                             delta = df_c[c_c_col].diff()
                             gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
@@ -2505,10 +2509,14 @@ with tab3:
                             c4.metric("終値", f"{c_c:,.1f}円")
                             c5.metric("RSI(14日)", f"{rsi_val:.1f}%")
                             
+                            # 全履歴でMA18・MA50・RSI14を算出済みの状態から、描画用データのみカレンダー1年分へスライス
+                            latest_dt_c = df_c[date_col].max()
+                            cutoff_dt_c = latest_dt_c - pd.DateOffset(years=1)
+                            df_c_1y = df_c[df_c[date_col] >= cutoff_dt_c].copy()
+                            if not df_c_1y.empty:
+                                df_c = df_c_1y
+
                             fig = go.Figure()
-                            date_col = 'Date' if 'Date' in df_c.columns else df_c.columns[0]
-                            df_c[date_col] = pd.to_datetime(df_c[date_col], errors='coerce')
-                            df_c = df_c.dropna(subset=[date_col]).copy()
                             
                             fig.add_trace(go.Candlestick(
                                 x=df_c[date_col], 
