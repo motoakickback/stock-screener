@@ -23,7 +23,7 @@ session.headers.update(headers)
 
 prices_db = {}
 base_date_jst = datetime.utcnow() + timedelta(hours=9)
-days_to_fetch = 400
+days_to_fetch = 480
 fetched_days = 0
 
 for i in range(days_to_fetch):
