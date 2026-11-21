@@ -482,33 +482,188 @@ api_session = st.session_state.api_session
 # ==========================================
 # 🌪️ マクロ気象レーダー（日経平均）
 # ==========================================
+WS_MACRO_CACHE = "MACRO_CACHE"
+
+def _get_macro_cache_ws():
+    """st.session_state / st.rerun に一切依存せず MACRO_CACHE シートを取得・自動作成する防弾関数。"""
+    try:
+        sheet = get_db_sheet() if "get_db_sheet" in globals() else None
+        if sheet is None and "init_gspread" in globals():
+            client = init_gspread()
+            if client:
+                sheet = client.open_by_key(SPREADSHEET_ID)
+        if not sheet:
+            return None
+        try:
+            return sheet.worksheet(WS_MACRO_CACHE)
+        except gspread.exceptions.WorksheetNotFound:
+            return sheet.add_worksheet(title=WS_MACRO_CACHE, rows="10", cols="5")
+    except Exception as e:
+        print(f"MACRO_CACHEシート接続エラー: {e}")
+        return None
+
+def _load_macro_cache_from_sheets():
+    """Google Sheets（MACRO_CACHE）から保存済みの日経平均確定日足辞書 {YYYY-MM-DD: float} を読み込む。"""
+    ws = _get_macro_cache_ws()
+    if not ws:
+        return {}
+    try:
+        all_values = ws.get_all_values()
+        for row in all_values[1:]:
+            if len(row) >= 3 and str(row[0]).strip() == "nikkei_daily":
+                raw_json = str(row[2]).strip()
+                if not raw_json:
+                    return {}
+                parsed = json.loads(raw_json)
+                if isinstance(parsed, dict):
+                    clean_map = {}
+                    for k, v in parsed.items():
+                        d_str = str(k).strip()[:10]
+                        try:
+                            fv = float(v)
+                            if len(d_str) == 10 and pd.notna(fv) and fv > 0:
+                                clean_map[d_str] = fv
+                        except Exception:
+                            pass
+                    return clean_map
+    except Exception as e:
+        print(f"MACRO_CACHE読み込みエラー: {e}")
+    return {}
+
+def _save_macro_cache_to_sheets(price_map):
+    """日経平均確定日足辞書を固定2行（A1:D2）で完全上書き保存する（容量増加ゼロ）。"""
+    ws = _get_macro_cache_ws()
+    if not ws or not price_map:
+        return
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        sorted_items = sorted(price_map.items())[-550:]
+        trimmed_map = {k: round(float(v), 2) for k, v in sorted_items}
+        latest_d = sorted_items[-1][0]
+        payload_str = json.dumps(trimmed_map, ensure_ascii=False, separators=(",", ":"))
+        if len(payload_str) > 49000:
+            sorted_items = sorted_items[-400:]
+            trimmed_map = {k: round(float(v), 2) for k, v in sorted_items}
+            payload_str = json.dumps(trimmed_map, ensure_ascii=False, separators=(",", ":"))
+
+        try:
+            now_jst = _dt.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S JST')
+        except Exception:
+            now_jst = (_dt.utcnow() + _td(hours=9)).strftime('%Y-%m-%d %H:%M:%S JST')
+
+        rows = [
+            ["key", "latest_date", "payload_json", "updated_at"],
+            ["nikkei_daily", latest_d, payload_str, now_jst],
+        ]
+        try:
+            ws.update(values=rows, range_name="A1:D2")
+        except TypeError:
+            ws.update("A1:D2", rows)
+    except Exception as e:
+        print(f"MACRO_CACHE書き込みエラー: {e}")
+
 @st.cache_data(ttl=600, show_spinner=False)
 def get_macro_weather():
     try:
         import yfinance as yf
+        from datetime import datetime as _dt, timedelta as _td
+
+        try:
+            today_jst_str = _dt.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d')
+        except Exception:
+            today_jst_str = (_dt.utcnow() + _td(hours=9)).strftime('%Y-%m-%d')
+
+        fetched_map = {}
         tk = yf.Ticker("^N225")
-        df_raw = tk.history(period="3mo")
-        if not df_raw.empty:
-            if df_raw.index.tz is not None:
-                df_raw.index = df_raw.index.tz_localize(None)
-            df_ni = df_raw.reset_index()
-            df_ni.rename(columns={df_ni.columns[0]: 'Date'}, inplace=True)
-            close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_ni.columns), 'Close')
-            df_ni = df_ni.dropna(subset=[close_col])
-            
-            if len(df_ni) >= 2:
-                # 🚨 戦術B: 推測合成ロジック（13060 ETFからの算出等）を完全パージ。遅延時は事実のみを出力する。
-                latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
-                return {
-                    "nikkei": {
-                        "price": float(latest[close_col]),
-                        "diff": float(latest[close_col] - prev[close_col]),
-                        "pct": ((float(latest[close_col]) / float(prev[close_col])) - 1) * 100,
-                        "df": df_ni,
-                        "date": latest['Date'].strftime('%m/%d')
-                    }
+
+        # 1. 日足データ取得（1年表示＋MA50計算バッファ確保のため2年分取得）
+        try:
+            df_raw = tk.history(period="2y")
+            if df_raw is not None and not df_raw.empty:
+                idx = df_raw.index
+                if idx.tz is not None:
+                    idx = idx.tz_convert('Asia/Tokyo').tz_localize(None)
+                df_tmp = df_raw.copy()
+                df_tmp.index = idx
+                close_col = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_tmp.columns), None)
+                if close_col:
+                    s_close = pd.to_numeric(df_tmp[close_col], errors='coerce').dropna()
+                    for dt_idx, val in s_close.items():
+                        fv = float(val)
+                        d_str = pd.Timestamp(dt_idx).strftime('%Y-%m-%d')
+                        if fv > 0 and d_str <= today_jst_str:
+                            fetched_map[d_str] = fv
+        except Exception as e:
+            print(f"日経日足取得エラー: {e}")
+
+        # 2. 第1層防衛：yfinance時間足（1h）による最新営業日欠落の補完（実約定値のみ採用）
+        try:
+            df_intra = tk.history(period="5d", interval="1h")
+            if df_intra is not None and not df_intra.empty:
+                idx_i = df_intra.index
+                if idx_i.tz is not None:
+                    idx_i = idx_i.tz_convert('Asia/Tokyo').tz_localize(None)
+                df_i = df_intra.copy()
+                df_i.index = idx_i
+                close_col_i = next((c for c in ['Close', 'close', 'C', 'c'] if c in df_i.columns), None)
+                if close_col_i:
+                    s_intra = pd.to_numeric(df_i[close_col_i], errors='coerce').dropna()
+                    s_intra = s_intra[s_intra > 0].sort_index()
+                    if not s_intra.empty:
+                        intra_last_d = pd.Timestamp(s_intra.index[-1]).strftime('%Y-%m-%d')
+                        intra_last_v = float(s_intra.iloc[-1])
+                        latest_daily_d = max(fetched_map.keys()) if fetched_map else ""
+                        if intra_last_d <= today_jst_str and (not latest_daily_d or intra_last_d > latest_daily_d):
+                            fetched_map[intra_last_d] = intra_last_v
+        except Exception as e:
+            print(f"日経時間足補完エラー: {e}")
+
+        # 3. 第3層防衛：Google Sheets（MACRO_CACHE）とのマージによる巻き戻り物理ブロック
+        cached_map = _load_macro_cache_from_sheets()
+        merged_map = dict(cached_map)
+        for d_str, val in fetched_map.items():
+            merged_map[d_str] = val
+
+        if not merged_map:
+            return None
+
+        # 変化検知時のみ上書き保存（API消費最小化）
+        need_save = False
+        if not cached_map:
+            need_save = True
+        else:
+            c_max_d = max(cached_map.keys())
+            m_max_d = max(merged_map.keys())
+            if m_max_d > c_max_d:
+                need_save = True
+            elif m_max_d == c_max_d and abs(merged_map[m_max_d] - cached_map[c_max_d]) >= 0.01:
+                need_save = True
+            elif len(merged_map) > len(cached_map):
+                need_save = True
+
+        if need_save:
+            _save_macro_cache_to_sheets(merged_map)
+
+        sorted_items = sorted(merged_map.items())
+        df_ni = pd.DataFrame(sorted_items, columns=['Date', 'Close'])
+        df_ni['Date'] = pd.to_datetime(df_ni['Date'], errors='coerce')
+        df_ni['Close'] = pd.to_numeric(df_ni['Close'], errors='coerce')
+        df_ni = df_ni.dropna(subset=['Date', 'Close']).sort_values('Date').reset_index(drop=True)
+
+        if len(df_ni) >= 2:
+            # 🚨 戦術B: 推測合成ロジック（13060 ETFからの算出等）を完全パージ。遅延時は事実のみを出力する。
+            latest, prev = df_ni.iloc[-1], df_ni.iloc[-2]
+            return {
+                "nikkei": {
+                    "price": float(latest['Close']),
+                    "diff": float(latest['Close'] - prev['Close']),
+                    "pct": ((float(latest['Close']) / float(prev['Close'])) - 1) * 100,
+                    "df": df_ni,
+                    "date": latest['Date'].strftime('%m/%d')
                 }
-    except: pass
+            }
+    except Exception as e:
+        print(f"マクロ気象レーダー処理エラー: {e}")
     return None
 
 def render_macro_board():
@@ -521,14 +676,24 @@ def render_macro_board():
             df = df.reset_index()
             if 'index' in df.columns and 'Date' not in df.columns:
                 df.rename(columns={'index': 'Date'}, inplace=True)
-        if pd.api.types.is_datetime64_any_dtype(df['Date']):
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date']).sort_values('Date').reset_index(drop=True)
+        if pd.api.types.is_datetime64_any_dtype(df['Date']) and df['Date'].dt.tz is not None:
             df['Date'] = df['Date'].dt.tz_localize(None)
 
         close_col = next((c for c in ['AdjC', 'Close', 'close', 'Adj Close', 'C'] if c in df.columns), None)
-        if not close_col: return
+        if not close_col or df.empty: return
 
+        # 2年分の全データに対して先にMA18・MA50を算出（左端欠損を完全にゼロ化）
         df['MA18'] = df[close_col].rolling(window=18).mean()
         df['MA50'] = df[close_col].rolling(window=50).mean()
+
+        # 描画直前に最新営業日からカレンダー1年分へスライス
+        latest_dt = df['Date'].max()
+        cutoff_dt = latest_dt - pd.DateOffset(years=1)
+        df_plot = df[df['Date'] >= cutoff_dt].copy()
+        if df_plot.empty:
+            df_plot = df.copy()
         
         color = "#26a69a" if ni['diff'] >= 0 else "#ef5350" 
         sign = "+" if ni['diff'] >= 0 else ""
@@ -546,15 +711,16 @@ def render_macro_board():
             
         with c2:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df[close_col], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA18'], name='18日線', mode='lines', line=dict(color='#26a69a', width=1.5, dash='dot'), hovertemplate='18日線: ¥%{y:,.0f}<extra></extra>'))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['MA50'], name='50日線', mode='lines', line=dict(color='#ff9800', width=1.5, dash='dash'), hovertemplate='50日線: ¥%{y:,.0f}<extra></extra>'))
-            y_min, y_max = df[close_col].min(), df[close_col].max()
+            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot[close_col], name='日経平均', mode='lines', line=dict(color='#FFD700', width=2), hovertemplate='日経平均: ¥%{y:,.0f}<extra></extra>'))
+            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA18'], name='18日線', mode='lines', line=dict(color='#26a69a', width=1.5, dash='dot'), hovertemplate='18日線: ¥%{y:,.0f}<extra></extra>'))
+            fig.add_trace(go.Scatter(x=df_plot['Date'], y=df_plot['MA50'], name='50日線', mode='lines', line=dict(color='#ff9800', width=1.5, dash='dash'), hovertemplate='50日線: ¥%{y:,.0f}<extra></extra>'))
+            y_vals = pd.concat([df_plot[close_col], df_plot['MA18'], df_plot['MA50']]).dropna()
+            y_min, y_max = float(y_vals.min()), float(y_vals.max())
             fig.update_layout(
                 height=220, margin=dict(l=0, r=40, t=15, b=10), xaxis_rangeslider_visible=False, 
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, hovermode="x unified", 
                 yaxis=dict(side="right", tickformat=",.0f", gridcolor='rgba(255,255,255,0.05)', autorange=True, range=[y_min * 0.98, y_max * 1.05], fixedrange=True), 
-                xaxis=dict(type='date', tickformat='%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df['Date'].min(), df['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
+                xaxis=dict(type='date', tickformat='%y/%m', hoverformat='%Y/%m/%d', gridcolor='rgba(255,255,255,0.05)', range=[df_plot['Date'].min(), df_plot['Date'].max() + pd.Timedelta(hours=24)], fixedrange=True)
             )
             import uuid
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False}, key=f"macro_weather_{uuid.uuid4().hex[:8]}")
