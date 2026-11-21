@@ -2220,9 +2220,9 @@ with tab3:
 
                     import plotly.graph_objects as go
                     import numpy as np
-                    import datetime
+                    import datetime as dt_mod
                     
-                    now_jst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+                    now_jst = dt_mod.datetime.utcnow() + dt_mod.timedelta(hours=9)
                     today_date = now_jst.date()
                     
                     hit_count = len(display_targets)
