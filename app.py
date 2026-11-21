@@ -257,17 +257,32 @@ def check_password():
 
 if not check_password(): st.stop()
 
+def _get_db_file_fingerprint(*filenames):
+    """対象DBファイルの更新時刻（ns）とファイルサイズから極小コストで指紋文字列を生成する。"""
+    base_dir = os.path.dirname(__file__)
+    for fname in filenames:
+        fpath = os.path.join(base_dir, fname)
+        if os.path.exists(fpath):
+            try:
+                st_info = os.stat(fpath)
+                return f"{fname}_{st_info.st_mtime_ns}_{st_info.st_size}"
+            except Exception:
+                continue
+    return "missing"
+
 def get_cache_key():
+    from datetime import datetime as _dt, timedelta as _td
+    file_sig = _get_db_file_fingerprint("prices_db.pkl.gz")
     try:
         tz = pytz.timezone('Asia/Tokyo')
-        now = datetime.now(tz)
+        now = _dt.now(tz)
         if now.hour < 19:
-            reset_base = (now - timedelta(days=1)).replace(hour=19, minute=0, second=0, microsecond=0)
+            reset_base = (now - _td(days=1)).replace(hour=19, minute=0, second=0, microsecond=0)
         else:
             reset_base = now.replace(hour=19, minute=0, second=0, microsecond=0)
-        return f"iron_rule_v2026_{reset_base.strftime('%Y%m%d_%H')}"
-    except:
-        return datetime.now().strftime('%Y%m%d_H')
+        return f"iron_rule_v2026_{reset_base.strftime('%Y%m%d_%H')}_{file_sig}"
+    except Exception:
+        return f"{_dt.now().strftime('%Y%m%d_%H')}_{file_sig}"
 
 # --- 🚁 司令部へ帰還ボタン ---
 components.html(
@@ -749,8 +764,8 @@ tab1, tab2, tab3, tab7 = st.tabs(["📈 TAB1: 買い", "📉 TAB2: 空売り", "
 # ==========================================
 # ⚡ 全銘柄現在値・一括取得エンジン（完全ローカルDB参照版）
 # ==========================================
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_all_latest_prices_bulk():
+@st.cache_data(ttl=3600, max_entries=1, show_spinner=False)
+def _get_all_latest_prices_bulk_cached(file_sig):
     """API通信を物理遮断。ローカル株価DB（prices_db.pkl.gz / .pkl）から最新営業日の株価を一括抽出する"""
     import os
     import pickle
@@ -790,13 +805,21 @@ def get_all_latest_prices_bulk():
                 
     return prices_map
 
-@st.cache_resource(ttl=3600*24)
-def load_local_fundamentals_db():
+def get_all_latest_prices_bulk():
+    file_sig = _get_db_file_fingerprint("prices_db.pkl.gz", "prices_db.pkl")
+    return _get_all_latest_prices_bulk_cached(file_sig)
+
+@st.cache_resource(ttl=3600*24, max_entries=1)
+def _load_local_fundamentals_db_cached(file_sig):
     import pickle, gzip
     db_path = os.path.join(os.path.dirname(__file__), "fundamentals_db.pkl.gz")
     if os.path.exists(db_path):
         with gzip.open(db_path, "rb") as f: return pickle.load(f)
     return {}
+
+def load_local_fundamentals_db():
+    file_sig = _get_db_file_fingerprint("fundamentals_db.pkl.gz")
+    return _load_local_fundamentals_db_cached(file_sig)
 
 def get_historical_statements(code):
     db = load_local_fundamentals_db()
