@@ -1554,6 +1554,273 @@ def fetch_fundamental_history_local(code, local_db):
     except Exception as e: 
         return None
 
+def build_kagi_chart(df_plot, date_col, close_col, reversal_mode="ATR(14)", atr_val=0.0):
+    """直近1年分の終値からカギ足（Kagi）Plotly Figureを生成する。陽線(#26a69a)・陰線(#ef5350)は同一線幅。"""
+    if df_plot is None or df_plot.empty or date_col not in df_plot.columns or close_col not in df_plot.columns:
+        return None, ""
+
+    df_k = df_plot[[date_col, close_col]].copy()
+    df_k[close_col] = pd.to_numeric(df_k[close_col], errors='coerce')
+    df_k = df_k.dropna(subset=[date_col, close_col])
+    df_k = df_k[df_k[close_col] > 0].reset_index(drop=True)
+    if len(df_k) < 2:
+        return None, ""
+
+    dates = df_k[date_col].tolist()
+    closes = [float(v) for v in df_k[close_col].tolist()]
+
+    # 転換幅パラメータ確定（ATR14は一律円幅適用、%モードは比率適用）
+    is_pct_mode = False
+    rev_pct = 0.0
+    rev_abs = 0.0
+    if reversal_mode == "ATR(14)":
+        if atr_val is not None and float(atr_val) > 0:
+            rev_abs = float(atr_val)
+            rev_label = f"ATR(14) = {rev_abs:,.1f}円"
+        else:
+            is_pct_mode = True
+            rev_pct = 0.03
+            rev_label = "3%（ATR算出不可のため自動代替）"
+    else:
+        is_pct_mode = True
+        try:
+            rev_pct = float(str(reversal_mode).replace("%", "").strip()) / 100.0
+        except Exception:
+            rev_pct = 0.03
+        rev_label = f"{rev_pct * 100:.0f}%"
+
+    def _is_reversed(curr_dir, extreme_p, price):
+        if is_pct_mode:
+            if curr_dir == 1:
+                return price <= extreme_p * (1.0 - rev_pct)
+            return price >= extreme_p * (1.0 + rev_pct)
+        else:
+            if curr_dir == 1:
+                return price <= extreme_p - rev_abs
+            return price >= extreme_p + rev_abs
+
+    # 初期方向決定
+    p0 = closes[0]
+    d0 = dates[0]
+    init_dir = 0
+    start_idx = 1
+    for i in range(1, len(closes)):
+        p = closes[i]
+        if is_pct_mode:
+            if p >= p0 * (1.0 + rev_pct):
+                init_dir = 1
+                start_idx = i
+                break
+            elif p <= p0 * (1.0 - rev_pct):
+                init_dir = -1
+                start_idx = i
+                break
+        else:
+            if p >= p0 + rev_abs:
+                init_dir = 1
+                start_idx = i
+                break
+            elif p <= p0 - rev_abs:
+                init_dir = -1
+                start_idx = i
+                break
+
+    # 1年間で一度も転換幅に到達しなかった場合のフェイルセーフ
+    if init_dir == 0:
+        fallback_dir = 1 if closes[-1] >= p0 else -1
+        cols_data = [{
+            "x": 0,
+            "start_p": p0,
+            "end_p": closes[-1],
+            "dir": fallback_dir,
+            "start_date": d0,
+            "end_date": dates[-1],
+        }]
+    else:
+        cols_data = [{
+            "x": 0,
+            "start_p": p0,
+            "end_p": closes[start_idx],
+            "dir": init_dir,
+            "start_date": d0,
+            "end_date": dates[start_idx],
+        }]
+        for i in range(start_idx + 1, len(closes)):
+            p = closes[i]
+            d = dates[i]
+            cur = cols_data[-1]
+            if cur["dir"] == 1:
+                if p > cur["end_p"]:
+                    cur["end_p"] = p
+                    cur["end_date"] = d
+                elif _is_reversed(1, cur["end_p"], p):
+                    cols_data.append({
+                        "x": cur["x"] + 1,
+                        "start_p": cur["end_p"],
+                        "end_p": p,
+                        "dir": -1,
+                        "start_date": d,
+                        "end_date": d,
+                    })
+            else:
+                if p < cur["end_p"]:
+                    cur["end_p"] = p
+                    cur["end_date"] = d
+                elif _is_reversed(-1, cur["end_p"], p):
+                    cols_data.append({
+                        "x": cur["x"] + 1,
+                        "start_p": cur["end_p"],
+                        "end_p": p,
+                        "dir": 1,
+                        "start_date": d,
+                        "end_date": d,
+                    })
+
+    # 陽線(#26a69a)・陰線(#ef5350)セグメント構築（肩突破で陽転、腰割れで陰転）
+    yang_x, yang_y = [], []
+    yin_x, yin_y = [], []
+    hover_x, hover_y, hover_text = [], [], []
+
+    def _add_seg(is_yang_state, x1, y1, x2, y2):
+        if is_yang_state:
+            yang_x.extend([x1, x2, None])
+            yang_y.extend([y1, y2, None])
+        else:
+            yin_x.extend([x1, x2, None])
+            yin_y.extend([y1, y2, None])
+
+    is_yang = (cols_data[0]["dir"] == 1)
+    last_shoulder = None
+    last_waist = None
+
+    # 始点ホバー登録
+    d0_str = pd.Timestamp(cols_data[0]["start_date"]).strftime('%Y/%m/%d')
+    hover_x.append(0)
+    hover_y.append(cols_data[0]["start_p"])
+    hover_text.append(
+        f"・日付：{d0_str}<br>・価格：{cols_data[0]['start_p']:,.1f}円<br>・種別：起点<br>・状態：{'陽線' if is_yang else '陰線'}"
+    )
+
+    for idx_c, col in enumerate(cols_data):
+        cx = col["x"]
+        sp = col["start_p"]
+        ep = col["end_p"]
+        cdir = col["dir"]
+
+        if idx_c > 0:
+            prev_col = cols_data[idx_c - 1]
+            # 肩・腰の水平連結線（現在状態で描画）
+            _add_seg(is_yang, cx - 1, sp, cx, sp)
+            if prev_col["dir"] == 1:
+                last_shoulder = prev_col["end_p"]
+            else:
+                last_waist = prev_col["end_p"]
+
+        # 縦線描画と陽転・陰転の交差分割
+        if cdir == 1 and (not is_yang) and (last_shoulder is not None) and (ep > last_shoulder):
+            if sp < last_shoulder:
+                _add_seg(False, cx, sp, cx, last_shoulder)
+                _add_seg(True, cx, last_shoulder, cx, ep)
+            else:
+                _add_seg(True, cx, sp, cx, ep)
+            is_yang = True
+        elif cdir == -1 and is_yang and (last_waist is not None) and (ep < last_waist):
+            if sp > last_waist:
+                _add_seg(True, cx, sp, cx, last_waist)
+                _add_seg(False, cx, last_waist, cx, ep)
+            else:
+                _add_seg(False, cx, sp, cx, ep)
+            is_yang = False
+        else:
+            _add_seg(is_yang, cx, sp, cx, ep)
+
+        # 転換点（肩・腰・最新終値）ホバー登録
+        ed_str = pd.Timestamp(col["end_date"]).strftime('%Y/%m/%d')
+        if idx_c == len(cols_data) - 1:
+            pt_kind = "最新終値"
+        else:
+            pt_kind = "肩（高値転換）" if cdir == 1 else "腰（安値転換）"
+        hover_x.append(cx)
+        hover_y.append(ep)
+        hover_text.append(
+            f"・日付：{ed_str}<br>・価格：{ep:,.1f}円<br>・種別：{pt_kind}<br>・状態：{'陽線' if is_yang else '陰線'}"
+        )
+
+    fig_kagi = go.Figure()
+
+    # 陽線・陰線ともに同一の線幅（width=2.5）で描画
+    fig_kagi.add_trace(go.Scatter(
+        x=yang_x,
+        y=yang_y,
+        mode='lines',
+        name='陽線（買い優勢）',
+        line=dict(color='#26a69a', width=2.5),
+        hoverinfo='skip'
+    ))
+    fig_kagi.add_trace(go.Scatter(
+        x=yin_x,
+        y=yin_y,
+        mode='lines',
+        name='陰線（売り優勢）',
+        line=dict(color='#ef5350', width=2.5),
+        hoverinfo='skip'
+    ))
+    fig_kagi.add_trace(go.Scatter(
+        x=hover_x,
+        y=hover_y,
+        mode='markers',
+        name='転換点',
+        showlegend=False,
+        marker=dict(size=9, color='rgba(255,255,255,0.01)'),
+        text=hover_text,
+        hovertemplate='%{text}<extra></extra>'
+    ))
+
+    # 非時系列X軸へ転換日付の代表目盛りを配置
+    total_cols = len(cols_data)
+    step_tick = max(1, total_cols // 8)
+    tick_vals = list(range(0, total_cols, step_tick))
+    if (total_cols - 1) not in tick_vals:
+        tick_vals.append(total_cols - 1)
+    tick_texts = [pd.Timestamp(cols_data[i]["end_date"]).strftime('%y/%m/%d') for i in tick_vals]
+
+    fig_kagi.update_layout(
+        height=400,
+        margin=dict(l=0, r=40, t=40, b=20),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        dragmode='pan',
+        hovermode='closest',
+        hoverlabel=dict(bgcolor="rgba(0,0,0,0.85)", font_size=13, font_family="sans-serif", align="left"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(0,0,0,0)"
+        ),
+        xaxis=dict(
+            tickmode='array',
+            tickvals=tick_vals,
+            ticktext=tick_texts,
+            showgrid=True,
+            gridcolor='rgba(255,255,255,0.05)',
+            fixedrange=False,
+            range=[-0.5, max(total_cols - 0.5, 0.5)]
+        ),
+        yaxis=dict(
+            side='right',
+            tickformat=',.0f',
+            autorange=True,
+            fixedrange=False,
+            gridcolor='rgba(255,255,255,0.05)'
+        )
+    )
+
+    info_text = f"転換幅: {rev_label} | 転換回数: {max(total_cols - 1, 0)}回 | 状態: {'🟢 陽線' if is_yang else '🔴 陰線'}"
+    return fig_kagi, info_text
+
 # ==========================================
 # 🌐 TAB1: 買い銘柄広域スキャン (Growth / Standard / Prime)
 # ==========================================
@@ -2104,6 +2371,13 @@ with tab3:
     st.session_state[store_key] = target_codes_input
     st.session_state["tab3_manual_codes"] = manual_codes_input
 
+    kagi_rev_mode = st.selectbox(
+        "📐 カギ足 転換幅設定（終値・1年分）",
+        ["ATR(14)", "3%", "4%", "5%"],
+        index=0,
+        key="tab3_kagi_reversal",
+    )
+
     btn_scan_t3 = st.button("🚀 TAB3 精密スキャン＆一斉分析", key="btn_scan_tab3")
 
     # 案A：リロード・再ログイン時（ボタン未押下時）は保存済みの前回抽出サマリーを高速復元表示する
@@ -2510,6 +2784,15 @@ with tab3:
                             
                             df_c['RSI14'] = df_c['RSI14'].replace([np.inf, -np.inf], 50.0).fillna(50.0)
 
+                            # カギ足用 ATR(14) を全履歴からWilder RMA（TradingView標準）で算出
+                            prev_c_tr = df_c[c_c_col].shift(1)
+                            tr_series = pd.concat([
+                                (df_c[c_h_col] - df_c[c_l_col]).abs(),
+                                (df_c[c_h_col] - prev_c_tr).abs(),
+                                (df_c[c_l_col] - prev_c_tr).abs()
+                            ], axis=1).max(axis=1)
+                            df_c['ATR14'] = tr_series.ewm(alpha=1/14, adjust=False).mean()
+
                             def safe_float(val):
                                 if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
                                 try: 
@@ -2524,6 +2807,7 @@ with tab3:
                             c_l = safe_float(q0.get(c_l_col, 0))
                             c_c = safe_float(q0.get(c_c_col, 0))
                             rsi_val = safe_float(q0.get('RSI14', 50.0))
+                            atr14_val = safe_float(q0.get('ATR14', 0.0))
                             
                             c1, c2, c3, c4, c5 = st.columns(5)
                             c1.metric("始値", f"{c_o:,.1f}円")
@@ -2663,6 +2947,20 @@ with tab3:
                             
                             st.caption("💡 **狙撃手マニュアル**: 初期表示は直近3ヶ月にオートフォーカスしています。過去に遡ってローソク足が見切れた場合は、右側の価格軸（Y軸の数字）を直接上下にドラッグするか、チャート内で **ダブルクリック** するとY軸が自動追従（オートフィット）します。")
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_chart_{code}_{scan_mode}_{idx}")
+
+                            with st.expander(f"📐 カギ足チャートを比較表示（終値・1年 / {kagi_rev_mode}）", expanded=False):
+                                fig_kagi, kagi_info = build_kagi_chart(
+                                    df_c,
+                                    date_col=date_col,
+                                    close_col=c_c_col,
+                                    reversal_mode=kagi_rev_mode,
+                                    atr_val=atr14_val,
+                                )
+                                if fig_kagi is not None:
+                                    st.caption(f"📐 **カギ足設定**: {kagi_info}（※各転換点へカーソルを合わせると日付・価格・状態を表示）")
+                                    st.plotly_chart(fig_kagi, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True}, key=f"tab3_kagi_{code}_{scan_mode}_{idx}")
+                                else:
+                                    st.info("ℹ️ カギ足を描画するための価格データが不足しています。")
 
                         if data.get("fund") is not None and not data["fund"].empty:
                             st.markdown("##### 📊 業績成長率（YoY 前年同期比）")
